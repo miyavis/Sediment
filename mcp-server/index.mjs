@@ -219,6 +219,43 @@ const TOOLS = [
     },
   },
   {
+    name: "list_tasks",
+    description: "列出 vault 原生待办：today / overdue / all / agent。",
+    inputSchema: {
+      type: "object",
+      properties: { scope: { type: "string", description: "today / overdue / all / agent" } },
+    },
+  },
+  {
+    name: "complete_task",
+    description: "勾选指定笔记中某一行的 - [ ] 待办。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        line: { type: "number", description: "行号，从 1 开始" },
+      },
+      required: ["path", "line"],
+    },
+  },
+  {
+    name: "delegate_task",
+    description: "把一条待办转成带 #to-agent 标签的速记任务。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        line: { type: "number" },
+      },
+      required: ["path", "line"],
+    },
+  },
+  {
+    name: "snapshot_tasks",
+    description: "按需把遗留待办写入当天日记（不默认执行）。",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
     name: "semantic_search",
     description: "本地语义检索：按意义而非关键词查找笔记，返回相关度、路径和片段。",
     inputSchema: {
@@ -392,6 +429,14 @@ async function dispatch(name, args) {
       return call("/agent-task/claim", { id: args.id }, "POST");
     case "complete_agent_task":
       return call("/agent-task/complete", { id: args.id, resultPath: args.resultPath ?? "" }, "POST");
+    case "list_tasks":
+      return call("/tasks", { scope: args.scope ?? "all" });
+    case "complete_task":
+      return call("/tasks/complete", { path: args.path, line: args.line }, "POST");
+    case "delegate_task":
+      return call("/tasks/delegate", { path: args.path, line: args.line }, "POST");
+    case "snapshot_tasks":
+      return call("/tasks/snapshot", {}, "POST");
     case "semantic_search":
       return call("/semantic-search", { q: args.query ?? "", limit: args.limit ?? 10 });
     case "get_active_context":

@@ -608,6 +608,23 @@ export class AgentApi {
     return this.categories()[0] ?? "未分类";
   }
 
+  async listTasks(scope = "all"): Promise<Array<{ path: string; line: number; text: string; date: string; checked: boolean }>> {
+    return this.plugin.tasks.list(scope as "today" | "overdue" | "all" | "agent");
+  }
+
+  async completeTask(path: string, line: number): Promise<{ ok: true }> {
+    await this.plugin.tasks.complete(path, line);
+    return { ok: true };
+  }
+
+  async delegateTask(path: string, line: number): Promise<{ id: string }> {
+    return { id: await this.plugin.tasks.delegate(path, line) };
+  }
+
+  async snapshotTasks(): Promise<{ count: number }> {
+    return { count: await this.plugin.tasks.snapshot() };
+  }
+
   getPomodoro(): PomodoroState {
     return this.plugin.pomodoro.state();
   }

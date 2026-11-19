@@ -122,6 +122,7 @@ export class DashboardView extends ItemView {
     const body = root.createDiv({ cls: "sd-body" });
     this.renderTodayCard(body);
     this.renderQuickMemo(body);
+    this.renderTasksCard(body);
     this.renderTodayAgent(body);
   }
 
@@ -210,10 +211,43 @@ export class DashboardView extends ItemView {
   private renderAgentHub(root: HTMLElement): void {
     const body = root.createDiv({ cls: "sd-body" });
     this.renderAgentStatus(body);
+    this.renderTasksCard(body);
     this.renderHeatmap(body, true);
     this.renderDrafts(body);
     this.renderWorkLogs(body);
     this.renderFooter(body);
+  }
+
+  private renderTasksCard(root: HTMLElement): void {
+    const card = root.createDiv({ cls: "sd-card" });
+    card.createDiv({ cls: "sd-card-title", text: "待办 · 今日 / 遗留 / Agent" });
+    const list = card.createDiv({ cls: "sd-task-list" });
+    list.createDiv({ cls: "kp-empty", text: "加载中…" });
+    void Promise.all([
+      this.plugin.tasks.list("today"),
+      this.plugin.tasks.list("overdue"),
+      this.plugin.tasks.list("agent"),
+    ]).then(([today, overdue, agent]) => {
+      list.empty();
+      const items = [...today.filter((task) => !task.checked), ...overdue, ...agent];
+      if (items.length === 0) {
+        list.createDiv({ cls: "kp-empty", text: "没有未完成待办。" });
+        return;
+      }
+      for (const task of items.slice(0, 12)) {
+        const row = list.createDiv({ cls: "sd-task-item" });
+        const button = row.createEl("button", {
+          cls: "sd-task-open",
+          text: task.text,
+          attr: { title: task.path || "Agent 任务" },
+        });
+        if (task.path) button.onclick = () => void this.plugin.app.workspace.openLinkText(task.path, "", false);
+        row.createDiv({
+          cls: "sd-task-meta",
+          text: task.path ? `${task.date} · ${task.path.split("/").pop()}:${task.line}` : `Agent · ${task.date}`,
+        });
+      }
+    });
   }
 
   private renderAgentStatus(root: HTMLElement): void {

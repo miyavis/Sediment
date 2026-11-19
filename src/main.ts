@@ -5,6 +5,7 @@ import { SemanticIndex } from "./agent/semantic";
 import { Store } from "./data/store";
 import { MemoManager } from "./features/memo";
 import { PomodoroManager } from "./features/pomodoro";
+import { TaskManager } from "./features/tasks";
 import { buildWeeklyReview } from "./features/review";
 import { QuickMemoModal } from "./ui/quick-memo-modal";
 import { PulseSettingTab } from "./ui/settings-tab";
@@ -20,6 +21,7 @@ export class SedimentPlugin extends Plugin {
   tracker!: Tracker;
   memos!: MemoManager;
   pomodoro!: PomodoroManager;
+  tasks!: TaskManager;
   agentApi!: AgentApi;
   agentServer!: AgentServer;
   semantic!: SemanticIndex;
@@ -39,6 +41,7 @@ export class SedimentPlugin extends Plugin {
     this.tracker = new Tracker(this, this.store);
     this.memos = new MemoManager(this);
     this.pomodoro = new PomodoroManager(this);
+    this.tasks = new TaskManager(this);
     this.agentApi = new AgentApi(this);
     this.agentServer = new AgentServer(this);
     this.semantic = new SemanticIndex(this);
@@ -75,6 +78,7 @@ export class SedimentPlugin extends Plugin {
       store: this.store,
       memos: this.memos,
       pomodoro: this.pomodoro,
+      tasks: this.tasks,
       plugin: this,
     };
 
@@ -115,6 +119,14 @@ export class SedimentPlugin extends Plugin {
       id: "pomodoro-skip",
       name: "跳过当前番茄 / 休息",
       callback: () => this.pomodoro.skip(),
+    });
+    this.addCommand({
+      id: "snapshot-open-tasks",
+      name: "记录今日遗留待办到日记",
+      callback: () =>
+        void this.tasks.snapshot().then((count) => {
+          new Notice(count > 0 ? `已记录 ${count} 条遗留待办` : "没有遗留待办");
+        }),
     });
     this.addCommand({
       id: "show-changelog",

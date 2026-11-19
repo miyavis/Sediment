@@ -223,6 +223,18 @@ export class AgentServer {
         case "GET /activity":
           this.json(response, 200, api.getToolActivity());
           return;
+        case "GET /tasks":
+          this.json(response, 200, await api.listTasks(str(query.get("scope"), "all")));
+          return;
+        case "POST /tasks/complete":
+          this.json(response, 200, await api.completeTask(str(body.path as string), Number(body.line)));
+          return;
+        case "POST /tasks/delegate":
+          this.json(response, 200, await api.delegateTask(str(body.path as string), Number(body.line)));
+          return;
+        case "POST /tasks/snapshot":
+          this.json(response, 200, await api.snapshotTasks());
+          return;
         case "POST /patch-note":
           this.json(
             response,

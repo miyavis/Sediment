@@ -365,13 +365,30 @@ export class MemoView extends ItemView {
     }
     for (const [category, items] of groups) {
       const section = card.createDiv({ cls: "sd-knowledge-group" });
-      section.createDiv({ cls: "sd-knowledge-category", text: `${category} · ${items.length}` });
+      const head = section.createDiv({ cls: "sd-knowledge-group-head" });
+      head.createSpan({ cls: "sd-category-badge", text: category });
+      head.createSpan({ cls: "sd-category-count", text: String(items.length) });
       const list = section.createDiv({ cls: "sd-knowledge-list" });
       for (const file of items) {
+        const date = (file.basename.match(/^(\d{4}-\d{2}-\d{2})/) ?? [])[1] ?? "";
+        const display = file.basename.replace(/^\d{4}-\d{2}-\d{2}-/, "").replace(/^\d+-/, "");
+        const title = display.length > 26 ? `${display.slice(0, 26)}…` : display;
         const row = list.createDiv({ cls: "sd-knowledge-item" });
-        const button = row.createEl("button", { cls: "sd-knowledge-open", text: file.basename });
+        const button = row.createEl("button", {
+          cls: "sd-knowledge-open",
+          text: title,
+          attr: { title: file.basename },
+        });
         button.onclick = () => void this.plugin.app.workspace.openLinkText(file.path, "", false);
-        row.createDiv({ cls: "sd-knowledge-path", text: file.path });
+        const cache = this.plugin.app.metadataCache.getFileCache(file);
+        const rawTags = cache?.frontmatter?.tags;
+        const tags = Array.isArray(rawTags)
+          ? rawTags.slice(0, 3).map((tag) => `#${String(tag).replace(/^#/, "")}`)
+          : [];
+        row.createDiv({
+          cls: "sd-knowledge-path",
+          text: [date, file.parent?.path ?? "", ...tags].filter(Boolean).join(" · "),
+        });
       }
     }
   }

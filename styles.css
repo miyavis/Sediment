@@ -949,12 +949,27 @@
   margin-top: 10px;
 }
 
-.sd-knowledge-category {
-  margin-bottom: 6px;
+.sd-knowledge-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.sd-category-badge {
+  padding: 2px 9px;
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--interactive-accent);
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+  border-radius: 10px;
+}
+
+.sd-category-count {
+  font-size: 10px;
+  color: var(--text-faint);
 }
 
 .sd-knowledge-list {
@@ -992,6 +1007,19 @@
   color: var(--text-faint);
 }
 
+.sd-knowledge-item {
+  padding: 9px 11px;
+  background: var(--background-secondary);
+  border-left: 2px solid var(--background-modifier-border);
+  border-radius: 7px;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.sd-knowledge-item:hover {
+  border-left-color: var(--interactive-accent);
+  background: var(--background-primary);
+}
+
 .kp-memo-view .sd-knowledge-item {
   flex-direction: column;
   align-items: flex-start;
@@ -1001,6 +1029,45 @@
 .kp-memo-view .sd-knowledge-path {
   font-size: 9px;
   word-break: break-all;
+}
+
+.sd-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.sd-task-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 10px;
+  background: var(--background-secondary);
+  border-left: 3px solid var(--interactive-accent);
+  border-radius: 6px;
+}
+
+.sd-task-open {
+  padding: 0;
+  font-size: 12px;
+  text-align: left;
+  color: var(--text-normal);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.sd-task-open:hover {
+  color: var(--interactive-accent);
+}
+
+.sd-task-meta {
+  font-size: 9px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sd-setup-hint {

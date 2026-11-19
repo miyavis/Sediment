@@ -2,6 +2,16 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [Unreleased]
+
+### 新增
+- 待办模块：扫描 vault 原生 `- [ ]` 待办，分今日 / 遗留 / Agent 三类展示
+- MCP 工具 `list_tasks` / `complete_task` / `delegate_task` / `snapshot_tasks`（31 个工具）
+- 命令「记录今日遗留待办到日记」，按需写入，不默认改笔记
+
+### 改进
+- 沉淀列表视觉：去掉标题日期前缀、分类徽章与计数、目录/标签元信息、悬停高亮
+
 ## [0.8.0] - 2026-11-19
 
 ### 新增
