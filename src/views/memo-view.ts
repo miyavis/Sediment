@@ -120,7 +120,7 @@ export class MemoView extends ItemView {
     });
 
     this.renderList(root);
-    this.renderKnowledge(root, 5, true);
+    this.renderKnowledge(root, 30, true);
   }
 
   private async attachImage(file: File | null): Promise<void> {
@@ -307,7 +307,7 @@ export class MemoView extends ItemView {
     const head = card.createDiv({ cls: "sd-card-head" });
     head.createDiv({
       cls: "sd-card-title",
-      text: compact ? `最近沉淀 · ${files.length}` : `知识沉淀 · ${files.length}`,
+      text: `知识沉淀 · ${files.length}`,
     });
     if (compact) {
       const more = head.createEl("button", { text: "全部" });

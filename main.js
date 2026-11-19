@@ -591,7 +591,7 @@ var AgentServer = class {
       };
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
-          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.3.1" });
+          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.3.2" });
           return;
         case "GET /notes":
           this.json(response, 200, api.listNotes(str(query.get("folder")), num(query.get("limit"), 50)));
@@ -1974,7 +1974,7 @@ var MemoView = class extends import_obsidian8.ItemView {
       this.renderList(root);
     });
     this.renderList(root);
-    this.renderKnowledge(root, 5, true);
+    this.renderKnowledge(root, 30, true);
   }
   async attachImage(file) {
     var _a, _b;
@@ -2139,7 +2139,7 @@ var MemoView = class extends import_obsidian8.ItemView {
     const head = card.createDiv({ cls: "sd-card-head" });
     head.createDiv({
       cls: "sd-card-title",
-      text: compact ? `\u6700\u8FD1\u6C89\u6DC0 \xB7 ${files.length}` : `\u77E5\u8BC6\u6C89\u6DC0 \xB7 ${files.length}`
+      text: `\u77E5\u8BC6\u6C89\u6DC0 \xB7 ${files.length}`
     });
     if (compact) {
       const more = head.createEl("button", { text: "\u5168\u90E8" });
