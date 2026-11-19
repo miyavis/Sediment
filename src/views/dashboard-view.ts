@@ -2,6 +2,7 @@ import { ItemView, MarkdownRenderer, Notice, TFile, type WorkspaceLeaf } from "o
 import type { SedimentPlugin } from "../main";
 import { ChangelogModal } from "../ui/changelog-modal";
 import { DiffModal } from "../ui/diff-modal";
+import { PosterModal } from "../ui/poster-modal";
 import { listBackups, readBackup, restoreBackup } from "../features/audit";
 import { buildWeeklyReview } from "../features/review";
 import { exportTodayReport } from "../features/embed";
@@ -36,7 +37,9 @@ export class DashboardView extends ItemView {
   private tab: TabKey = "today";
   private metric: MetricKey = "contribution";
   private range: RangeKey = "1y";
-  private trendTab: "writing" | "changes" | "time" = "writing";
+  private trendTab: "writing" | "changes" | "time" | "source" = "writing";
+  private rhythmTab: "matrix" | "hours" = "matrix";
+  private yearlyTab: "wheel" | "fingerprint" | "moon" = "wheel";
   private rhythmActiveOnly = true;
   private foldersExpanded = false;
   private selected: string | null = null;
@@ -272,14 +275,12 @@ export class DashboardView extends ItemView {
     }
     this.renderOverview(body);
     this.renderHeatmap(body, false);
-    this.renderHorizon(body);
     this.renderAnalytics(body);
     this.renderYearly(body);
     this.renderReview(body);
     const footer = this.renderFooter(body);
     footer.createEl("button", { text: t("月报") }).onclick = () => {
-      this.posterMonth = new Date().getMonth();
-      this.render();
+      new PosterModal(this.plugin.app, this.plugin.store, this.posterMonth).open();
     };
   }
 
@@ -884,48 +885,6 @@ ${refLines}${dots}${peakLabel}</svg>`;
     }
   }
 
-  private renderHorizon(root: HTMLElement): void {
-    const card = root.createDiv({ cls: "sd-card sd-horizon" });
-    card.createDiv({ cls: "sd-card-title", text: t("地平线 · 最近 60 天") });
-    const values = lastNDays(60).map((key) => this.value(key));
-    const max = Math.max(1, ...values);
-    const step = 1600 / values.length;
-    const ridge = values
-      .map((value, index) => `${(index * step).toFixed(1)},${(190 - (value / max) * 110).toFixed(1)}`)
-      .join(" ");
-    const reflectionPoints = values
-      .map((value, index) => `${(index * step).toFixed(1)},${(208 + (value / max) * 52).toFixed(1)}`)
-      .join(" ");
-    const stones = values
-      .map((value, index) =>
-        value > 0
-          ? `<circle cx="${(index * step + step / 2).toFixed(1)}" cy="${(188 - (value / max) * 110).toFixed(1)}" r="2.6" fill="var(--interactive-accent)" opacity="0.8"/>`
-          : ""
-      )
-      .join("");
-    const hour = new Date().getHours();
-    const daylight = hour >= 6 && hour < 18;
-    const x = 180 + (hour / 24) * 1240;
-    const celestial = daylight
-      ? `<circle cx="${x.toFixed(0)}" cy="74" r="28" fill="#ffe08a"/>`
-      : `<circle cx="${x.toFixed(0)}" cy="74" r="24" fill="#f2f0dc"/>`;
-    const sailing = this.plugin.pomodoro.state().running
-      ? `<g transform="translate(1280 232)"><path d="M0 18 h54 l-8 12 H8 Z" fill="var(--text-muted)"/><path d="M26 16 V-26 l24 34 Z" fill="var(--interactive-accent)"/></g>`
-      : "";
-    card.innerHTML += `<svg viewBox="0 0 1600 300" preserveAspectRatio="none" class="sd-horizon-svg">
-<rect width="1600" height="200" fill="${daylight ? "#cfe2f2" : "#33455f"}" opacity="0.6"/>
-${celestial}
-<polygon points="0,200 ${ridge} 1600,200" fill="var(--interactive-accent)" opacity="0.28"/>
-${stones}
-<path d="M0 188 Q200 168 400 188 T800 188 T1200 188 T1600 188" fill="none" stroke="var(--interactive-accent)" stroke-width="1" opacity="0.16"/>
-<rect y="200" width="1600" height="100" fill="var(--background-secondary)" opacity="0.75"/>
-<polygon points="0,206 ${reflectionPoints} 1600,206" fill="var(--interactive-accent)" opacity="0.12"/>
-<path d="M0 228 Q160 222 320 228 T640 228 T960 228 T1280 228 T1600 228" fill="none" stroke="var(--interactive-accent)" stroke-width="1" opacity="0.12"/>
-<path d="M0 256 Q200 250 400 256 T800 256 T1200 256 T1600 256" fill="none" stroke="var(--interactive-accent)" stroke-width="1" opacity="0.08"/>
-${sailing}
-</svg>`;
-  }
-
   private renderAnalytics(root: HTMLElement): void {
     const keys = this.chartKeys();
     const days = keys.map((key) => this.plugin.store.getDay(key));
@@ -934,10 +893,11 @@ ${sailing}
     const trend = this.analyticsCard(root, t("写作与时间趋势"), label);
     trend.setAttribute("id", "sd-trend");
     const trendTabs = trend.querySelector(".sd-card-head")?.createDiv({ cls: "sd-trend-tabs" });
-    const trendOptions: Array<["writing" | "changes" | "time", string]> = [
+    const trendOptions: Array<["writing" | "changes" | "time" | "source", string]> = [
       ["writing", t("每日写作")],
       ["changes", t("写作变化")],
       ["time", t("时间投入")],
+      ["source", t("写作来源")],
     ];
     for (const [key, title] of trendOptions) {
       const button = trendTabs?.createEl("button", {
@@ -969,7 +929,7 @@ ${sailing}
         ],
         addedMean > 0 ? [{ value: addedMean, label: tf("新增均值 {n}", { n: Math.round(addedMean) }) }] : []
       );
-    } else {
+    } else if (this.trendTab === "time") {
       const activeValues = days.map((day) => day.activeMinutes);
       const activeMean = this.mean(activeValues);
       trendContent.innerHTML += this.multiLine(
@@ -979,16 +939,15 @@ ${sailing}
         ],
         activeMean > 0 ? [{ value: activeMean, label: tf("活跃均值 {n}", { n: Math.round(activeMean) }) }] : []
       );
+    } else {
+      const totalWords = days.reduce((sum, day) => sum + day.wordsAdded, 0);
+      const captured = days.reduce((sum, day) => sum + day.capturedWords, 0);
+      const typed = Math.max(0, totalWords - captured);
+      const bar = trendContent.createDiv({ cls: "sd-source-bar" });
+      bar.createDiv({ cls: "sd-source-typed" }).style.width = `${totalWords ? (typed / totalWords) * 100 : 0}%`;
+      bar.createDiv({ cls: "sd-source-capture" }).style.width = `${totalWords ? (captured / totalWords) * 100 : 0}%`;
+      trendContent.createDiv({ cls: "sd-card-sub", text: tf("逐步写入 {typed} 字 · 大段捕获 {captured} 字", { typed, captured }) });
     }
-
-    const totalWords = days.reduce((sum, day) => sum + day.wordsAdded, 0);
-    const captured = days.reduce((sum, day) => sum + day.capturedWords, 0);
-    const source = this.analyticsCard(root, t("写作来源"), t("逐步写入 / 大段捕获"));
-    const typed = Math.max(0, totalWords - captured);
-    const bar = source.createDiv({ cls: "sd-source-bar" });
-    bar.createDiv({ cls: "sd-source-typed" }).style.width = `${totalWords ? (typed / totalWords) * 100 : 0}%`;
-    bar.createDiv({ cls: "sd-source-capture" }).style.width = `${totalWords ? (captured / totalWords) * 100 : 0}%`;
-    source.createDiv({ cls: "sd-card-sub", text: tf("逐步写入 {typed} 字 · 大段捕获 {captured} 字", { typed, captured }) });
 
     const folders = this.analyticsCard(root, t("投入去向"), t("按目录统计（笔记 × 天）"));
     folders.setAttribute("id", "sd-folders");
@@ -1018,34 +977,52 @@ ${sailing}
       };
     }
 
-    const hourly = Array.from({ length: 24 }, (_, hour) =>
-      days.reduce((sum, day) => sum + (day.hourlyWords[hour] ?? 0), 0)
-    );
-    const hours = this.analyticsCard(root, t("活跃时段"), t("按小时的新增词数"));
-    const hourlyMean = this.mean(hourly);
-    hours.innerHTML += this.barChart(
-      hourly,
-      "var(--interactive-accent)",
-      hourlyMean > 0 ? [{ value: hourlyMean, label: tf("均值 {n}", { n: Math.round(hourlyMean) }) }] : []
-    );
-    const weekdayHour = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0));
-    for (const key of keys) {
-      const day = this.plugin.store.getDay(key);
-      const weekday = parseKey(key).getDay();
-      for (let hour = 0; hour < 24; hour += 1) weekdayHour[weekday][hour] += day.hourlyWords[hour] ?? 0;
-    }
-    const hourMax = Math.max(1, ...weekdayHour.flat());
-    const pattern = hours.createDiv({ cls: "sd-hour-grid" });
-    for (let weekday = 0; weekday < 7; weekday += 1) {
-      for (let hour = 0; hour < 24; hour += 1) {
-        const cell = pattern.createDiv({ cls: "sd-hour-cell" });
-        const ratio = weekdayHour[weekday][hour] / hourMax;
-        cell.setAttribute("style", `background:var(--interactive-accent);opacity:${ratio > 0 ? 0.1 + ratio * 0.9 : 0.05}`);
-      }
-    }
-
     const rhythm = this.analyticsCard(root, t("投入节律矩阵"), t("六项指标按天对齐"));
     const rhythmHead = rhythm.querySelector(".sd-card-head");
+    const rhythmTabs = rhythmHead?.createDiv({ cls: "sd-trend-tabs" });
+    const rhythmOptions: Array<["matrix" | "hours", string]> = [
+      ["matrix", t("节律矩阵")],
+      ["hours", t("活跃时段")],
+    ];
+    for (const [key, title] of rhythmOptions) {
+      const button = rhythmTabs?.createEl("button", {
+        cls: key === this.rhythmTab ? "is-active" : "",
+        text: title,
+      });
+      if (button) button.onclick = () => {
+        this.rhythmTab = key;
+        this.render();
+      };
+    }
+
+    if (this.rhythmTab === "hours") {
+      const hourly = Array.from({ length: 24 }, (_, hour) =>
+        days.reduce((sum, day) => sum + (day.hourlyWords[hour] ?? 0), 0)
+      );
+      const hourlyMean = this.mean(hourly);
+      rhythm.innerHTML += this.barChart(
+        hourly,
+        "var(--interactive-accent)",
+        hourlyMean > 0 ? [{ value: hourlyMean, label: tf("均值 {n}", { n: Math.round(hourlyMean) }) }] : []
+      );
+      const weekdayHour = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0));
+      for (const key of keys) {
+        const day = this.plugin.store.getDay(key);
+        const weekday = parseKey(key).getDay();
+        for (let hour = 0; hour < 24; hour += 1) weekdayHour[weekday][hour] += day.hourlyWords[hour] ?? 0;
+      }
+      const hourMax = Math.max(1, ...weekdayHour.flat());
+      const pattern = rhythm.createDiv({ cls: "sd-hour-grid" });
+      for (let weekday = 0; weekday < 7; weekday += 1) {
+        for (let hour = 0; hour < 24; hour += 1) {
+          const cell = pattern.createDiv({ cls: "sd-hour-cell" });
+          const ratio = weekdayHour[weekday][hour] / hourMax;
+          cell.setAttribute("style", `background:var(--interactive-accent);opacity:${ratio > 0 ? 0.1 + ratio * 0.9 : 0.05}`);
+        }
+      }
+      return;
+    }
+
     if (rhythmHead) {
       const toggle = rhythmHead.createEl("button", {
         text: this.rhythmActiveOnly ? t("仅活跃日期") : t("全部日期"),
@@ -1104,55 +1081,76 @@ ${sailing}
   private renderYearly(root: HTMLElement): void {
     const year = new Date().getFullYear();
     const entries = Object.entries(this.plugin.store.data.days).filter(([key]) => key.startsWith(`${year}-`));
-    const wheel = this.analyticsCard(root, t("年轮"), tf("{year} 年 · 每天一片花瓣", { year }));
-    wheel.setAttribute("id", "sd-yearly");
-    const petals = entries
-      .map(([key, day]) => {
-        const dayOfYear = Math.floor((parseKey(key).getTime() - new Date(year, 0, 0).getTime()) / 86400000);
-        const angle = (dayOfYear / 365) * Math.PI * 2 - Math.PI / 2;
-        const length = 14 + Math.min(54, day.contribution * 3);
-        const x1 = 110 + Math.cos(angle) * 36;
-        const y1 = 110 + Math.sin(angle) * 36;
-        const x2 = 110 + Math.cos(angle) * (36 + length);
-        const y2 = 110 + Math.sin(angle) * (36 + length);
-        const color = day.contribution > 0 ? "var(--interactive-accent)" : "var(--background-modifier-border)";
-        return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${color}" stroke-width="2.6" stroke-linecap="round"/>`;
-      })
-      .join("");
-    const tracks = [
-      `<circle cx="110" cy="110" r="36" fill="none" stroke="var(--background-modifier-border)" stroke-width="1"/>`,
-      `<circle cx="110" cy="110" r="72" fill="none" stroke="var(--background-modifier-border)" stroke-width="1" stroke-dasharray="3 5"/>`,
-      `<circle cx="110" cy="110" r="108" fill="none" stroke="var(--background-modifier-border)" stroke-width="1"/>`,
-    ].join("");
-    const monthTicks = Array.from({ length: 12 }, (_, month) => {
-      const angle = (month / 12) * Math.PI * 2 - Math.PI / 2;
-      const inner = 106;
-      const outer = 116;
-      const x1 = 110 + Math.cos(angle) * inner;
-      const y1 = 110 + Math.sin(angle) * inner;
-      const x2 = 110 + Math.cos(angle) * outer;
-      const y2 = 110 + Math.sin(angle) * outer;
-      const lx = 110 + Math.cos(angle) * 124;
-      const ly = 110 + Math.sin(angle) * 124;
-      return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="var(--background-modifier-border)" stroke-width="1"/><text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-size="9" text-anchor="middle" dominant-baseline="middle" fill="var(--text-faint)">${month + 1}月</text>`;
-    }).join("");
-    const watermark = `<text x="110" y="116" text-anchor="middle" font-size="26" font-weight="600" fill="var(--text-faint)" opacity="0.18">${year}</text>`;
-    wheel.innerHTML += `<svg viewBox="0 0 220 220" class="sd-wheel">${tracks}${monthTicks}${watermark}${petals}</svg>`;
+    const card = this.analyticsCard(root, t("年度画像"), tf("{year} 年", { year }));
+    card.setAttribute("id", "sd-yearly");
+    const yearlyTabs = card.querySelector(".sd-card-head")?.createDiv({ cls: "sd-trend-tabs" });
+    const yearlyOptions: Array<["wheel" | "fingerprint" | "moon", string]> = [
+      ["wheel", t("年轮")],
+      ["fingerprint", t("指纹")],
+      ["moon", t("月相")],
+    ];
+    for (const [key, title] of yearlyOptions) {
+      const button = yearlyTabs?.createEl("button", {
+        cls: key === this.yearlyTab ? "is-active" : "",
+        text: title,
+      });
+      if (button) button.onclick = () => {
+        this.yearlyTab = key;
+        this.render();
+      };
+    }
 
-    const fingerprint = this.analyticsCard(root, t("知识指纹"), t("每天一根色条"));
-    const fingerprintSvg = Array.from({ length: 12 }, (_, month) => {
-      const bars = Array.from({ length: 31 }, (_, index) => {
-        const key = `${year}-${String(month + 1).padStart(2, "0")}-${String(index + 1).padStart(2, "0")}`;
-        const value = this.plugin.store.getDay(key).contribution;
-        return `<rect x="${index * 13}" y="${month * 20}" width="9" height="13" rx="2" fill="var(--interactive-accent)" opacity="${value > 0 ? 0.2 + Math.min(0.8, value / 12) : 0.06}"/>`;
+    if (this.yearlyTab === "wheel") {
+      const petals = entries
+        .map(([key, day]) => {
+          const dayOfYear = Math.floor((parseKey(key).getTime() - new Date(year, 0, 0).getTime()) / 86400000);
+          const angle = (dayOfYear / 365) * Math.PI * 2 - Math.PI / 2;
+          const length = 14 + Math.min(54, day.contribution * 3);
+          const x1 = 110 + Math.cos(angle) * 36;
+          const y1 = 110 + Math.sin(angle) * 36;
+          const x2 = 110 + Math.cos(angle) * (36 + length);
+          const y2 = 110 + Math.sin(angle) * (36 + length);
+          const color = day.contribution > 0 ? "var(--interactive-accent)" : "var(--background-modifier-border)";
+          return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${color}" stroke-width="2.6" stroke-linecap="round"/>`;
+        })
+        .join("");
+      const tracks = [
+        `<circle cx="110" cy="110" r="36" fill="none" stroke="var(--background-modifier-border)" stroke-width="1"/>`,
+        `<circle cx="110" cy="110" r="72" fill="none" stroke="var(--background-modifier-border)" stroke-width="1" stroke-dasharray="3 5"/>`,
+        `<circle cx="110" cy="110" r="108" fill="none" stroke="var(--background-modifier-border)" stroke-width="1"/>`,
+      ].join("");
+      const monthTicks = Array.from({ length: 12 }, (_, month) => {
+        const angle = (month / 12) * Math.PI * 2 - Math.PI / 2;
+        const inner = 106;
+        const outer = 116;
+        const x1 = 110 + Math.cos(angle) * inner;
+        const y1 = 110 + Math.sin(angle) * inner;
+        const x2 = 110 + Math.cos(angle) * outer;
+        const y2 = 110 + Math.sin(angle) * outer;
+        const lx = 110 + Math.cos(angle) * 124;
+        const ly = 110 + Math.sin(angle) * 124;
+        return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="var(--background-modifier-border)" stroke-width="1"/><text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-size="9" text-anchor="middle" dominant-baseline="middle" fill="var(--text-faint)">${month + 1}月</text>`;
       }).join("");
-      return `<text x="0" y="${month * 20 + 11}" font-size="9" fill="var(--text-faint)">${month + 1}</text>${bars}`;
-    }).join("");
-    fingerprint.innerHTML += `<svg viewBox="0 0 420 248" class="sd-fingerprint">${fingerprintSvg}</svg>`;
+      const watermark = `<text x="110" y="116" text-anchor="middle" font-size="26" font-weight="600" fill="var(--text-faint)" opacity="0.18">${year}</text>`;
+      card.innerHTML += `<svg viewBox="0 0 220 220" class="sd-wheel">${tracks}${monthTicks}${watermark}${petals}</svg>`;
+      return;
+    }
 
-    const calendar = this.analyticsCard(root, t("月相日历"), t("满月是高峰日，新月是休息日"));
+    if (this.yearlyTab === "fingerprint") {
+      const fingerprintSvg = Array.from({ length: 12 }, (_, month) => {
+        const bars = Array.from({ length: 31 }, (_, index) => {
+          const key = `${year}-${String(month + 1).padStart(2, "0")}-${String(index + 1).padStart(2, "0")}`;
+          const value = this.plugin.store.getDay(key).contribution;
+          return `<rect x="${index * 13}" y="${month * 20}" width="9" height="13" rx="2" fill="var(--interactive-accent)" opacity="${value > 0 ? 0.2 + Math.min(0.8, value / 12) : 0.06}"/>`;
+        }).join("");
+        return `<text x="0" y="${month * 20 + 11}" font-size="9" fill="var(--text-faint)">${month + 1}</text>${bars}`;
+      }).join("");
+      card.innerHTML += `<svg viewBox="0 0 420 248" class="sd-fingerprint">${fingerprintSvg}</svg>`;
+      return;
+    }
+
     for (let month = 0; month < 12; month += 1) {
-      const section = calendar.createDiv({ cls: "sd-calendar-month" });
+      const section = card.createDiv({ cls: "sd-calendar-month" });
       section.createDiv({ cls: "sd-calendar-title", text: `${month + 1} 月` });
       const grid = section.createDiv({ cls: "sd-calendar-grid" });
       for (let day = 1; day <= new Date(year, month + 1, 0).getDate(); day += 1) {
@@ -1163,65 +1161,6 @@ ${sailing}
         cell.createDiv({ cls: "sd-calendar-value", text: value > 0 ? String(value) : "·" });
       }
     }
-
-    const poster = this.analyticsCard(root, t("月报海报"), t("点左右箭头切换月份"));
-    const posterHead = poster.createDiv({ cls: "sd-poster-head" });
-    const prev = posterHead.createEl("button", { text: "‹" });
-    const title = posterHead.createDiv({ cls: "sd-poster-title", text: `${year} 年 ${this.posterMonth + 1} 月` });
-    const next = posterHead.createEl("button", { text: "›" });
-    prev.onclick = () => {
-      this.posterMonth = (this.posterMonth + 11) % 12;
-      this.render();
-    };
-    next.onclick = () => {
-      this.posterMonth = (this.posterMonth + 1) % 12;
-      this.render();
-    };
-    const post = poster.createDiv({ cls: "sd-poster" });
-    const prefix = `${year}-${String(this.posterMonth + 1).padStart(2, "0")}`;
-    const monthDays = entries.filter(([key]) => key.startsWith(prefix));
-    const monthTotal = monthDays.reduce((sum, [, day]) => sum + day.contribution, 0);
-    const monthWords = monthDays.reduce((sum, [, day]) => sum + day.wordsAdded, 0);
-    const monthActive = monthDays.filter(([, day]) => day.contribution > 0).length;
-    post.createDiv({ cls: "sd-poster-big", text: String(monthTotal) });
-    post.createDiv({ cls: "sd-poster-sub", text: t("本月贡献分") });
-    const stats = post.createDiv({ cls: "sd-poster-stats" });
-    stats.createSpan({ text: tf("活跃 {n} 天", { n: monthActive }) });
-    stats.createSpan({ text: tf("新增 {n} 字", { n: monthWords }) });
-    const grid = post.createDiv({ cls: "sd-poster-grid" });
-    for (let day = 1; day <= new Date(year, this.posterMonth + 1, 0).getDate(); day += 1) {
-      const value = this.plugin.store.getDay(`${prefix}-${String(day).padStart(2, "0")}`).contribution;
-      grid.createDiv({ cls: "sd-poster-cell", attr: { title: `${prefix}-${String(day).padStart(2, "0")} · ${value} 分` } }).setAttribute(
-        "style",
-        `background:var(--interactive-accent);opacity:${value > 0 ? 0.2 + Math.min(0.8, value / 12) : 0.06}`
-      );
-    }
-    poster.createEl("button", { cls: "sd-poster-export", text: t("导出 PNG") }).onclick = () =>
-      void this.exportPoster(title.textContent, monthTotal, monthWords, monthActive);
-  }
-
-  private async exportPoster(title: string, total: number, words: number, active: number): Promise<void> {
-    const canvas = document.createElement("canvas");
-    canvas.width = 900;
-    canvas.height = 1200;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.fillStyle = "#f4f7fb";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = "#2f6fb2";
-    ctx.fillRect(0, 0, canvas.width, 260);
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 64px sans-serif";
-    ctx.fillText(title, 60, 130);
-    ctx.fillStyle = "#20344d";
-    ctx.font = "bold 120px sans-serif";
-    ctx.fillText(String(total), 60, 470);
-    ctx.font = "32px sans-serif";
-    ctx.fillText(`活跃 ${active} 天 · 新增 ${words} 字`, 60, 610);
-    const link = document.createElement("a");
-    link.download = `sediment-${title.replace(/\s/g, "")}.png`;
-    link.href = canvas.toDataURL("image/png");
-    link.click();
   }
 
   private renderReview(root: HTMLElement): void {
