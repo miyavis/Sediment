@@ -516,7 +516,7 @@ var AgentServer = class {
       };
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
-          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.1.1" });
+          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.1.2" });
           return;
         case "GET /notes":
           this.json(response, 200, api.listNotes(str(query.get("folder")), num(query.get("limit"), 50)));
@@ -938,12 +938,27 @@ var PulseSettingTab = class extends import_obsidian5.PluginSettingTab {
 // src/views/dashboard-view.ts
 var import_obsidian6 = require("obsidian");
 var DASHBOARD_VIEW_TYPE = "sediment-dashboard";
+var RANGE_OPTIONS = [
+  ["7d", "\u8FD1 7 \u5929"],
+  ["30d", "\u8FD1 30 \u5929"],
+  ["90d", "\u8FD1 90 \u5929"],
+  ["ytd", "\u4ECA\u5E74"],
+  ["1y", "\u8FD1\u4E00\u5E74"]
+];
+var TABS = [
+  ["board", "\u770B\u677F\u89C6\u56FE"],
+  ["review", "\u77E5\u8BC6\u590D\u76D8"],
+  ["analytics", "\u6570\u636E\u5206\u6790"],
+  ["yearly", "\u5E74\u5EA6\u753B\u50CF"]
+];
 var WEEKDAYS = ["\u65E5", "\u4E00", "\u4E8C", "\u4E09", "\u56DB", "\u4E94", "\u516D"];
 var DashboardView = class extends import_obsidian6.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
-    this.weeks = 53;
+    this.metric = "contribution";
+    this.range = "1y";
+    this.tab = "board";
     this.selected = null;
     this.metric = plugin.store.settings.heatmapMetric;
   }
@@ -951,7 +966,7 @@ var DashboardView = class extends import_obsidian6.ItemView {
     return DASHBOARD_VIEW_TYPE;
   }
   getDisplayText() {
-    return "Sediment";
+    return "Sediment \u77E5\u8BC6\u8109\u51B2";
   }
   getIcon() {
     return "activity";
@@ -959,30 +974,192 @@ var DashboardView = class extends import_obsidian6.ItemView {
   async onOpen() {
     this.render();
   }
-  setMetric(metric) {
-    this.metric = metric;
-    this.render();
-  }
   render() {
     const root = this.contentEl;
     root.empty();
-    root.addClass("kp-dashboard");
-    this.renderToolbar(root);
-    this.renderSummary(root);
-    this.renderHeatmap(root);
-    this.renderDetail(root);
+    root.addClass("sd-dashboard");
+    this.renderHeader(root);
+    this.renderToday(root);
+    const body = root.createDiv({ cls: "sd-body" });
+    if (this.tab === "board") {
+      this.renderOverview(body);
+      this.renderHeatmap(body);
+      this.renderHorizon(body);
+    } else if (this.tab === "review") {
+      this.renderReview(body);
+    } else if (this.tab === "analytics") {
+      this.renderAnalytics(body);
+    } else {
+      this.renderYearly(body);
+    }
   }
-  metricLabel() {
-    var _a, _b;
-    return (_b = (_a = METRICS.find((metric) => metric.key === this.metric)) == null ? void 0 : _a.label) != null ? _b : this.metric;
+  value(key) {
+    return Number(this.plugin.store.getDay(key)[this.metric]) || 0;
   }
-  renderToolbar(root) {
-    const bar = root.createDiv({ cls: "kp-toolbar" });
-    bar.createDiv({ cls: "kp-brand", text: "SEDIMENT" });
-    const tabs = bar.createDiv({ cls: "kp-tabs" });
-    for (const metric of METRICS) {
+  rangeKeys() {
+    const today = /* @__PURE__ */ new Date();
+    if (this.range === "7d") return lastNDays(7, today);
+    if (this.range === "30d") return lastNDays(30, today);
+    if (this.range === "90d") return lastNDays(90, today);
+    if (this.range === "ytd") {
+      const keys = [];
+      for (let day = new Date(today.getFullYear(), 0, 1); day <= today; day = addDays(day, 1)) {
+        keys.push(dateKey(day));
+      }
+      return keys;
+    }
+    return lastNDays(365, today);
+  }
+  renderHeader(root) {
+    const header = root.createDiv({ cls: "sd-header" });
+    const banner = header.createDiv({ cls: "sd-banner" });
+    banner.innerHTML = `
+<svg viewBox="0 0 1600 300" preserveAspectRatio="xMidYMid slice" class="sd-banner-svg">
+  <defs>
+    <linearGradient id="sd-sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2f6fb2"/><stop offset="55%" stop-color="#8fc2e8"/><stop offset="100%" stop-color="#d8ecfa"/>
+    </linearGradient>
+    <linearGradient id="sd-water" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#7fb3d9"/><stop offset="100%" stop-color="#cfe4f2"/>
+    </linearGradient>
+    <radialGradient id="sd-sun"><stop offset="0%" stop-color="#fff6cf"/><stop offset="100%" stop-color="#ffd975"/></radialGradient>
+  </defs>
+  <rect width="1600" height="300" fill="url(#sd-sky)"/>
+  <circle cx="1240" cy="86" r="38" fill="url(#sd-sun)" opacity="0.95"/>
+  <circle cx="1240" cy="86" r="58" fill="#fff2c4" opacity="0.16"/>
+  <path d="M120 70 q60 -26 130 0 q40 -18 90 4" stroke="#ffffff" stroke-width="12" fill="none" opacity="0.18" stroke-linecap="round"/>
+  <path d="M760 118 q70 -24 150 0 q50 -16 100 4" stroke="#ffffff" stroke-width="10" fill="none" opacity="0.14" stroke-linecap="round"/>
+  <path d="M0 232 L120 178 L210 210 L330 138 L450 208 L560 166 L690 224 L820 180 L960 228 L1090 176 L1220 220 L1360 168 L1500 214 L1600 186 L1600 260 L0 260 Z" fill="#5b8dbd" opacity="0.45"/>
+  <path d="M0 252 L160 214 L300 244 L430 200 L580 246 L720 212 L880 250 L1030 208 L1190 246 L1340 206 L1500 244 L1600 220 L1600 280 L0 280 Z" fill="#3f6f9f" opacity="0.5"/>
+  <rect x="138" y="150" width="20" height="86" fill="#f5f5f2"/>
+  <path d="M138 166 h20 M138 196 h20" stroke="#d9544d" stroke-width="8"/>
+  <path d="M136 150 h24 l-6 -14 h-12 Z" fill="#d9544d"/>
+  <rect x="143" y="132" width="10" height="8" fill="#ffe9a8"/>
+  <rect y="258" width="1600" height="42" fill="url(#sd-water)" opacity="0.75"/>
+  <path d="M0 266 h420 M520 266 h300 M900 266 h700" stroke="#ffffff" stroke-width="2" opacity="0.35"/>
+</svg>`;
+    const bar = header.createDiv({ cls: "sd-navbar" });
+    bar.createDiv({ cls: "sd-brand", text: "SEDIMENT" });
+    const tabs = bar.createDiv({ cls: "sd-tabs" });
+    for (const [key, label] of TABS) {
       const button = tabs.createEl("button", {
-        cls: `kp-tab ${metric.key === this.metric ? "is-active" : ""}`,
+        cls: `sd-tab ${key === this.tab ? "is-active" : ""}`,
+        text: label
+      });
+      button.onclick = () => {
+        this.tab = key;
+        this.render();
+      };
+    }
+    const spacer = bar.createDiv({ cls: "sd-spacer" });
+    spacer.setAttribute("style", "flex:1");
+    const refresh = bar.createEl("button", { cls: "sd-refresh", text: "\u5237\u65B0" });
+    refresh.onclick = () => this.render();
+  }
+  renderToday(root) {
+    const today = dateKey(/* @__PURE__ */ new Date());
+    const day = this.plugin.store.getDay(today);
+    let streak = 0;
+    let cursor = /* @__PURE__ */ new Date();
+    if (this.plugin.store.getDay(dateKey(cursor)).contribution === 0) {
+      cursor = addDays(cursor, -1);
+    }
+    while (this.plugin.store.getDay(dateKey(cursor)).contribution > 0 && streak < 400) {
+      streak += 1;
+      cursor = addDays(cursor, -1);
+    }
+    const card = root.createDiv({ cls: "sd-card sd-today" });
+    const head = card.createDiv({ cls: "sd-today-head" });
+    head.createDiv({ cls: "sd-today-title", text: "\u4ECA\u5929" });
+    head.createDiv({
+      cls: "sd-pill",
+      text: day.contribution > 0 ? `${day.contribution} \u5206` : "\u8FD8\u6CA1\u5F00\u59CB"
+    });
+    const row = card.createDiv({ cls: "sd-today-row" });
+    row.createSpan({ text: `\u5199\u4F5C ${day.wordsAdded} / 1,000 \u5B57` });
+    row.createSpan({ text: `\u8FDE\u7EED ${streak} \u5929` });
+    const progress = card.createDiv({ cls: "sd-progress" });
+    const fill = progress.createDiv({ cls: "sd-progress-fill" });
+    fill.style.width = `${Math.min(100, day.wordsAdded / 1e3 * 100)}%`;
+  }
+  renderOverview(root) {
+    var _a, _b, _c;
+    const card = root.createDiv({ cls: "sd-card sd-overview" });
+    const head = card.createDiv({ cls: "sd-card-head" });
+    head.createDiv({ cls: "sd-card-title", text: "\u77E5\u8BC6\u8109\u51B2\u6982\u89C8" });
+    head.createDiv({ cls: "sd-card-sub", text: `\u8FD1 ${(_b = (_a = RANGE_OPTIONS.find((r) => r[0] === this.range)) == null ? void 0 : _a[1]) != null ? _b : ""} \xB7 \u53EF\u9760\u8BB0\u5F55` });
+    const ranges = card.createDiv({ cls: "sd-ranges" });
+    for (const [key, label] of RANGE_OPTIONS) {
+      const button = ranges.createEl("button", {
+        cls: `sd-range ${key === this.range ? "is-active" : ""}`,
+        text: label
+      });
+      button.onclick = () => {
+        this.range = key;
+        this.render();
+      };
+    }
+    const keys = this.rangeKeys();
+    const total = keys.reduce((sum, key) => sum + this.value(key), 0);
+    const active = keys.filter((key) => this.value(key) > 0).length;
+    const best = keys.reduce((bestDay, day) => this.value(day) > this.value(bestDay) ? day : bestDay, (_c = keys[0]) != null ? _c : dateKey(/* @__PURE__ */ new Date()));
+    const grid = card.createDiv({ cls: "sd-overview-grid" });
+    const left = grid.createDiv({ cls: "sd-overview-left" });
+    left.createDiv({ cls: "sd-metric-label", text: "\u7D2F\u8BA1\u8D21\u732E\u5206" });
+    left.createDiv({ cls: "sd-metric-value", text: String(total) });
+    left.createDiv({ cls: "sd-metric-hint", text: `${active} \u5929\u6709\u8BB0\u5F55 \xB7 \u65E5\u5747 ${keys.length ? Math.round(total / keys.length) : 0} \u5206` });
+    left.innerHTML += this.sparkline(keys.map((key) => this.value(key)));
+    const right = grid.createDiv({ cls: "sd-overview-right" });
+    const mini = (label, value, hint, ring) => {
+      const item = right.createDiv({ cls: "sd-mini" });
+      item.createDiv({ cls: "sd-mini-label", text: label });
+      item.createDiv({ cls: "sd-mini-value", text: value });
+      item.createDiv({ cls: "sd-mini-hint", text: hint });
+      if (ring) {
+        const holder = item.createDiv({ cls: "sd-mini-ring" });
+        holder.innerHTML = ring;
+      }
+    };
+    mini("\u6D3B\u8DC3\u5929\u6570", `${active} / ${keys.length}`, "\u8FD9\u6BB5\u65F6\u95F4\u6709\u8BB0\u5F55\u7684\u65E5\u5B50", this.ring(active, keys.length));
+    mini("\u5F53\u524D\u8FDE\u7EED", "0 \u5929", "\u6700\u957F 0 \u5929 \xB7 \u6309\u5168\u90E8\u5386\u53F2");
+    mini("\u6295\u5165\u65F6\u95F4", "0 \u5C0F\u65F6", "\u4EA4\u4E92 / \u4E13\u6CE8\uFF08\u5F85\u8054\u52A8\uFF09");
+    mini("\u6700\u9AD8\u7684\u4E00\u5929", this.value(best) > 0 ? String(this.value(best)) : "\u2014", best);
+  }
+  sparkline(values) {
+    const width = 620;
+    const height = 96;
+    const pad = 6;
+    const max = Math.max(1, ...values);
+    const points = values.map((value, index) => {
+      const x = pad + index / Math.max(1, values.length - 1) * (width - pad * 2);
+      const y = height - pad - value / max * (height - pad * 2);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(" ");
+    const area = `${pad},${height - pad} ${points} ${width - pad},${height - pad}`;
+    return `<svg class="sd-spark" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+<polyline points="${points}" fill="none" stroke="var(--interactive-accent)" stroke-width="2" vector-effect="non-scaling-stroke"/>
+<polygon points="${area}" fill="var(--interactive-accent)" opacity="0.1"/></svg>`;
+  }
+  ring(active, total) {
+    const radius = 26;
+    const circumference = 2 * Math.PI * radius;
+    const ratio = total > 0 ? active / total : 0;
+    return `<svg viewBox="0 0 68 68" class="sd-ring">
+<circle cx="34" cy="34" r="${radius}" fill="none" stroke="var(--background-modifier-border)" stroke-width="7"/>
+<circle cx="34" cy="34" r="${radius}" fill="none" stroke="var(--interactive-accent)" stroke-width="7"
+  stroke-dasharray="${(ratio * circumference).toFixed(1)} ${circumference.toFixed(1)}" transform="rotate(-90 34 34)"/>
+<text x="34" y="40" text-anchor="middle" font-size="15" fill="var(--text-normal)">${active}</text></svg>`;
+  }
+  renderHeatmap(root) {
+    var _a;
+    const card = root.createDiv({ cls: "sd-card sd-heatmap" });
+    const head = card.createDiv({ cls: "sd-card-head" });
+    head.createDiv({ cls: "sd-card-title", text: "\u5E74\u5EA6\u77E5\u8BC6\u6D3B\u8DC3\u8109\u51B2" });
+    head.createDiv({ cls: "sd-card-sub", text: `\u8FD1 53 \u5468 \xB7 ${this.metricLabel()} ${(_a = this.plugin.store.getDay(dateKey(/* @__PURE__ */ new Date()))[this.metric]) != null ? _a : 0} \u5206` });
+    const metrics = card.createDiv({ cls: "sd-metrics" });
+    for (const metric of METRICS) {
+      const button = metrics.createEl("button", {
+        cls: `sd-metric-tab ${metric.key === this.metric ? "is-active" : ""}`,
         text: metric.label,
         attr: { title: metric.hint }
       });
@@ -993,77 +1170,28 @@ var DashboardView = class extends import_obsidian6.ItemView {
         this.render();
       };
     }
-    const select = bar.createEl("select", { cls: "kp-select" });
-    for (const count of [7, 13, 26, 53]) {
-      const option = select.createEl("option", { text: `\u8FD1 ${count} \u5468`, value: String(count) });
-      if (count === this.weeks) option.selected = true;
-    }
-    select.onchange = () => {
-      this.weeks = Number(select.value);
-      this.render();
-    };
-  }
-  renderSummary(root) {
-    var _a;
-    const store = this.plugin.store;
-    const todayKey = dateKey(/* @__PURE__ */ new Date());
-    const rangeKeys = Array.from(
-      { length: this.weeks * 7 },
-      (_, i) => dateKey(addDays(/* @__PURE__ */ new Date(), -(this.weeks * 7 - 1 - i)))
-    ).filter((key) => key <= todayKey);
-    const value = (key) => Number(store.getDay(key)[this.metric]) || 0;
-    const total = rangeKeys.reduce((sum, key) => sum + value(key), 0);
-    const active = rangeKeys.filter((key) => value(key) > 0).length;
-    const today = value(todayKey);
-    let streak = 0;
-    let cursor = /* @__PURE__ */ new Date();
-    if (value(dateKey(cursor)) === 0) cursor = addDays(cursor, -1);
-    while (value(dateKey(cursor)) > 0 && streak < 400) {
-      streak += 1;
-      cursor = addDays(cursor, -1);
-    }
-    const best = rangeKeys.reduce(
-      (bestDay, day) => value(day) > value(bestDay) ? day : bestDay,
-      (_a = rangeKeys[0]) != null ? _a : todayKey
-    );
-    const wrap = root.createDiv({ cls: "kp-summary" });
-    const card = (label, display, hint) => {
-      const element = wrap.createDiv({ cls: "kp-card" });
-      element.createDiv({ cls: "kp-card-label", text: label });
-      element.createDiv({ cls: "kp-card-value", text: display });
-      element.createDiv({ cls: "kp-card-hint", text: hint });
-    };
-    card("\u533A\u95F4\u603B\u91CF", String(total), `${this.weeks} \u5468 \xB7 ${this.metricLabel()}`);
-    card("\u6D3B\u8DC3\u5929\u6570", String(active), "\u6709\u8BB0\u5F55\u7684\u65E5\u5B50");
-    card("\u5F53\u524D\u8FDE\u7EED", `${streak} \u5929`, `\u622A\u81F3 ${todayKey}`);
-    card("\u4ECA\u65E5", String(today), todayKey);
-    card("\u6700\u9AD8\u7684\u4E00\u5929", String(value(best)), best);
-  }
-  renderHeatmap(root) {
     const store = this.plugin.store;
     const weekStart = store.settings.weekStart;
     const today = /* @__PURE__ */ new Date();
     today.setHours(0, 0, 0, 0);
-    const start = addDays(startOfWeek(today, weekStart), -(this.weeks - 1) * 7);
-    const wrap = root.createDiv({ cls: "kp-heatmap-wrap" });
-    wrap.createDiv({ cls: "kp-section-title", text: `\u8FD1 ${this.weeks} \u5468\u6D3B\u8DC3\u5168\u666F` });
+    const start = addDays(startOfWeekFor(today, weekStart), -52 * 7);
+    const wrap = card.createDiv({ cls: "kp-heatmap-wrap" });
     const grid = wrap.createDiv({ cls: "kp-grid" });
-    const weekdayLabels = grid.createDiv({ cls: "kp-weekdays" });
-    for (let row = 0; row < 7; row++) {
+    const labels = grid.createDiv({ cls: "kp-weekdays" });
+    for (let row = 0; row < 7; row += 1) {
       const weekday = (row + weekStart) % 7;
-      weekdayLabels.createDiv({ cls: "kp-weekday", text: row % 2 === 0 ? WEEKDAYS[weekday] : "" });
+      labels.createDiv({ cls: "kp-weekday", text: row % 2 === 0 ? WEEKDAYS[weekday] : "" });
     }
     const main = grid.createDiv({ cls: "kp-main" });
     const months = main.createDiv({ cls: "kp-months" });
-    months.style.gridTemplateColumns = `repeat(${this.weeks}, 15px)`;
+    months.style.gridTemplateColumns = "repeat(53, 15px)";
     const columns = main.createDiv({ cls: "kp-columns" });
     const cells = [];
-    for (let week = 0; week < this.weeks; week++) {
+    for (let week = 0; week < 53; week += 1) {
       const column = columns.createDiv({ cls: "kp-col" });
-      for (let day = 0; day < 7; day++) {
+      for (let day = 0; day < 7; day += 1) {
         const date = addDays(start, week * 7 + day);
         const key = dateKey(date);
-        const cellValue = Number(store.getDay(key)[this.metric]) || 0;
         const element = column.createDiv({ cls: "kp-cell", attr: { "data-date": key } });
         if (date > today) {
           element.addClass("kp-future");
@@ -1073,15 +1201,15 @@ var DashboardView = class extends import_obsidian6.ItemView {
             this.render();
           };
         }
-        cells.push({ key, value: cellValue, date, el: element });
+        cells.push({ key, value: this.value(key), date, el: element });
       }
     }
     for (const cell of cells) {
       if (cell.date.getDate() !== 1) continue;
-      const columnIndex = Math.floor((cell.date.getTime() - start.getTime()) / (7 * 864e5));
-      if (columnIndex < 0 || columnIndex >= this.weeks) continue;
+      const column = Math.floor((cell.date.getTime() - start.getTime()) / (7 * 864e5));
+      if (column < 0 || column >= 53) continue;
       const label = months.createDiv({ cls: "kp-month", text: `${cell.date.getMonth() + 1}\u6708` });
-      label.style.gridColumn = String(columnIndex + 1);
+      label.style.gridColumn = String(column + 1);
     }
     const max = Math.max(1, ...cells.map((cell) => cell.value));
     for (const cell of cells) {
@@ -1091,44 +1219,94 @@ var DashboardView = class extends import_obsidian6.ItemView {
     }
     const legend = wrap.createDiv({ cls: "kp-legend" });
     legend.createSpan({ text: "\u5C11" });
-    for (let level = 0; level <= 4; level++) {
-      legend.createDiv({ cls: `kp-cell kp-lvl-${level}` });
-    }
+    for (let level = 0; level <= 4; level += 1) legend.createDiv({ cls: `kp-cell kp-lvl-${level}` });
     legend.createSpan({ text: "\u591A" });
-  }
-  renderDetail(root) {
-    const box = root.createDiv({ cls: "kp-detail" });
-    if (!this.selected) {
-      box.createDiv({ cls: "kp-empty", text: "\u70B9\u51FB\u70ED\u529B\u56FE\u4E2D\u7684\u67D0\u4E00\u5929\uFF0C\u67E5\u770B\u5F53\u5929\u660E\u7EC6\u3002" });
-      return;
-    }
-    const day = this.plugin.store.getDay(this.selected);
-    box.createDiv({ cls: "kp-detail-head", text: this.selected });
-    const grid = box.createDiv({ cls: "kp-detail-grid" });
-    const rows = [
-      ["\u8D21\u732E\u5206", day.contribution],
-      ["\u65B0\u589E\u8BCD", day.wordsAdded],
-      ["\u5220\u9664\u8BCD", day.wordsRemoved],
-      ["\u7F16\u8F91\u4F1A\u8BDD", day.edits],
-      ["\u65B0\u5EFA\u7B14\u8BB0", day.notesCreated],
-      ["\u5B8C\u6210\u4EFB\u52A1", day.tasksCompleted],
-      ["\u4E13\u6CE8\u5206\u949F", day.focusMinutes]
-    ];
-    for (const [label, value] of rows) {
-      const item = grid.createDiv({ cls: "kp-detail-item" });
-      item.createDiv({ cls: "kp-detail-label", text: label });
-      item.createDiv({ cls: "kp-detail-value", text: String(value) });
-    }
-    const memos = this.plugin.store.data.memos.filter((memo) => memo.date === this.selected);
-    if (memos.length > 0) {
-      box.createDiv({ cls: "kp-section-title", text: "\u5F53\u5929\u901F\u8BB0" });
-      const list = box.createDiv({ cls: "kp-detail-memos" });
-      for (const memo of memos) {
-        list.createDiv({ cls: "kp-detail-memo", text: `${memo.time} ${memo.text}` });
+    if (this.selected) {
+      const day = store.getDay(this.selected);
+      const detail = card.createDiv({ cls: "sd-day-detail" });
+      detail.createDiv({ cls: "sd-day-head", text: this.selected });
+      const rows = [
+        ["\u8D21\u732E\u5206", day.contribution],
+        ["\u65B0\u589E\u8BCD", day.wordsAdded],
+        ["\u7F16\u8F91\u4F1A\u8BDD", day.edits],
+        ["\u65B0\u5EFA\u7B14\u8BB0", day.notesCreated],
+        ["\u5B8C\u6210\u4EFB\u52A1", day.tasksCompleted]
+      ];
+      for (const [label, value] of rows) {
+        const item = detail.createDiv({ cls: "sd-day-item" });
+        item.createSpan({ text: label });
+        item.createEl("strong", { text: String(value) });
       }
     }
   }
+  renderHorizon(root) {
+    const card = root.createDiv({ cls: "sd-card sd-horizon" });
+    const values = lastNDays(60).map((key) => this.value(key));
+    const max = Math.max(1, ...values);
+    const bars = values.map((value, index) => {
+      const x = 20 + index * 26;
+      const height = 10 + value / max * 80;
+      return `<rect x="${x}" y="${120 - height}" width="16" height="${height}" rx="3" fill="var(--interactive-accent)" opacity="${value > 0 ? 0.75 : 0.15}"/>`;
+    }).join("");
+    const reflection = values.map((value, index) => {
+      const x = 20 + index * 26;
+      const height = 8 + value / max * 30;
+      return `<rect x="${x}" y="140" width="16" height="${height}" rx="3" fill="var(--interactive-accent)" opacity="${value > 0 ? 0.16 : 0.04}"/>`;
+    }).join("");
+    card.innerHTML = `<div class="sd-card-title">\u5730\u5E73\u7EBF \xB7 \u6700\u8FD1 60 \u5929</div>
+<svg viewBox="0 0 1600 200" preserveAspectRatio="none" class="sd-horizon-svg">
+  <line x1="0" y1="120" x2="1600" y2="120" stroke="var(--background-modifier-border)" stroke-width="1"/>
+  ${bars}
+  <rect x="0" y="136" width="1600" height="64" fill="var(--background-secondary)" opacity="0.6"/>
+  ${reflection}
+</svg>`;
+  }
+  renderReview(root) {
+    const card = root.createDiv({ cls: "sd-card sd-text-view" });
+    card.createDiv({ cls: "sd-card-title", text: "\u77E5\u8BC6\u590D\u76D8 \xB7 \u672C\u5468" });
+    const markdown = buildWeeklyReview(this.plugin.store, /* @__PURE__ */ new Date());
+    card.createEl("pre", { cls: "sd-review-md", text: markdown });
+  }
+  renderAnalytics(root) {
+    const card = root.createDiv({ cls: "sd-card sd-text-view" });
+    card.createDiv({ cls: "sd-card-title", text: "\u6570\u636E\u5206\u6790 \xB7 \u8FD1 30 \u5929\u65B0\u589E\u8BCD\u6570" });
+    const keys = lastNDays(30);
+    const values = keys.map((key) => Number(this.plugin.store.getDay(key).wordsAdded) || 0);
+    card.innerHTML += this.sparkline(values);
+    const list = card.createDiv({ cls: "sd-analytics-list" });
+    for (const key of keys.slice(-7).reverse()) {
+      const row = list.createDiv({ cls: "sd-analytics-row" });
+      row.createSpan({ text: key });
+      row.createEl("strong", { text: `${this.plugin.store.getDay(key).wordsAdded} \u5B57` });
+    }
+  }
+  renderYearly(root) {
+    const card = root.createDiv({ cls: "sd-card sd-text-view" });
+    card.createDiv({ cls: "sd-card-title", text: "\u5E74\u5EA6\u753B\u50CF \xB7 \u6708\u5EA6\u8D21\u732E" });
+    const year = (/* @__PURE__ */ new Date()).getFullYear();
+    const months = card.createDiv({ cls: "sd-year-grid" });
+    for (let month = 0; month < 12; month += 1) {
+      let total = 0;
+      for (const [key, day] of Object.entries(this.plugin.store.data.days)) {
+        if (key.startsWith(`${year}-${String(month + 1).padStart(2, "0")}`)) total += day.contribution;
+      }
+      const item = months.createDiv({ cls: "sd-year-month" });
+      item.createDiv({ cls: "sd-year-label", text: `${month + 1}\u6708` });
+      item.createDiv({ cls: "sd-year-value", text: String(total) });
+    }
+  }
+  metricLabel() {
+    var _a, _b;
+    return (_b = (_a = METRICS.find((metric) => metric.key === this.metric)) == null ? void 0 : _a.label) != null ? _b : this.metric;
+  }
 };
+function startOfWeekFor(date, weekStart) {
+  const copy = new Date(date);
+  copy.setHours(0, 0, 0, 0);
+  const diff = (copy.getDay() - weekStart + 7) % 7;
+  copy.setDate(copy.getDate() - diff);
+  return copy;
+}
 
 // src/views/memo-view.ts
 var import_obsidian7 = require("obsidian");
