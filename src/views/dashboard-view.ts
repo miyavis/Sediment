@@ -1,4 +1,4 @@
-import { ItemView, type WorkspaceLeaf } from "obsidian";
+import { ItemView, MarkdownRenderer, Notice, type WorkspaceLeaf } from "obsidian";
 import type { SedimentPlugin } from "../main";
 import { buildWeeklyReview } from "../features/review";
 import { METRICS, type MetricKey } from "../types";
@@ -359,9 +359,15 @@ export class DashboardView extends ItemView {
 
   private renderReview(root: HTMLElement): void {
     const card = root.createDiv({ cls: "sd-card sd-text-view" });
-    card.createDiv({ cls: "sd-card-title", text: "知识复盘 · 本周" });
+    const head = card.createDiv({ cls: "sd-card-head" });
+    head.createDiv({ cls: "sd-card-title", text: "知识复盘 · 本周" });
     const markdown = buildWeeklyReview(this.plugin.store, new Date());
-    card.createEl("pre", { cls: "sd-review-md", text: markdown });
+    const copy = head.createEl("button", { text: "复制 Markdown" });
+    copy.onclick = () => {
+      void navigator.clipboard.writeText(markdown).then(() => new Notice("周复盘已复制"));
+    };
+    const preview = card.createDiv({ cls: "sd-review-preview" });
+    void MarkdownRenderer.render(this.plugin.app, markdown, preview, "", this);
   }
 
   private analyticsCard(root: HTMLElement, title: string, subtitle = ""): HTMLElement {

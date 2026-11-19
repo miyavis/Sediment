@@ -919,6 +919,22 @@
   padding: 12px;
 }
 
+.sd-review-preview {
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.sd-review-preview table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.sd-review-preview th,
+.sd-review-preview td {
+  padding: 4px 8px;
+  border: 1px solid var(--background-modifier-border);
+}
+
 .sd-tag-item {
   display: block;
   width: 100%;

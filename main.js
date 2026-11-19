@@ -516,7 +516,7 @@ var AgentServer = class {
       };
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
-          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.2.1" });
+          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.2.2" });
           return;
         case "GET /notes":
           this.json(response, 200, api.listNotes(str(query.get("folder")), num(query.get("limit"), 50)));
@@ -1281,9 +1281,15 @@ var DashboardView = class extends import_obsidian6.ItemView {
   }
   renderReview(root) {
     const card = root.createDiv({ cls: "sd-card sd-text-view" });
-    card.createDiv({ cls: "sd-card-title", text: "\u77E5\u8BC6\u590D\u76D8 \xB7 \u672C\u5468" });
+    const head = card.createDiv({ cls: "sd-card-head" });
+    head.createDiv({ cls: "sd-card-title", text: "\u77E5\u8BC6\u590D\u76D8 \xB7 \u672C\u5468" });
     const markdown = buildWeeklyReview(this.plugin.store, /* @__PURE__ */ new Date());
-    card.createEl("pre", { cls: "sd-review-md", text: markdown });
+    const copy = head.createEl("button", { text: "\u590D\u5236 Markdown" });
+    copy.onclick = () => {
+      void navigator.clipboard.writeText(markdown).then(() => new import_obsidian6.Notice("\u5468\u590D\u76D8\u5DF2\u590D\u5236"));
+    };
+    const preview = card.createDiv({ cls: "sd-review-preview" });
+    void import_obsidian6.MarkdownRenderer.render(this.plugin.app, markdown, preview, "", this);
   }
   analyticsCard(root, title, subtitle = "") {
     const card = root.createDiv({ cls: "sd-card" });
