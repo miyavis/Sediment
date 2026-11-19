@@ -511,7 +511,7 @@ async function handle(message) {
         result: {
           protocolVersion: "2024-11-05",
           capabilities: { tools: {} },
-          serverInfo: { name: "sediment", version: "0.8.3" },
+          serverInfo: { name: "sediment", version: "0.8.4" },
         },
       });
       break;
