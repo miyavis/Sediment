@@ -217,7 +217,24 @@ export class AgentApi {
       const category = parts.length > 1 ? parts[1] : "未分类";
       counts[category] = (counts[category] ?? 0) + 1;
     }
-    return { categories: this.categories(), counts };
+    const all = [...new Set([...this.categories(), ...Object.keys(counts)])];
+    return { categories: all, counts };
+  }
+
+  /** 根据标题、标签和正文关键词推断分类；Agent 也可自行指定任意分类名。 */
+  private inferCategory(title: string, content: string, tags: string[]): string {
+    const text = `${title} ${tags.join(" ")} ${content.slice(0, 600)}`.toLowerCase();
+    const rules: Array<[string, RegExp]> = [
+      ["复盘", /复盘|总结|周报|回顾|小结|review|retro/],
+      ["项目", /项目|计划|需求|进度|里程碑|project|任务拆解/],
+      ["技术", /代码|插件|api|mcp|配置|报错|调试|开发|构建|故障|排查|排错|发布|维护|bug|error|code|build|技术/],
+      ["方法", /工作流|提示词|步骤|规范|指南|流程|方法|workflow|prompt|howto|教程/],
+      ["灵感", /想法|灵感|点子|随想|idea/],
+    ];
+    for (const [category, pattern] of rules) {
+      if (pattern.test(text)) return category;
+    }
+    return this.categories()[0] ?? "未分类";
   }
 
   getPomodoro(): PomodoroState {
@@ -305,8 +322,18 @@ export class AgentApi {
       title.replace(/[\\/:*?"<>|#\[\]]/g, "-").slice(0, 80) || "未命名笔记";
     const base = normalizeFolder(this.plugin.store.settings.knowledgeFolder);
     const categories = this.categories();
+    const tags = Array.isArray(input.tags)
+      ? input.tags.map((tag) => String(tag).replace(/^#/, ""))
+      : [];
+    const links = Array.isArray(input.links) ? input.links.map(String) : [];
+    const agent = String(input.agent || "agent").replace(/[:#]/g, "-");
     const requestedCategory = String(input.category ?? "").trim();
-    const category = requestedCategory || categories[0] || "未分类";
+    const category =
+      requestedCategory ||
+      (tags.length || String(input.content ?? "").length > 0
+        ? this.inferCategory(title, String(input.content ?? ""), tags)
+        : categories[0]) ||
+      "未分类";
     const sub = normalizeFolder(input.folder ?? "");
     const folder = [base, category, sub].filter(Boolean).join("/");
     await ensureFolder(this.vault, folder);
@@ -321,11 +348,6 @@ export class AgentApi {
       counter += 1;
     }
 
-    const tags = Array.isArray(input.tags)
-      ? input.tags.map((tag) => String(tag).replace(/^#/, ""))
-      : [];
-    const links = Array.isArray(input.links) ? input.links.map(String) : [];
-    const agent = String(input.agent || "agent").replace(/[:#]/g, "-");
     const frontmatter = [
       "---",
       `date: ${today}`,

@@ -152,7 +152,7 @@ const TOOLS = [
       properties: {
         title: { type: "string", description: "笔记标题" },
         content: { type: "string", description: "Markdown 正文" },
-        category: { type: "string", description: "知识库分类，如 技术/项目/方法/灵感/复盘；会按分类建子目录" },
+        category: { type: "string", description: "可选；不填则插件根据标题/正文/标签智能推断；也可填任意自定义分类名" },
         folder: { type: "string", description: "分类下的进一步子目录，可选" },
         tags: { type: "array", items: { type: "string" } },
         agent: { type: "string", description: "来源智能体" },

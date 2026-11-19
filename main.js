@@ -314,7 +314,24 @@ ${content}`);
       const category = parts.length > 1 ? parts[1] : "\u672A\u5206\u7C7B";
       counts[category] = ((_a = counts[category]) != null ? _a : 0) + 1;
     }
-    return { categories: this.categories(), counts };
+    const all = [.../* @__PURE__ */ new Set([...this.categories(), ...Object.keys(counts)])];
+    return { categories: all, counts };
+  }
+  /** 根据标题、标签和正文关键词推断分类；Agent 也可自行指定任意分类名。 */
+  inferCategory(title, content, tags) {
+    var _a;
+    const text = `${title} ${tags.join(" ")} ${content.slice(0, 600)}`.toLowerCase();
+    const rules = [
+      ["\u590D\u76D8", /复盘|总结|周报|回顾|小结|review|retro/],
+      ["\u9879\u76EE", /项目|计划|需求|进度|里程碑|project|任务拆解/],
+      ["\u6280\u672F", /代码|插件|api|mcp|配置|报错|调试|开发|构建|故障|排查|排错|发布|维护|bug|error|code|build|技术/],
+      ["\u65B9\u6CD5", /工作流|提示词|步骤|规范|指南|流程|方法|workflow|prompt|howto|教程/],
+      ["\u7075\u611F", /想法|灵感|点子|随想|idea/]
+    ];
+    for (const [category, pattern] of rules) {
+      if (pattern.test(text)) return category;
+    }
+    return (_a = this.categories()[0]) != null ? _a : "\u672A\u5206\u7C7B";
   }
   getPomodoro() {
     return this.plugin.pomodoro.state();
@@ -385,14 +402,17 @@ ${block}`);
   }
   /** 把一段知识沉淀成带 frontmatter 的独立笔记。 */
   async addKnowledge(input) {
-    var _a, _b, _c;
+    var _a, _b, _c, _d, _e;
     const title = String(input.title || "\u672A\u547D\u540D\u7B14\u8BB0").trim();
     const safeTitle = title.replace(/[\\/:*?"<>|#\[\]]/g, "-").slice(0, 80) || "\u672A\u547D\u540D\u7B14\u8BB0";
     const base = normalizeFolder(this.plugin.store.settings.knowledgeFolder);
     const categories = this.categories();
+    const tags = Array.isArray(input.tags) ? input.tags.map((tag) => String(tag).replace(/^#/, "")) : [];
+    const links = Array.isArray(input.links) ? input.links.map(String) : [];
+    const agent = String(input.agent || "agent").replace(/[:#]/g, "-");
     const requestedCategory = String((_a = input.category) != null ? _a : "").trim();
-    const category = requestedCategory || categories[0] || "\u672A\u5206\u7C7B";
-    const sub = normalizeFolder((_b = input.folder) != null ? _b : "");
+    const category = requestedCategory || (tags.length || String((_b = input.content) != null ? _b : "").length > 0 ? this.inferCategory(title, String((_c = input.content) != null ? _c : ""), tags) : categories[0]) || "\u672A\u5206\u7C7B";
+    const sub = normalizeFolder((_d = input.folder) != null ? _d : "");
     const folder = [base, category, sub].filter(Boolean).join("/");
     await ensureFolder(this.vault, folder);
     const today = dateKey(/* @__PURE__ */ new Date());
@@ -404,9 +424,6 @@ ${block}`);
       path = folder ? `${folder}/${fileName}` : fileName;
       counter += 1;
     }
-    const tags = Array.isArray(input.tags) ? input.tags.map((tag) => String(tag).replace(/^#/, "")) : [];
-    const links = Array.isArray(input.links) ? input.links.map(String) : [];
-    const agent = String(input.agent || "agent").replace(/[:#]/g, "-");
     const frontmatter = [
       "---",
       `date: ${today}`,
@@ -422,7 +439,7 @@ ${block}`);
       "---"
     ].join("\n");
     const body = String(input.content || "").trim();
-    const firstLine = (_c = body.split("\n").map((line) => line.trim()).find((line) => line.length > 0)) != null ? _c : "";
+    const firstLine = (_e = body.split("\n").map((line) => line.trim()).find((line) => line.length > 0)) != null ? _e : "";
     const summary = firstLine.replace(/^[#>\-*0-9.\s]+/, "").slice(0, 120) || "\u2014";
     const doc = [
       frontmatter,
@@ -574,7 +591,7 @@ var AgentServer = class {
       };
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
-          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.2.9" });
+          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.3.0" });
           return;
         case "GET /notes":
           this.json(response, 200, api.listNotes(str(query.get("folder")), num(query.get("limit"), 50)));
