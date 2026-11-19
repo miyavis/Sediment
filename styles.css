@@ -889,3 +889,45 @@
 .sd-footer button {
   font-size: 11px;
 }
+
+/* 速记增强 */
+.sd-memo-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.sd-memo-tab {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.sd-memo-tab.is-active {
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+}
+
+.sd-review-section,
+.sd-walk,
+.sd-tag-tree {
+  padding: 12px;
+}
+
+.sd-tag-item {
+  display: block;
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 6px 10px;
+  font-size: 12px;
+  text-align: left;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  cursor: pointer;
+}

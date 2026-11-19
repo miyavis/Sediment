@@ -516,7 +516,7 @@ var AgentServer = class {
       };
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
-          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.2.0" });
+          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.2.1" });
           return;
         case "GET /notes":
           this.json(response, 200, api.listNotes(str(query.get("folder")), num(query.get("limit"), 50)));
@@ -1651,7 +1651,9 @@ var MemoView = class extends import_obsidian7.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
+    this.tab = "all";
     this.filter = "";
+    this.walkId = null;
   }
   getViewType() {
     return MEMO_VIEW_TYPE;
@@ -1669,13 +1671,47 @@ var MemoView = class extends import_obsidian7.ItemView {
     const root = this.contentEl;
     root.empty();
     root.addClass("kp-memo-view");
+    const tabs = root.createDiv({ cls: "sd-memo-tabs" });
+    const options = [
+      ["all", "\u5168\u90E8"],
+      ["review", "\u56DE\u987E"],
+      ["walk", "\u6F2B\u6B65"],
+      ["tags", "\u6807\u7B7E"]
+    ];
+    for (const [key, label] of options) {
+      const button = tabs.createEl("button", {
+        cls: `sd-memo-tab ${key === this.tab ? "is-active" : ""}`,
+        text: label
+      });
+      button.onclick = () => {
+        this.tab = key;
+        this.render();
+      };
+    }
+    if (this.tab === "all") this.renderAll(root);
+    else if (this.tab === "review") this.renderReview(root);
+    else if (this.tab === "walk") this.renderWalk(root);
+    else this.renderTags(root);
+  }
+  renderAll(root) {
     const form = root.createDiv({ cls: "kp-memo-form" });
     const area = form.createEl("textarea", { cls: "kp-memo-input" });
-    area.placeholder = "\u60F3\u5230\u4EC0\u4E48\uFF0C\u968F\u624B\u8BB0\u4E0B\u2026";
+    area.placeholder = "\u60F3\u5230\u4EC0\u4E48\uFF0C\u968F\u624B\u8BB0\u4E0B\u2026\uFF08\u53EF\u7C98\u8D34\u56FE\u7247\uFF09";
     area.rows = 3;
     const row = form.createDiv({ cls: "kp-memo-row" });
     const tagInput = row.createEl("input", { type: "text", placeholder: "\u6807\u7B7E\uFF0C\u7A7A\u683C\u5206\u9694" });
     const submit = row.createEl("button", { cls: "mod-cta", text: "\u8BB0\u4E00\u6761" });
+    area.addEventListener("paste", (event) => {
+      var _a;
+      const items = (_a = event.clipboardData) == null ? void 0 : _a.items;
+      if (!items) return;
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith("image/")) {
+          event.preventDefault();
+          void this.attachImage(item.getAsFile());
+        }
+      }
+    });
     const doSubmit = () => {
       const text = area.value.trim();
       if (!text) return;
@@ -1684,6 +1720,7 @@ var MemoView = class extends import_obsidian7.ItemView {
         if (!memo) return;
         area.value = "";
         tagInput.value = "";
+        this.walkId = memo.id;
         this.render();
       });
     };
@@ -1706,6 +1743,24 @@ var MemoView = class extends import_obsidian7.ItemView {
     });
     this.renderList(root);
   }
+  async attachImage(file) {
+    var _a, _b;
+    if (!file) return;
+    const buffer = await file.arrayBuffer();
+    const extension = file.type.split("/")[1] || "png";
+    const name = `${Date.now()}.${extension}`;
+    const config = this.plugin.app.vault;
+    const folder = normalizeFolder((_b = (_a = config.getConfig) == null ? void 0 : _a.call(config, "attachmentFolderPath")) != null ? _b : "attachments");
+    await ensureFolder(this.plugin.app.vault, folder);
+    const path = folder ? `${folder}/${name}` : name;
+    await this.plugin.app.vault.createBinary(path, buffer);
+    const area = this.contentEl.querySelector(".kp-memo-input");
+    if (area) {
+      area.value += ` ![[${name}]]`;
+      area.focus();
+    }
+    new import_obsidian7.Notice("\u56FE\u7247\u5DF2\u63D2\u5165\u901F\u8BB0");
+  }
   renderList(root) {
     var _a;
     (_a = root.querySelector(".kp-memo-list")) == null ? void 0 : _a.remove();
@@ -1727,19 +1782,119 @@ var MemoView = class extends import_obsidian7.ItemView {
         currentDate = memo.date;
         list.createDiv({ cls: "kp-memo-date", text: currentDate });
       }
-      const card = list.createDiv({ cls: "kp-memo-card" });
-      card.createDiv({ cls: "kp-memo-time", text: memo.time });
-      card.createDiv({ cls: "kp-memo-text", text: memo.text });
-      if (memo.tags.length > 0) {
-        const tags = card.createDiv({ cls: "kp-memo-tags" });
-        for (const tag of memo.tags) {
-          const button = tags.createEl("button", { cls: "kp-tag", text: `#${tag}` });
-          button.onclick = () => {
-            this.filter = `#${tag}`;
-            this.render();
-          };
-        }
+      list.appendChild(this.memoCard(memo));
+    }
+  }
+  memoCard(memo) {
+    const card = document.createElement("div");
+    card.className = "kp-memo-card";
+    card.createDiv({ cls: "kp-memo-time", text: memo.time });
+    card.createDiv({ cls: "kp-memo-text", text: memo.text });
+    if (memo.tags.length > 0) {
+      const tags = card.createDiv({ cls: "kp-memo-tags" });
+      for (const tag of memo.tags) {
+        const button = tags.createEl("button", { cls: "kp-tag", text: `#${tag}` });
+        button.onclick = () => {
+          this.filter = `#${tag}`;
+          this.tab = "all";
+          this.render();
+        };
       }
+    }
+    return card;
+  }
+  /** 同一天的回顾固定不变，可换一批；并显示去年今日和上月今日。 */
+  renderReview(root) {
+    const today = /* @__PURE__ */ new Date();
+    const todayKey = dateKey(today);
+    const memos = this.plugin.store.data.memos;
+    const todays = memos.filter((memo) => memo.date === todayKey);
+    const lastYearKey = `${today.getFullYear() - 1}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    const lastMonth = addDays(new Date(today.getFullYear(), today.getMonth() - 1, 1), Math.min(today.getDate(), new Date(today.getFullYear(), today.getMonth(), 0).getDate()) - 1);
+    const lastMonthKey = dateKey(lastMonth);
+    const section = (title, items) => {
+      const card = root.createDiv({ cls: "sd-card sd-review-section" });
+      card.createDiv({ cls: "sd-card-title", text: title });
+      if (items.length === 0) {
+        card.createDiv({ cls: "kp-empty", text: "\u8FD9\u5929\u6CA1\u6709\u901F\u8BB0\u3002" });
+        return;
+      }
+      for (const memo of items.slice(0, 3)) card.appendChild(this.memoCard(memo));
+    };
+    section(`\u6BCF\u65E5\u56DE\u987E \xB7 ${todayKey}`, this.pick(todays, todayKey));
+    section(`\u53BB\u5E74\u4ECA\u65E5 \xB7 ${lastYearKey}`, memos.filter((memo) => memo.date === lastYearKey));
+    section(`\u4E0A\u6708\u4ECA\u65E5 \xB7 ${lastMonthKey}`, memos.filter((memo) => memo.date === lastMonthKey));
+  }
+  pick(items, seed) {
+    if (items.length <= 3) return items;
+    let number = 0;
+    for (const char of seed) number = number * 31 + char.charCodeAt(0) >>> 0;
+    const copy = items.slice();
+    for (let index = copy.length - 1; index > 0; index -= 1) {
+      number = number * 1664525 + 1013904223 >>> 0;
+      const target = number % (index + 1);
+      [copy[index], copy[target]] = [copy[target], copy[index]];
+    }
+    return copy.slice(0, 3);
+  }
+  tokens(text) {
+    var _a;
+    const clean = text.toLowerCase().replace(/[#\[\]()]/g, " ");
+    const chinese = clean.replace(/[^\u3400-\u9fff]/g, " ");
+    const bigrams = [];
+    for (let index = 0; index < chinese.length - 1; index += 1) {
+      const pair = chinese.slice(index, index + 2).trim();
+      if (pair.length === 2) bigrams.push(pair);
+    }
+    return [...bigrams, ...(_a = clean.match(/[a-z0-9]+/g)) != null ? _a : []];
+  }
+  renderWalk(root) {
+    var _a, _b;
+    const memos = this.plugin.store.data.memos;
+    if (memos.length === 0) {
+      root.createDiv({ cls: "kp-empty", text: "\u8FD8\u6CA1\u6709\u901F\u8BB0\u53EF\u4EE5\u6F2B\u6B65\u3002" });
+      return;
+    }
+    let current = (_a = memos.find((memo) => memo.id === this.walkId)) != null ? _a : memos[0];
+    const card = root.createDiv({ cls: "sd-card sd-walk" });
+    card.createDiv({ cls: "sd-card-sub", text: `\u6F2B\u6B65 \xB7 ${current.date} ${current.time}` });
+    card.appendChild(this.memoCard(current));
+    const currentTokens = new Set(this.tokens(current.text));
+    const ranked = memos.filter((memo) => memo.id !== current.id).map((memo) => ({
+      memo,
+      score: this.tokens(memo.text).filter((token) => currentTokens.has(token)).length
+    })).sort((a, b) => b.score - a.score);
+    const next = (_b = ranked[0]) == null ? void 0 : _b.memo;
+    if (next) {
+      const shared = ranked[0].score;
+      card.createDiv({ cls: "sd-card-sub", text: `\u5171\u540C\u7684\u8BCD\uFF1A${shared} \u4E2A` });
+      const button = card.createEl("button", { text: "\u7EE7\u7EED\u6F2B\u6B65 \u2192" });
+      button.onclick = () => {
+        this.walkId = next.id;
+        this.render();
+      };
+    }
+    this.walkId = current.id;
+  }
+  renderTags(root) {
+    var _a;
+    const counts = /* @__PURE__ */ new Map();
+    for (const memo of this.plugin.store.data.memos) {
+      for (const tag of memo.tags) counts.set(tag, ((_a = counts.get(tag)) != null ? _a : 0) + 1);
+    }
+    const card = root.createDiv({ cls: "sd-card sd-tag-tree" });
+    card.createDiv({ cls: "sd-card-title", text: `\u6807\u7B7E \xB7 ${counts.size} \u4E2A` });
+    if (counts.size === 0) {
+      card.createDiv({ cls: "kp-empty", text: "\u8FD8\u6CA1\u6709\u6807\u7B7E\u3002" });
+      return;
+    }
+    for (const [tag, count] of [...counts.entries()].sort((a, b) => b[1] - a[1])) {
+      const button = card.createEl("button", { cls: "sd-tag-item", text: `#${tag} (${count})` });
+      button.onclick = () => {
+        this.filter = `#${tag}`;
+        this.tab = "all";
+        this.render();
+      };
     }
   }
 };
