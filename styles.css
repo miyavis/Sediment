@@ -1,0 +1,368 @@
+/* Sediment — 全部颜色跟随 Obsidian 主题变量。 */
+
+.kp-dashboard {
+  padding: 12px 16px 40px;
+}
+
+.kp-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.kp-brand {
+  margin-right: auto;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--text-muted);
+}
+
+.kp-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.kp-tab {
+  padding: 4px 9px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.kp-tab:hover {
+  color: var(--text-normal);
+}
+
+.kp-tab.is-active {
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+}
+
+.kp-select {
+  padding: 3px 6px;
+  font-size: 12px;
+}
+
+.kp-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.kp-card {
+  padding: 10px 12px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+}
+
+.kp-card-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.kp-card-value {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.kp-card-hint {
+  font-size: 10px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kp-section-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.kp-heatmap-wrap {
+  margin-bottom: 18px;
+}
+
+.kp-grid {
+  display: flex;
+  gap: 6px;
+  padding-bottom: 6px;
+  overflow-x: auto;
+}
+
+.kp-weekdays {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 18px;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.kp-weekday {
+  width: 18px;
+  height: 12px;
+  line-height: 12px;
+}
+
+.kp-main {
+  min-width: max-content;
+}
+
+.kp-months {
+  display: grid;
+  height: 16px;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.kp-month {
+  white-space: nowrap;
+}
+
+.kp-columns {
+  display: flex;
+  gap: 3px;
+}
+
+.kp-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.kp-cell {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--background-modifier-border);
+}
+
+.kp-cell.kp-future {
+  opacity: 0.25;
+}
+
+.kp-cell:not(.kp-future):hover {
+  outline: 1px solid var(--text-normal);
+  cursor: pointer;
+}
+
+.kp-lvl-0 {
+  background: var(--background-modifier-border-hover);
+}
+
+.kp-lvl-1 {
+  background: rgba(63, 163, 121, 0.3);
+  background: color-mix(in srgb, var(--interactive-accent) 30%, var(--background-primary));
+}
+
+.kp-lvl-2 {
+  background: rgba(63, 163, 121, 0.55);
+  background: color-mix(in srgb, var(--interactive-accent) 55%, var(--background-primary));
+}
+
+.kp-lvl-3 {
+  background: rgba(63, 163, 121, 0.78);
+  background: color-mix(in srgb, var(--interactive-accent) 78%, var(--background-primary));
+}
+
+.kp-lvl-4 {
+  background: rgba(63, 163, 121, 1);
+  background: var(--interactive-accent);
+}
+
+.kp-legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.kp-detail {
+  padding-top: 12px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.kp-detail-head {
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.kp-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  gap: 6px;
+}
+
+.kp-detail-item {
+  padding: 8px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+}
+
+.kp-detail-label {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.kp-detail-value {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.kp-detail-memos {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.kp-detail-memo {
+  padding: 6px 8px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  background: var(--background-secondary);
+  border-left: 2px solid var(--interactive-accent);
+  border-radius: 0 4px 4px 0;
+}
+
+.kp-empty {
+  padding: 8px 0;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+/* 速记面板 */
+.kp-memo-view {
+  padding: 12px 16px 32px;
+}
+
+.kp-memo-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.kp-memo-input {
+  width: 100%;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.kp-memo-row {
+  display: flex;
+  gap: 6px;
+}
+
+.kp-memo-row input {
+  flex: 1;
+}
+
+.kp-memo-filter {
+  margin-bottom: 10px;
+}
+
+.kp-memo-filter input {
+  width: 100%;
+}
+
+.kp-memo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kp-memo-date {
+  margin-top: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.kp-memo-card {
+  padding: 8px 10px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+}
+
+.kp-memo-time {
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.kp-memo-text {
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.kp-memo-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.kp-tag {
+  padding: 1px 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+/* 快速速记弹窗 */
+.kp-modal-input {
+  width: 100%;
+  margin: 8px 0;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.kp-modal-tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.kp-modal-tags input {
+  flex: 1;
+}
+
+.kp-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+@media (max-width: 500px) {
+  .kp-card-value {
+    font-size: 18px;
+  }
+
+  .kp-dashboard,
+  .kp-memo-view {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+}
