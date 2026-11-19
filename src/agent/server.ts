@@ -120,7 +120,7 @@ export class AgentServer {
 
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
-          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.8.1" });
+          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.8.2" });
           return;
         case "GET /notes":
           this.json(response, 200, api.listNotes(str(query.get("folder")), num(query.get("limit"), 50)));
