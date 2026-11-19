@@ -1186,6 +1186,202 @@
   border: 1px solid var(--background-modifier-border);
 }
 
+/* ── Design polish: typography, surfaces, rhythm, states ── */
+.sd-dashboard {
+  --sd-ease: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.sd-dashboard .sd-card {
+  border-color: transparent;
+  box-shadow: inset 0 1px 0 var(--background-modifier-border-hover);
+  padding: 22px 24px;
+}
+
+.sd-dashboard .sd-card-head {
+  margin-bottom: 16px;
+}
+
+.sd-dashboard .sd-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.sd-dashboard .sd-card-sub {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.sd-metric-value,
+.sd-mini-value,
+.sd-poster-big,
+.sd-category-count,
+.sd-day-item strong,
+.sd-analytics-row strong {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+}
+
+.sd-dashboard button,
+.kp-memo-view button {
+  transition:
+    background-color 0.22s var(--sd-ease),
+    color 0.22s var(--sd-ease),
+    border-color 0.22s var(--sd-ease),
+    transform 0.22s var(--sd-ease);
+}
+
+.sd-dashboard button:active,
+.kp-memo-view button:active {
+  transform: translateY(1px) scale(0.985);
+}
+
+.sd-dashboard button:focus-visible,
+.kp-memo-view button:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+.sd-tab,
+.sd-refresh {
+  border-radius: 999px;
+}
+
+.sd-status-grid .sd-status-item:first-child {
+  grid-column: span 2;
+}
+
+.sd-analytics-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 11px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--background-modifier-border);
+  border-radius: 0;
+}
+
+.sd-analytics-row:last-child {
+  border-bottom: none;
+}
+
+.sd-analytics-row:hover {
+  background: var(--background-secondary);
+  border-radius: 8px;
+}
+
+.sd-analytics-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.sd-task-item {
+  padding: 9px 12px;
+  background: var(--background-secondary);
+  border: none;
+  border-radius: 9px;
+  box-shadow: inset 2px 0 0 var(--interactive-accent);
+}
+
+.sd-task-open {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.sd-knowledge-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 3px;
+  padding: 10px 12px;
+  background: var(--background-secondary);
+  border: none;
+  border-radius: 9px;
+  box-shadow: inset 0 1px 0 var(--background-modifier-border-hover);
+}
+
+.sd-knowledge-item:hover {
+  background: var(--background-primary);
+  box-shadow: inset 2px 0 0 var(--interactive-accent);
+  transform: translateY(-1px);
+}
+
+.sd-knowledge-open {
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sd-knowledge-path {
+  font-size: 10px;
+  opacity: 0.72;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sd-category-badge {
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 10px;
+}
+
+.kp-empty {
+  padding: 18px;
+  text-align: center;
+  font-size: 11px;
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: 10px;
+}
+
+.kp-cell {
+  transition: transform 0.16s var(--sd-ease);
+}
+
+.kp-cell:not(.kp-future):hover {
+  position: relative;
+  z-index: 1;
+  transform: scale(1.25);
+}
+
+@keyframes sd-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.sd-body > .sd-card {
+  animation: sd-enter 0.5s var(--sd-ease) both;
+}
+
+.sd-body > .sd-card:nth-child(2) { animation-delay: 0.04s; }
+.sd-body > .sd-card:nth-child(3) { animation-delay: 0.08s; }
+.sd-body > .sd-card:nth-child(4) { animation-delay: 0.12s; }
+.sd-body > .sd-card:nth-child(5) { animation-delay: 0.16s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sd-body > .sd-card {
+    animation: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .sd-status-grid .sd-status-item:first-child {
+    grid-column: span 1;
+  }
+}
+
 .sd-tag-item {
   display: block;
   width: 100%;
