@@ -185,14 +185,14 @@ export class DashboardView extends ItemView {
       card.createDiv({ cls: "kp-empty", text: "今天还没有智能体活动。" });
       return;
     }
-    const list = card.createDiv({ cls: "sd-analytics-list" });
+    const list = card.createDiv({ cls: "sd-feed-list" });
     for (const call of calls.slice(0, 8)) {
-      const row = list.createDiv({ cls: "sd-analytics-row" });
+      const row = list.createDiv({ cls: "sd-feed-row" });
       row.createSpan({ text: `${call.time.slice(11, 16)} · ${call.agent || "unknown"}` });
       row.createEl("strong", { text: call.tool.replace(/^(GET|POST) /, "") });
     }
     for (const log of logs) {
-      const row = list.createDiv({ cls: "sd-analytics-row" });
+      const row = list.createDiv({ cls: "sd-feed-row" });
       row.createSpan({ text: `${log.time} · ${log.agent}` });
       row.createEl("strong", { text: log.task });
     }
@@ -358,9 +358,9 @@ export class DashboardView extends ItemView {
       card.createDiv({ cls: "kp-empty", text: "还没有工作日志。" });
       return;
     }
-    const list = card.createDiv({ cls: "sd-analytics-list" });
+    const list = card.createDiv({ cls: "sd-feed-list" });
     for (const log of logs) {
-      const row = list.createDiv({ cls: "sd-analytics-row" });
+      const row = list.createDiv({ cls: "sd-feed-row" });
       row.createSpan({ text: `${log.date} ${log.time} · ${log.agent}` });
       row.createEl("strong", { text: log.task });
     }

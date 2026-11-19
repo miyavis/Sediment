@@ -1523,3 +1523,99 @@
     grid-column: span 12;
   }
 }
+
+.sd-bento {
+  align-items: stretch;
+}
+
+.sd-bento > .sd-card {
+  height: 100%;
+}
+
+.sd-feed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 8px;
+}
+
+.sd-feed-row {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.sd-feed-row:last-child {
+  border-bottom: none;
+}
+
+.sd-feed-row span {
+  font-size: 10px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sd-feed-row strong {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sd-progress {
+  height: 8px;
+}
+
+.sd-progress-fill {
+  background: linear-gradient(
+    90deg,
+    var(--interactive-accent),
+    color-mix(in srgb, var(--interactive-accent) 65%, var(--background-primary))
+  );
+}
+
+.sd-quick-memo button {
+  display: block;
+  margin-left: auto;
+}
+
+.kp-memo-view .sd-knowledge-item,
+.sd-knowledge-item {
+  padding: 8px 10px;
+  gap: 2px;
+}
+
+.sd-knowledge-open,
+.kp-memo-view .sd-knowledge-open {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: left !important;
+  color: var(--text-normal) !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.sd-knowledge-open:hover,
+.kp-memo-view .sd-knowledge-open:hover {
+  color: var(--interactive-accent) !important;
+}
+
+.sd-knowledge-path,
+.kp-memo-view .sd-knowledge-path {
+  text-align: left;
+  font-size: 9px;
+  opacity: 0.6;
+}

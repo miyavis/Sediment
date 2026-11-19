@@ -2,6 +2,12 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [Unreleased]
+
+### 修复
+- 今日页 bento 卡片等高对齐；Agent 动态与工作日志改为单列信息流，不再挤成多列窄条
+- 速记侧栏沉淀列表标题左对齐并去掉默认按钮白底方块，元信息更紧凑
+
 ## [0.8.2] - 2026-11-19
 
 ### 改进
