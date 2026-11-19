@@ -127,6 +127,37 @@ export class PulseSettingTab extends PluginSettingTab {
           })
       );
 
+    new Setting(containerEl)
+      .setName("看板画风")
+      .setDesc("像素湖面 / 水墨山水 / 像素城市，也可在看板页脚点「换画风」。")
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("lake", "像素湖面")
+          .addOption("ink", "水墨山水")
+          .addOption("city", "像素城市")
+          .setValue(settings.artStyle)
+          .onChange((value) => {
+            settings.artStyle = value as "lake" | "ink" | "city";
+            save();
+            this.plugin.refreshViews();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("每日写作目标")
+      .setDesc("看板今天卡片显示进度，0 表示关闭。")
+      .addText((text) =>
+        text
+          .setPlaceholder("1000")
+          .setValue(String(settings.dailyWordGoal))
+          .onChange((value) => {
+            const goal = Number(value);
+            settings.dailyWordGoal = Number.isFinite(goal) && goal >= 0 ? goal : 1000;
+            save();
+            this.plugin.refreshViews();
+          })
+      );
+
     containerEl.createEl("h3", { text: "Agent 接入（本地 HTTP / MCP）" });
 
     new Setting(containerEl)

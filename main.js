@@ -516,7 +516,7 @@ var AgentServer = class {
       };
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
-          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.1.3" });
+          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.2.0" });
           return;
         case "GET /notes":
           this.json(response, 200, api.listNotes(str(query.get("folder")), num(query.get("limit"), 50)));
@@ -916,6 +916,21 @@ var PulseSettingTab = class extends import_obsidian5.PluginSettingTab {
         save();
       })
     );
+    new import_obsidian5.Setting(containerEl).setName("\u770B\u677F\u753B\u98CE").setDesc("\u50CF\u7D20\u6E56\u9762 / \u6C34\u58A8\u5C71\u6C34 / \u50CF\u7D20\u57CE\u5E02\uFF0C\u4E5F\u53EF\u5728\u770B\u677F\u9875\u811A\u70B9\u300C\u6362\u753B\u98CE\u300D\u3002").addDropdown(
+      (dropdown) => dropdown.addOption("lake", "\u50CF\u7D20\u6E56\u9762").addOption("ink", "\u6C34\u58A8\u5C71\u6C34").addOption("city", "\u50CF\u7D20\u57CE\u5E02").setValue(settings.artStyle).onChange((value) => {
+        settings.artStyle = value;
+        save();
+        this.plugin.refreshViews();
+      })
+    );
+    new import_obsidian5.Setting(containerEl).setName("\u6BCF\u65E5\u5199\u4F5C\u76EE\u6807").setDesc("\u770B\u677F\u4ECA\u5929\u5361\u7247\u663E\u793A\u8FDB\u5EA6\uFF0C0 \u8868\u793A\u5173\u95ED\u3002").addText(
+      (text) => text.setPlaceholder("1000").setValue(String(settings.dailyWordGoal)).onChange((value) => {
+        const goal = Number(value);
+        settings.dailyWordGoal = Number.isFinite(goal) && goal >= 0 ? goal : 1e3;
+        save();
+        this.plugin.refreshViews();
+      })
+    );
     containerEl.createEl("h3", { text: "Agent \u63A5\u5165\uFF08\u672C\u5730 HTTP / MCP\uFF09" });
     new import_obsidian5.Setting(containerEl).setName("\u542F\u7528\u672C\u5730 Agent API").setDesc("\u53EA\u76D1\u542C 127.0.0.1\uFF0C\u4F9B MCP \u6865\u63A5\u548C\u672C\u5730\u811A\u672C\u8C03\u7528\u4E2A\u4EBA\u77E5\u8BC6\u5E93\u3002").addToggle(
       (toggle) => toggle.setValue(settings.agentServerEnabled).onChange((value) => {
@@ -973,6 +988,8 @@ var DashboardView = class extends import_obsidian6.ItemView {
     this.range = "1y";
     this.tab = "board";
     this.selected = null;
+    this.posterMonth = (/* @__PURE__ */ new Date()).getMonth();
+    this.bannerEl = null;
     this.metric = plugin.store.settings.heatmapMetric;
   }
   getViewType() {
@@ -986,6 +1003,7 @@ var DashboardView = class extends import_obsidian6.ItemView {
   }
   async onOpen() {
     this.render();
+    this.registerInterval(window.setInterval(() => this.updateBanner(), 6e4));
   }
   render() {
     const root = this.contentEl;
@@ -998,6 +1016,15 @@ var DashboardView = class extends import_obsidian6.ItemView {
       this.renderOverview(body);
       this.renderHeatmap(body);
       this.renderHorizon(body);
+      const footer = body.createDiv({ cls: "sd-footer" });
+      footer.createSpan({ text: "Sediment 0.1.3 \xB7 \u6570\u636E\u53EA\u7559\u5728\u672C\u5730" });
+      const monthly = footer.createEl("button", { text: "\u6708\u62A5" });
+      monthly.onclick = () => {
+        this.tab = "yearly";
+        this.render();
+      };
+      const styleButton = footer.createEl("button", { text: "\u6362\u753B\u98CE" });
+      styleButton.onclick = () => this.cycleArtStyle();
     } else if (this.tab === "review") {
       this.renderReview(body);
     } else if (this.tab === "analytics") {
@@ -1026,31 +1053,8 @@ var DashboardView = class extends import_obsidian6.ItemView {
   renderHeader(root) {
     const header = root.createDiv({ cls: "sd-header" });
     const banner = header.createDiv({ cls: "sd-banner" });
-    banner.innerHTML = `
-<svg viewBox="0 0 1600 300" preserveAspectRatio="xMidYMid slice" class="sd-banner-svg">
-  <defs>
-    <linearGradient id="sd-sky" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#2f6fb2"/><stop offset="55%" stop-color="#8fc2e8"/><stop offset="100%" stop-color="#d8ecfa"/>
-    </linearGradient>
-    <linearGradient id="sd-water" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#7fb3d9"/><stop offset="100%" stop-color="#cfe4f2"/>
-    </linearGradient>
-    <radialGradient id="sd-sun"><stop offset="0%" stop-color="#fff6cf"/><stop offset="100%" stop-color="#ffd975"/></radialGradient>
-  </defs>
-  <rect width="1600" height="300" fill="url(#sd-sky)"/>
-  <circle cx="1240" cy="86" r="38" fill="url(#sd-sun)" opacity="0.95"/>
-  <circle cx="1240" cy="86" r="58" fill="#fff2c4" opacity="0.16"/>
-  <path d="M120 70 q60 -26 130 0 q40 -18 90 4" stroke="#ffffff" stroke-width="12" fill="none" opacity="0.18" stroke-linecap="round"/>
-  <path d="M760 118 q70 -24 150 0 q50 -16 100 4" stroke="#ffffff" stroke-width="10" fill="none" opacity="0.14" stroke-linecap="round"/>
-  <path d="M0 232 L120 178 L210 210 L330 138 L450 208 L560 166 L690 224 L820 180 L960 228 L1090 176 L1220 220 L1360 168 L1500 214 L1600 186 L1600 260 L0 260 Z" fill="#5b8dbd" opacity="0.45"/>
-  <path d="M0 252 L160 214 L300 244 L430 200 L580 246 L720 212 L880 250 L1030 208 L1190 246 L1340 206 L1500 244 L1600 220 L1600 280 L0 280 Z" fill="#3f6f9f" opacity="0.5"/>
-  <rect x="138" y="150" width="20" height="86" fill="#f5f5f2"/>
-  <path d="M138 166 h20 M138 196 h20" stroke="#d9544d" stroke-width="8"/>
-  <path d="M136 150 h24 l-6 -14 h-12 Z" fill="#d9544d"/>
-  <rect x="143" y="132" width="10" height="8" fill="#ffe9a8"/>
-  <rect y="258" width="1600" height="42" fill="url(#sd-water)" opacity="0.75"/>
-  <path d="M0 266 h420 M520 266 h300 M900 266 h700" stroke="#ffffff" stroke-width="2" opacity="0.35"/>
-</svg>`;
+    banner.innerHTML = this.bannerSvg();
+    this.bannerEl = banner;
     const bar = header.createDiv({ cls: "sd-navbar" });
     bar.createDiv({ cls: "sd-brand", text: "SEDIMENT" });
     const tabs = bar.createDiv({ cls: "sd-tabs" });
@@ -1089,11 +1093,12 @@ var DashboardView = class extends import_obsidian6.ItemView {
       text: day.contribution > 0 ? `${day.contribution} \u5206` : "\u8FD8\u6CA1\u5F00\u59CB"
     });
     const row = card.createDiv({ cls: "sd-today-row" });
-    row.createSpan({ text: `\u5199\u4F5C ${day.wordsAdded} / 1,000 \u5B57` });
+    const goal = this.plugin.store.settings.dailyWordGoal || 1e3;
+    row.createSpan({ text: `\u5199\u4F5C ${day.wordsAdded} / ${goal.toLocaleString()} \u5B57` });
     row.createSpan({ text: `\u8FDE\u7EED ${streak} \u5929` });
     const progress = card.createDiv({ cls: "sd-progress" });
     const fill = progress.createDiv({ cls: "sd-progress-fill" });
-    fill.style.width = `${Math.min(100, day.wordsAdded / 1e3 * 100)}%`;
+    fill.style.width = `${Math.min(100, day.wordsAdded / goal * 100)}%`;
   }
   renderOverview(root) {
     var _a, _b, _c;
@@ -1280,33 +1285,351 @@ var DashboardView = class extends import_obsidian6.ItemView {
     const markdown = buildWeeklyReview(this.plugin.store, /* @__PURE__ */ new Date());
     card.createEl("pre", { cls: "sd-review-md", text: markdown });
   }
+  analyticsCard(root, title, subtitle = "") {
+    const card = root.createDiv({ cls: "sd-card" });
+    const head = card.createDiv({ cls: "sd-card-head" });
+    head.createDiv({ cls: "sd-card-title", text: title });
+    if (subtitle) head.createDiv({ cls: "sd-card-sub", text: subtitle });
+    return card;
+  }
+  barChart(values, color = "var(--interactive-accent)") {
+    const width = 900;
+    const height = 120;
+    const pad = 4;
+    const max = Math.max(1, ...values);
+    const barWidth = (width - pad * 2) / Math.max(1, values.length);
+    const rects = values.map((value, index) => {
+      const h = value / max * (height - pad * 2);
+      return `<rect x="${(pad + index * barWidth).toFixed(1)}" y="${(height - pad - h).toFixed(1)}" width="${(barWidth * 0.72).toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${color}" opacity="${value > 0 ? 0.8 : 0.12}"/>`;
+    }).join("");
+    return `<svg class="sd-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${rects}</svg>`;
+  }
+  multiLine(series) {
+    const width = 900;
+    const height = 140;
+    const pad = 6;
+    const max = Math.max(1, ...series.flatMap((item) => item.values));
+    const lines = series.map((item) => {
+      const points = item.values.map((value, index) => {
+        const x = pad + index / Math.max(1, item.values.length - 1) * (width - pad * 2);
+        const y = height - pad - value / max * (height - pad * 2);
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      }).join(" ");
+      return `<polyline points="${points}" fill="none" stroke="${item.color}" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+    }).join("");
+    return `<svg class="sd-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${lines}</svg>`;
+  }
   renderAnalytics(root) {
-    const card = root.createDiv({ cls: "sd-card sd-text-view" });
-    card.createDiv({ cls: "sd-card-title", text: "\u6570\u636E\u5206\u6790 \xB7 \u8FD1 30 \u5929\u65B0\u589E\u8BCD\u6570" });
-    const keys = lastNDays(30);
-    const values = keys.map((key) => Number(this.plugin.store.getDay(key).wordsAdded) || 0);
-    card.innerHTML += this.sparkline(values);
-    const list = card.createDiv({ cls: "sd-analytics-list" });
-    for (const key of keys.slice(-7).reverse()) {
-      const row = list.createDiv({ cls: "sd-analytics-row" });
-      row.createSpan({ text: key });
-      row.createEl("strong", { text: `${this.plugin.store.getDay(key).wordsAdded} \u5B57` });
+    var _a, _b, _c, _d;
+    const keys = this.rangeKeys();
+    const days = keys.map((key) => this.plugin.store.getDay(key));
+    const label = (_b = (_a = RANGE_OPTIONS.find((range) => range[0] === this.range)) == null ? void 0 : _a[1]) != null ? _b : "";
+    const writing = this.analyticsCard(root, "\u6BCF\u65E5\u5199\u4F5C", label);
+    writing.innerHTML += this.barChart(days.map((day) => day.wordsAdded));
+    const changes = this.analyticsCard(root, "\u5199\u4F5C\u53D8\u5316", "\u65B0\u589E / \u5220\u9664 / \u5927\u6BB5\u6355\u83B7");
+    changes.innerHTML += this.multiLine([
+      { values: days.map((day) => day.wordsAdded), color: "var(--interactive-accent)" },
+      { values: days.map((day) => day.wordsRemoved), color: "var(--text-faint)" },
+      { values: days.map((day) => day.capturedWords), color: "var(--text-muted)" }
+    ]);
+    const time = this.analyticsCard(root, "\u65F6\u95F4\u6295\u5165", "\u4EA4\u4E92\u6D3B\u8DC3 / \u4E13\u6CE8");
+    time.innerHTML += this.multiLine([
+      { values: days.map((day) => day.activeMinutes), color: "var(--interactive-accent)" },
+      { values: days.map((day) => day.focusMinutes), color: "var(--text-faint)" }
+    ]);
+    const totalWords = days.reduce((sum, day) => sum + day.wordsAdded, 0);
+    const captured = days.reduce((sum, day) => sum + day.capturedWords, 0);
+    const typed = Math.max(0, totalWords - captured);
+    const sources = this.analyticsCard(root, "\u5199\u4F5C\u6765\u6E90", "\u9010\u6B65\u5199\u5165 / \u5927\u6BB5\u6355\u83B7");
+    const sourceBar = sources.createDiv({ cls: "sd-source-bar" });
+    const typedPart = sourceBar.createDiv({ cls: "sd-source-typed" });
+    typedPart.style.width = `${totalWords ? typed / totalWords * 100 : 0}%`;
+    const capturePart = sourceBar.createDiv({ cls: "sd-source-capture" });
+    capturePart.style.width = `${totalWords ? captured / totalWords * 100 : 0}%`;
+    sources.createDiv({
+      cls: "sd-card-sub",
+      text: `\u9010\u6B65\u5199\u5165 ${typed} \u5B57 \xB7 \u5927\u6BB5\u6355\u83B7 ${captured} \u5B57`
+    });
+    const folderTotals = /* @__PURE__ */ new Map();
+    for (const day of days) {
+      for (const [folder, words] of Object.entries(day.folderWords)) {
+        folderTotals.set(folder, ((_c = folderTotals.get(folder)) != null ? _c : 0) + words);
+      }
+    }
+    const folders = this.analyticsCard(root, "\u6295\u5165\u53BB\u5411", "\u6309\u76EE\u5F55\u7EDF\u8BA1\uFF08\u7B14\u8BB0 \xD7 \u5929\uFF09");
+    const folderList = folders.createDiv({ cls: "sd-analytics-list" });
+    for (const [folder, words] of [...folderTotals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10)) {
+      const row = folderList.createDiv({ cls: "sd-analytics-row" });
+      row.createSpan({ text: folder || "/" });
+      row.createEl("strong", { text: `${words} \u5B57` });
+    }
+    const hourly = Array.from(
+      { length: 24 },
+      (_, hour) => days.reduce((sum, day) => {
+        var _a2;
+        return sum + ((_a2 = day.hourlyWords[hour]) != null ? _a2 : 0);
+      }, 0)
+    );
+    const hours = this.analyticsCard(root, "\u6D3B\u8DC3\u65F6\u6BB5", "\u6309\u5C0F\u65F6\u7684\u65B0\u589E\u8BCD\u6570");
+    hours.innerHTML += this.barChart(hourly, "var(--interactive-accent)");
+    const weekdayHour = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0));
+    for (const key of keys) {
+      const day = this.plugin.store.getDay(key);
+      const weekday = parseKey(key).getDay();
+      for (let hour = 0; hour < 24; hour += 1) {
+        weekdayHour[weekday][hour] += (_d = day.hourlyWords[hour]) != null ? _d : 0;
+      }
+    }
+    const hourMax = Math.max(1, ...weekdayHour.flat());
+    const pattern = hours.createDiv({ cls: "sd-hour-grid" });
+    for (let weekday = 0; weekday < 7; weekday += 1) {
+      for (let hour = 0; hour < 24; hour += 1) {
+        const cell = pattern.createDiv({ cls: "sd-hour-cell" });
+        const ratio = weekdayHour[weekday][hour] / hourMax;
+        cell.setAttribute("style", `background:var(--interactive-accent);opacity:${ratio > 0 ? 0.1 + ratio * 0.9 : 0.05}`);
+        cell.setAttribute("title", `${weekday} \u5468 \xB7 ${hour} \u65F6 \xB7 ${weekdayHour[weekday][hour]} \u5B57`);
+      }
+    }
+    const rhythm = this.analyticsCard(root, "\u6295\u5165\u8282\u5F8B\u77E9\u9635", "\u516D\u9879\u6307\u6807\u6309\u5929\u5BF9\u9F50\uFF0C\u989C\u8272\u4E3A\u533A\u95F4\u5185\u76F8\u5BF9\u9AD8\u4F4E");
+    const grid = rhythm.createDiv({ cls: "sd-rhythm" });
+    const metricKeys = [
+      "contribution",
+      "wordsAdded",
+      "activeMinutes",
+      "focusMinutes",
+      "notesCreated",
+      "tasksCompleted"
+    ];
+    grid.createDiv({ cls: "sd-rhythm-label", text: "\u65E5\u671F" });
+    for (const key of metricKeys) grid.createDiv({ cls: "sd-rhythm-label", text: this.shortMetric(key) });
+    const maxima = metricKeys.map((key) => Math.max(1, ...days.map((day) => Number(day[key]) || 0)));
+    for (const key of keys.slice(-30)) {
+      const day = this.plugin.store.getDay(key);
+      grid.createDiv({ cls: "sd-rhythm-label", text: key.slice(5) });
+      metricKeys.forEach((metric, index) => {
+        const value = Number(day[metric]) || 0;
+        const cell = grid.createDiv({ cls: "sd-rhythm-cell" });
+        cell.setAttribute("style", `background:var(--interactive-accent);opacity:${value > 0 ? 0.1 + 0.9 * (value / maxima[index]) : 0.04}`);
+        cell.setAttribute("title", `${key} \xB7 ${this.shortMetric(metric)} ${value}`);
+      });
     }
   }
+  shortMetric(key) {
+    var _a;
+    const names = {
+      contribution: "\u8D21\u732E",
+      wordsAdded: "\u65B0\u589E\u8BCD",
+      activeMinutes: "\u6D3B\u8DC3",
+      focusMinutes: "\u4E13\u6CE8",
+      notesCreated: "\u65B0\u7B14\u8BB0",
+      tasksCompleted: "\u4EFB\u52A1"
+    };
+    return (_a = names[key]) != null ? _a : key;
+  }
+  moonGlyph(date) {
+    const synodic = 29.530588853 * 864e5;
+    const known = new Date(2e3, 0, 6, 18, 14).getTime();
+    const phase = ((date.getTime() - known) / synodic % 1 + 1) % 1;
+    if (phase < 0.03 || phase > 0.97) return "\u{1F311}";
+    if (phase < 0.22) return "\u{1F312}";
+    if (phase < 0.28) return "\u{1F313}";
+    if (phase < 0.47) return "\u{1F314}";
+    if (phase < 0.53) return "\u{1F315}";
+    if (phase < 0.72) return "\u{1F316}";
+    if (phase < 0.78) return "\u{1F317}";
+    return "\u{1F318}";
+  }
   renderYearly(root) {
-    const card = root.createDiv({ cls: "sd-card sd-text-view" });
-    card.createDiv({ cls: "sd-card-title", text: "\u5E74\u5EA6\u753B\u50CF \xB7 \u6708\u5EA6\u8D21\u732E" });
+    var _a;
     const year = (/* @__PURE__ */ new Date()).getFullYear();
-    const months = card.createDiv({ cls: "sd-year-grid" });
+    const entries = Object.entries(this.plugin.store.data.days).filter(([key]) => key.startsWith(`${year}-`));
+    const wheel = this.analyticsCard(root, "\u5E74\u8F6E", `${year} \u5E74 \xB7 \u6BCF\u5929\u4E00\u7247\u82B1\u74E3\uFF0C\u957F\u5EA6\u662F\u8D21\u732E`);
+    const petals = entries.map(([key, day]) => {
+      const dayOfYear = Math.floor((parseKey(key).getTime() - new Date(year, 0, 0).getTime()) / 864e5);
+      const angle = dayOfYear / 365 * Math.PI * 2 - Math.PI / 2;
+      const length = 10 + Math.min(64, day.contribution * 3);
+      const x1 = 110 + Math.cos(angle) * 36;
+      const y1 = 110 + Math.sin(angle) * 36;
+      const x2 = 110 + Math.cos(angle) * (36 + length);
+      const y2 = 110 + Math.sin(angle) * (36 + length);
+      const color = day.contribution > 0 ? "var(--interactive-accent)" : "var(--background-modifier-border)";
+      return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${color}" stroke-width="2.6" stroke-linecap="round"/>`;
+    }).join("");
+    wheel.innerHTML += `<svg viewBox="0 0 220 220" class="sd-wheel">${petals}</svg>`;
+    const fingerprint = this.analyticsCard(root, "\u77E5\u8BC6\u6307\u7EB9", "\u6BCF\u5929\u4E00\u6839\u8272\u6761");
+    const fingerprintSvg = Array.from({ length: 12 }, (_, month) => {
+      const bars = Array.from({ length: 31 }, (_2, index) => {
+        const key = `${year}-${String(month + 1).padStart(2, "0")}-${String(index + 1).padStart(2, "0")}`;
+        const value = this.plugin.store.getDay(key).contribution;
+        const opacity = value > 0 ? 0.2 + Math.min(0.8, value / 12) : 0.06;
+        return `<rect x="${index * 13}" y="${month * 20}" width="9" height="13" rx="2" fill="var(--interactive-accent)" opacity="${opacity.toFixed(2)}"/>`;
+      }).join("");
+      return `<text x="0" y="${month * 20 + 11}" font-size="9" fill="var(--text-faint)">${month + 1}</text>${bars}`;
+    }).join("");
+    fingerprint.innerHTML += `<svg viewBox="0 0 420 248" class="sd-fingerprint">${fingerprintSvg}</svg>`;
+    const calendar = this.analyticsCard(root, "\u6708\u76F8\u65E5\u5386", "\u6EE1\u6708\u662F\u9AD8\u5CF0\u65E5\uFF0C\u65B0\u6708\u662F\u4F11\u606F\u65E5");
     for (let month = 0; month < 12; month += 1) {
-      let total = 0;
-      for (const [key, day] of Object.entries(this.plugin.store.data.days)) {
-        if (key.startsWith(`${year}-${String(month + 1).padStart(2, "0")}`)) total += day.contribution;
+      const section = calendar.createDiv({ cls: "sd-calendar-month" });
+      section.createDiv({ cls: "sd-calendar-title", text: `${month + 1} \u6708` });
+      const grid = section.createDiv({ cls: "sd-calendar-grid" });
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      for (let day = 1; day <= daysInMonth; day += 1) {
+        const date = new Date(year, month, day);
+        const value = this.plugin.store.getDay(dateKey(date)).contribution;
+        const cell = grid.createDiv({ cls: "sd-calendar-cell" });
+        cell.setAttribute("title", `${dateKey(date)} \xB7 ${value} \u5206`);
+        cell.createDiv({ cls: "sd-calendar-moon", text: this.moonGlyph(date) });
+        cell.createDiv({ cls: "sd-calendar-value", text: value > 0 ? String(value) : "\xB7" });
       }
-      const item = months.createDiv({ cls: "sd-year-month" });
-      item.createDiv({ cls: "sd-year-label", text: `${month + 1}\u6708` });
-      item.createDiv({ cls: "sd-year-value", text: String(total) });
     }
+    const strata = this.analyticsCard(root, "\u77E5\u8BC6\u5730\u5C42", "\u6BCF\u5468\u4E00\u5C42\uFF0C\u6309\u76EE\u5F55\u5206\u8272");
+    const layerGrid = strata.createDiv({ cls: "sd-strata" });
+    for (let week = 0; week < 26; week += 1) {
+      const row = layerGrid.createDiv({ cls: "sd-strata-row" });
+      const start = addDays(new Date(year, 0, 1), week * 7);
+      const folders = /* @__PURE__ */ new Map();
+      for (let offset = 0; offset < 7; offset += 1) {
+        const day = this.plugin.store.getDay(dateKey(addDays(start, offset)));
+        for (const [folder, words] of Object.entries(day.folderWords)) {
+          folders.set(folder, ((_a = folders.get(folder)) != null ? _a : 0) + words);
+        }
+      }
+      row.createDiv({ cls: "sd-strata-label", text: `${start.getMonth() + 1}/${start.getDate()}` });
+      const total = [...folders.values()].reduce((sum, value) => sum + value, 0) || 1;
+      for (const [folder, words] of [...folders.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6)) {
+        const segment = row.createDiv({ cls: "sd-strata-segment" });
+        segment.style.width = `${words / total * 100}%`;
+        segment.setAttribute("title", `${folder} \xB7 ${words} \u5B57`);
+      }
+    }
+    const poster = this.analyticsCard(root, "\u6708\u62A5\u6D77\u62A5", "\u70B9\u5DE6\u53F3\u7BAD\u5934\u5207\u6362\u6708\u4EFD");
+    const posterHead = poster.createDiv({ cls: "sd-poster-head" });
+    const prev = posterHead.createEl("button", { text: "\u2039" });
+    const title = posterHead.createDiv({ cls: "sd-poster-title", text: `${year} \u5E74 ${this.posterMonth + 1} \u6708` });
+    const next = posterHead.createEl("button", { text: "\u203A" });
+    prev.onclick = () => {
+      this.posterMonth = (this.posterMonth + 11) % 12;
+      this.render();
+    };
+    next.onclick = () => {
+      this.posterMonth = (this.posterMonth + 1) % 12;
+      this.render();
+    };
+    const post = poster.createDiv({ cls: "sd-poster" });
+    const monthPrefix = `${year}-${String(this.posterMonth + 1).padStart(2, "0")}`;
+    const monthDays = entries.filter(([key]) => key.startsWith(monthPrefix));
+    const monthTotal = monthDays.reduce((sum, [, day]) => sum + day.contribution, 0);
+    const monthWords = monthDays.reduce((sum, [, day]) => sum + day.wordsAdded, 0);
+    const monthActive = monthDays.filter(([, day]) => day.contribution > 0).length;
+    post.createDiv({ cls: "sd-poster-big", text: String(monthTotal) });
+    post.createDiv({ cls: "sd-poster-sub", text: "\u672C\u6708\u8D21\u732E\u5206" });
+    const stats = post.createDiv({ cls: "sd-poster-stats" });
+    stats.createSpan({ text: `\u6D3B\u8DC3 ${monthActive} \u5929` });
+    stats.createSpan({ text: `\u65B0\u589E ${monthWords} \u5B57` });
+    const posterGrid = post.createDiv({ cls: "sd-poster-grid" });
+    for (let day = 1; day <= new Date(year, this.posterMonth + 1, 0).getDate(); day += 1) {
+      const key = `${monthPrefix}-${String(day).padStart(2, "0")}`;
+      const value = this.plugin.store.getDay(key).contribution;
+      const cell = posterGrid.createDiv({ cls: "sd-poster-cell" });
+      cell.setAttribute("style", `background:var(--interactive-accent);opacity:${value > 0 ? 0.2 + Math.min(0.8, value / 12) : 0.06}`);
+      cell.setAttribute("title", `${key} \xB7 ${value} \u5206`);
+    }
+    const exportButton = poster.createEl("button", { cls: "sd-poster-export", text: "\u5BFC\u51FA PNG" });
+    exportButton.onclick = () => void this.exportPoster(title.textContent, monthTotal, monthWords, monthActive);
+  }
+  async exportPoster(title, total, words, active) {
+    const canvas = document.createElement("canvas");
+    canvas.width = 900;
+    canvas.height = 1200;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.fillStyle = "#f4f7fb";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#2f6fb2";
+    ctx.fillRect(0, 0, canvas.width, 260);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 64px sans-serif";
+    ctx.fillText(title, 60, 130);
+    ctx.fillStyle = "#20344d";
+    ctx.font = "bold 120px sans-serif";
+    ctx.fillText(String(total), 60, 470);
+    ctx.font = "36px sans-serif";
+    ctx.fillText("\u672C\u6708\u8D21\u732E\u5206", 60, 530);
+    ctx.font = "32px sans-serif";
+    ctx.fillText(`\u6D3B\u8DC3 ${active} \u5929 \xB7 \u65B0\u589E ${words} \u5B57`, 60, 610);
+    const link = document.createElement("a");
+    link.download = `sediment-${title.replace(/\s/g, "")}.png`;
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+  }
+  bannerSvg() {
+    const style = this.plugin.store.settings.artStyle;
+    const now = /* @__PURE__ */ new Date();
+    const hour = now.getHours() + now.getMinutes() / 60;
+    const daylight = hour >= 6 && hour < 18;
+    const x = 180 + hour / 24 * 1240;
+    const y = Math.max(34, 60 - Math.sin((hour - 6) / 12 * Math.PI) * 34);
+    const celestial = daylight ? `<circle cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" r="34" fill="#ffe08a"/><circle cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" r="56" fill="#fff3c4" opacity="0.18"/>` : `<circle cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" r="30" fill="#f2f0dc" opacity="0.9"/><text x="${x.toFixed(0)}" y="${(y + 10).toFixed(0)}" font-size="30" text-anchor="middle">${this.moonGlyph(now)}</text>`;
+    if (style === "ink") {
+      return `<svg viewBox="0 0 1600 300" preserveAspectRatio="xMidYMid slice" class="sd-banner-svg">
+<rect width="1600" height="300" fill="#e9e7e1"/>
+<path d="M0 150 q300 -90 560 10 q260 -120 520 -20 q260 -70 520 30 L1600 300 L0 300 Z" fill="#9aa0a3" opacity="0.5"/>
+<path d="M0 210 q240 -70 480 10 q300 -90 560 -10 q260 -50 560 20 L1600 300 L0 300 Z" fill="#5f676c" opacity="0.6"/>
+<circle cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" r="38" fill="#f7f5ee" stroke="#8b9094" stroke-width="2"/>
+<rect x="1460" y="40" width="62" height="62" fill="#b6473f" opacity="0.85"/>
+<text x="1491" y="82" font-size="30" text-anchor="middle" fill="#fff">\u6C89</text>
+</svg>`;
+    }
+    if (style === "city") {
+      const buildings = Array.from({ length: 34 }, (_, index) => {
+        const width = 28 + index % 4 * 6;
+        const height = 70 + index * 37 % 110;
+        const bx = index * 48;
+        const windows = Array.from(
+          { length: 4 },
+          (_2, row) => Array.from(
+            { length: 3 },
+            (_3, col) => `<rect x="${bx + 7 + col * 8}" y="${300 - height + 12 + row * 16}" width="4" height="6" fill="${(index + row + col) % 3 === 0 ? "#ffd987" : "#dbe6f0"}" opacity="0.7"/>`
+          ).join("")
+        ).join("");
+        return `<rect x="${bx}" y="${300 - height}" width="${width}" height="${height}" fill="${daylight ? "#6d87a7" : "#2a3b57"}"/>${windows}`;
+      }).join("");
+      return `<svg viewBox="0 0 1600 300" preserveAspectRatio="xMidYMid slice" class="sd-banner-svg">
+<rect width="1600" height="300" fill="${daylight ? "#d8b79b" : "#1b2740"}"/>
+${celestial}
+${buildings}
+<rect y="282" width="1600" height="18" fill="${daylight ? "#93adc5" : "#101a2e"}"/>
+</svg>`;
+    }
+    return `<svg viewBox="0 0 1600 300" preserveAspectRatio="xMidYMid slice" class="sd-banner-svg">
+<rect width="1600" height="300" fill="url(#sd-sky)"/>
+<defs>
+  <linearGradient id="sd-sky" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="${daylight ? "#2f6fb2" : "#15294a"}"/>
+    <stop offset="60%" stop-color="${daylight ? "#8fc2e8" : "#3d5b86"}"/>
+    <stop offset="100%" stop-color="${daylight ? "#d8ecfa" : "#7793b6"}"/>
+  </linearGradient>
+</defs>
+${celestial}
+<path d="M120 70 q60 -26 130 0 q40 -18 90 4" stroke="#ffffff" stroke-width="12" fill="none" opacity="0.16" stroke-linecap="round"/>
+<path d="M0 232 L120 178 L210 210 L330 138 L450 208 L560 166 L690 224 L820 180 L960 228 L1090 176 L1220 220 L1360 168 L1500 214 L1600 186 L1600 260 L0 260 Z" fill="#5b8dbd" opacity="0.45"/>
+<path d="M0 252 L160 214 L300 244 L430 200 L580 246 L720 212 L880 250 L1030 208 L1190 246 L1340 206 L1500 244 L1600 220 L1600 280 L0 280 Z" fill="#3f6f9f" opacity="0.5"/>
+<rect x="138" y="150" width="20" height="86" fill="#f5f5f2"/>
+<path d="M138 166 h20 M138 196 h20" stroke="#d9544d" stroke-width="8"/>
+<path d="M136 150 h24 l-6 -14 h-12 Z" fill="#d9544d"/>
+<rect x="143" y="132" width="10" height="8" fill="#ffe9a8"/>
+<rect y="258" width="1600" height="42" fill="${daylight ? "#a9cbe4" : "#2b3f5e"}" opacity="0.75"/>
+</svg>`;
+  }
+  updateBanner() {
+    if (this.bannerEl) this.bannerEl.innerHTML = this.bannerSvg();
+  }
+  cycleArtStyle() {
+    const styles = ["lake", "ink", "city"];
+    const current = this.plugin.store.settings.artStyle;
+    this.plugin.store.settings.artStyle = styles[(styles.indexOf(current) + 1) % styles.length];
+    void this.plugin.saveSettings();
+    this.render();
   }
   metricLabel() {
     var _a, _b;
@@ -1607,6 +1930,17 @@ var SedimentPlugin = class extends import_obsidian9.Plugin {
       id: "weekly-review",
       name: "\u751F\u6210\u672C\u5468\u5DE5\u4F5C\u590D\u76D8",
       callback: () => void this.generateReview()
+    });
+    this.addCommand({
+      id: "cycle-art-style",
+      name: "\u5207\u6362\u770B\u677F\u9876\u90E8\u548C\u5E95\u90E8\u7684\u753B\u98CE",
+      callback: () => {
+        const styles = ["lake", "ink", "city"];
+        const current = this.store.settings.artStyle;
+        this.store.settings.artStyle = styles[(styles.indexOf(current) + 1) % styles.length];
+        void this.saveSettings();
+        this.refreshViews();
+      }
     });
     this.addSettingTab(new PulseSettingTab(this.app, this));
   }

@@ -696,3 +696,196 @@
     padding: 14px 12px;
   }
 }
+
+/* 数据分析 / 年度画像 */
+.sd-chart {
+  display: block;
+  width: 100%;
+  height: 130px;
+  margin-top: 10px;
+  border-bottom: 1px dashed var(--background-modifier-border);
+}
+
+.sd-source-bar {
+  display: flex;
+  width: 100%;
+  height: 18px;
+  margin: 10px 0 6px;
+  overflow: hidden;
+  border-radius: 9px;
+  background: var(--background-modifier-border);
+}
+
+.sd-source-typed {
+  background: var(--interactive-accent);
+}
+
+.sd-source-capture {
+  background: var(--text-muted);
+}
+
+.sd-hour-grid {
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  gap: 2px;
+  margin-top: 10px;
+}
+
+.sd-hour-cell {
+  height: 14px;
+  border-radius: 2px;
+}
+
+.sd-rhythm {
+  display: grid;
+  grid-template-columns: 58px repeat(6, minmax(0, 1fr));
+  gap: 2px;
+  margin-top: 10px;
+  font-size: 10px;
+}
+
+.sd-rhythm-label {
+  padding: 3px 2px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.sd-rhythm-cell {
+  height: 15px;
+  border-radius: 2px;
+}
+
+.sd-wheel {
+  display: block;
+  width: 220px;
+  height: 220px;
+  margin: 0 auto;
+}
+
+.sd-fingerprint {
+  display: block;
+  width: 100%;
+  height: 250px;
+}
+
+.sd-calendar-month {
+  margin-bottom: 12px;
+}
+
+.sd-calendar-title {
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.sd-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(31, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.sd-calendar-cell {
+  padding: 3px 1px;
+  text-align: center;
+  background: var(--background-secondary);
+  border-radius: 4px;
+}
+
+.sd-calendar-moon {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.sd-calendar-value {
+  font-size: 9px;
+  color: var(--text-faint);
+}
+
+.sd-strata-row {
+  display: flex;
+  height: 12px;
+  margin-bottom: 3px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--background-secondary);
+}
+
+.sd-strata-label {
+  width: 44px;
+  flex: none;
+  font-size: 9px;
+  line-height: 12px;
+  color: var(--text-faint);
+}
+
+.sd-strata-segment {
+  height: 100%;
+  background: var(--interactive-accent);
+  opacity: 0.7;
+}
+
+.sd-poster-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sd-poster-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sd-poster {
+  margin-top: 12px;
+  padding: 18px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--interactive-accent), var(--background-secondary));
+}
+
+.sd-poster-big {
+  font-size: 46px;
+  font-weight: 700;
+  color: var(--text-on-accent);
+}
+
+.sd-poster-sub,
+.sd-poster-stats {
+  font-size: 12px;
+  color: var(--text-on-accent);
+}
+
+.sd-poster-stats {
+  display: flex;
+  gap: 18px;
+  margin-top: 6px;
+}
+
+.sd-poster-grid {
+  display: grid;
+  grid-template-columns: repeat(31, minmax(0, 1fr));
+  gap: 2px;
+  margin-top: 14px;
+}
+
+.sd-poster-cell {
+  height: 12px;
+  border-radius: 2px;
+}
+
+.sd-poster-export {
+  margin-top: 12px;
+}
+
+.sd-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 4px 0;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.sd-footer button {
+  font-size: 11px;
+}

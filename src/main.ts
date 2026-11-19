@@ -76,6 +76,17 @@ export class SedimentPlugin extends Plugin {
       name: "生成本周工作复盘",
       callback: () => void this.generateReview(),
     });
+    this.addCommand({
+      id: "cycle-art-style",
+      name: "切换看板顶部和底部的画风",
+      callback: () => {
+        const styles = ["lake", "ink", "city"] as const;
+        const current = this.store.settings.artStyle;
+        this.store.settings.artStyle = styles[(styles.indexOf(current) + 1) % styles.length];
+        void this.saveSettings();
+        this.refreshViews();
+      },
+    });
 
     this.addSettingTab(new PulseSettingTab(this.app, this));
   }
