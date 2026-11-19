@@ -1,8 +1,9 @@
 name: Build release assets
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "v*"
 
 permissions:
   contents: write
@@ -25,12 +26,14 @@ jobs:
       - name: Build plugin
         run: npm run build
 
-      - name: Upload release assets
+      - name: Generate release notes from CHANGELOG.md
+        run: npm run changelog -- ${{ github.ref_name }} > RELEASE_NOTES.md
+
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
+          body_path: RELEASE_NOTES.md
           files: |
             main.js
             manifest.json
             styles.css
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

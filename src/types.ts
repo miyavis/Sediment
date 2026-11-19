@@ -78,6 +78,8 @@ export interface PulseSettings {
   knowledgeFolder: string;
   /** 知识库分类（逗号分隔），沉淀时按分类建子目录 */
   knowledgeCategories: string;
+  /** 上次提示过的版本号，用于升级时展示增量更新记录 */
+  lastSeenVersion: string;
   /** 看板画风：像素湖面 / 水墨山水 / 像素城市 */
   artStyle: "lake" | "ink" | "city";
   /** 每天写作目标字数，0 表示关闭 */
@@ -124,6 +126,7 @@ export const DEFAULT_SETTINGS: PulseSettings = {
   workLogFolder: "agent-logs",
   knowledgeFolder: "knowledge",
   knowledgeCategories: "技术,项目,方法,灵感,复盘",
+  lastSeenVersion: "",
   artStyle: "lake",
   dailyWordGoal: 1000,
   agentServerEnabled: false,

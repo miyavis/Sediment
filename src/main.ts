@@ -7,6 +7,7 @@ import { PomodoroManager } from "./features/pomodoro";
 import { buildWeeklyReview } from "./features/review";
 import { QuickMemoModal } from "./ui/quick-memo-modal";
 import { PulseSettingTab } from "./ui/settings-tab";
+import { ChangelogModal } from "./ui/changelog-modal";
 import { normalizeFolder, ensureFolder } from "./utils/vault";
 import { dateKey, startOfWeek } from "./utils/dates";
 import { DashboardView, DASHBOARD_VIEW_TYPE } from "./views/dashboard-view";
@@ -24,6 +25,11 @@ export class SedimentPlugin extends Plugin {
   async onload(): Promise<void> {
     this.store = new Store(this);
     await this.store.load();
+    if (this.store.settings.lastSeenVersion !== this.manifest.version) {
+      this.store.settings.lastSeenVersion = this.manifest.version;
+      await this.store.save();
+      new Notice(`Sediment 已更新到 v${this.manifest.version}，可在「查看更新记录」中了解变化`);
+    }
     if (!this.store.settings.agentServerToken) {
       this.store.settings.agentServerToken = generateToken();
       await this.store.save();
@@ -102,6 +108,11 @@ export class SedimentPlugin extends Plugin {
       id: "pomodoro-skip",
       name: "跳过当前番茄 / 休息",
       callback: () => this.pomodoro.skip(),
+    });
+    this.addCommand({
+      id: "show-changelog",
+      name: "查看更新记录",
+      callback: () => new ChangelogModal(this.app).open(),
     });
     this.addCommand({
       id: "cycle-art-style",

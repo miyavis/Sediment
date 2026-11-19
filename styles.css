@@ -1003,6 +1003,32 @@
   word-break: break-all;
 }
 
+.sd-changelog-modal {
+  max-width: 820px;
+}
+
+.sd-changelog-body {
+  max-height: 70vh;
+  overflow: auto;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.sd-changelog-body h2 {
+  margin-top: 18px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.sd-changelog-body h3 {
+  margin: 10px 0 4px;
+  color: var(--interactive-accent);
+}
+
+.sd-changelog-body li {
+  margin: 3px 0;
+}
+
 .sd-review-preview {
   font-size: 13px;
   line-height: 1.7;

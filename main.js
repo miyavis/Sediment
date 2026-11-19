@@ -28,7 +28,7 @@ __export(main_exports, {
   default: () => main_default
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian10 = require("obsidian");
+var import_obsidian11 = require("obsidian");
 
 // src/agent/api.ts
 var import_obsidian = require("obsidian");
@@ -591,7 +591,7 @@ var AgentServer = class {
       };
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
-          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.3.3" });
+          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.3.4" });
           return;
         case "GET /notes":
           this.json(response, 200, api.listNotes(str(query.get("folder")), num(query.get("limit"), 50)));
@@ -709,6 +709,7 @@ var DEFAULT_SETTINGS = {
   workLogFolder: "agent-logs",
   knowledgeFolder: "knowledge",
   knowledgeCategories: "\u6280\u672F,\u9879\u76EE,\u65B9\u6CD5,\u7075\u611F,\u590D\u76D8",
+  lastSeenVersion: "",
   artStyle: "lake",
   dailyWordGoal: 1e3,
   agentServerEnabled: false,
@@ -1142,8 +1143,34 @@ var PulseSettingTab = class extends import_obsidian6.PluginSettingTab {
   }
 };
 
-// src/views/dashboard-view.ts
+// src/ui/changelog-modal.ts
 var import_obsidian7 = require("obsidian");
+
+// src/changelog.ts
+var CHANGELOG = "# \u66F4\u65B0\u8BB0\u5F55\n\n\u672C\u6587\u4EF6\u8BB0\u5F55\u6BCF\u4E2A\u7248\u672C\u7684\u589E\u91CF\u53D8\u5316\uFF0C\u683C\u5F0F\u9075\u5FAA [Keep a Changelog](https://keepachangelog.com/)\u3002\u6784\u5EFA\u65F6\u7531 `scripts/sync-changelog.mjs` \u540C\u6B65\u5230\u63D2\u4EF6\u5185\uFF0C\u53EF\u5728\u770B\u677F\u9875\u811A\u7684\u300C\u66F4\u65B0\u8BB0\u5F55\u300D\u91CC\u67E5\u770B\u3002\n\n## [0.3.4] - 2026-11-19\n\n### \u65B0\u589E\n- \u589E\u91CF\u53D8\u66F4\u8BB0\u5F55\uFF1A\u65B0\u589E `CHANGELOG.md`\uFF0C\u6309\u7248\u672C\u5206\u7EC4\u8BB0\u5F55\u65B0\u589E / \u53D8\u66F4 / \u4FEE\u590D\n- \u6784\u5EFA\u65F6\u81EA\u52A8\u540C\u6B65\u5230\u63D2\u4EF6\u5185\uFF0C\u770B\u677F\u9875\u811A\u300C\u66F4\u65B0\u8BB0\u5F55\u300D\u548C\u547D\u4EE4\u300C\u67E5\u770B\u66F4\u65B0\u8BB0\u5F55\u300D\u53EF\u968F\u65F6\u67E5\u770B\n- \u5347\u7EA7\u540E\u81EA\u52A8\u63D0\u793A\u65B0\u7248\u672C\u53F7\n- GitHub Release \u6B63\u6587\u4ECE\u5BF9\u5E94\u7248\u672C\u7684 CHANGELOG \u7AE0\u8282\u81EA\u52A8\u751F\u6210\uFF0C\u53D1\u5E03\u9875\u4E0E\u63D2\u4EF6\u5185\u8BF4\u660E\u4E00\u81F4\n\n## [0.3.3] - 2026-11-19\n\n### \u4FEE\u590D\n- Agent \u901A\u8FC7 MCP \u5199\u5165\u7B14\u8BB0\u540E\uFF0C\u770B\u677F\u4E0E\u901F\u8BB0\u9762\u677F 400ms \u5185\u81EA\u52A8\u5237\u65B0\uFF0C\u4E14\u4E0D\u6E05\u7A7A\u6B63\u5728\u8F93\u5165\u7684\u6587\u5B57\n- \u76D1\u542C create / modify / delete / rename \u4E8B\u4EF6\uFF0C\u8986\u76D6\u77E5\u8BC6\u5E93\u3001\u5DE5\u4F5C\u65E5\u5FD7\u4E0E\u65E5\u8BB0\u76EE\u5F55\n\n## [0.3.2] - 2026-11-19\n\n### \u4FEE\u590D\n- \u901F\u8BB0\u9762\u677F\u300C\u5168\u90E8\u300D\u9875\u7B7E\u4E0B\u7684\u6C89\u6DC0\u5217\u8868\u6539\u4E3A\u663E\u793A\u5168\u90E8\u7B14\u8BB0\uFF0C\u4E0D\u518D\u53EA\u663E\u793A 5 \u6761\n\n## [0.3.1] - 2026-11-19\n\n### \u65B0\u589E\n- \u901F\u8BB0\u9762\u677F\u300C\u5168\u90E8\u300D\u9875\u7B7E\u4E0B\u65B9\u76F4\u63A5\u663E\u793A\u300C\u77E5\u8BC6\u6C89\u6DC0\u300D\u5C0F\u533A\u5757\uFF0C\u4E0D\u7528\u5207\u9875\u7B7E\u5373\u53EF\u770B\u5230\uFF0C\u5E26\u300C\u5168\u90E8\u300D\u8DF3\u8F6C\u6309\u94AE\n\n## [0.3.0] - 2026-11-19\n\n### \u65B0\u589E\n- \u6C89\u6DC0\u9875\u7B7E\u6309\u5206\u7C7B\u5206\u7EC4\u663E\u793A\uFF08\u6280\u672F / \u65B9\u6CD5 / \u5DE5\u4F5C\u65E5\u5FD7\uFF09\n- \u667A\u80FD\u5206\u7C7B\uFF1AAgent \u4E0D\u4F20 category \u65F6\u6839\u636E\u6807\u9898\u3001\u6807\u7B7E\u3001\u6B63\u6587\u5173\u952E\u8BCD\u81EA\u52A8\u63A8\u65AD\uFF1B\u4E5F\u53EF\u4F20\u4EFB\u610F\u81EA\u5B9A\u4E49\u5206\u7C7B\u540D\n- \u65B0\u589E MCP \u5DE5\u5177 `list_categories`\n\n## [0.2.9] - 2026-11-19\n\n### \u65B0\u589E\n- \u77E5\u8BC6\u5E93\u5206\u7C7B\uFF1A\u9ED8\u8BA4\u300C\u6280\u672F / \u9879\u76EE / \u65B9\u6CD5 / \u7075\u611F / \u590D\u76D8\u300D\uFF0C\u6C89\u6DC0\u65F6\u6309\u5206\u7C7B\u5EFA\u5B50\u76EE\u5F55\n- \u77E5\u8BC6\u7B14\u8BB0\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\u7684\u7248\u5F0F\u7F8E\u5316\uFF1Afrontmatter\u3001\u901F\u89C8 Callout\u3001\u6B63\u6587\u3001\u5173\u8054\u6765\u6E90\u3001\u6C89\u6DC0\u4FE1\u606F\n- \u5DF2\u6709 7 \u7BC7\u7B14\u8BB0\u6309\u5206\u7C7B\u91CD\u65B0\u6392\u7248\u5F52\u4F4D\n\n## [0.2.8] - 2026-11-19\n\n### \u53D8\u66F4\n- \u300C\u77E5\u8BC6\u6C89\u6DC0\u300D\u4ECE\u770B\u677F\u5E95\u90E8\u79FB\u5230\u901F\u8BB0\u9762\u677F\uFF0C\u4F5C\u4E3A\u7B2C\u4E94\u4E2A\u9875\u7B7E\n\n## [0.2.7] - 2026-11-19\n\n### \u65B0\u589E\n- \u770B\u677F\u5E95\u90E8\u5217\u51FA Agent \u5199\u5165\u7684\u77E5\u8BC6\u7B14\u8BB0\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\uFF0C\u53EF\u70B9\u51FB\u6253\u5F00\n\n## [0.2.6] - 2026-11-19\n\n### \u4FEE\u590D\n- Obsidian \u91CD\u542F\u65F6\u4E3A\u5DF2\u6709\u6587\u4EF6\u8865\u53D1 create \u4E8B\u4EF6\uFF0C\u65E7\u7248\u4F1A\u8BEF\u7B97\u6210\u65B0\u5EFA\u7B14\u8BB0\uFF0822 \u7BC7 / 5512 \u5B57 / 121 \u5206\uFF09\n\n## [0.2.5] - 2026-11-19\n\n### \u4FEE\u590D\n- MCP \u6865\u63A5\u7684 GET \u5DE5\u5177\u53C2\u6570\u672A\u62FC\u8FDB URL\uFF0C\u5BFC\u81F4\u641C\u7D22\u65E0\u7ED3\u679C\u3001\u8BFB\u7B14\u8BB0\u62A5\u300C\u8DEF\u5F84\u4E0D\u80FD\u4E3A\u7A7A\u300D\n\n## [0.2.4] - 2026-11-19\n\n### \u4FEE\u590D\n- MCP \u6865\u63A5\u5728 Node 16 \u4E0B\u62A5 `fetch is not defined`\uFF0C\u6539\u7528 node:http\n\n## [0.2.3] - 2026-11-19\n\n### \u65B0\u589E\n- \u5185\u7F6E\u756A\u8304\u949F\uFF0825/5/15 \u5206\u949F\uFF09\uFF0C\u72B6\u6001\u680F\u5012\u8BA1\u65F6\uFF0C\u5B8C\u6210\u8BB0\u5165 focusMinutes\uFF0CAgent \u4E5F\u53EF\u901A\u8FC7 MCP \u63A7\u5236\n- \u65B0\u589E `get_pomodoro` / `control_pomodoro`\n\n### \u4FEE\u590D\n- \u5730\u5E73\u7EBF\u91CD\u505A\u4E3A\u5C71\u810A + \u6E56\u9762\u5012\u5F71 + \u65E5\u6708 + \u5B63\u8282\u6811 + \u4E13\u6CE8\u65F6\u5E06\u8239\n- \u9875\u811A\u7248\u672C\u53F7\u6539\u4E3A\u52A8\u6001\u8BFB\u53D6 manifest\n\n## [0.2.2] - 2026-11-19\n\n### \u4FEE\u590D\n- \u77E5\u8BC6\u590D\u76D8\u4ECE\u539F\u59CB Markdown \u6539\u4E3A\u6E32\u67D3\u9884\u89C8\uFF0C\u5E76\u52A0\u590D\u5236\u6309\u94AE\n\n## [0.2.1] - 2026-11-19\n\n### \u65B0\u589E\n- \u901F\u8BB0\uFF1A\u7C98\u8D34\u56FE\u7247\u81EA\u52A8\u5165\u5E93\u3001\u6BCF\u65E5\u56DE\u987E\uFF08\u53BB\u5E74\u4ECA\u65E5 / \u4E0A\u6708\u4ECA\u65E5\uFF09\u3001\u672C\u5730\u76F8\u4F3C\u5EA6\u6F2B\u6B65\u3001\u6807\u7B7E\u6811\n\n## [0.2.0] - 2026-11-19\n\n### \u65B0\u589E\n- \u6570\u636E\u5206\u6790\u9875\uFF1A\u5199\u4F5C\u67F1\u72B6\u56FE\u3001\u5199\u4F5C\u53D8\u5316\u6298\u7EBF\u3001\u65F6\u95F4\u6295\u5165\u3001\u5199\u4F5C\u6765\u6E90\u3001\u6295\u5165\u53BB\u5411\u3001\u6D3B\u8DC3\u65F6\u6BB5\u3001\u6295\u5165\u8282\u5F8B\u77E9\u9635\n- \u5E74\u5EA6\u753B\u50CF\uFF1A\u5E74\u8F6E\u3001\u77E5\u8BC6\u6307\u7EB9\u3001\u6708\u76F8\u65E5\u5386\u3001\u77E5\u8BC6\u5730\u5C42\u3001\u6708\u62A5\u6D77\u62A5 PNG \u5BFC\u51FA\n- \u4E09\u79CD\u753B\u98CE\uFF08\u50CF\u7D20\u6E56\u9762 / \u6C34\u58A8\u5C71\u6C34 / \u50CF\u7D20\u57CE\u5E02\uFF09\u4E0E\u968F\u65F6\u6BB5\u79FB\u52A8\u7684\u65E5\u6708\u6A2A\u5E45\n\n## [0.1.3] - 2026-11-19\n\n### \u4FEE\u590D\n- \u65E7\u7248\u6B8B\u7559\u5728\u4FA7\u680F\u7684\u770B\u677F\u6807\u7B7E\u88AB\u590D\u7528\u5BFC\u81F4\u4E00\u76F4\u7A84\u5C4F\uFF0C\u6539\u4E3A\u5F3A\u5236\u5728\u4E3B\u533A\u65B0\u5F00\u6807\u7B7E\u9875\n\n## [0.1.2] - 2026-11-19\n\n### \u65B0\u589E\n- \u5B8C\u6574\u4E3B\u89C6\u56FE\uFF1A\u901A\u680F\u6A2A\u5E45\u3001\u4ECA\u5929\u5361\u7247\u3001\u6982\u89C8\u5361 + SVG \u8D8B\u52BF\u300153 \u5468\u70ED\u529B\u56FE\u3001\u5730\u5E73\u7EBF\u3001\u56DB\u4E2A\u9875\u7B7E\n\n## [0.1.1] - 2026-11-19\n\n### \u4FEE\u590D\n- \u770B\u677F\u6539\u5230\u4E3B\u7F16\u8F91\u533A\u6253\u5F00\uFF0C\u901F\u8BB0\u7559\u5728\u53F3\u4FA7\u680F\n\n## [0.1.0] - 2026-11-19\n\n### \u65B0\u589E\n- \u9996\u4E2A\u7248\u672C\uFF1A\u70ED\u529B\u56FE\u770B\u677F\u3001\u5199\u4F5C\u7EDF\u8BA1\u3001flomo \u5F0F\u901F\u8BB0\u3001\u5468\u590D\u76D8\n- \u672C\u5730 HTTP API + MCP \u6865\u63A5\uFF0CAgent \u53EF\u8BFB\u5199\u77E5\u8BC6\u5E93\n- \u5DE5\u4F5C\u65E5\u5FD7\u4E0E\u77E5\u8BC6\u7B14\u8BB0\u6C89\u6DC0\uFF0CAgent \u4EA7\u51FA\u8BA1\u5165\u7EDF\u8BA1\n";
+
+// src/ui/changelog-modal.ts
+var ChangelogModal = class extends import_obsidian7.Modal {
+  constructor(app) {
+    super(app);
+    this.component = new import_obsidian7.Component();
+  }
+  onOpen() {
+    this.component.load();
+    const { contentEl } = this;
+    contentEl.addClass("sd-changelog-modal");
+    contentEl.createEl("h2", { text: "Sediment \u66F4\u65B0\u8BB0\u5F55" });
+    const body = contentEl.createDiv({ cls: "sd-changelog-body" });
+    void import_obsidian7.MarkdownRenderer.render(this.app, CHANGELOG, body, "", this.component);
+  }
+  onClose() {
+    this.component.unload();
+    this.contentEl.empty();
+  }
+};
+
+// src/views/dashboard-view.ts
+var import_obsidian8 = require("obsidian");
 var DASHBOARD_VIEW_TYPE = "sediment-dashboard";
 var RANGE_OPTIONS = [
   ["7d", "\u8FD1 7 \u5929"],
@@ -1159,7 +1186,7 @@ var TABS = [
   ["yearly", "\u5E74\u5EA6\u753B\u50CF"]
 ];
 var WEEKDAYS = ["\u65E5", "\u4E00", "\u4E8C", "\u4E09", "\u56DB", "\u4E94", "\u516D"];
-var DashboardView = class extends import_obsidian7.ItemView {
+var DashboardView = class extends import_obsidian8.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
@@ -1210,6 +1237,8 @@ var DashboardView = class extends import_obsidian7.ItemView {
       };
       const styleButton = footer.createEl("button", { text: "\u6362\u753B\u98CE" });
       styleButton.onclick = () => this.cycleArtStyle();
+      const changelog = footer.createEl("button", { text: "\u66F4\u65B0\u8BB0\u5F55" });
+      changelog.onclick = () => new ChangelogModal(this.plugin.app).open();
     } else if (this.tab === "review") {
       this.renderReview(body);
     } else if (this.tab === "analytics") {
@@ -1501,10 +1530,10 @@ ${sailing}
     const markdown = buildWeeklyReview(this.plugin.store, /* @__PURE__ */ new Date());
     const copy = head.createEl("button", { text: "\u590D\u5236 Markdown" });
     copy.onclick = () => {
-      void navigator.clipboard.writeText(markdown).then(() => new import_obsidian7.Notice("\u5468\u590D\u76D8\u5DF2\u590D\u5236"));
+      void navigator.clipboard.writeText(markdown).then(() => new import_obsidian8.Notice("\u5468\u590D\u76D8\u5DF2\u590D\u5236"));
     };
     const preview = card.createDiv({ cls: "sd-review-preview" });
-    void import_obsidian7.MarkdownRenderer.render(this.plugin.app, markdown, preview, "", this);
+    void import_obsidian8.MarkdownRenderer.render(this.plugin.app, markdown, preview, "", this);
   }
   analyticsCard(root, title, subtitle = "") {
     const card = root.createDiv({ cls: "sd-card" });
@@ -1875,9 +1904,9 @@ function startOfWeekFor(date, weekStart) {
 }
 
 // src/views/memo-view.ts
-var import_obsidian8 = require("obsidian");
+var import_obsidian9 = require("obsidian");
 var MEMO_VIEW_TYPE = "sediment-memo";
-var MemoView = class extends import_obsidian8.ItemView {
+var MemoView = class extends import_obsidian9.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
@@ -2005,7 +2034,7 @@ var MemoView = class extends import_obsidian8.ItemView {
       area.value += ` ![[${name}]]`;
       area.focus();
     }
-    new import_obsidian8.Notice("\u56FE\u7247\u5DF2\u63D2\u5165\u901F\u8BB0");
+    new import_obsidian9.Notice("\u56FE\u7247\u5DF2\u63D2\u5165\u901F\u8BB0");
   }
   renderList(root) {
     var _a;
@@ -2198,7 +2227,7 @@ var MemoView = class extends import_obsidian8.ItemView {
 };
 
 // src/tracking/tracker.ts
-var import_obsidian9 = require("obsidian");
+var import_obsidian10 = require("obsidian");
 function countWords(text) {
   var _a, _b;
   const cjk = ((_a = text.match(/[\u3400-\u9fff]/g)) != null ? _a : []).length;
@@ -2226,12 +2255,12 @@ var Tracker = class {
     }
     this.plugin.registerEvent(
       vault.on("create", (file) => {
-        if (file instanceof import_obsidian9.TFile) void this.onCreate(file);
+        if (file instanceof import_obsidian10.TFile) void this.onCreate(file);
       })
     );
     this.plugin.registerEvent(
       vault.on("modify", (file) => {
-        if (file instanceof import_obsidian9.TFile) void this.onModify(file);
+        if (file instanceof import_obsidian10.TFile) void this.onModify(file);
       })
     );
     this.plugin.registerEvent(
@@ -2331,7 +2360,7 @@ var Tracker = class {
 };
 
 // src/main.ts
-var SedimentPlugin = class extends import_obsidian10.Plugin {
+var SedimentPlugin = class extends import_obsidian11.Plugin {
   constructor() {
     super(...arguments);
     this.serverRestartTimer = null;
@@ -2340,6 +2369,11 @@ var SedimentPlugin = class extends import_obsidian10.Plugin {
   async onload() {
     this.store = new Store(this);
     await this.store.load();
+    if (this.store.settings.lastSeenVersion !== this.manifest.version) {
+      this.store.settings.lastSeenVersion = this.manifest.version;
+      await this.store.save();
+      new import_obsidian11.Notice(`Sediment \u5DF2\u66F4\u65B0\u5230 v${this.manifest.version}\uFF0C\u53EF\u5728\u300C\u67E5\u770B\u66F4\u65B0\u8BB0\u5F55\u300D\u4E2D\u4E86\u89E3\u53D8\u5316`);
+    }
     if (!this.store.settings.agentServerToken) {
       this.store.settings.agentServerToken = generateToken();
       await this.store.save();
@@ -2408,6 +2442,11 @@ var SedimentPlugin = class extends import_obsidian10.Plugin {
       id: "pomodoro-skip",
       name: "\u8DF3\u8FC7\u5F53\u524D\u756A\u8304 / \u4F11\u606F",
       callback: () => this.pomodoro.skip()
+    });
+    this.addCommand({
+      id: "show-changelog",
+      name: "\u67E5\u770B\u66F4\u65B0\u8BB0\u5F55",
+      callback: () => new ChangelogModal(this.app).open()
     });
     this.addCommand({
       id: "cycle-art-style",
@@ -2499,7 +2538,7 @@ var SedimentPlugin = class extends import_obsidian10.Plugin {
     var _a;
     let parent = leaf.parent;
     while (parent) {
-      if (parent instanceof import_obsidian10.WorkspaceSidedock) return true;
+      if (parent instanceof import_obsidian11.WorkspaceSidedock) return true;
       parent = (_a = parent.parent) != null ? _a : null;
     }
     return false;
@@ -2513,7 +2552,7 @@ var SedimentPlugin = class extends import_obsidian10.Plugin {
     const path = folder ? `${folder}/${name}` : name;
     const existing = this.app.vault.getAbstractFileByPath(path);
     let file;
-    if (existing instanceof import_obsidian10.TFile) {
+    if (existing instanceof import_obsidian11.TFile) {
       const previous = await this.app.vault.read(existing);
       await this.app.vault.modify(existing, `${previous.trimEnd()}
 
@@ -2525,7 +2564,7 @@ ${markdown}`);
       file = await this.app.vault.create(path, markdown);
     }
     await this.app.workspace.getLeaf(true).openFile(file);
-    new import_obsidian10.Notice("\u5468\u590D\u76D8\u5DF2\u751F\u6210\u5E76\u6253\u5F00");
+    new import_obsidian11.Notice("\u5468\u590D\u76D8\u5DF2\u751F\u6210\u5E76\u6253\u5F00");
   }
 };
 var main_default = SedimentPlugin;

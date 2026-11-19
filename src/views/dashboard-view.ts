@@ -1,4 +1,5 @@
 import { ItemView, MarkdownRenderer, Notice, type WorkspaceLeaf } from "obsidian";
+import { ChangelogModal } from "../ui/changelog-modal";
 import type { SedimentPlugin } from "../main";
 import { buildWeeklyReview } from "../features/review";
 import { METRICS, type MetricKey } from "../types";
@@ -84,6 +85,8 @@ export class DashboardView extends ItemView {
       };
       const styleButton = footer.createEl("button", { text: "换画风" });
       styleButton.onclick = () => this.cycleArtStyle();
+      const changelog = footer.createEl("button", { text: "更新记录" });
+      changelog.onclick = () => new ChangelogModal(this.plugin.app).open();
     } else if (this.tab === "review") {
       this.renderReview(body);
     } else if (this.tab === "analytics") {
