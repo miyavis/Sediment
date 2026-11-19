@@ -242,12 +242,27 @@ export class DashboardView extends ItemView {
           attr: { title: task.path || "Agent 任务" },
         });
         if (task.path) button.onclick = () => void this.plugin.app.workspace.openLinkText(task.path, "", false);
+        else if (task.sourcePath)
+          button.onclick = () => void this.openTaskSource(task.sourcePath, task.sourceLine);
         row.createDiv({
           cls: "sd-task-meta",
-          text: task.path ? `${task.date} · ${task.path.split("/").pop()}:${task.line}` : `Agent · ${task.date}`,
+          text: task.path
+            ? `${task.date} · ${task.path.split("/").pop()}:${task.line}`
+            : task.sourcePath
+              ? `Agent · 原待办 ${task.sourcePath.split("/").pop()}:${task.sourceLine ?? 1}`
+              : `Agent · ${task.date}`,
         });
       }
     });
+  }
+
+  private async openTaskSource(path?: string, line?: number): Promise<void> {
+    if (!path) return;
+    await this.plugin.app.workspace.openLinkText(path, "", false);
+    if (line) {
+      const editor = this.plugin.app.workspace.activeEditor?.editor;
+      editor?.setCursor({ line: Math.max(0, line - 1), ch: 0 });
+    }
   }
 
   private renderAgentStatus(root: HTMLElement): void {

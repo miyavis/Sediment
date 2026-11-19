@@ -9,6 +9,10 @@ export interface TaskItem {
   text: string;
   date: string;
   checked: boolean;
+  /** Agent 任务：来源复选框与速记 id */
+  sourcePath?: string;
+  sourceLine?: number;
+  memoId?: string;
 }
 
 const CHECKBOX = /^(\s*[-*+]\s+)\[([ xX])\]\s+(.*)$/;
@@ -33,6 +37,9 @@ export class TaskManager {
           text: memo.text,
           date: memo.date,
           checked: false,
+          sourcePath: memo.sourcePath,
+          sourceLine: memo.sourceLine,
+          memoId: memo.id,
         }));
     }
     const today = dateKey(new Date());
@@ -77,7 +84,10 @@ export class TaskManager {
     const tasks = await this.list("all");
     const task = tasks.find((item) => item.path === path && item.line === line);
     if (!task) throw new Error(`找不到待办：${path}:${line}`);
-    const memo = await this.plugin.memos.add(task.text, ["to-agent"]);
+    const memo = await this.plugin.memos.add(task.text, ["to-agent"], {
+      path: task.path,
+      line: task.line,
+    });
     if (!memo) throw new Error("创建 Agent 任务失败");
     return memo.id;
   }

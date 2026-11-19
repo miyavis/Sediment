@@ -2,6 +2,12 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [Unreleased]
+
+### 改进
+- `#to-agent` 速记记住原待办的 `sourcePath` / `sourceLine`，速记卡片和待办模块可一键跳回原复选框并定位行号
+- `add_memo` 支持传入来源路径与行号
+
 ## [0.8.1] - 2026-11-19
 
 ### 新增

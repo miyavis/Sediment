@@ -141,7 +141,16 @@ export class AgentServer {
         }
         case "POST /memo": {
           const tags = Array.isArray(body.tags) ? (body.tags as unknown[]).map(String) : [];
-          this.json(response, 200, await api.addMemo(str(body.text as string), tags));
+          this.json(
+            response,
+            200,
+            await api.addMemo(
+              str(body.text as string),
+              tags,
+              str(body.sourcePath as string) || undefined,
+              typeof body.sourceLine === "number" ? body.sourceLine : undefined
+            )
+          );
           return;
         }
         case "GET /stats":

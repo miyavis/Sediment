@@ -232,6 +232,13 @@ export class MemoView extends ItemView {
         };
       }
     }
+    if (memo.sourcePath) {
+      const source = card.createEl("button", {
+        cls: "sd-memo-source",
+        text: `原待办 · ${memo.sourcePath.split("/").pop()}:${memo.sourceLine ?? 1}`,
+      });
+      source.onclick = () => void this.openSource(memo.sourcePath, memo.sourceLine);
+    }
     return card;
   }
 
@@ -314,6 +321,15 @@ export class MemoView extends ItemView {
       };
     }
     this.walkId = current.id;
+  }
+
+  private async openSource(path?: string, line?: number): Promise<void> {
+    if (!path) return;
+    await this.plugin.app.workspace.openLinkText(path, "", false);
+    if (line) {
+      const editor = this.plugin.app.workspace.activeEditor?.editor;
+      editor?.setCursor({ line: Math.max(0, line - 1), ch: 0 });
+    }
   }
 
   private renderKnowledge(root: HTMLElement, limit = 30, compact = false): void {

@@ -80,6 +80,8 @@ const TOOLS = [
       properties: {
         text: { type: "string", description: "速记内容" },
         tags: { type: "array", items: { type: "string" }, description: "标签" },
+        sourcePath: { type: "string", description: "可选：来源笔记路径（关联原生待办）" },
+        sourceLine: { type: "number", description: "可选：来源复选框行号" },
       },
       required: ["text"],
     },
@@ -372,7 +374,12 @@ async function dispatch(name, args) {
     case "append_note":
       return call("/note", { path: args.path, content: args.content, mode: "append" }, "POST");
     case "add_memo":
-      return call("/memo", { text: args.text, tags: args.tags ?? [] }, "POST");
+      return call("/memo", {
+        text: args.text,
+        tags: args.tags ?? [],
+        sourcePath: args.sourcePath ?? "",
+        sourceLine: args.sourceLine ?? 0,
+      }, "POST");
     case "get_stats":
       return call("/stats", { days: args.days ?? 30 });
     case "get_today":

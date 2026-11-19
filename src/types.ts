@@ -52,6 +52,9 @@ export interface MemoRecord {
   converted: boolean;
   /** 任务完成时关联的产出笔记路径 */
   resultPath?: string;
+  /** 由原生待办转来时，记录原始复选框所在的笔记与行号 */
+  sourcePath?: string;
+  sourceLine?: number;
 }
 
 /** Agent 一次工作会话的沉淀记录。 */

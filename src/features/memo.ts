@@ -12,7 +12,11 @@ export class MemoManager {
     return this.plugin.store;
   }
 
-  async add(text: string, tags: string[] = []): Promise<MemoRecord | null> {
+  async add(
+    text: string,
+    tags: string[] = [],
+    source?: { path: string; line: number }
+  ): Promise<MemoRecord | null> {
     const clean = text.trim();
     if (!clean) return null;
 
@@ -24,6 +28,7 @@ export class MemoManager {
       text: clean,
       tags,
       converted: false,
+      ...(source ? { sourcePath: source.path, sourceLine: source.line } : {}),
     };
 
     this.store.addMemo(memo);

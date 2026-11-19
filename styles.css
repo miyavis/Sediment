@@ -1031,6 +1031,17 @@
   word-break: break-all;
 }
 
+.sd-memo-source {
+  margin-top: 6px;
+  padding: 2px 8px;
+  font-size: 10px;
+  color: var(--interactive-accent);
+  background: transparent;
+  border: 1px solid var(--interactive-accent);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
 .sd-task-list {
   display: flex;
   flex-direction: column;

@@ -291,8 +291,17 @@ export class AgentApi {
   }
 
   /** 记一条速记，写入当天日记。 */
-  async addMemo(text: string, tags: string[] = []): Promise<MemoRecord | null> {
-    return this.plugin.memos.add(text, tags);
+  async addMemo(
+    text: string,
+    tags: string[] = [],
+    sourcePath?: string,
+    sourceLine?: number
+  ): Promise<MemoRecord | null> {
+    return this.plugin.memos.add(
+      text,
+      tags,
+      sourcePath ? { path: sourcePath, line: sourceLine ?? 1 } : undefined
+    );
   }
 
   /** 最近若干天的完整指标。 */
