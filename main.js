@@ -1031,7 +1031,7 @@ var AgentServer = class {
       api.logToolCall(`${request.method} ${url.pathname}`, agent, loggedPath);
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
-          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.5.1" });
+          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.6.0" });
           return;
         case "GET /notes":
           this.json(response, 200, api.listNotes(str(query.get("folder")), num(query.get("limit"), 50)));
@@ -1660,7 +1660,7 @@ var PulseSettingTab = class extends import_obsidian7.PluginSettingTab {
 var import_obsidian8 = require("obsidian");
 
 // src/changelog.ts
-var CHANGELOG = "# \u66F4\u65B0\u8BB0\u5F55\n\n\u672C\u6587\u4EF6\u8BB0\u5F55\u6BCF\u4E2A\u7248\u672C\u7684\u589E\u91CF\u53D8\u5316\uFF0C\u683C\u5F0F\u9075\u5FAA [Keep a Changelog](https://keepachangelog.com/)\u3002\u6784\u5EFA\u65F6\u7531 `scripts/sync-changelog.mjs` \u540C\u6B65\u5230\u63D2\u4EF6\u5185\uFF0C\u53EF\u5728\u770B\u677F\u9875\u811A\u7684\u300C\u66F4\u65B0\u8BB0\u5F55\u300D\u91CC\u67E5\u770B\u3002\n\n## [0.5.1] - 2026-11-19\n\n### \u4FEE\u590D\n- `get_active_context` \u5728\u4E3B\u533A\u6253\u5F00\u770B\u677F/\u56FE\u8C31\u65F6\u56DE\u9000\u5230\u6700\u8FD1\u4E00\u4E2A Markdown \u6807\u7B7E\u9875\uFF0C\u4E0D\u518D\u8FD4\u56DE\u7A7A\u7ED3\u679C\n\n## [0.5.0] - 2026-11-19\n\n### \u65B0\u589E\n- P1 \u7CBE\u51C6\u5199\u5165\uFF1A`patch_note`\uFF08\u6309\u6807\u9898/\u6587\u672C\u7247\u6BB5\u5C40\u90E8\u4FEE\u6539\u3001`vault.process` \u539F\u5B50\u5199\u5165\u3001\u5199\u524D\u81EA\u52A8\u5907\u4EFD\u3001`ifMatch` \u7248\u672C\u6821\u9A8C\uFF09\u4E0E `update_frontmatter`\n- `#to-agent` \u4EFB\u52A1\u95ED\u73AF\uFF1A`get_daily_context` \u8FD4\u56DE `agentTasks`\uFF0C\u65B0\u589E `claim_agent_task` / `complete_agent_task`\uFF0C\u72B6\u6001\u4ECE `#to-agent` \u2192 `#agent-in-progress` \u2192 `#agent-done`\n- \u5728 vault \u6839\u76EE\u5F55\u5199\u5165 `AGENTS.md` \u4E09\u9636\u6BB5\u534F\u4F5C\u534F\u8BAE\uFF08\u5F00\u5DE5\u5BF9\u9F50 / \u7CBE\u51C6\u8BFB\u5199 / \u6536\u5DE5\u6C89\u6DC0\uFF09\n- MCP \u5DE5\u5177\u589E\u81F3 26 \u4E2A\n\n## [0.4.0] - 2026-11-19\n\n### \u65B0\u589E\n- P0 \u5DE5\u5177\u5C42\uFF1A`get_active_context`\uFF08\u5F53\u524D\u7B14\u8BB0/\u9009\u4E2D\u6587\u672C/\u5149\u6807\u6BB5\u843D\uFF09\u3001`get_note_metadata`\uFF08\u53EA\u8BFB\u5143\u6570\u636E\u7701 Token\uFF09\u3001`get_graph_neighbors`\uFF08\u51FA\u94FE/\u53CD\u94FE/\u540C\u6807\u7B7E\uFF09\u3001`get_tool_activity`\uFF08\u8C03\u7528\u7EDF\u8BA1\uFF09\n- \u65B0\u589E\u6587\u4EF6\u5939/\u6807\u7B7E\u9ED1\u540D\u5355\uFF0CAgent \u7684\u8BFB\u5199\u4E0E\u641C\u7D22\u5168\u90E8\u53D7\u63A7\n- Agent \u5199\u5165\u7684\u5185\u5BB9\u5355\u72EC\u8BA1\u5165 `aiWordsAdded`\uFF0C\u4E3A\u540E\u7EED\u4EBA\u673A\u53CC\u8272\u70ED\u529B\u56FE\u6253\u57FA\u7840\n- MCP/HTTP \u8C03\u7528\u5BA1\u8BA1\u65E5\u5FD7\uFF08\u9650 500 \u6761\uFF09\uFF0C\u5E76\u8BB0\u5F55\u5BA2\u6237\u7AEF\u540D `AGENT_NAME`\n- AI \u6C89\u6DC0\u7B14\u8BB0\u9ED8\u8BA4\u5E26 `sediment_status: draft`\n\n## [0.3.4] - 2026-11-19\n\n### \u65B0\u589E\n- \u589E\u91CF\u53D8\u66F4\u8BB0\u5F55\uFF1A\u65B0\u589E `CHANGELOG.md`\uFF0C\u6309\u7248\u672C\u5206\u7EC4\u8BB0\u5F55\u65B0\u589E / \u53D8\u66F4 / \u4FEE\u590D\n- \u6784\u5EFA\u65F6\u81EA\u52A8\u540C\u6B65\u5230\u63D2\u4EF6\u5185\uFF0C\u770B\u677F\u9875\u811A\u300C\u66F4\u65B0\u8BB0\u5F55\u300D\u548C\u547D\u4EE4\u300C\u67E5\u770B\u66F4\u65B0\u8BB0\u5F55\u300D\u53EF\u968F\u65F6\u67E5\u770B\n- \u5347\u7EA7\u540E\u81EA\u52A8\u63D0\u793A\u65B0\u7248\u672C\u53F7\n- GitHub Release \u6B63\u6587\u4ECE\u5BF9\u5E94\u7248\u672C\u7684 CHANGELOG \u7AE0\u8282\u81EA\u52A8\u751F\u6210\uFF0C\u53D1\u5E03\u9875\u4E0E\u63D2\u4EF6\u5185\u8BF4\u660E\u4E00\u81F4\n\n## [0.3.3] - 2026-11-19\n\n### \u4FEE\u590D\n- Agent \u901A\u8FC7 MCP \u5199\u5165\u7B14\u8BB0\u540E\uFF0C\u770B\u677F\u4E0E\u901F\u8BB0\u9762\u677F 400ms \u5185\u81EA\u52A8\u5237\u65B0\uFF0C\u4E14\u4E0D\u6E05\u7A7A\u6B63\u5728\u8F93\u5165\u7684\u6587\u5B57\n- \u76D1\u542C create / modify / delete / rename \u4E8B\u4EF6\uFF0C\u8986\u76D6\u77E5\u8BC6\u5E93\u3001\u5DE5\u4F5C\u65E5\u5FD7\u4E0E\u65E5\u8BB0\u76EE\u5F55\n\n## [0.3.2] - 2026-11-19\n\n### \u4FEE\u590D\n- \u901F\u8BB0\u9762\u677F\u300C\u5168\u90E8\u300D\u9875\u7B7E\u4E0B\u7684\u6C89\u6DC0\u5217\u8868\u6539\u4E3A\u663E\u793A\u5168\u90E8\u7B14\u8BB0\uFF0C\u4E0D\u518D\u53EA\u663E\u793A 5 \u6761\n\n## [0.3.1] - 2026-11-19\n\n### \u65B0\u589E\n- \u901F\u8BB0\u9762\u677F\u300C\u5168\u90E8\u300D\u9875\u7B7E\u4E0B\u65B9\u76F4\u63A5\u663E\u793A\u300C\u77E5\u8BC6\u6C89\u6DC0\u300D\u5C0F\u533A\u5757\uFF0C\u4E0D\u7528\u5207\u9875\u7B7E\u5373\u53EF\u770B\u5230\uFF0C\u5E26\u300C\u5168\u90E8\u300D\u8DF3\u8F6C\u6309\u94AE\n\n## [0.3.0] - 2026-11-19\n\n### \u65B0\u589E\n- \u6C89\u6DC0\u9875\u7B7E\u6309\u5206\u7C7B\u5206\u7EC4\u663E\u793A\uFF08\u6280\u672F / \u65B9\u6CD5 / \u5DE5\u4F5C\u65E5\u5FD7\uFF09\n- \u667A\u80FD\u5206\u7C7B\uFF1AAgent \u4E0D\u4F20 category \u65F6\u6839\u636E\u6807\u9898\u3001\u6807\u7B7E\u3001\u6B63\u6587\u5173\u952E\u8BCD\u81EA\u52A8\u63A8\u65AD\uFF1B\u4E5F\u53EF\u4F20\u4EFB\u610F\u81EA\u5B9A\u4E49\u5206\u7C7B\u540D\n- \u65B0\u589E MCP \u5DE5\u5177 `list_categories`\n\n## [0.2.9] - 2026-11-19\n\n### \u65B0\u589E\n- \u77E5\u8BC6\u5E93\u5206\u7C7B\uFF1A\u9ED8\u8BA4\u300C\u6280\u672F / \u9879\u76EE / \u65B9\u6CD5 / \u7075\u611F / \u590D\u76D8\u300D\uFF0C\u6C89\u6DC0\u65F6\u6309\u5206\u7C7B\u5EFA\u5B50\u76EE\u5F55\n- \u77E5\u8BC6\u7B14\u8BB0\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\u7684\u7248\u5F0F\u7F8E\u5316\uFF1Afrontmatter\u3001\u901F\u89C8 Callout\u3001\u6B63\u6587\u3001\u5173\u8054\u6765\u6E90\u3001\u6C89\u6DC0\u4FE1\u606F\n- \u5DF2\u6709 7 \u7BC7\u7B14\u8BB0\u6309\u5206\u7C7B\u91CD\u65B0\u6392\u7248\u5F52\u4F4D\n\n## [0.2.8] - 2026-11-19\n\n### \u53D8\u66F4\n- \u300C\u77E5\u8BC6\u6C89\u6DC0\u300D\u4ECE\u770B\u677F\u5E95\u90E8\u79FB\u5230\u901F\u8BB0\u9762\u677F\uFF0C\u4F5C\u4E3A\u7B2C\u4E94\u4E2A\u9875\u7B7E\n\n## [0.2.7] - 2026-11-19\n\n### \u65B0\u589E\n- \u770B\u677F\u5E95\u90E8\u5217\u51FA Agent \u5199\u5165\u7684\u77E5\u8BC6\u7B14\u8BB0\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\uFF0C\u53EF\u70B9\u51FB\u6253\u5F00\n\n## [0.2.6] - 2026-11-19\n\n### \u4FEE\u590D\n- Obsidian \u91CD\u542F\u65F6\u4E3A\u5DF2\u6709\u6587\u4EF6\u8865\u53D1 create \u4E8B\u4EF6\uFF0C\u65E7\u7248\u4F1A\u8BEF\u7B97\u6210\u65B0\u5EFA\u7B14\u8BB0\uFF0822 \u7BC7 / 5512 \u5B57 / 121 \u5206\uFF09\n\n## [0.2.5] - 2026-11-19\n\n### \u4FEE\u590D\n- MCP \u6865\u63A5\u7684 GET \u5DE5\u5177\u53C2\u6570\u672A\u62FC\u8FDB URL\uFF0C\u5BFC\u81F4\u641C\u7D22\u65E0\u7ED3\u679C\u3001\u8BFB\u7B14\u8BB0\u62A5\u300C\u8DEF\u5F84\u4E0D\u80FD\u4E3A\u7A7A\u300D\n\n## [0.2.4] - 2026-11-19\n\n### \u4FEE\u590D\n- MCP \u6865\u63A5\u5728 Node 16 \u4E0B\u62A5 `fetch is not defined`\uFF0C\u6539\u7528 node:http\n\n## [0.2.3] - 2026-11-19\n\n### \u65B0\u589E\n- \u5185\u7F6E\u756A\u8304\u949F\uFF0825/5/15 \u5206\u949F\uFF09\uFF0C\u72B6\u6001\u680F\u5012\u8BA1\u65F6\uFF0C\u5B8C\u6210\u8BB0\u5165 focusMinutes\uFF0CAgent \u4E5F\u53EF\u901A\u8FC7 MCP \u63A7\u5236\n- \u65B0\u589E `get_pomodoro` / `control_pomodoro`\n\n### \u4FEE\u590D\n- \u5730\u5E73\u7EBF\u91CD\u505A\u4E3A\u5C71\u810A + \u6E56\u9762\u5012\u5F71 + \u65E5\u6708 + \u5B63\u8282\u6811 + \u4E13\u6CE8\u65F6\u5E06\u8239\n- \u9875\u811A\u7248\u672C\u53F7\u6539\u4E3A\u52A8\u6001\u8BFB\u53D6 manifest\n\n## [0.2.2] - 2026-11-19\n\n### \u4FEE\u590D\n- \u77E5\u8BC6\u590D\u76D8\u4ECE\u539F\u59CB Markdown \u6539\u4E3A\u6E32\u67D3\u9884\u89C8\uFF0C\u5E76\u52A0\u590D\u5236\u6309\u94AE\n\n## [0.2.1] - 2026-11-19\n\n### \u65B0\u589E\n- \u901F\u8BB0\uFF1A\u7C98\u8D34\u56FE\u7247\u81EA\u52A8\u5165\u5E93\u3001\u6BCF\u65E5\u56DE\u987E\uFF08\u53BB\u5E74\u4ECA\u65E5 / \u4E0A\u6708\u4ECA\u65E5\uFF09\u3001\u672C\u5730\u76F8\u4F3C\u5EA6\u6F2B\u6B65\u3001\u6807\u7B7E\u6811\n\n## [0.2.0] - 2026-11-19\n\n### \u65B0\u589E\n- \u6570\u636E\u5206\u6790\u9875\uFF1A\u5199\u4F5C\u67F1\u72B6\u56FE\u3001\u5199\u4F5C\u53D8\u5316\u6298\u7EBF\u3001\u65F6\u95F4\u6295\u5165\u3001\u5199\u4F5C\u6765\u6E90\u3001\u6295\u5165\u53BB\u5411\u3001\u6D3B\u8DC3\u65F6\u6BB5\u3001\u6295\u5165\u8282\u5F8B\u77E9\u9635\n- \u5E74\u5EA6\u753B\u50CF\uFF1A\u5E74\u8F6E\u3001\u77E5\u8BC6\u6307\u7EB9\u3001\u6708\u76F8\u65E5\u5386\u3001\u77E5\u8BC6\u5730\u5C42\u3001\u6708\u62A5\u6D77\u62A5 PNG \u5BFC\u51FA\n- \u4E09\u79CD\u753B\u98CE\uFF08\u50CF\u7D20\u6E56\u9762 / \u6C34\u58A8\u5C71\u6C34 / \u50CF\u7D20\u57CE\u5E02\uFF09\u4E0E\u968F\u65F6\u6BB5\u79FB\u52A8\u7684\u65E5\u6708\u6A2A\u5E45\n\n## [0.1.3] - 2026-11-19\n\n### \u4FEE\u590D\n- \u65E7\u7248\u6B8B\u7559\u5728\u4FA7\u680F\u7684\u770B\u677F\u6807\u7B7E\u88AB\u590D\u7528\u5BFC\u81F4\u4E00\u76F4\u7A84\u5C4F\uFF0C\u6539\u4E3A\u5F3A\u5236\u5728\u4E3B\u533A\u65B0\u5F00\u6807\u7B7E\u9875\n\n## [0.1.2] - 2026-11-19\n\n### \u65B0\u589E\n- \u5B8C\u6574\u4E3B\u89C6\u56FE\uFF1A\u901A\u680F\u6A2A\u5E45\u3001\u4ECA\u5929\u5361\u7247\u3001\u6982\u89C8\u5361 + SVG \u8D8B\u52BF\u300153 \u5468\u70ED\u529B\u56FE\u3001\u5730\u5E73\u7EBF\u3001\u56DB\u4E2A\u9875\u7B7E\n\n## [0.1.1] - 2026-11-19\n\n### \u4FEE\u590D\n- \u770B\u677F\u6539\u5230\u4E3B\u7F16\u8F91\u533A\u6253\u5F00\uFF0C\u901F\u8BB0\u7559\u5728\u53F3\u4FA7\u680F\n\n## [0.1.0] - 2026-11-19\n\n### \u65B0\u589E\n- \u9996\u4E2A\u7248\u672C\uFF1A\u70ED\u529B\u56FE\u770B\u677F\u3001\u5199\u4F5C\u7EDF\u8BA1\u3001flomo \u5F0F\u901F\u8BB0\u3001\u5468\u590D\u76D8\n- \u672C\u5730 HTTP API + MCP \u6865\u63A5\uFF0CAgent \u53EF\u8BFB\u5199\u77E5\u8BC6\u5E93\n- \u5DE5\u4F5C\u65E5\u5FD7\u4E0E\u77E5\u8BC6\u7B14\u8BB0\u6C89\u6DC0\uFF0CAgent \u4EA7\u51FA\u8BA1\u5165\u7EDF\u8BA1\n";
+var CHANGELOG = "# \u66F4\u65B0\u8BB0\u5F55\n\n\u672C\u6587\u4EF6\u8BB0\u5F55\u6BCF\u4E2A\u7248\u672C\u7684\u589E\u91CF\u53D8\u5316\uFF0C\u683C\u5F0F\u9075\u5FAA [Keep a Changelog](https://keepachangelog.com/)\u3002\u6784\u5EFA\u65F6\u7531 `scripts/sync-changelog.mjs` \u540C\u6B65\u5230\u63D2\u4EF6\u5185\uFF0C\u53EF\u5728\u770B\u677F\u9875\u811A\u7684\u300C\u66F4\u65B0\u8BB0\u5F55\u300D\u91CC\u67E5\u770B\u3002\n\n## [0.6.0] - 2026-11-19\n\n### \u65B0\u589E\n- P2 UI\uFF1A\u4E09\u6BB5\u5F0F\u4E3B\u770B\u677F\uFF08\u4ECA\u65E5\u8109\u51B2 / \u77E5\u8BC6\u5730\u5C42 / \u667A\u80FD\u4F53\u5DE5\u574A\uFF09\uFF0C\u77E5\u8BC6\u590D\u76D8\u79FB\u5165\u77E5\u8BC6\u5730\u5C42\n- \u667A\u80FD\u4F53\u5DE5\u574A\uFF1A\u8FDE\u63A5\u4E0E\u8C03\u7528\u72B6\u6001\u3001AI \u8349\u7A3F\u5BA1\u6838\u6D41\uFF08\u91C7\u7EB3 / \u5408\u5E76\u5230\u5173\u8054\u7B14\u8BB0 / \u9A73\u56DE\u5220\u9664\uFF09\u3001\u5DE5\u4F5C\u65E5\u5FD7\u5217\u8868\n- \u4EBA\u673A\u53CC\u8272\u70ED\u529B\u56FE\uFF1A\u6309 `aiWordsAdded` \u5360\u6BD4\u7528\u6E10\u53D8\u533A\u5206\u4EBA\u7C7B\u7F16\u8F91\u4E0E AI \u6C89\u6DC0\n- \u4ECA\u65E5\u8109\u51B2\u9875\u65B0\u589E\u5FEB\u901F\u901F\u8BB0\u6846\u4E0E\u300C\u4ECA\u65E5 Agent \u52A8\u6001\u300D\n- \u901F\u8BB0\u4FA7\u680F\u65B0\u589E\u300C\u4E0E\u5F53\u524D\u7B14\u8BB0\u76F8\u5173\u300D\u533A\u5757\uFF0C\u968F\u6253\u5F00\u7684\u6587\u4EF6\u81EA\u52A8\u66F4\u65B0\n\n## [0.5.1] - 2026-11-19\n\n### \u4FEE\u590D\n- `get_active_context` \u5728\u4E3B\u533A\u6253\u5F00\u770B\u677F/\u56FE\u8C31\u65F6\u56DE\u9000\u5230\u6700\u8FD1\u4E00\u4E2A Markdown \u6807\u7B7E\u9875\uFF0C\u4E0D\u518D\u8FD4\u56DE\u7A7A\u7ED3\u679C\n\n## [0.5.0] - 2026-11-19\n\n### \u65B0\u589E\n- P1 \u7CBE\u51C6\u5199\u5165\uFF1A`patch_note`\uFF08\u6309\u6807\u9898/\u6587\u672C\u7247\u6BB5\u5C40\u90E8\u4FEE\u6539\u3001`vault.process` \u539F\u5B50\u5199\u5165\u3001\u5199\u524D\u81EA\u52A8\u5907\u4EFD\u3001`ifMatch` \u7248\u672C\u6821\u9A8C\uFF09\u4E0E `update_frontmatter`\n- `#to-agent` \u4EFB\u52A1\u95ED\u73AF\uFF1A`get_daily_context` \u8FD4\u56DE `agentTasks`\uFF0C\u65B0\u589E `claim_agent_task` / `complete_agent_task`\uFF0C\u72B6\u6001\u4ECE `#to-agent` \u2192 `#agent-in-progress` \u2192 `#agent-done`\n- \u5728 vault \u6839\u76EE\u5F55\u5199\u5165 `AGENTS.md` \u4E09\u9636\u6BB5\u534F\u4F5C\u534F\u8BAE\uFF08\u5F00\u5DE5\u5BF9\u9F50 / \u7CBE\u51C6\u8BFB\u5199 / \u6536\u5DE5\u6C89\u6DC0\uFF09\n- MCP \u5DE5\u5177\u589E\u81F3 26 \u4E2A\n\n## [0.4.0] - 2026-11-19\n\n### \u65B0\u589E\n- P0 \u5DE5\u5177\u5C42\uFF1A`get_active_context`\uFF08\u5F53\u524D\u7B14\u8BB0/\u9009\u4E2D\u6587\u672C/\u5149\u6807\u6BB5\u843D\uFF09\u3001`get_note_metadata`\uFF08\u53EA\u8BFB\u5143\u6570\u636E\u7701 Token\uFF09\u3001`get_graph_neighbors`\uFF08\u51FA\u94FE/\u53CD\u94FE/\u540C\u6807\u7B7E\uFF09\u3001`get_tool_activity`\uFF08\u8C03\u7528\u7EDF\u8BA1\uFF09\n- \u65B0\u589E\u6587\u4EF6\u5939/\u6807\u7B7E\u9ED1\u540D\u5355\uFF0CAgent \u7684\u8BFB\u5199\u4E0E\u641C\u7D22\u5168\u90E8\u53D7\u63A7\n- Agent \u5199\u5165\u7684\u5185\u5BB9\u5355\u72EC\u8BA1\u5165 `aiWordsAdded`\uFF0C\u4E3A\u540E\u7EED\u4EBA\u673A\u53CC\u8272\u70ED\u529B\u56FE\u6253\u57FA\u7840\n- MCP/HTTP \u8C03\u7528\u5BA1\u8BA1\u65E5\u5FD7\uFF08\u9650 500 \u6761\uFF09\uFF0C\u5E76\u8BB0\u5F55\u5BA2\u6237\u7AEF\u540D `AGENT_NAME`\n- AI \u6C89\u6DC0\u7B14\u8BB0\u9ED8\u8BA4\u5E26 `sediment_status: draft`\n\n## [0.3.4] - 2026-11-19\n\n### \u65B0\u589E\n- \u589E\u91CF\u53D8\u66F4\u8BB0\u5F55\uFF1A\u65B0\u589E `CHANGELOG.md`\uFF0C\u6309\u7248\u672C\u5206\u7EC4\u8BB0\u5F55\u65B0\u589E / \u53D8\u66F4 / \u4FEE\u590D\n- \u6784\u5EFA\u65F6\u81EA\u52A8\u540C\u6B65\u5230\u63D2\u4EF6\u5185\uFF0C\u770B\u677F\u9875\u811A\u300C\u66F4\u65B0\u8BB0\u5F55\u300D\u548C\u547D\u4EE4\u300C\u67E5\u770B\u66F4\u65B0\u8BB0\u5F55\u300D\u53EF\u968F\u65F6\u67E5\u770B\n- \u5347\u7EA7\u540E\u81EA\u52A8\u63D0\u793A\u65B0\u7248\u672C\u53F7\n- GitHub Release \u6B63\u6587\u4ECE\u5BF9\u5E94\u7248\u672C\u7684 CHANGELOG \u7AE0\u8282\u81EA\u52A8\u751F\u6210\uFF0C\u53D1\u5E03\u9875\u4E0E\u63D2\u4EF6\u5185\u8BF4\u660E\u4E00\u81F4\n\n## [0.3.3] - 2026-11-19\n\n### \u4FEE\u590D\n- Agent \u901A\u8FC7 MCP \u5199\u5165\u7B14\u8BB0\u540E\uFF0C\u770B\u677F\u4E0E\u901F\u8BB0\u9762\u677F 400ms \u5185\u81EA\u52A8\u5237\u65B0\uFF0C\u4E14\u4E0D\u6E05\u7A7A\u6B63\u5728\u8F93\u5165\u7684\u6587\u5B57\n- \u76D1\u542C create / modify / delete / rename \u4E8B\u4EF6\uFF0C\u8986\u76D6\u77E5\u8BC6\u5E93\u3001\u5DE5\u4F5C\u65E5\u5FD7\u4E0E\u65E5\u8BB0\u76EE\u5F55\n\n## [0.3.2] - 2026-11-19\n\n### \u4FEE\u590D\n- \u901F\u8BB0\u9762\u677F\u300C\u5168\u90E8\u300D\u9875\u7B7E\u4E0B\u7684\u6C89\u6DC0\u5217\u8868\u6539\u4E3A\u663E\u793A\u5168\u90E8\u7B14\u8BB0\uFF0C\u4E0D\u518D\u53EA\u663E\u793A 5 \u6761\n\n## [0.3.1] - 2026-11-19\n\n### \u65B0\u589E\n- \u901F\u8BB0\u9762\u677F\u300C\u5168\u90E8\u300D\u9875\u7B7E\u4E0B\u65B9\u76F4\u63A5\u663E\u793A\u300C\u77E5\u8BC6\u6C89\u6DC0\u300D\u5C0F\u533A\u5757\uFF0C\u4E0D\u7528\u5207\u9875\u7B7E\u5373\u53EF\u770B\u5230\uFF0C\u5E26\u300C\u5168\u90E8\u300D\u8DF3\u8F6C\u6309\u94AE\n\n## [0.3.0] - 2026-11-19\n\n### \u65B0\u589E\n- \u6C89\u6DC0\u9875\u7B7E\u6309\u5206\u7C7B\u5206\u7EC4\u663E\u793A\uFF08\u6280\u672F / \u65B9\u6CD5 / \u5DE5\u4F5C\u65E5\u5FD7\uFF09\n- \u667A\u80FD\u5206\u7C7B\uFF1AAgent \u4E0D\u4F20 category \u65F6\u6839\u636E\u6807\u9898\u3001\u6807\u7B7E\u3001\u6B63\u6587\u5173\u952E\u8BCD\u81EA\u52A8\u63A8\u65AD\uFF1B\u4E5F\u53EF\u4F20\u4EFB\u610F\u81EA\u5B9A\u4E49\u5206\u7C7B\u540D\n- \u65B0\u589E MCP \u5DE5\u5177 `list_categories`\n\n## [0.2.9] - 2026-11-19\n\n### \u65B0\u589E\n- \u77E5\u8BC6\u5E93\u5206\u7C7B\uFF1A\u9ED8\u8BA4\u300C\u6280\u672F / \u9879\u76EE / \u65B9\u6CD5 / \u7075\u611F / \u590D\u76D8\u300D\uFF0C\u6C89\u6DC0\u65F6\u6309\u5206\u7C7B\u5EFA\u5B50\u76EE\u5F55\n- \u77E5\u8BC6\u7B14\u8BB0\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\u7684\u7248\u5F0F\u7F8E\u5316\uFF1Afrontmatter\u3001\u901F\u89C8 Callout\u3001\u6B63\u6587\u3001\u5173\u8054\u6765\u6E90\u3001\u6C89\u6DC0\u4FE1\u606F\n- \u5DF2\u6709 7 \u7BC7\u7B14\u8BB0\u6309\u5206\u7C7B\u91CD\u65B0\u6392\u7248\u5F52\u4F4D\n\n## [0.2.8] - 2026-11-19\n\n### \u53D8\u66F4\n- \u300C\u77E5\u8BC6\u6C89\u6DC0\u300D\u4ECE\u770B\u677F\u5E95\u90E8\u79FB\u5230\u901F\u8BB0\u9762\u677F\uFF0C\u4F5C\u4E3A\u7B2C\u4E94\u4E2A\u9875\u7B7E\n\n## [0.2.7] - 2026-11-19\n\n### \u65B0\u589E\n- \u770B\u677F\u5E95\u90E8\u5217\u51FA Agent \u5199\u5165\u7684\u77E5\u8BC6\u7B14\u8BB0\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\uFF0C\u53EF\u70B9\u51FB\u6253\u5F00\n\n## [0.2.6] - 2026-11-19\n\n### \u4FEE\u590D\n- Obsidian \u91CD\u542F\u65F6\u4E3A\u5DF2\u6709\u6587\u4EF6\u8865\u53D1 create \u4E8B\u4EF6\uFF0C\u65E7\u7248\u4F1A\u8BEF\u7B97\u6210\u65B0\u5EFA\u7B14\u8BB0\uFF0822 \u7BC7 / 5512 \u5B57 / 121 \u5206\uFF09\n\n## [0.2.5] - 2026-11-19\n\n### \u4FEE\u590D\n- MCP \u6865\u63A5\u7684 GET \u5DE5\u5177\u53C2\u6570\u672A\u62FC\u8FDB URL\uFF0C\u5BFC\u81F4\u641C\u7D22\u65E0\u7ED3\u679C\u3001\u8BFB\u7B14\u8BB0\u62A5\u300C\u8DEF\u5F84\u4E0D\u80FD\u4E3A\u7A7A\u300D\n\n## [0.2.4] - 2026-11-19\n\n### \u4FEE\u590D\n- MCP \u6865\u63A5\u5728 Node 16 \u4E0B\u62A5 `fetch is not defined`\uFF0C\u6539\u7528 node:http\n\n## [0.2.3] - 2026-11-19\n\n### \u65B0\u589E\n- \u5185\u7F6E\u756A\u8304\u949F\uFF0825/5/15 \u5206\u949F\uFF09\uFF0C\u72B6\u6001\u680F\u5012\u8BA1\u65F6\uFF0C\u5B8C\u6210\u8BB0\u5165 focusMinutes\uFF0CAgent \u4E5F\u53EF\u901A\u8FC7 MCP \u63A7\u5236\n- \u65B0\u589E `get_pomodoro` / `control_pomodoro`\n\n### \u4FEE\u590D\n- \u5730\u5E73\u7EBF\u91CD\u505A\u4E3A\u5C71\u810A + \u6E56\u9762\u5012\u5F71 + \u65E5\u6708 + \u5B63\u8282\u6811 + \u4E13\u6CE8\u65F6\u5E06\u8239\n- \u9875\u811A\u7248\u672C\u53F7\u6539\u4E3A\u52A8\u6001\u8BFB\u53D6 manifest\n\n## [0.2.2] - 2026-11-19\n\n### \u4FEE\u590D\n- \u77E5\u8BC6\u590D\u76D8\u4ECE\u539F\u59CB Markdown \u6539\u4E3A\u6E32\u67D3\u9884\u89C8\uFF0C\u5E76\u52A0\u590D\u5236\u6309\u94AE\n\n## [0.2.1] - 2026-11-19\n\n### \u65B0\u589E\n- \u901F\u8BB0\uFF1A\u7C98\u8D34\u56FE\u7247\u81EA\u52A8\u5165\u5E93\u3001\u6BCF\u65E5\u56DE\u987E\uFF08\u53BB\u5E74\u4ECA\u65E5 / \u4E0A\u6708\u4ECA\u65E5\uFF09\u3001\u672C\u5730\u76F8\u4F3C\u5EA6\u6F2B\u6B65\u3001\u6807\u7B7E\u6811\n\n## [0.2.0] - 2026-11-19\n\n### \u65B0\u589E\n- \u6570\u636E\u5206\u6790\u9875\uFF1A\u5199\u4F5C\u67F1\u72B6\u56FE\u3001\u5199\u4F5C\u53D8\u5316\u6298\u7EBF\u3001\u65F6\u95F4\u6295\u5165\u3001\u5199\u4F5C\u6765\u6E90\u3001\u6295\u5165\u53BB\u5411\u3001\u6D3B\u8DC3\u65F6\u6BB5\u3001\u6295\u5165\u8282\u5F8B\u77E9\u9635\n- \u5E74\u5EA6\u753B\u50CF\uFF1A\u5E74\u8F6E\u3001\u77E5\u8BC6\u6307\u7EB9\u3001\u6708\u76F8\u65E5\u5386\u3001\u77E5\u8BC6\u5730\u5C42\u3001\u6708\u62A5\u6D77\u62A5 PNG \u5BFC\u51FA\n- \u4E09\u79CD\u753B\u98CE\uFF08\u50CF\u7D20\u6E56\u9762 / \u6C34\u58A8\u5C71\u6C34 / \u50CF\u7D20\u57CE\u5E02\uFF09\u4E0E\u968F\u65F6\u6BB5\u79FB\u52A8\u7684\u65E5\u6708\u6A2A\u5E45\n\n## [0.1.3] - 2026-11-19\n\n### \u4FEE\u590D\n- \u65E7\u7248\u6B8B\u7559\u5728\u4FA7\u680F\u7684\u770B\u677F\u6807\u7B7E\u88AB\u590D\u7528\u5BFC\u81F4\u4E00\u76F4\u7A84\u5C4F\uFF0C\u6539\u4E3A\u5F3A\u5236\u5728\u4E3B\u533A\u65B0\u5F00\u6807\u7B7E\u9875\n\n## [0.1.2] - 2026-11-19\n\n### \u65B0\u589E\n- \u5B8C\u6574\u4E3B\u89C6\u56FE\uFF1A\u901A\u680F\u6A2A\u5E45\u3001\u4ECA\u5929\u5361\u7247\u3001\u6982\u89C8\u5361 + SVG \u8D8B\u52BF\u300153 \u5468\u70ED\u529B\u56FE\u3001\u5730\u5E73\u7EBF\u3001\u56DB\u4E2A\u9875\u7B7E\n\n## [0.1.1] - 2026-11-19\n\n### \u4FEE\u590D\n- \u770B\u677F\u6539\u5230\u4E3B\u7F16\u8F91\u533A\u6253\u5F00\uFF0C\u901F\u8BB0\u7559\u5728\u53F3\u4FA7\u680F\n\n## [0.1.0] - 2026-11-19\n\n### \u65B0\u589E\n- \u9996\u4E2A\u7248\u672C\uFF1A\u70ED\u529B\u56FE\u770B\u677F\u3001\u5199\u4F5C\u7EDF\u8BA1\u3001flomo \u5F0F\u901F\u8BB0\u3001\u5468\u590D\u76D8\n- \u672C\u5730 HTTP API + MCP \u6865\u63A5\uFF0CAgent \u53EF\u8BFB\u5199\u77E5\u8BC6\u5E93\n- \u5DE5\u4F5C\u65E5\u5FD7\u4E0E\u77E5\u8BC6\u7B14\u8BB0\u6C89\u6DC0\uFF0CAgent \u4EA7\u51FA\u8BA1\u5165\u7EDF\u8BA1\n";
 
 // src/ui/changelog-modal.ts
 var ChangelogModal = class extends import_obsidian8.Modal {
@@ -1685,6 +1685,11 @@ var ChangelogModal = class extends import_obsidian8.Modal {
 // src/views/dashboard-view.ts
 var import_obsidian9 = require("obsidian");
 var DASHBOARD_VIEW_TYPE = "sediment-dashboard";
+var TABS = [
+  ["today", "\u4ECA\u65E5\u8109\u51B2"],
+  ["insights", "\u77E5\u8BC6\u5730\u5C42"],
+  ["agent", "\u667A\u80FD\u4F53\u5DE5\u574A"]
+];
 var RANGE_OPTIONS = [
   ["7d", "\u8FD1 7 \u5929"],
   ["30d", "\u8FD1 30 \u5929"],
@@ -1692,20 +1697,14 @@ var RANGE_OPTIONS = [
   ["ytd", "\u4ECA\u5E74"],
   ["1y", "\u8FD1\u4E00\u5E74"]
 ];
-var TABS = [
-  ["board", "\u770B\u677F\u89C6\u56FE"],
-  ["review", "\u77E5\u8BC6\u590D\u76D8"],
-  ["analytics", "\u6570\u636E\u5206\u6790"],
-  ["yearly", "\u5E74\u5EA6\u753B\u50CF"]
-];
 var WEEKDAYS = ["\u65E5", "\u4E00", "\u4E8C", "\u4E09", "\u56DB", "\u4E94", "\u516D"];
 var DashboardView = class extends import_obsidian9.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
+    this.tab = "today";
     this.metric = "contribution";
     this.range = "1y";
-    this.tab = "board";
     this.selected = null;
     this.posterMonth = (/* @__PURE__ */ new Date()).getMonth();
     this.bannerEl = null;
@@ -1735,30 +1734,9 @@ var DashboardView = class extends import_obsidian9.ItemView {
     root.empty();
     root.addClass("sd-dashboard");
     this.renderHeader(root);
-    this.renderToday(root);
-    const body = root.createDiv({ cls: "sd-body" });
-    if (this.tab === "board") {
-      this.renderOverview(body);
-      this.renderHeatmap(body);
-      this.renderHorizon(body);
-      const footer = body.createDiv({ cls: "sd-footer" });
-      footer.createSpan({ text: `Sediment ${this.plugin.manifest.version} \xB7 \u6570\u636E\u53EA\u7559\u5728\u672C\u5730` });
-      const monthly = footer.createEl("button", { text: "\u6708\u62A5" });
-      monthly.onclick = () => {
-        this.tab = "yearly";
-        this.render();
-      };
-      const styleButton = footer.createEl("button", { text: "\u6362\u753B\u98CE" });
-      styleButton.onclick = () => this.cycleArtStyle();
-      const changelog = footer.createEl("button", { text: "\u66F4\u65B0\u8BB0\u5F55" });
-      changelog.onclick = () => new ChangelogModal(this.plugin.app).open();
-    } else if (this.tab === "review") {
-      this.renderReview(body);
-    } else if (this.tab === "analytics") {
-      this.renderAnalytics(body);
-    } else {
-      this.renderYearly(body);
-    }
+    if (this.tab === "today") this.renderToday(root);
+    else if (this.tab === "insights") this.renderInsights(root);
+    else this.renderAgentHub(root);
   }
   value(key) {
     return Number(this.plugin.store.getDay(key)[this.metric]) || 0;
@@ -1801,13 +1779,17 @@ var DashboardView = class extends import_obsidian9.ItemView {
     refresh.onclick = () => this.render();
   }
   renderToday(root) {
+    const body = root.createDiv({ cls: "sd-body" });
+    this.renderTodayCard(body);
+    this.renderQuickMemo(body);
+    this.renderTodayAgent(body);
+  }
+  renderTodayCard(root) {
     const today = dateKey(/* @__PURE__ */ new Date());
     const day = this.plugin.store.getDay(today);
     let streak = 0;
     let cursor = /* @__PURE__ */ new Date();
-    if (this.plugin.store.getDay(dateKey(cursor)).contribution === 0) {
-      cursor = addDays(cursor, -1);
-    }
+    if (this.plugin.store.getDay(dateKey(cursor)).contribution === 0) cursor = addDays(cursor, -1);
     while (this.plugin.store.getDay(dateKey(cursor)).contribution > 0 && streak < 400) {
       streak += 1;
       cursor = addDays(cursor, -1);
@@ -1815,10 +1797,7 @@ var DashboardView = class extends import_obsidian9.ItemView {
     const card = root.createDiv({ cls: "sd-card sd-today" });
     const head = card.createDiv({ cls: "sd-today-head" });
     head.createDiv({ cls: "sd-today-title", text: "\u4ECA\u5929" });
-    head.createDiv({
-      cls: "sd-pill",
-      text: day.contribution > 0 ? `${day.contribution} \u5206` : "\u8FD8\u6CA1\u5F00\u59CB"
-    });
+    head.createDiv({ cls: "sd-pill", text: day.contribution > 0 ? `${day.contribution} \u5206` : "\u8FD8\u6CA1\u5F00\u59CB" });
     const row = card.createDiv({ cls: "sd-today-row" });
     const goal = this.plugin.store.settings.dailyWordGoal || 1e3;
     row.createSpan({ text: `\u5199\u4F5C ${day.wordsAdded} / ${goal.toLocaleString()} \u5B57` });
@@ -1826,11 +1805,209 @@ var DashboardView = class extends import_obsidian9.ItemView {
     const pomoButton = row.createEl("button", { cls: "sd-pomodoro-button" });
     pomoButton.onclick = () => this.plugin.pomodoro.toggle();
     this.updatePomodoroButton();
-    const skipButton = row.createEl("button", { cls: "sd-pomodoro-skip", text: "\u8DF3\u8FC7" });
-    skipButton.onclick = () => this.plugin.pomodoro.skip();
+    const skip = row.createEl("button", { cls: "sd-pomodoro-skip", text: "\u8DF3\u8FC7" });
+    skip.onclick = () => this.plugin.pomodoro.skip();
     const progress = card.createDiv({ cls: "sd-progress" });
-    const fill = progress.createDiv({ cls: "sd-progress-fill" });
-    fill.style.width = `${Math.min(100, day.wordsAdded / goal * 100)}%`;
+    progress.createDiv({ cls: "sd-progress-fill" }).style.width = `${Math.min(100, day.wordsAdded / goal * 100)}%`;
+  }
+  renderQuickMemo(root) {
+    const card = root.createDiv({ cls: "sd-card sd-quick-memo" });
+    card.createDiv({ cls: "sd-card-title", text: "\u5FEB\u901F\u901F\u8BB0" });
+    const area = card.createEl("textarea", { cls: "kp-memo-input" });
+    area.placeholder = "\u60F3\u5230\u4EC0\u4E48\uFF0C\u968F\u624B\u8BB0\u4E0B\u2026";
+    area.rows = 2;
+    const submit = card.createEl("button", { cls: "mod-cta", text: "\u8BB0\u4E00\u6761" });
+    submit.onclick = () => {
+      const text = area.value.trim();
+      if (!text) return;
+      void this.plugin.memos.add(text).then(() => {
+        area.value = "";
+        this.render();
+      });
+    };
+  }
+  renderTodayAgent(root) {
+    const card = root.createDiv({ cls: "sd-card" });
+    card.createDiv({ cls: "sd-card-title", text: "\u4ECA\u65E5 Agent \u52A8\u6001" });
+    const today = dateKey(/* @__PURE__ */ new Date());
+    const calls = this.plugin.store.data.toolCalls.filter((call) => call.time.startsWith(today));
+    const logs = this.plugin.store.data.workLogs.filter((log) => log.date === today);
+    if (calls.length === 0 && logs.length === 0) {
+      card.createDiv({ cls: "kp-empty", text: "\u4ECA\u5929\u8FD8\u6CA1\u6709\u667A\u80FD\u4F53\u6D3B\u52A8\u3002" });
+      return;
+    }
+    const list = card.createDiv({ cls: "sd-analytics-list" });
+    for (const call of calls.slice(0, 8)) {
+      const row = list.createDiv({ cls: "sd-analytics-row" });
+      row.createSpan({ text: `${call.time.slice(11, 16)} \xB7 ${call.agent || "unknown"}` });
+      row.createEl("strong", { text: call.tool.replace(/^(GET|POST) /, "") });
+    }
+    for (const log of logs) {
+      const row = list.createDiv({ cls: "sd-analytics-row" });
+      row.createSpan({ text: `${log.time} \xB7 ${log.agent}` });
+      row.createEl("strong", { text: log.task });
+    }
+  }
+  renderInsights(root) {
+    const body = root.createDiv({ cls: "sd-body" });
+    this.renderOverview(body);
+    this.renderHeatmap(body, false);
+    this.renderHorizon(body);
+    this.renderAnalytics(body);
+    this.renderYearly(body);
+    this.renderReview(body);
+    const footer = this.renderFooter(body);
+    footer.createEl("button", { text: "\u6708\u62A5" }).onclick = () => {
+      this.posterMonth = (/* @__PURE__ */ new Date()).getMonth();
+      this.render();
+    };
+  }
+  renderAgentHub(root) {
+    const body = root.createDiv({ cls: "sd-body" });
+    this.renderAgentStatus(body);
+    this.renderHeatmap(body, true);
+    this.renderDrafts(body);
+    this.renderWorkLogs(body);
+    this.renderFooter(body);
+  }
+  renderAgentStatus(root) {
+    var _a;
+    const card = root.createDiv({ cls: "sd-card" });
+    card.createDiv({ cls: "sd-card-title", text: "\u8FDE\u63A5\u4E0E\u8C03\u7528\u72B6\u6001" });
+    const settings = this.plugin.store.settings;
+    const calls = this.plugin.store.data.toolCalls;
+    const byAgent = {};
+    for (const call of calls) byAgent[call.agent || "unknown"] = ((_a = byAgent[call.agent || "unknown"]) != null ? _a : 0) + 1;
+    const grid = card.createDiv({ cls: "sd-status-grid" });
+    const item = (label, value) => {
+      const box = grid.createDiv({ cls: "sd-status-item" });
+      box.createDiv({ cls: "sd-mini-label", text: label });
+      box.createDiv({ cls: "sd-mini-value", text: value });
+    };
+    item("\u672C\u5730 API", settings.agentServerEnabled ? `\u5728\u7EBF \xB7 ${settings.agentServerPort}` : "\u672A\u542F\u7528");
+    item("\u7D2F\u8BA1\u8C03\u7528", String(calls.length));
+    for (const [agent, count] of Object.entries(byAgent)) item(agent, `${count} \u6B21`);
+    const last = calls[0];
+    if (last) card.createDiv({ cls: "sd-card-sub", text: `\u6700\u8FD1\u8C03\u7528\uFF1A${last.time.slice(0, 16)} \xB7 ${last.tool}` });
+  }
+  renderDrafts(root) {
+    var _a, _b, _c;
+    const card = root.createDiv({ cls: "sd-card" });
+    card.createDiv({ cls: "sd-card-title", text: "AI \u6C89\u6DC0\u5BA1\u6838" });
+    const drafts = [];
+    for (const file of this.plugin.app.vault.getMarkdownFiles()) {
+      const cache = this.plugin.app.metadataCache.getFileCache(file);
+      if (((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.sediment_status) === "draft") drafts.push(file);
+    }
+    if (drafts.length === 0) {
+      card.createDiv({ cls: "kp-empty", text: "\u6CA1\u6709\u5F85\u5BA1\u6838\u7684 AI \u8349\u7A3F\u3002" });
+      return;
+    }
+    const list = card.createDiv({ cls: "sd-draft-list" });
+    for (const file of drafts.slice(0, 20)) {
+      const item = list.createDiv({ cls: "sd-draft-card" });
+      const title = item.createEl("button", { cls: "sd-draft-title", text: file.basename });
+      title.onclick = () => void this.plugin.app.workspace.openLinkText(file.path, "", false);
+      const cache = this.plugin.app.metadataCache.getFileCache(file);
+      const category = String((_c = (_b = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _b.category) != null ? _c : "\u672A\u5206\u7C7B");
+      item.createDiv({ cls: "sd-card-sub", text: `${category} \xB7 ${file.path}` });
+      const actions = item.createDiv({ cls: "sd-draft-actions" });
+      actions.createEl("button", { text: "\u91C7\u7EB3\u5E76\u5F52\u6863" }).onclick = () => {
+        void this.plugin.agentApi.updateFrontmatter(file.path, { sediment_status: "accepted" }).then(() => {
+          new import_obsidian9.Notice("\u5DF2\u91C7\u7EB3");
+          this.render();
+        });
+      };
+      actions.createEl("button", { text: "\u5408\u5E76\u5230\u5173\u8054\u7B14\u8BB0" }).onclick = () => void this.mergeDraft(file);
+      actions.createEl("button", { text: "\u9A73\u56DE\u5220\u9664" }).onclick = () => {
+        void this.plugin.app.vault.trash(file, false).then(() => {
+          new import_obsidian9.Notice("\u5DF2\u9A73\u56DE\u5E76\u79FB\u5165\u56DE\u6536\u7AD9");
+          this.render();
+        });
+      };
+    }
+  }
+  async mergeDraft(file) {
+    var _a;
+    const cache = this.plugin.app.metadataCache.getFileCache(file);
+    const links = (_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.links;
+    const first = Array.isArray(links) && links.length > 0 ? String(links[0]) : "";
+    if (!first) {
+      new import_obsidian9.Notice("\u8FD9\u5F20\u8349\u7A3F\u6CA1\u6709\u5173\u8054\u7B14\u8BB0\uFF0C\u65E0\u6CD5\u5408\u5E76");
+      return;
+    }
+    const target = this.plugin.app.vault.getMarkdownFiles().find((item) => item.basename === first || item.path === first);
+    if (!target) {
+      new import_obsidian9.Notice(`\u627E\u4E0D\u5230\u5173\u8054\u7B14\u8BB0\uFF1A${first}`);
+      return;
+    }
+    const source = await this.plugin.app.vault.read(file);
+    const body = source.replace(/^---[\s\S]*?---\s*/, "");
+    await this.plugin.app.vault.process(target, (data) => `${data.trimEnd()}
+
+${body.trim()}
+`);
+    await this.plugin.app.vault.trash(file, false);
+    new import_obsidian9.Notice(`\u5DF2\u5408\u5E76\u5230 ${target.basename}`);
+    this.render();
+  }
+  renderWorkLogs(root) {
+    const card = root.createDiv({ cls: "sd-card" });
+    card.createDiv({ cls: "sd-card-title", text: "\u667A\u80FD\u4F53\u5DE5\u4F5C\u65E5\u5FD7" });
+    const logs = this.plugin.store.data.workLogs.slice(0, 10);
+    if (logs.length === 0) {
+      card.createDiv({ cls: "kp-empty", text: "\u8FD8\u6CA1\u6709\u5DE5\u4F5C\u65E5\u5FD7\u3002" });
+      return;
+    }
+    const list = card.createDiv({ cls: "sd-analytics-list" });
+    for (const log of logs) {
+      const row = list.createDiv({ cls: "sd-analytics-row" });
+      row.createSpan({ text: `${log.date} ${log.time} \xB7 ${log.agent}` });
+      row.createEl("strong", { text: log.task });
+    }
+  }
+  renderFooter(root) {
+    const footer = root.createDiv({ cls: "sd-footer" });
+    footer.createSpan({ text: `Sediment ${this.plugin.manifest.version} \xB7 \u6570\u636E\u53EA\u7559\u5728\u672C\u5730` });
+    const changelog = footer.createEl("button", { text: "\u66F4\u65B0\u8BB0\u5F55" });
+    changelog.onclick = () => new ChangelogModal(this.plugin.app).open();
+    const styleButton = footer.createEl("button", { text: "\u6362\u753B\u98CE" });
+    styleButton.onclick = () => this.cycleArtStyle();
+    return footer;
+  }
+  analyticsCard(root, title, subtitle = "") {
+    const card = root.createDiv({ cls: "sd-card" });
+    const head = card.createDiv({ cls: "sd-card-head" });
+    head.createDiv({ cls: "sd-card-title", text: title });
+    if (subtitle) head.createDiv({ cls: "sd-card-sub", text: subtitle });
+    return card;
+  }
+  barChart(values, color = "var(--interactive-accent)") {
+    const width = 900;
+    const height = 120;
+    const pad = 4;
+    const max = Math.max(1, ...values);
+    const barWidth = (width - pad * 2) / Math.max(1, values.length);
+    const rects = values.map((value, index) => {
+      const h = value / max * (height - pad * 2);
+      return `<rect x="${(pad + index * barWidth).toFixed(1)}" y="${(height - pad - h).toFixed(1)}" width="${(barWidth * 0.72).toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${color}" opacity="${value > 0 ? 0.8 : 0.12}"/>`;
+    }).join("");
+    return `<svg class="sd-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${rects}</svg>`;
+  }
+  multiLine(series) {
+    const width = 900;
+    const height = 140;
+    const pad = 6;
+    const max = Math.max(1, ...series.flatMap((item) => item.values));
+    const lines = series.map((item) => {
+      const points = item.values.map((value, index) => {
+        const x = pad + index / Math.max(1, item.values.length - 1) * (width - pad * 2);
+        const y = height - pad - value / max * (height - pad * 2);
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      }).join(" ");
+      return `<polyline points="${points}" fill="none" stroke="${item.color}" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+    }).join("");
+    return `<svg class="sd-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${lines}</svg>`;
   }
   renderOverview(root) {
     var _a, _b, _c;
@@ -1852,7 +2029,10 @@ var DashboardView = class extends import_obsidian9.ItemView {
     const keys = this.rangeKeys();
     const total = keys.reduce((sum, key) => sum + this.value(key), 0);
     const active = keys.filter((key) => this.value(key) > 0).length;
-    const best = keys.reduce((bestDay, day) => this.value(day) > this.value(bestDay) ? day : bestDay, (_c = keys[0]) != null ? _c : dateKey(/* @__PURE__ */ new Date()));
+    const best = keys.reduce(
+      (bestDay, day) => this.value(day) > this.value(bestDay) ? day : bestDay,
+      (_c = keys[0]) != null ? _c : dateKey(/* @__PURE__ */ new Date())
+    );
     const grid = card.createDiv({ cls: "sd-overview-grid" });
     const left = grid.createDiv({ cls: "sd-overview-left" });
     left.createDiv({ cls: "sd-metric-label", text: "\u7D2F\u8BA1\u8D21\u732E\u5206" });
@@ -1865,14 +2045,11 @@ var DashboardView = class extends import_obsidian9.ItemView {
       item.createDiv({ cls: "sd-mini-label", text: label });
       item.createDiv({ cls: "sd-mini-value", text: value });
       item.createDiv({ cls: "sd-mini-hint", text: hint });
-      if (ring) {
-        const holder = item.createDiv({ cls: "sd-mini-ring" });
-        holder.innerHTML = ring;
-      }
+      if (ring) item.createDiv({ cls: "sd-mini-ring" }).innerHTML = ring;
     };
-    mini("\u6D3B\u8DC3\u5929\u6570", `${active} / ${keys.length}`, "\u8FD9\u6BB5\u65F6\u95F4\u6709\u8BB0\u5F55\u7684\u65E5\u5B50", this.ring(active, keys.length));
+    mini("\u6D3B\u8DC3\u5929\u6570", `${active} / ${keys.length}`, "\u6709\u8BB0\u5F55\u7684\u65E5\u5B50", this.ring(active, keys.length));
     mini("\u5F53\u524D\u8FDE\u7EED", "0 \u5929", "\u6700\u957F 0 \u5929 \xB7 \u6309\u5168\u90E8\u5386\u53F2");
-    mini("\u6295\u5165\u65F6\u95F4", "0 \u5C0F\u65F6", "\u4EA4\u4E92 / \u4E13\u6CE8\uFF08\u5F85\u8054\u52A8\uFF09");
+    mini("\u6295\u5165\u65F6\u95F4", "0 \u5C0F\u65F6", "\u4EA4\u4E92 / \u4E13\u6CE8");
     mini("\u6700\u9AD8\u7684\u4E00\u5929", this.value(best) > 0 ? String(this.value(best)) : "\u2014", best);
   }
   sparkline(values) {
@@ -1885,10 +2062,9 @@ var DashboardView = class extends import_obsidian9.ItemView {
       const y = height - pad - value / max * (height - pad * 2);
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     }).join(" ");
-    const area = `${pad},${height - pad} ${points} ${width - pad},${height - pad}`;
     return `<svg class="sd-spark" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
 <polyline points="${points}" fill="none" stroke="var(--interactive-accent)" stroke-width="2" vector-effect="non-scaling-stroke"/>
-<polygon points="${area}" fill="var(--interactive-accent)" opacity="0.1"/></svg>`;
+<polygon points="${pad},${height - pad} ${points} ${width - pad},${height - pad}" fill="var(--interactive-accent)" opacity="0.1"/></svg>`;
   }
   ring(active, total) {
     const radius = 26;
@@ -1900,12 +2076,11 @@ var DashboardView = class extends import_obsidian9.ItemView {
   stroke-dasharray="${(ratio * circumference).toFixed(1)} ${circumference.toFixed(1)}" transform="rotate(-90 34 34)"/>
 <text x="34" y="40" text-anchor="middle" font-size="15" fill="var(--text-normal)">${active}</text></svg>`;
   }
-  renderHeatmap(root) {
-    var _a;
+  renderHeatmap(root, dual) {
     const card = root.createDiv({ cls: "sd-card sd-heatmap" });
     const head = card.createDiv({ cls: "sd-card-head" });
-    head.createDiv({ cls: "sd-card-title", text: "\u5E74\u5EA6\u77E5\u8BC6\u6D3B\u8DC3\u8109\u51B2" });
-    head.createDiv({ cls: "sd-card-sub", text: `\u8FD1 53 \u5468 \xB7 ${this.metricLabel()} ${(_a = this.plugin.store.getDay(dateKey(/* @__PURE__ */ new Date()))[this.metric]) != null ? _a : 0} \u5206` });
+    head.createDiv({ cls: "sd-card-title", text: dual ? "\u4EBA\u673A\u53CC\u8272\u70ED\u529B\u56FE" : "\u5E74\u5EA6\u77E5\u8BC6\u6D3B\u8DC3\u8109\u51B2" });
+    head.createDiv({ cls: "sd-card-sub", text: `\u8FD1 53 \u5468 \xB7 ${this.metricLabel()}` });
     const metrics = card.createDiv({ cls: "sd-metrics" });
     for (const metric of METRICS) {
       const button = metrics.createEl("button", {
@@ -1942,16 +2117,16 @@ var DashboardView = class extends import_obsidian9.ItemView {
       for (let day = 0; day < 7; day += 1) {
         const date = addDays(start, week * 7 + day);
         const key = dateKey(date);
+        const record = store.getDay(key);
+        const cellValue = Number(record[this.metric]) || 0;
         const element = column.createDiv({ cls: "kp-cell", attr: { "data-date": key } });
-        if (date > today) {
-          element.addClass("kp-future");
-        } else {
+        if (date > today) element.addClass("kp-future");
+        else
           element.onclick = () => {
             this.selected = key;
             this.render();
           };
-        }
-        cells.push({ key, value: this.value(key), date, el: element });
+        cells.push({ key, value: cellValue, date, el: element, ai: record.aiWordsAdded });
       }
     }
     for (const cell of cells) {
@@ -1965,12 +2140,19 @@ var DashboardView = class extends import_obsidian9.ItemView {
     for (const cell of cells) {
       const level = cell.value <= 0 ? 0 : Math.max(1, Math.min(4, Math.ceil(cell.value / max * 4)));
       cell.el.addClass(`kp-lvl-${level}`);
-      cell.el.setAttribute("title", `${cell.key} \xB7 ${this.metricLabel()} ${cell.value}`);
+      if (dual && this.metric === "wordsAdded" && cell.value > 0) {
+        const ratio = Math.min(100, cell.ai / cell.value * 100);
+        cell.el.style.background = `linear-gradient(90deg, var(--interactive-accent) ${ratio}%, var(--text-faint) ${ratio}%)`;
+      }
+      cell.el.setAttribute(
+        "title",
+        dual && this.metric === "wordsAdded" ? `${cell.key} \xB7 \u603B ${cell.value} \u5B57\uFF0C\u5176\u4E2D AI ${cell.ai} \u5B57` : `${cell.key} \xB7 ${this.metricLabel()} ${cell.value}`
+      );
     }
     const legend = wrap.createDiv({ cls: "kp-legend" });
-    legend.createSpan({ text: "\u5C11" });
+    legend.createSpan({ text: dual ? "\u4EBA" : "\u5C11" });
     for (let level = 0; level <= 4; level += 1) legend.createDiv({ cls: `kp-cell kp-lvl-${level}` });
-    legend.createSpan({ text: "\u591A" });
+    legend.createSpan({ text: dual ? "AI" : "\u591A" });
     if (this.selected) {
       const day = store.getDay(this.selected);
       const detail = card.createDiv({ cls: "sd-day-detail" });
@@ -1978,13 +2160,14 @@ var DashboardView = class extends import_obsidian9.ItemView {
       const rows = [
         ["\u8D21\u732E\u5206", day.contribution],
         ["\u65B0\u589E\u8BCD", day.wordsAdded],
+        ["AI \u65B0\u589E\u8BCD", day.aiWordsAdded],
         ["\u7F16\u8F91\u4F1A\u8BDD", day.edits],
         ["\u65B0\u5EFA\u7B14\u8BB0", day.notesCreated],
         ["\u5B8C\u6210\u4EFB\u52A1", day.tasksCompleted]
       ];
       for (const [label, value] of rows) {
         const item = detail.createDiv({ cls: "sd-day-item" });
-        item.createSpan({ text: label });
+        item.createDiv({ cls: "kp-detail-label", text: label });
         item.createEl("strong", { text: String(value) });
       }
     }
@@ -1992,95 +2175,28 @@ var DashboardView = class extends import_obsidian9.ItemView {
   renderHorizon(root) {
     const card = root.createDiv({ cls: "sd-card sd-horizon" });
     card.createDiv({ cls: "sd-card-title", text: "\u5730\u5E73\u7EBF \xB7 \u6700\u8FD1 60 \u5929" });
-    card.createDiv({
-      cls: "sd-card-sub",
-      text: "\u5C71\u810A\u662F\u6BCF\u5929\u7684\u8D21\u732E\u5206\uFF0C\u6700\u53F3\u8FB9\u7684\u5C0F\u65D7\u662F\u4ECA\u5929\uFF1B\u6E56\u9762\u5012\u6620\u7740\u5929\u7A7A\uFF0C\u4E13\u6CE8\u65F6\u4F1A\u6709\u5E06\u8239\u3002"
-    });
     const values = lastNDays(60).map((key) => this.value(key));
     const max = Math.max(1, ...values);
     const step = 1600 / values.length;
     const ridge = values.map((value, index) => `${(index * step).toFixed(1)},${(190 - value / max * 110).toFixed(1)}`).join(" ");
-    const mountains = `0,200 ${ridge} 1600,200`;
     const reflectionPoints = values.map((value, index) => `${(index * step).toFixed(1)},${(208 + value / max * 52).toFixed(1)}`).join(" ");
-    const reflection = `0,206 ${reflectionPoints} 1600,206`;
     const stones = values.map(
       (value, index) => value > 0 ? `<circle cx="${(index * step + step / 2).toFixed(1)}" cy="${(188 - value / max * 110).toFixed(1)}" r="2.6" fill="var(--interactive-accent)" opacity="0.8"/>` : ""
     ).join("");
-    const now = /* @__PURE__ */ new Date();
-    const hour = now.getHours() + now.getMinutes() / 60;
+    const hour = (/* @__PURE__ */ new Date()).getHours();
     const daylight = hour >= 6 && hour < 18;
     const x = 180 + hour / 24 * 1240;
-    const celestial = daylight ? `<circle cx="${x.toFixed(0)}" cy="74" r="28" fill="#ffe08a"/><circle cx="${x.toFixed(0)}" cy="74" r="46" fill="#fff3c4" opacity="0.16"/>` : `<circle cx="${x.toFixed(0)}" cy="74" r="24" fill="#f2f0dc" opacity="0.9"/><text x="${x.toFixed(0)}" y="84" font-size="24" text-anchor="middle">${this.moonGlyph(now)}</text>`;
-    const month = now.getMonth();
-    const treeColor = month === 11 || month < 3 ? "#d7e4ec" : month < 6 ? "#8fbf7a" : month < 9 ? "#6fa05f" : "#d59a5b";
-    const trees = [140, 380, 650, 940, 1230].map((tx) => `<path d="M${tx} 190 l14 -34 l14 34 Z" fill="${treeColor}" opacity="0.7"/>`).join("");
-    const sailing = this.plugin.pomodoro.state().running ? `<g transform="translate(1280 232)"><path d="M0 18 h54 l-8 12 H8 Z" fill="var(--text-muted)"/><path d="M26 16 V-26 l24 34 Z" fill="var(--interactive-accent)" opacity="0.75"/></g>` : "";
+    const celestial = daylight ? `<circle cx="${x.toFixed(0)}" cy="74" r="28" fill="#ffe08a"/>` : `<circle cx="${x.toFixed(0)}" cy="74" r="24" fill="#f2f0dc"/>`;
+    const sailing = this.plugin.pomodoro.state().running ? `<g transform="translate(1280 232)"><path d="M0 18 h54 l-8 12 H8 Z" fill="var(--text-muted)"/><path d="M26 16 V-26 l24 34 Z" fill="var(--interactive-accent)"/></g>` : "";
     card.innerHTML += `<svg viewBox="0 0 1600 300" preserveAspectRatio="none" class="sd-horizon-svg">
-<defs>
-  <linearGradient id="sd-hsky" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="0%" stop-color="${daylight ? "#9fc8e8" : "#2b3f60"}"/>
-    <stop offset="100%" stop-color="${daylight ? "#e6f2fa" : "#64809f"}"/>
-  </linearGradient>
-</defs>
-<rect width="1600" height="200" fill="url(#sd-hsky)"/>
+<rect width="1600" height="200" fill="${daylight ? "#cfe2f2" : "#33455f"}" opacity="0.6"/>
 ${celestial}
-<polygon points="${mountains}" fill="var(--interactive-accent)" opacity="0.28"/>
-<polygon points="${mountains}" fill="none" stroke="var(--interactive-accent)" stroke-width="2" opacity="0.6"/>
+<polygon points="0,200 ${ridge} 1600,200" fill="var(--interactive-accent)" opacity="0.28"/>
 ${stones}
-${trees}
-<rect x="1560" y="118" width="3" height="76" fill="var(--text-muted)"/>
-<path d="M1563 120 l34 10 -34 10 Z" fill="var(--interactive-accent)"/>
 <rect y="200" width="1600" height="100" fill="var(--background-secondary)" opacity="0.75"/>
-<polygon points="${reflection}" fill="var(--interactive-accent)" opacity="0.12"/>
-<ellipse cx="${x.toFixed(0)}" cy="232" rx="38" ry="9" fill="${daylight ? "#ffe08a" : "#f2f0dc"}" opacity="0.22"/>
+<polygon points="0,206 ${reflectionPoints} 1600,206" fill="var(--interactive-accent)" opacity="0.12"/>
 ${sailing}
 </svg>`;
-  }
-  renderReview(root) {
-    const card = root.createDiv({ cls: "sd-card sd-text-view" });
-    const head = card.createDiv({ cls: "sd-card-head" });
-    head.createDiv({ cls: "sd-card-title", text: "\u77E5\u8BC6\u590D\u76D8 \xB7 \u672C\u5468" });
-    const markdown = buildWeeklyReview(this.plugin.store, /* @__PURE__ */ new Date());
-    const copy = head.createEl("button", { text: "\u590D\u5236 Markdown" });
-    copy.onclick = () => {
-      void navigator.clipboard.writeText(markdown).then(() => new import_obsidian9.Notice("\u5468\u590D\u76D8\u5DF2\u590D\u5236"));
-    };
-    const preview = card.createDiv({ cls: "sd-review-preview" });
-    void import_obsidian9.MarkdownRenderer.render(this.plugin.app, markdown, preview, "", this);
-  }
-  analyticsCard(root, title, subtitle = "") {
-    const card = root.createDiv({ cls: "sd-card" });
-    const head = card.createDiv({ cls: "sd-card-head" });
-    head.createDiv({ cls: "sd-card-title", text: title });
-    if (subtitle) head.createDiv({ cls: "sd-card-sub", text: subtitle });
-    return card;
-  }
-  barChart(values, color = "var(--interactive-accent)") {
-    const width = 900;
-    const height = 120;
-    const pad = 4;
-    const max = Math.max(1, ...values);
-    const barWidth = (width - pad * 2) / Math.max(1, values.length);
-    const rects = values.map((value, index) => {
-      const h = value / max * (height - pad * 2);
-      return `<rect x="${(pad + index * barWidth).toFixed(1)}" y="${(height - pad - h).toFixed(1)}" width="${(barWidth * 0.72).toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${color}" opacity="${value > 0 ? 0.8 : 0.12}"/>`;
-    }).join("");
-    return `<svg class="sd-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${rects}</svg>`;
-  }
-  multiLine(series) {
-    const width = 900;
-    const height = 140;
-    const pad = 6;
-    const max = Math.max(1, ...series.flatMap((item) => item.values));
-    const lines = series.map((item) => {
-      const points = item.values.map((value, index) => {
-        const x = pad + index / Math.max(1, item.values.length - 1) * (width - pad * 2);
-        const y = height - pad - value / max * (height - pad * 2);
-        return `${x.toFixed(1)},${y.toFixed(1)}`;
-      }).join(" ");
-      return `<polyline points="${points}" fill="none" stroke="${item.color}" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
-    }).join("");
-    return `<svg class="sd-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${lines}</svg>`;
   }
   renderAnalytics(root) {
     var _a, _b, _c, _d;
@@ -2102,24 +2218,19 @@ ${sailing}
     ]);
     const totalWords = days.reduce((sum, day) => sum + day.wordsAdded, 0);
     const captured = days.reduce((sum, day) => sum + day.capturedWords, 0);
+    const source = this.analyticsCard(root, "\u5199\u4F5C\u6765\u6E90", "\u9010\u6B65\u5199\u5165 / \u5927\u6BB5\u6355\u83B7");
     const typed = Math.max(0, totalWords - captured);
-    const sources = this.analyticsCard(root, "\u5199\u4F5C\u6765\u6E90", "\u9010\u6B65\u5199\u5165 / \u5927\u6BB5\u6355\u83B7");
-    const sourceBar = sources.createDiv({ cls: "sd-source-bar" });
-    const typedPart = sourceBar.createDiv({ cls: "sd-source-typed" });
-    typedPart.style.width = `${totalWords ? typed / totalWords * 100 : 0}%`;
-    const capturePart = sourceBar.createDiv({ cls: "sd-source-capture" });
-    capturePart.style.width = `${totalWords ? captured / totalWords * 100 : 0}%`;
-    sources.createDiv({
-      cls: "sd-card-sub",
-      text: `\u9010\u6B65\u5199\u5165 ${typed} \u5B57 \xB7 \u5927\u6BB5\u6355\u83B7 ${captured} \u5B57`
-    });
+    const bar = source.createDiv({ cls: "sd-source-bar" });
+    bar.createDiv({ cls: "sd-source-typed" }).style.width = `${totalWords ? typed / totalWords * 100 : 0}%`;
+    bar.createDiv({ cls: "sd-source-capture" }).style.width = `${totalWords ? captured / totalWords * 100 : 0}%`;
+    source.createDiv({ cls: "sd-card-sub", text: `\u9010\u6B65\u5199\u5165 ${typed} \u5B57 \xB7 \u5927\u6BB5\u6355\u83B7 ${captured} \u5B57` });
+    const folders = this.analyticsCard(root, "\u6295\u5165\u53BB\u5411", "\u6309\u76EE\u5F55\u7EDF\u8BA1\uFF08\u7B14\u8BB0 \xD7 \u5929\uFF09");
     const folderTotals = /* @__PURE__ */ new Map();
     for (const day of days) {
       for (const [folder, words] of Object.entries(day.folderWords)) {
         folderTotals.set(folder, ((_c = folderTotals.get(folder)) != null ? _c : 0) + words);
       }
     }
-    const folders = this.analyticsCard(root, "\u6295\u5165\u53BB\u5411", "\u6309\u76EE\u5F55\u7EDF\u8BA1\uFF08\u7B14\u8BB0 \xD7 \u5929\uFF09");
     const folderList = folders.createDiv({ cls: "sd-analytics-list" });
     for (const [folder, words] of [...folderTotals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10)) {
       const row = folderList.createDiv({ cls: "sd-analytics-row" });
@@ -2134,14 +2245,12 @@ ${sailing}
       }, 0)
     );
     const hours = this.analyticsCard(root, "\u6D3B\u8DC3\u65F6\u6BB5", "\u6309\u5C0F\u65F6\u7684\u65B0\u589E\u8BCD\u6570");
-    hours.innerHTML += this.barChart(hourly, "var(--interactive-accent)");
+    hours.innerHTML += this.barChart(hourly);
     const weekdayHour = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0));
     for (const key of keys) {
       const day = this.plugin.store.getDay(key);
       const weekday = parseKey(key).getDay();
-      for (let hour = 0; hour < 24; hour += 1) {
-        weekdayHour[weekday][hour] += (_d = day.hourlyWords[hour]) != null ? _d : 0;
-      }
+      for (let hour = 0; hour < 24; hour += 1) weekdayHour[weekday][hour] += (_d = day.hourlyWords[hour]) != null ? _d : 0;
     }
     const hourMax = Math.max(1, ...weekdayHour.flat());
     const pattern = hours.createDiv({ cls: "sd-hour-grid" });
@@ -2150,19 +2259,11 @@ ${sailing}
         const cell = pattern.createDiv({ cls: "sd-hour-cell" });
         const ratio = weekdayHour[weekday][hour] / hourMax;
         cell.setAttribute("style", `background:var(--interactive-accent);opacity:${ratio > 0 ? 0.1 + ratio * 0.9 : 0.05}`);
-        cell.setAttribute("title", `${weekday} \u5468 \xB7 ${hour} \u65F6 \xB7 ${weekdayHour[weekday][hour]} \u5B57`);
       }
     }
-    const rhythm = this.analyticsCard(root, "\u6295\u5165\u8282\u5F8B\u77E9\u9635", "\u516D\u9879\u6307\u6807\u6309\u5929\u5BF9\u9F50\uFF0C\u989C\u8272\u4E3A\u533A\u95F4\u5185\u76F8\u5BF9\u9AD8\u4F4E");
+    const rhythm = this.analyticsCard(root, "\u6295\u5165\u8282\u5F8B\u77E9\u9635", "\u516D\u9879\u6307\u6807\u6309\u5929\u5BF9\u9F50");
     const grid = rhythm.createDiv({ cls: "sd-rhythm" });
-    const metricKeys = [
-      "contribution",
-      "wordsAdded",
-      "activeMinutes",
-      "focusMinutes",
-      "notesCreated",
-      "tasksCompleted"
-    ];
+    const metricKeys = ["contribution", "wordsAdded", "activeMinutes", "focusMinutes", "notesCreated", "tasksCompleted"];
     grid.createDiv({ cls: "sd-rhythm-label", text: "\u65E5\u671F" });
     for (const key of metricKeys) grid.createDiv({ cls: "sd-rhythm-label", text: this.shortMetric(key) });
     const maxima = metricKeys.map((key) => Math.max(1, ...days.map((day) => Number(day[key]) || 0)));
@@ -2173,7 +2274,6 @@ ${sailing}
         const value = Number(day[metric]) || 0;
         const cell = grid.createDiv({ cls: "sd-rhythm-cell" });
         cell.setAttribute("style", `background:var(--interactive-accent);opacity:${value > 0 ? 0.1 + 0.9 * (value / maxima[index]) : 0.04}`);
-        cell.setAttribute("title", `${key} \xB7 ${this.shortMetric(metric)} ${value}`);
       });
     }
   }
@@ -2203,10 +2303,9 @@ ${sailing}
     return "\u{1F318}";
   }
   renderYearly(root) {
-    var _a;
     const year = (/* @__PURE__ */ new Date()).getFullYear();
     const entries = Object.entries(this.plugin.store.data.days).filter(([key]) => key.startsWith(`${year}-`));
-    const wheel = this.analyticsCard(root, "\u5E74\u8F6E", `${year} \u5E74 \xB7 \u6BCF\u5929\u4E00\u7247\u82B1\u74E3\uFF0C\u957F\u5EA6\u662F\u8D21\u732E`);
+    const wheel = this.analyticsCard(root, "\u5E74\u8F6E", `${year} \u5E74 \xB7 \u6BCF\u5929\u4E00\u7247\u82B1\u74E3`);
     const petals = entries.map(([key, day]) => {
       const dayOfYear = Math.floor((parseKey(key).getTime() - new Date(year, 0, 0).getTime()) / 864e5);
       const angle = dayOfYear / 365 * Math.PI * 2 - Math.PI / 2;
@@ -2224,8 +2323,7 @@ ${sailing}
       const bars = Array.from({ length: 31 }, (_2, index) => {
         const key = `${year}-${String(month + 1).padStart(2, "0")}-${String(index + 1).padStart(2, "0")}`;
         const value = this.plugin.store.getDay(key).contribution;
-        const opacity = value > 0 ? 0.2 + Math.min(0.8, value / 12) : 0.06;
-        return `<rect x="${index * 13}" y="${month * 20}" width="9" height="13" rx="2" fill="var(--interactive-accent)" opacity="${opacity.toFixed(2)}"/>`;
+        return `<rect x="${index * 13}" y="${month * 20}" width="9" height="13" rx="2" fill="var(--interactive-accent)" opacity="${value > 0 ? 0.2 + Math.min(0.8, value / 12) : 0.06}"/>`;
       }).join("");
       return `<text x="0" y="${month * 20 + 11}" font-size="9" fill="var(--text-faint)">${month + 1}</text>${bars}`;
     }).join("");
@@ -2234,35 +2332,13 @@ ${sailing}
     for (let month = 0; month < 12; month += 1) {
       const section = calendar.createDiv({ cls: "sd-calendar-month" });
       section.createDiv({ cls: "sd-calendar-title", text: `${month + 1} \u6708` });
-      const grid = section.createDiv({ cls: "sd-calendar-grid" });
-      const daysInMonth = new Date(year, month + 1, 0).getDate();
-      for (let day = 1; day <= daysInMonth; day += 1) {
+      const grid2 = section.createDiv({ cls: "sd-calendar-grid" });
+      for (let day = 1; day <= new Date(year, month + 1, 0).getDate(); day += 1) {
         const date = new Date(year, month, day);
         const value = this.plugin.store.getDay(dateKey(date)).contribution;
-        const cell = grid.createDiv({ cls: "sd-calendar-cell" });
-        cell.setAttribute("title", `${dateKey(date)} \xB7 ${value} \u5206`);
+        const cell = grid2.createDiv({ cls: "sd-calendar-cell", attr: { title: `${dateKey(date)} \xB7 ${value} \u5206` } });
         cell.createDiv({ cls: "sd-calendar-moon", text: this.moonGlyph(date) });
         cell.createDiv({ cls: "sd-calendar-value", text: value > 0 ? String(value) : "\xB7" });
-      }
-    }
-    const strata = this.analyticsCard(root, "\u77E5\u8BC6\u5730\u5C42", "\u6BCF\u5468\u4E00\u5C42\uFF0C\u6309\u76EE\u5F55\u5206\u8272");
-    const layerGrid = strata.createDiv({ cls: "sd-strata" });
-    for (let week = 0; week < 26; week += 1) {
-      const row = layerGrid.createDiv({ cls: "sd-strata-row" });
-      const start = addDays(new Date(year, 0, 1), week * 7);
-      const folders = /* @__PURE__ */ new Map();
-      for (let offset = 0; offset < 7; offset += 1) {
-        const day = this.plugin.store.getDay(dateKey(addDays(start, offset)));
-        for (const [folder, words] of Object.entries(day.folderWords)) {
-          folders.set(folder, ((_a = folders.get(folder)) != null ? _a : 0) + words);
-        }
-      }
-      row.createDiv({ cls: "sd-strata-label", text: `${start.getMonth() + 1}/${start.getDate()}` });
-      const total = [...folders.values()].reduce((sum, value) => sum + value, 0) || 1;
-      for (const [folder, words] of [...folders.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6)) {
-        const segment = row.createDiv({ cls: "sd-strata-segment" });
-        segment.style.width = `${words / total * 100}%`;
-        segment.setAttribute("title", `${folder} \xB7 ${words} \u5B57`);
       }
     }
     const poster = this.analyticsCard(root, "\u6708\u62A5\u6D77\u62A5", "\u70B9\u5DE6\u53F3\u7BAD\u5934\u5207\u6362\u6708\u4EFD");
@@ -2279,8 +2355,8 @@ ${sailing}
       this.render();
     };
     const post = poster.createDiv({ cls: "sd-poster" });
-    const monthPrefix = `${year}-${String(this.posterMonth + 1).padStart(2, "0")}`;
-    const monthDays = entries.filter(([key]) => key.startsWith(monthPrefix));
+    const prefix = `${year}-${String(this.posterMonth + 1).padStart(2, "0")}`;
+    const monthDays = entries.filter(([key]) => key.startsWith(prefix));
     const monthTotal = monthDays.reduce((sum, [, day]) => sum + day.contribution, 0);
     const monthWords = monthDays.reduce((sum, [, day]) => sum + day.wordsAdded, 0);
     const monthActive = monthDays.filter(([, day]) => day.contribution > 0).length;
@@ -2289,16 +2365,15 @@ ${sailing}
     const stats = post.createDiv({ cls: "sd-poster-stats" });
     stats.createSpan({ text: `\u6D3B\u8DC3 ${monthActive} \u5929` });
     stats.createSpan({ text: `\u65B0\u589E ${monthWords} \u5B57` });
-    const posterGrid = post.createDiv({ cls: "sd-poster-grid" });
+    const grid = post.createDiv({ cls: "sd-poster-grid" });
     for (let day = 1; day <= new Date(year, this.posterMonth + 1, 0).getDate(); day += 1) {
-      const key = `${monthPrefix}-${String(day).padStart(2, "0")}`;
-      const value = this.plugin.store.getDay(key).contribution;
-      const cell = posterGrid.createDiv({ cls: "sd-poster-cell" });
-      cell.setAttribute("style", `background:var(--interactive-accent);opacity:${value > 0 ? 0.2 + Math.min(0.8, value / 12) : 0.06}`);
-      cell.setAttribute("title", `${key} \xB7 ${value} \u5206`);
+      const value = this.plugin.store.getDay(`${prefix}-${String(day).padStart(2, "0")}`).contribution;
+      grid.createDiv({ cls: "sd-poster-cell", attr: { title: `${prefix}-${String(day).padStart(2, "0")} \xB7 ${value} \u5206` } }).setAttribute(
+        "style",
+        `background:var(--interactive-accent);opacity:${value > 0 ? 0.2 + Math.min(0.8, value / 12) : 0.06}`
+      );
     }
-    const exportButton = poster.createEl("button", { cls: "sd-poster-export", text: "\u5BFC\u51FA PNG" });
-    exportButton.onclick = () => void this.exportPoster(title.textContent, monthTotal, monthWords, monthActive);
+    poster.createEl("button", { cls: "sd-poster-export", text: "\u5BFC\u51FA PNG" }).onclick = () => void this.exportPoster(title.textContent, monthTotal, monthWords, monthActive);
   }
   async exportPoster(title, total, words, active) {
     const canvas = document.createElement("canvas");
@@ -2316,14 +2391,23 @@ ${sailing}
     ctx.fillStyle = "#20344d";
     ctx.font = "bold 120px sans-serif";
     ctx.fillText(String(total), 60, 470);
-    ctx.font = "36px sans-serif";
-    ctx.fillText("\u672C\u6708\u8D21\u732E\u5206", 60, 530);
     ctx.font = "32px sans-serif";
     ctx.fillText(`\u6D3B\u8DC3 ${active} \u5929 \xB7 \u65B0\u589E ${words} \u5B57`, 60, 610);
     const link = document.createElement("a");
     link.download = `sediment-${title.replace(/\s/g, "")}.png`;
     link.href = canvas.toDataURL("image/png");
     link.click();
+  }
+  renderReview(root) {
+    const card = root.createDiv({ cls: "sd-card sd-text-view" });
+    const head = card.createDiv({ cls: "sd-card-head" });
+    head.createDiv({ cls: "sd-card-title", text: "\u77E5\u8BC6\u590D\u76D8 \xB7 \u672C\u5468" });
+    const markdown = buildWeeklyReview(this.plugin.store, /* @__PURE__ */ new Date());
+    head.createEl("button", { text: "\u590D\u5236 Markdown" }).onclick = () => {
+      void navigator.clipboard.writeText(markdown).then(() => new import_obsidian9.Notice("\u5468\u590D\u76D8\u5DF2\u590D\u5236"));
+    };
+    const preview = card.createDiv({ cls: "sd-review-preview" });
+    void import_obsidian9.MarkdownRenderer.render(this.plugin.app, markdown, preview, "", this);
   }
   bannerSvg() {
     const style = this.plugin.store.settings.artStyle;
@@ -2332,16 +2416,15 @@ ${sailing}
     const daylight = hour >= 6 && hour < 18;
     const x = 180 + hour / 24 * 1240;
     const y = Math.max(34, 60 - Math.sin((hour - 6) / 12 * Math.PI) * 34);
-    const celestial = daylight ? `<circle cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" r="34" fill="#ffe08a"/><circle cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" r="56" fill="#fff3c4" opacity="0.18"/>` : `<circle cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" r="30" fill="#f2f0dc" opacity="0.9"/><text x="${x.toFixed(0)}" y="${(y + 10).toFixed(0)}" font-size="30" text-anchor="middle">${this.moonGlyph(now)}</text>`;
+    const celestial = daylight ? `<circle cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" r="34" fill="#ffe08a"/>` : `<circle cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" r="30" fill="#f2f0dc"/><text x="${x.toFixed(0)}" y="${(y + 10).toFixed(0)}" font-size="30" text-anchor="middle">${this.moonGlyph(now)}</text>`;
     if (style === "ink") {
       return `<svg viewBox="0 0 1600 300" preserveAspectRatio="xMidYMid slice" class="sd-banner-svg">
 <rect width="1600" height="300" fill="#e9e7e1"/>
 <path d="M0 150 q300 -90 560 10 q260 -120 520 -20 q260 -70 520 30 L1600 300 L0 300 Z" fill="#9aa0a3" opacity="0.5"/>
 <path d="M0 210 q240 -70 480 10 q300 -90 560 -10 q260 -50 560 20 L1600 300 L0 300 Z" fill="#5f676c" opacity="0.6"/>
-<circle cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" r="38" fill="#f7f5ee" stroke="#8b9094" stroke-width="2"/>
+${celestial}
 <rect x="1460" y="40" width="62" height="62" fill="#b6473f" opacity="0.85"/>
-<text x="1491" y="82" font-size="30" text-anchor="middle" fill="#fff">\u6C89</text>
-</svg>`;
+<text x="1491" y="82" font-size="30" text-anchor="middle" fill="#fff">\u6C89</text></svg>`;
     }
     if (style === "city") {
       const buildings = Array.from({ length: 34 }, (_, index) => {
@@ -2358,31 +2441,15 @@ ${sailing}
         return `<rect x="${bx}" y="${300 - height}" width="${width}" height="${height}" fill="${daylight ? "#6d87a7" : "#2a3b57"}"/>${windows}`;
       }).join("");
       return `<svg viewBox="0 0 1600 300" preserveAspectRatio="xMidYMid slice" class="sd-banner-svg">
-<rect width="1600" height="300" fill="${daylight ? "#d8b79b" : "#1b2740"}"/>
-${celestial}
-${buildings}
-<rect y="282" width="1600" height="18" fill="${daylight ? "#93adc5" : "#101a2e"}"/>
-</svg>`;
+<rect width="1600" height="300" fill="${daylight ? "#d8b79b" : "#1b2740"}"/>${celestial}${buildings}</svg>`;
     }
     return `<svg viewBox="0 0 1600 300" preserveAspectRatio="xMidYMid slice" class="sd-banner-svg">
-<rect width="1600" height="300" fill="url(#sd-sky)"/>
-<defs>
-  <linearGradient id="sd-sky" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="0%" stop-color="${daylight ? "#2f6fb2" : "#15294a"}"/>
-    <stop offset="60%" stop-color="${daylight ? "#8fc2e8" : "#3d5b86"}"/>
-    <stop offset="100%" stop-color="${daylight ? "#d8ecfa" : "#7793b6"}"/>
-  </linearGradient>
-</defs>
+<rect width="1600" height="300" fill="${daylight ? "#9fc8e8" : "#2b3f60"}"/>
 ${celestial}
-<path d="M120 70 q60 -26 130 0 q40 -18 90 4" stroke="#ffffff" stroke-width="12" fill="none" opacity="0.16" stroke-linecap="round"/>
 <path d="M0 232 L120 178 L210 210 L330 138 L450 208 L560 166 L690 224 L820 180 L960 228 L1090 176 L1220 220 L1360 168 L1500 214 L1600 186 L1600 260 L0 260 Z" fill="#5b8dbd" opacity="0.45"/>
-<path d="M0 252 L160 214 L300 244 L430 200 L580 246 L720 212 L880 250 L1030 208 L1190 246 L1340 206 L1500 244 L1600 220 L1600 280 L0 280 Z" fill="#3f6f9f" opacity="0.5"/>
 <rect x="138" y="150" width="20" height="86" fill="#f5f5f2"/>
 <path d="M138 166 h20 M138 196 h20" stroke="#d9544d" stroke-width="8"/>
-<path d="M136 150 h24 l-6 -14 h-12 Z" fill="#d9544d"/>
-<rect x="143" y="132" width="10" height="8" fill="#ffe9a8"/>
-<rect y="258" width="1600" height="42" fill="${daylight ? "#a9cbe4" : "#2b3f5e"}" opacity="0.75"/>
-</svg>`;
+<rect y="258" width="1600" height="42" fill="${daylight ? "#a9cbe4" : "#2b3f5e"}" opacity="0.75"/></svg>`;
   }
   updateBanner() {
     if (this.bannerEl) this.bannerEl.innerHTML = this.bannerSvg();
@@ -2438,10 +2505,11 @@ var MemoView = class extends import_obsidian10.ItemView {
   }
   async onOpen() {
     this.render();
+    this.registerEvent(this.plugin.app.workspace.on("file-open", () => this.refreshContent()));
   }
   /** 只刷新列表和沉淀区，不碰用户正在输入的速记框。 */
   refreshContent() {
-    var _a, _b;
+    var _a, _b, _c;
     if (this.tab !== "all") {
       this.render();
       return;
@@ -2449,8 +2517,10 @@ var MemoView = class extends import_obsidian10.ItemView {
     const root = this.contentEl;
     (_a = root.querySelector(".kp-memo-list")) == null ? void 0 : _a.remove();
     (_b = root.querySelector(".sd-knowledge-inline")) == null ? void 0 : _b.remove();
+    (_c = root.querySelector(".sd-context-card")) == null ? void 0 : _c.remove();
     this.renderList(root);
     this.renderKnowledge(root, 30, true);
+    this.renderContext(root);
   }
   render() {
     const root = this.contentEl;
@@ -2530,6 +2600,31 @@ var MemoView = class extends import_obsidian10.ItemView {
     });
     this.renderList(root);
     this.renderKnowledge(root, 30, true);
+    this.renderContext(root);
+  }
+  /** 与当前打开的笔记相关的历史速记和工作日志。 */
+  renderContext(root) {
+    const file = this.plugin.app.workspace.getActiveFile();
+    if (!file) return;
+    const card = root.createDiv({ cls: "sd-card sd-context-card" });
+    card.createDiv({ cls: "sd-card-title", text: `\u4E0E\u300A${file.basename}\u300B\u76F8\u5173` });
+    const relatedMemos = this.plugin.store.data.memos.filter((memo) => memo.text.includes(file.basename) || memo.text.includes(file.path)).slice(0, 5);
+    const relatedLogs = this.plugin.store.data.workLogs.filter((log) => log.files.some((item) => item === file.path || item.endsWith(`/${file.basename}`))).slice(0, 5);
+    if (relatedMemos.length === 0 && relatedLogs.length === 0) {
+      card.createDiv({ cls: "kp-empty", text: "\u8FD9\u7BC7\u7B14\u8BB0\u8FD8\u6CA1\u6709\u76F8\u5173\u7684\u901F\u8BB0\u6216\u5DE5\u4F5C\u65E5\u5FD7\u3002" });
+      return;
+    }
+    const list = card.createDiv({ cls: "sd-knowledge-list" });
+    for (const memo of relatedMemos) {
+      const row = list.createDiv({ cls: "sd-knowledge-item" });
+      row.createEl("button", { cls: "sd-knowledge-open", text: `${memo.date} ${memo.time}` });
+      row.createDiv({ cls: "sd-knowledge-path", text: memo.text });
+    }
+    for (const log of relatedLogs) {
+      const row = list.createDiv({ cls: "sd-knowledge-item" });
+      row.createEl("button", { cls: "sd-knowledge-open", text: `${log.date} ${log.time} \xB7 ${log.agent}` });
+      row.createDiv({ cls: "sd-knowledge-path", text: log.task });
+    }
   }
   async attachImage(file) {
     var _a, _b;

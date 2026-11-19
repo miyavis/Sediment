@@ -32,6 +32,7 @@ export class MemoView extends ItemView {
 
   async onOpen(): Promise<void> {
     this.render();
+    this.registerEvent(this.plugin.app.workspace.on("file-open", () => this.refreshContent()));
   }
 
   /** 只刷新列表和沉淀区，不碰用户正在输入的速记框。 */
@@ -43,8 +44,10 @@ export class MemoView extends ItemView {
     const root = this.contentEl;
     root.querySelector(".kp-memo-list")?.remove();
     root.querySelector(".sd-knowledge-inline")?.remove();
+    root.querySelector(".sd-context-card")?.remove();
     this.renderList(root);
     this.renderKnowledge(root, 30, true);
+    this.renderContext(root);
   }
 
   render(): void {
@@ -134,6 +137,36 @@ export class MemoView extends ItemView {
 
     this.renderList(root);
     this.renderKnowledge(root, 30, true);
+    this.renderContext(root);
+  }
+
+  /** 与当前打开的笔记相关的历史速记和工作日志。 */
+  private renderContext(root: HTMLElement): void {
+    const file = this.plugin.app.workspace.getActiveFile();
+    if (!file) return;
+    const card = root.createDiv({ cls: "sd-card sd-context-card" });
+    card.createDiv({ cls: "sd-card-title", text: `与《${file.basename}》相关` });
+    const relatedMemos = this.plugin.store.data.memos
+      .filter((memo) => memo.text.includes(file.basename) || memo.text.includes(file.path))
+      .slice(0, 5);
+    const relatedLogs = this.plugin.store.data.workLogs
+      .filter((log) => log.files.some((item) => item === file.path || item.endsWith(`/${file.basename}`)))
+      .slice(0, 5);
+    if (relatedMemos.length === 0 && relatedLogs.length === 0) {
+      card.createDiv({ cls: "kp-empty", text: "这篇笔记还没有相关的速记或工作日志。" });
+      return;
+    }
+    const list = card.createDiv({ cls: "sd-knowledge-list" });
+    for (const memo of relatedMemos) {
+      const row = list.createDiv({ cls: "sd-knowledge-item" });
+      row.createEl("button", { cls: "sd-knowledge-open", text: `${memo.date} ${memo.time}` });
+      row.createDiv({ cls: "sd-knowledge-path", text: memo.text });
+    }
+    for (const log of relatedLogs) {
+      const row = list.createDiv({ cls: "sd-knowledge-item" });
+      row.createEl("button", { cls: "sd-knowledge-open", text: `${log.date} ${log.time} · ${log.agent}` });
+      row.createDiv({ cls: "sd-knowledge-path", text: log.task });
+    }
   }
 
   private async attachImage(file: File | null): Promise<void> {
