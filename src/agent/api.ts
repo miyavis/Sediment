@@ -30,6 +30,9 @@ export interface TodaySnapshot {
   tasksCompleted: number;
   memos: number;
   backlog: number;
+  /** 专注分钟与口径：measured = 番茄钟实测 */
+  focusMinutes: number;
+  focusSource: "measured" | "none";
 }
 
 export interface WorkLogInput {
@@ -225,10 +228,15 @@ export class AgentApi {
       const id = `${Date.now()}-${path.replace(/[\\/]/g, "_")}`;
       fs.writeFileSync(`${directory}/${id}`, content, "utf8");
       const files = fs.readdirSync(directory).sort();
-      while (files.length > 20) {
+      // 文件保留数与快照索引上限（200）一致，避免索引里有记录但文件已被清理。
+      while (files.length > 200) {
         const old = files.shift();
         if (old) fs.unlinkSync(`${directory}/${old}`);
       }
+      const remaining = new Set(files);
+      this.plugin.store.data.snapshots = this.plugin.store.data.snapshots.filter(
+        (snapshot) => remaining.has(snapshot.id)
+      );
       this.plugin.store.addSnapshot({
         id,
         path,
@@ -381,10 +389,14 @@ export class AgentApi {
     const existing = this.vault.getAbstractFileByPath(safe);
 
     if (mode === "create" && existing) throw new Error(`笔记已存在：${safe}`);
+    this.plugin.tracker.markAgentWrite(safe);
     if (mode === "append" && existing instanceof TFile) {
       const previous = await this.vault.read(existing);
+      this.backupNote(safe, previous);
       await this.vault.modify(existing, `${previous.trimEnd()}\n\n${content}`);
     } else if (existing instanceof TFile) {
+      const previous = await this.vault.read(existing);
+      this.backupNote(safe, previous);
       await this.vault.modify(existing, content);
     } else {
       await this.vault.create(safe, content);
@@ -439,7 +451,9 @@ export class AgentApi {
       wordsAdded: day.wordsAdded,
       tasksCompleted: day.tasksCompleted,
       memos: todayMemos.length,
-      backlog: store.data.memos.filter((memo) => !memo.converted).length,
+      backlog: store.data.memos.filter((memo) => !memo.converted && !memo.archived).length,
+      focusMinutes: day.focusMinutes,
+      focusSource: day.focusMinutes > 0 ? "measured" : "none",
     };
   }
 
@@ -650,6 +664,7 @@ export class AgentApi {
     }
 
     const snapshotId = this.backupNote(safe, before);
+    this.plugin.tracker.markAgentWrite(safe);
     await this.vault.process(file, () => result);
     this.plugin.store.updateDay(this.plugin.store.todayKey(), (day) => {
       day.aiWordsAdded += countWords(content);
@@ -679,6 +694,7 @@ export class AgentApi {
       throw new Error(`版本冲突：${safe} 已被修改，请重新读取后再写入`);
     }
     this.backupNote(safe, before);
+    this.plugin.tracker.markAgentWrite(safe);
 
     let result = "";
     await this.vault.process(file, (data) => {
@@ -784,6 +800,7 @@ export class AgentApi {
   }
 
   async completeTask(path: string, line: number): Promise<{ ok: true }> {
+    this.plugin.tracker.markAgentWrite(path);
     await this.plugin.tasks.complete(path, line);
     return { ok: true };
   }
@@ -835,7 +852,7 @@ export class AgentApi {
   }
 
   getBacklog(): { count: number } {
-    return { count: this.plugin.store.data.memos.filter((memo) => !memo.converted).length };
+    return { count: this.plugin.store.data.memos.filter((memo) => !memo.converted && !memo.archived).length };
   }
 
   /**
@@ -889,6 +906,7 @@ export class AgentApi {
       "",
     ].join("\n");
 
+    this.plugin.tracker.markAgentWrite(path);
     await this.vault.modify(file, `${previous.trimEnd()}\n\n${block}`);
     this.plugin.store.updateDay(log.date, (day) => {
       day.aiWordsAdded += countWords(block);
@@ -975,6 +993,7 @@ export class AgentApi {
     ].join("\n");
 
     this.assertPathAllowed(path, "create");
+    this.plugin.tracker.markAgentWrite(path);
     await this.vault.create(path, doc);
     this.plugin.store.updateDay(today, (day) => {
       day.aiWordsAdded += countWords(doc);
@@ -999,24 +1018,25 @@ export class AgentApi {
       memos: this.getMemos(10),
       notes: this.listNotes("", 10),
       agentTasks: this.plugin.store.data.memos.filter(
-        (memo) => memo.tags.includes("to-agent") && !memo.converted
+        (memo) => memo.tags.includes("to-agent") && !memo.converted && !memo.archived
       ),
     };
   }
 
   /** 认领一条 #to-agent 任务，避免被重复处理。 */
-  claimAgentTask(id: string): MemoRecord {
+  async claimAgentTask(id: string): Promise<MemoRecord> {
     const memo = this.plugin.store.data.memos.find((item) => item.id === id);
     if (!memo) throw new Error(`速记不存在：${id}`);
     if (!memo.tags.includes("to-agent")) throw new Error(`速记 ${id} 不是待办任务`);
     memo.tags = memo.tags.filter((tag) => tag !== "to-agent");
     if (!memo.tags.includes("agent-in-progress")) memo.tags.push("agent-in-progress");
     this.plugin.store.scheduleSave();
+    await this.plugin.memos.syncTags(memo);
     return memo;
   }
 
   /** 完成任务：标记为 #agent-done，可关联产出笔记。 */
-  completeAgentTask(id: string, resultPath?: string): MemoRecord {
+  async completeAgentTask(id: string, resultPath?: string): Promise<MemoRecord> {
     const memo = this.plugin.store.data.memos.find((item) => item.id === id);
     if (!memo) throw new Error(`速记不存在：${id}`);
     memo.tags = memo.tags.filter(
@@ -1026,6 +1046,7 @@ export class AgentApi {
     memo.converted = true;
     if (resultPath) memo.resultPath = resultPath;
     this.plugin.store.scheduleSave();
+    await this.plugin.memos.syncTags(memo);
     return memo;
   }
 

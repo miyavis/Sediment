@@ -28,7 +28,7 @@ __export(main_exports, {
   default: () => main_default
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian13 = require("obsidian");
+var import_obsidian15 = require("obsidian");
 
 // src/agent/api.ts
 var import_obsidian2 = require("obsidian");
@@ -102,8 +102,10 @@ function buildWeeklyReview(store, anchor) {
   const lines = [];
   lines.push(`# \u5DE5\u4F5C\u590D\u76D8 ${dateKey(start)} ~ ${dateKey(end)}`);
   lines.push("");
+  const s = store.settings;
+  const capNote = s.contributionDailyCap > 0 ? `\uFF0C\u5355\u65E5\u5C01\u9876 ${s.contributionDailyCap}` : "";
   lines.push(
-    `> \u751F\u6210\u4E8E ${dateKey(/* @__PURE__ */ new Date())}\u3002\u53E3\u5F84\uFF1A\u8D21\u732E\u5206 = \u65B0\u5EFA\u7B14\u8BB0\xD72 + \u7F16\u8F91\u4F1A\u8BDD + \u5B8C\u6210\u4EFB\u52A1 + \u65B0\u589E\u8BCD\u6570/100 + \u4E13\u6CE8\u5206\u949F/25\uFF1B\u672A\u8BB0\u5F55\u65E5\u671F\u4E0D\u89C6\u4F5C\u96F6\u3002`
+    `> \u751F\u6210\u4E8E ${dateKey(/* @__PURE__ */ new Date())}\u3002\u53E3\u5F84\uFF1A\u8D21\u732E\u5206 = \u65B0\u5EFA\u7B14\u8BB0\xD7${s.weightNotesCreated} + \u7F16\u8F91\u4F1A\u8BDD\xD7${s.weightEdits} + \u5B8C\u6210\u4EFB\u52A1\xD7${s.weightTasks} + \u65B0\u589E\u8BCD\u6570/${s.wordsPerPoint} + \u4E13\u6CE8\u5206\u949F/${s.focusMinutesPerPoint}${capNote}\uFF1B\u672A\u8BB0\u5F55\u65E5\u671F\u4E0D\u89C6\u4F5C\u96F6\u3002`
   );
   lines.push("");
   lines.push("## \u672C\u671F\u603B\u89C8");
@@ -148,7 +150,7 @@ function buildWeeklyReview(store, anchor) {
   if (store.getDay(best).contribution > 0) {
     clues.push(`\u8D21\u732E\u6700\u9AD8\u7684\u4E00\u5929\u662F ${best}\uFF08${store.getDay(best).contribution} \u5206\uFF09\u3002`);
   }
-  const pending = store.data.memos.filter((memo) => !memo.converted).length;
+  const pending = store.data.memos.filter((memo) => !memo.converted && !memo.archived).length;
   if (pending > 0) clues.push(`\u8FD8\u6709 ${pending} \u6761\u901F\u8BB0\u5C1A\u672A\u8F6C\u5316\u3002`);
   if (clues.length === 0) clues.push("\u672C\u671F\u8BB0\u5F55\u8F83\u5C11\uFF0C\u5148\u628A\u8BB0\u5F55\u4E60\u60EF\u4FDD\u6301\u4F4F\u3002");
   for (const clue of clues) lines.push(`- ${clue}`);
@@ -198,6 +200,21 @@ function countCheckedTasks(text) {
   var _a2;
   return ((_a2 = text.match(/^\s*[-*+]\s+\[(x|X)\]/gm)) != null ? _a2 : []).length;
 }
+function noteDateKey(text, fallback) {
+  const frontmatter = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (frontmatter) {
+    const field = frontmatter[1].match(/^(?:created|date)\s*:\s*["']?(\d{4}-\d{2}-\d{2})/m);
+    if (field) {
+      const [y, m, d] = field[1].split("-").map(Number);
+      const parsed = new Date(y, m - 1, d);
+      if (parsed.getFullYear() === y && parsed.getMonth() === m - 1 && parsed.getDate() === d) {
+        return field[1];
+      }
+    }
+  }
+  return dateKey(fallback);
+}
+var AGENT_WRITE_WINDOW_MS = 1e4;
 var Tracker = class {
   constructor(plugin, store) {
     this.plugin = plugin;
@@ -205,13 +222,19 @@ var Tracker = class {
     this.baseline = /* @__PURE__ */ new Map();
     this.countedSessions = /* @__PURE__ */ new Set();
     this.activeBuckets = /* @__PURE__ */ new Set();
+    this.agentWrites = /* @__PURE__ */ new Map();
     this.startedAt = Date.now();
     this.ready = false;
   }
   async start() {
+    var _a2;
     const vault = this.plugin.app.vault;
     for (const file of vault.getMarkdownFiles()) {
       this.baseline.set(file.path, await this.snapshot(file));
+    }
+    const today = this.store.todayKey();
+    for (const path of (_a2 = this.store.data.editSessions[today]) != null ? _a2 : []) {
+      this.countedSessions.add(`${today}|${path}`);
     }
     this.plugin.registerEvent(
       vault.on("create", (file) => {
@@ -235,9 +258,26 @@ var Tracker = class {
           this.baseline.delete(oldPath);
           this.baseline.set(file.path, snap);
         }
+        const agentAt = this.agentWrites.get(oldPath);
+        if (agentAt !== void 0) {
+          this.agentWrites.delete(oldPath);
+          this.agentWrites.set(file.path, agentAt);
+        }
       })
     );
     this.ready = true;
+  }
+  /** Agent API 写入前调用：标记来源，随后触发的 vault 事件不计入人类统计。 */
+  markAgentWrite(path) {
+    const now = Date.now();
+    this.agentWrites.set(path, now);
+    for (const [key, at] of this.agentWrites) {
+      if (now - at > AGENT_WRITE_WINDOW_MS * 6) this.agentWrites.delete(key);
+    }
+  }
+  isAgentWrite(path) {
+    const at = this.agentWrites.get(path);
+    return at !== void 0 && Date.now() - at <= AGENT_WRITE_WINDOW_MS;
   }
   async snapshot(file) {
     try {
@@ -247,26 +287,47 @@ var Tracker = class {
       return { words: 0, tasks: 0 };
     }
   }
+  /** 插件自身产出的目录（日记/复盘/工作日志/备份）不计入人类写作统计。 */
   isExcluded(path) {
-    const folder = normalizeFolder(this.store.settings.dailyNoteFolder);
-    return folder.length > 0 && path.startsWith(`${folder}/`);
+    const settings = this.store.settings;
+    const folders = [
+      settings.dailyNoteFolder,
+      settings.reviewFolder,
+      settings.workLogFolder,
+      settings.backupFolder
+    ].map(normalizeFolder).filter((folder) => folder.length > 0);
+    return folders.some((folder) => path.startsWith(`${folder}/`));
+  }
+  /** 单次写入计入的词数上限，防大段粘贴刷分；0 表示不封顶。 */
+  capWords(words) {
+    var _a2;
+    const cap = (_a2 = this.store.settings.wordsPerWriteCap) != null ? _a2 : 0;
+    return cap > 0 ? Math.min(words, cap) : words;
   }
   async onCreate(file) {
     var _a2, _b;
     if (!this.ready || !file.path.endsWith(".md") || this.isExcluded(file.path)) return;
     if (file.stat.ctime < this.startedAt - 6e4) return;
-    const snap = await this.snapshot(file);
+    let text = "";
+    try {
+      text = await this.plugin.app.vault.cachedRead(file);
+    } catch (error) {
+    }
+    const snap = { words: countWords(text), tasks: countCheckedTasks(text) };
     this.baseline.set(file.path, snap);
+    if (this.isAgentWrite(file.path)) return;
     if (snap.words > 0) {
       const hour = (/* @__PURE__ */ new Date()).getHours();
       const folder = (_b = (_a2 = file.parent) == null ? void 0 : _a2.path) != null ? _b : "/";
-      this.store.updateDay(this.store.todayKey(), (day) => {
+      const dayKey = noteDateKey(text, new Date(file.stat.ctime));
+      const words = this.capWords(snap.words);
+      this.store.updateDay(dayKey, (day) => {
         var _a3, _b2;
         day.notesCreated += 1;
-        day.wordsAdded += snap.words;
-        day.capturedWords += snap.words;
-        day.hourlyWords[hour] = ((_a3 = day.hourlyWords[hour]) != null ? _a3 : 0) + snap.words;
-        day.folderWords[folder] = ((_b2 = day.folderWords[folder]) != null ? _b2 : 0) + snap.words;
+        day.wordsAdded += words;
+        day.capturedWords += words;
+        day.hourlyWords[hour] = ((_a3 = day.hourlyWords[hour]) != null ? _a3 : 0) + words;
+        day.folderWords[folder] = ((_b2 = day.folderWords[folder]) != null ? _b2 : 0) + words;
       });
       this.markSession(file.path);
       this.markActive();
@@ -278,21 +339,23 @@ var Tracker = class {
     const snap = await this.snapshot(file);
     const prev = (_a2 = this.baseline.get(file.path)) != null ? _a2 : { words: 0, tasks: 0 };
     this.baseline.set(file.path, snap);
+    if (this.isAgentWrite(file.path)) return;
     const added = Math.max(0, snap.words - prev.words);
     const removed = Math.max(0, prev.words - snap.words);
     const tasks = Math.max(0, snap.tasks - prev.tasks);
     if (added === 0 && removed === 0 && tasks === 0) return;
     const hour = (/* @__PURE__ */ new Date()).getHours();
     const folder = (_c = (_b = file.parent) == null ? void 0 : _b.path) != null ? _c : "/";
-    const captured = added >= 200 ? added : 0;
+    const counted = this.capWords(added);
+    const captured = counted >= 200 ? counted : 0;
     this.store.updateDay(this.store.todayKey(), (day) => {
       var _a3, _b2;
-      day.wordsAdded += added;
+      day.wordsAdded += counted;
       day.wordsRemoved += removed;
       day.tasksCompleted += tasks;
       day.capturedWords += captured;
-      day.hourlyWords[hour] = ((_a3 = day.hourlyWords[hour]) != null ? _a3 : 0) + added;
-      day.folderWords[folder] = ((_b2 = day.folderWords[folder]) != null ? _b2 : 0) + added;
+      day.hourlyWords[hour] = ((_a3 = day.hourlyWords[hour]) != null ? _a3 : 0) + counted;
+      day.folderWords[folder] = ((_b2 = day.folderWords[folder]) != null ? _b2 : 0) + counted;
     });
     if (added > 0) this.markSession(file.path);
     this.markActive();
@@ -307,12 +370,19 @@ var Tracker = class {
       day.activeMinutes += 5;
     });
   }
-  /** 同一文件同一天最多记一次有效编辑会话，避免连续键入刷分。 */
+  /** 同一文件同一天最多记一次有效编辑会话，避免连续键入刷分；去重表持久化。 */
   markSession(path) {
+    var _a2;
     if (!this.store.settings.trackEdits) return;
-    const key = `${dateKey(/* @__PURE__ */ new Date())}|${path}`;
+    const today = dateKey(/* @__PURE__ */ new Date());
+    const key = `${today}|${path}`;
     if (this.countedSessions.has(key)) return;
     this.countedSessions.add(key);
+    const list = (_a2 = this.store.data.editSessions[today]) != null ? _a2 : [];
+    if (!list.includes(path)) {
+      list.push(path);
+      this.store.data.editSessions[today] = list;
+    }
     this.store.updateDay(this.store.todayKey(), (day) => {
       day.edits += 1;
     });
@@ -346,6 +416,11 @@ function readBackup(plugin, name) {
   return fs.readFileSync(`${directory}/${name}`, "utf8");
 }
 async function restoreBackup(plugin, file, name) {
+  const fs = nodeFs();
+  const directory = backupDirectory(plugin.app.vault);
+  if (!fs || !directory || !fs.existsSync(`${directory}/${name}`)) {
+    throw new Error(`\u5FEB\u7167\u6587\u4EF6\u4E0D\u5B58\u5728\u6216\u5DF2\u88AB\u6E05\u7406\uFF1A${name}`);
+  }
   const content = readBackup(plugin, name);
   await plugin.app.vault.process(file, () => content);
 }
@@ -467,10 +542,14 @@ var AgentApi = class {
       const id = `${Date.now()}-${path.replace(/[\\/]/g, "_")}`;
       fs.writeFileSync(`${directory}/${id}`, content, "utf8");
       const files = fs.readdirSync(directory).sort();
-      while (files.length > 20) {
+      while (files.length > 200) {
         const old = files.shift();
         if (old) fs.unlinkSync(`${directory}/${old}`);
       }
+      const remaining = new Set(files);
+      this.plugin.store.data.snapshots = this.plugin.store.data.snapshots.filter(
+        (snapshot) => remaining.has(snapshot.id)
+      );
       this.plugin.store.addSnapshot({
         id,
         path,
@@ -597,12 +676,16 @@ var AgentApi = class {
     await ensureFolder(this.vault, folder);
     const existing = this.vault.getAbstractFileByPath(safe);
     if (mode === "create" && existing) throw new Error(`\u7B14\u8BB0\u5DF2\u5B58\u5728\uFF1A${safe}`);
+    this.plugin.tracker.markAgentWrite(safe);
     if (mode === "append" && existing instanceof import_obsidian2.TFile) {
       const previous = await this.vault.read(existing);
+      this.backupNote(safe, previous);
       await this.vault.modify(existing, `${previous.trimEnd()}
 
 ${content}`);
     } else if (existing instanceof import_obsidian2.TFile) {
+      const previous = await this.vault.read(existing);
+      this.backupNote(safe, previous);
       await this.vault.modify(existing, content);
     } else {
       await this.vault.create(safe, content);
@@ -647,7 +730,9 @@ ${content}`);
       wordsAdded: day.wordsAdded,
       tasksCompleted: day.tasksCompleted,
       memos: todayMemos.length,
-      backlog: store.data.memos.filter((memo) => !memo.converted).length
+      backlog: store.data.memos.filter((memo) => !memo.converted && !memo.archived).length,
+      focusMinutes: day.focusMinutes,
+      focusSource: day.focusMinutes > 0 ? "measured" : "none"
     };
   }
   /** 当前打开的笔记、选中文本与光标所在段落。 */
@@ -796,6 +881,7 @@ ${content}
       };
     }
     const snapshotId = this.backupNote(safe, before);
+    this.plugin.tracker.markAgentWrite(safe);
     await this.vault.process(file, () => result);
     this.plugin.store.updateDay(this.plugin.store.todayKey(), (day) => {
       day.aiWordsAdded += countWords(content);
@@ -820,6 +906,7 @@ ${content}
       throw new Error(`\u7248\u672C\u51B2\u7A81\uFF1A${safe} \u5DF2\u88AB\u4FEE\u6539\uFF0C\u8BF7\u91CD\u65B0\u8BFB\u53D6\u540E\u518D\u5199\u5165`);
     }
     this.backupNote(safe, before);
+    this.plugin.tracker.markAgentWrite(safe);
     let result = "";
     await this.vault.process(file, (data) => {
       var _a2;
@@ -906,6 +993,7 @@ ${content}
     return this.plugin.tasks.list(scope);
   }
   async completeTask(path, line) {
+    this.plugin.tracker.markAgentWrite(path);
     await this.plugin.tasks.complete(path, line);
     return { ok: true };
   }
@@ -943,7 +1031,7 @@ ${content}
     return this.plugin.store.data.memos.slice(0, Math.max(1, Math.min(limit, 200)));
   }
   getBacklog() {
-    return { count: this.plugin.store.data.memos.filter((memo) => !memo.converted).length };
+    return { count: this.plugin.store.data.memos.filter((memo) => !memo.converted && !memo.archived).length };
   }
   /**
    * 记录一次 Agent 工作会话。同时写入 agent-logs/YYYY-MM-DD.md 与 data.json，
@@ -988,6 +1076,7 @@ ${content}
       log.tags.length ? `\u6807\u7B7E\uFF1A${log.tags.map((tag) => `#${tag}`).join(" ")}` : "",
       ""
     ].join("\n");
+    this.plugin.tracker.markAgentWrite(path);
     await this.vault.modify(file, `${previous.trimEnd()}
 
 ${block}`);
@@ -1064,6 +1153,7 @@ ${block}`);
       ""
     ].join("\n");
     this.assertPathAllowed(path, "create");
+    this.plugin.tracker.markAgentWrite(path);
     await this.vault.create(path, doc);
     this.plugin.store.updateDay(today, (day) => {
       day.aiWordsAdded += countWords(doc);
@@ -1086,22 +1176,23 @@ ${block}`);
       memos: this.getMemos(10),
       notes: this.listNotes("", 10),
       agentTasks: this.plugin.store.data.memos.filter(
-        (memo) => memo.tags.includes("to-agent") && !memo.converted
+        (memo) => memo.tags.includes("to-agent") && !memo.converted && !memo.archived
       )
     };
   }
   /** 认领一条 #to-agent 任务，避免被重复处理。 */
-  claimAgentTask(id) {
+  async claimAgentTask(id) {
     const memo = this.plugin.store.data.memos.find((item) => item.id === id);
     if (!memo) throw new Error(`\u901F\u8BB0\u4E0D\u5B58\u5728\uFF1A${id}`);
     if (!memo.tags.includes("to-agent")) throw new Error(`\u901F\u8BB0 ${id} \u4E0D\u662F\u5F85\u529E\u4EFB\u52A1`);
     memo.tags = memo.tags.filter((tag) => tag !== "to-agent");
     if (!memo.tags.includes("agent-in-progress")) memo.tags.push("agent-in-progress");
     this.plugin.store.scheduleSave();
+    await this.plugin.memos.syncTags(memo);
     return memo;
   }
   /** 完成任务：标记为 #agent-done，可关联产出笔记。 */
-  completeAgentTask(id, resultPath) {
+  async completeAgentTask(id, resultPath) {
     const memo = this.plugin.store.data.memos.find((item) => item.id === id);
     if (!memo) throw new Error(`\u901F\u8BB0\u4E0D\u5B58\u5728\uFF1A${id}`);
     memo.tags = memo.tags.filter(
@@ -1111,6 +1202,7 @@ ${block}`);
     memo.converted = true;
     if (resultPath) memo.resultPath = resultPath;
     this.plugin.store.scheduleSave();
+    await this.plugin.memos.syncTags(memo);
     return memo;
   }
   /** 生成周复盘 Markdown（不落盘）。 */
@@ -1180,8 +1272,7 @@ var AgentServer = class {
   }
   json(response, status, payload) {
     response.writeHead(status, {
-      "Content-Type": "application/json; charset=utf-8",
-      "Access-Control-Allow-Origin": "*"
+      "Content-Type": "application/json; charset=utf-8"
     });
     response.end(JSON.stringify(payload));
   }
@@ -1223,7 +1314,7 @@ var AgentServer = class {
       api.setCallContext(`${request.method} ${url.pathname}`, agent);
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
-          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.8.4" });
+          this.json(response, 200, { ok: true, plugin: "sediment", version: this.plugin.manifest.version });
           return;
         case "GET /notes":
           this.json(response, 200, api.listNotes(str(query.get("folder")), num(query.get("limit"), 50)));
@@ -1374,13 +1465,13 @@ var AgentServer = class {
           );
           return;
         case "POST /agent-task/claim":
-          this.json(response, 200, api.claimAgentTask(str(body.id)));
+          this.json(response, 200, await api.claimAgentTask(str(body.id)));
           return;
         case "POST /agent-task/complete":
           this.json(
             response,
             200,
-            api.completeAgentTask(str(body.id), str(body.resultPath) || void 0)
+            await api.completeAgentTask(str(body.id), str(body.resultPath) || void 0)
           );
           return;
         case "GET /pomodoro":
@@ -1513,7 +1604,7 @@ var SemanticIndex = class {
     return this.plugin.store.settings.deniedTags.split(/[,，]/).map((item) => item.trim()).filter(Boolean);
   }
   async build() {
-    var _a2, _b;
+    var _a2, _b, _c;
     if (!this.dirty) return;
     const vault = this.plugin.app.vault;
     const folders = this.deniedFolders();
@@ -1530,15 +1621,25 @@ var SemanticIndex = class {
     this.vectors.clear();
     this.documentFrequency.clear();
     this.documents = files.length;
+    const rawCounts = /* @__PURE__ */ new Map();
     for (const file of files) {
       const text = await vault.cachedRead(file);
       const tokens = tokenize(text);
       const counts = /* @__PURE__ */ new Map();
       for (const token of tokens) counts.set(token, ((_a2 = counts.get(token)) != null ? _a2 : 0) + 1);
-      this.vectors.set(file.path, counts);
+      rawCounts.set(file.path, counts);
       for (const token of counts.keys()) {
         this.documentFrequency.set(token, ((_b = this.documentFrequency.get(token)) != null ? _b : 0) + 1);
       }
+    }
+    for (const [path, counts] of rawCounts) {
+      const total = [...counts.values()].reduce((sum, count) => sum + count, 0) || 1;
+      const vector = /* @__PURE__ */ new Map();
+      for (const [token, count] of counts) {
+        const idf = Math.log(1 + this.documents / (1 + ((_c = this.documentFrequency.get(token)) != null ? _c : 0)));
+        vector.set(token, count / total * idf);
+      }
+      this.vectors.set(path, vector);
     }
     this.dirty = false;
   }
@@ -1601,6 +1702,7 @@ var METRICS = [
   { key: "focusMinutes", label: "\u4E13\u6CE8\u5206\u949F", hint: "\u9884\u7559\u7ED9\u4E13\u6CE8\u63D2\u4EF6\u8054\u52A8" }
 ];
 var DEFAULT_SETTINGS = {
+  language: "auto",
   dailyNoteFolder: "daily",
   dailyNoteFormat: "YYYY-MM-DD",
   memoHeading: "## \u901F\u8BB0",
@@ -1627,6 +1729,13 @@ var DEFAULT_SETTINGS = {
   backupKeep: 10,
   artStyle: "lake",
   dailyWordGoal: 1e3,
+  contributionDailyCap: 120,
+  wordsPerWriteCap: 4e3,
+  weightNotesCreated: 2,
+  weightEdits: 1,
+  weightTasks: 1,
+  wordsPerPoint: 100,
+  focusMinutesPerPoint: 25,
   agentServerEnabled: false,
   agentServerPort: 27123,
   agentServerToken: ""
@@ -1647,8 +1756,13 @@ function createEmptyDay() {
     aiWordsAdded: 0
   };
 }
-function computeContribution(d) {
-  return d.notesCreated * 2 + d.edits + d.tasksCompleted + Math.floor(d.wordsAdded / 100) + Math.floor(d.focusMinutes / 25);
+function computeContribution(d, settings = DEFAULT_SETTINGS) {
+  var _a2, _b, _c, _d;
+  const wordsPer = Math.max(1, settings.wordsPerPoint || 100);
+  const focusPer = Math.max(1, settings.focusMinutesPerPoint || 25);
+  const raw = d.notesCreated * ((_a2 = settings.weightNotesCreated) != null ? _a2 : 2) + d.edits * ((_b = settings.weightEdits) != null ? _b : 1) + d.tasksCompleted * ((_c = settings.weightTasks) != null ? _c : 1) + Math.floor(d.wordsAdded / wordsPer) + Math.floor(d.focusMinutes / focusPer);
+  const cap = (_d = settings.contributionDailyCap) != null ? _d : 0;
+  return cap > 0 ? Math.min(raw, cap) : raw;
 }
 var DEFAULT_DATA = {
   version: 1,
@@ -1657,6 +1771,9 @@ var DEFAULT_DATA = {
   workLogs: [],
   toolCalls: [],
   snapshots: [],
+  editSessions: {},
+  focusSessions: [],
+  pomodoro: null,
   settings: DEFAULT_SETTINGS
 };
 
@@ -1669,7 +1786,7 @@ var Store = class {
     this.lastBackupAt = 0;
   }
   async load() {
-    var _a2, _b, _c, _d, _e, _f, _g, _h;
+    var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k;
     const raw = await this.plugin.loadData();
     const loaded = raw && typeof raw === "object" ? raw : {};
     this.data = {
@@ -1679,21 +1796,35 @@ var Store = class {
       workLogs: (_d = loaded.workLogs) != null ? _d : [],
       toolCalls: (_e = loaded.toolCalls) != null ? _e : [],
       snapshots: (_f = loaded.snapshots) != null ? _f : [],
-      settings: { ...DEFAULT_SETTINGS, ...(_g = loaded.settings) != null ? _g : {} }
+      editSessions: (_g = loaded.editSessions) != null ? _g : {},
+      focusSessions: (_h = loaded.focusSessions) != null ? _h : [],
+      pomodoro: (_i = loaded.pomodoro) != null ? _i : null,
+      settings: { ...DEFAULT_SETTINGS, ...(_j = loaded.settings) != null ? _j : {} }
     };
+    const keepSince = dateKey(new Date(Date.now() - 864e5));
+    for (const key of Object.keys(this.data.editSessions)) {
+      if (key < keepSince) delete this.data.editSessions[key];
+    }
     for (const key of Object.keys(this.data.days)) {
       const day = { ...createEmptyDay(), ...this.data.days[key] };
       day.hourlyWords = Array.from({ length: 24 }, (_, hour) => {
         var _a3;
         return Number((_a3 = day.hourlyWords) == null ? void 0 : _a3[hour]) || 0;
       });
-      day.folderWords = (_h = day.folderWords) != null ? _h : {};
+      day.folderWords = (_k = day.folderWords) != null ? _k : {};
       day.activeMinutes = Math.max(0, Math.round(day.activeMinutes));
       day.capturedWords = Math.max(0, Math.round(day.capturedWords));
       day.aiWordsAdded = Math.max(0, Math.round(day.aiWordsAdded));
-      day.contribution = computeContribution(day);
+      day.contribution = computeContribution(day, this.data.settings);
       this.data.days[key] = day;
     }
+  }
+  /** 权重或封顶变更后，按当前设置全量重算历史贡献分。 */
+  recomputeContributions() {
+    for (const key of Object.keys(this.data.days)) {
+      this.data.days[key].contribution = computeContribution(this.data.days[key], this.settings);
+    }
+    this.scheduleSave();
   }
   async save() {
     if (this.saveTimer !== null) {
@@ -1758,7 +1889,7 @@ var Store = class {
     day.notesCreated = Math.max(0, Math.round(day.notesCreated));
     day.tasksCompleted = Math.max(0, Math.round(day.tasksCompleted));
     day.focusMinutes = Math.max(0, Math.round(day.focusMinutes));
-    day.contribution = computeContribution(day);
+    day.contribution = computeContribution(day, this.settings);
     this.scheduleSave();
     return day;
   }
@@ -1779,6 +1910,11 @@ var Store = class {
     this.data.snapshots.unshift(record);
     if (this.data.snapshots.length > 200) this.data.snapshots.length = 200;
     this.scheduleSave(2e3);
+  }
+  addFocusSession(record) {
+    this.data.focusSessions.unshift(record);
+    if (this.data.focusSessions.length > 500) this.data.focusSessions.length = 500;
+    this.scheduleSave();
   }
 };
 
@@ -1809,14 +1945,18 @@ var MemoManager = class {
     new import_obsidian4.Notice("\u901F\u8BB0\u5DF2\u8BB0\u5F55");
     return memo;
   }
-  async appendToDailyNote(memo) {
-    const vault = this.plugin.app.vault;
+  dailyNotePath(date) {
     const folder = normalizeFolder(this.store.settings.dailyNoteFolder);
     const fileName = formatDailyNoteName(
       this.store.settings.dailyNoteFormat || "YYYY-MM-DD",
-      parseKey(memo.date)
+      parseKey(date)
     );
-    const path = folder ? `${folder}/${fileName}.md` : `${fileName}.md`;
+    return folder ? `${folder}/${fileName}.md` : `${fileName}.md`;
+  }
+  async appendToDailyNote(memo) {
+    const vault = this.plugin.app.vault;
+    const folder = normalizeFolder(this.store.settings.dailyNoteFolder);
+    const path = this.dailyNotePath(memo.date);
     await ensureFolder(vault, folder);
     const existing = vault.getAbstractFileByPath(path);
     const file = existing instanceof import_obsidian4.TFile ? existing : await vault.create(path, `# ${memo.date}
@@ -1824,8 +1964,7 @@ var MemoManager = class {
 `);
     const content = await vault.read(file);
     const heading = this.store.settings.memoHeading.trim() || "## \u901F\u8BB0";
-    const tagStr = memo.tags.length ? ` ${memo.tags.map((tag) => `#${tag.replace(/^#/, "")}`).join(" ")}` : "";
-    const callout = `> [!memo] ${memo.time}${tagStr}
+    const callout = `${this.calloutHeader(memo)}
 ${memo.text.split("\n").map((line) => `> ${line}`).join("\n")}
 `;
     const index = content.indexOf(heading);
@@ -1843,6 +1982,92 @@ ${heading}
 ${callout}`;
     }
     await vault.modify(file, next);
+  }
+  calloutHeader(memo) {
+    const tagStr = memo.tags.length ? ` ${memo.tags.map((tag) => `#${tag.replace(/^#/, "")}`).join(" ")}` : "";
+    return `> [!memo] ${memo.time}${tagStr}`;
+  }
+  /**
+   * 在日记文本中定位某条速记的 Callout 行区间 [start, end)。
+   * 用「时间 + 正文首行」双重匹配，避免误改同一分钟的另一条速记。
+   */
+  findCalloutRange(lines, memo, textOverride) {
+    const firstLine = `> ${(textOverride != null ? textOverride : memo.text).split("\n")[0]}`;
+    const headerPrefix = `> [!memo] ${memo.time}`;
+    for (let i = 0; i < lines.length; i += 1) {
+      if (!lines[i].startsWith(headerPrefix)) continue;
+      if (lines[i + 1] !== firstLine) continue;
+      let end = i + 1;
+      while (end < lines.length && lines[end].startsWith(">")) end += 1;
+      return { start: i, end };
+    }
+    return null;
+  }
+  /** 把 data.json 里的最新标签同步回日记 Callout（claim/complete/编辑后调用）。 */
+  async syncTags(memo) {
+    const file = this.plugin.app.vault.getAbstractFileByPath(this.dailyNotePath(memo.date));
+    if (!(file instanceof import_obsidian4.TFile)) return;
+    await this.plugin.app.vault.process(file, (data) => {
+      const lines = data.split("\n");
+      const range = this.findCalloutRange(lines, memo);
+      if (!range) return data;
+      lines[range.start] = this.calloutHeader(memo);
+      return lines.join("\n");
+    });
+  }
+  /** 重写或删除日记里的 Callout。nextText 为 null 表示删除整块。 */
+  async updateCallout(memo, nextText, oldText) {
+    const file = this.plugin.app.vault.getAbstractFileByPath(this.dailyNotePath(memo.date));
+    if (!(file instanceof import_obsidian4.TFile)) return;
+    await this.plugin.app.vault.process(file, (data) => {
+      const lines = data.split("\n");
+      const range = this.findCalloutRange(lines, memo, oldText);
+      if (!range) return data;
+      if (nextText === null) {
+        let start = range.start;
+        let end = range.end;
+        if (lines[start - 1] === "") start -= 1;
+        else if (lines[end] === "") end += 1;
+        lines.splice(start, end - start);
+      } else {
+        const body = nextText.split("\n").map((line) => `> ${line}`);
+        lines.splice(range.start, range.end - range.start, this.calloutHeader(memo), ...body);
+      }
+      return lines.join("\n");
+    });
+  }
+  /** 编辑速记正文（可选同时改标签），双写同步日记 Callout。 */
+  async edit(id, text, tags) {
+    const memo = this.store.data.memos.find((item) => item.id === id);
+    if (!memo) return null;
+    const clean = text.trim();
+    if (!clean) return null;
+    const oldText = memo.text;
+    memo.text = clean;
+    if (tags) memo.tags = tags.map((tag) => tag.replace(/^#/, "")).filter(Boolean);
+    await this.updateCallout(memo, clean, oldText);
+    this.store.scheduleSave();
+    new import_obsidian4.Notice("\u901F\u8BB0\u5DF2\u66F4\u65B0");
+    return memo;
+  }
+  /** 删除速记：data.json 与日记 Callout 一起移除。 */
+  async remove(id) {
+    const index = this.store.data.memos.findIndex((item) => item.id === id);
+    if (index < 0) return false;
+    const memo = this.store.data.memos[index];
+    await this.updateCallout(memo, null);
+    this.store.data.memos.splice(index, 1);
+    this.store.scheduleSave();
+    new import_obsidian4.Notice("\u901F\u8BB0\u5DF2\u5220\u9664");
+    return true;
+  }
+  /** 归档/取消归档：只影响列表与积压统计，日记里的历史记录保留。 */
+  setArchived(id, archived) {
+    const memo = this.store.data.memos.find((item) => item.id === id);
+    if (!memo) return null;
+    memo.archived = archived;
+    this.store.scheduleSave();
+    return memo;
   }
 };
 
@@ -1862,9 +2087,36 @@ var PomodoroManager = class {
     this.completed = 0;
     this.listeners = /* @__PURE__ */ new Set();
     this.statusEl = null;
+    this.restore();
     this.statusEl = plugin.addStatusBarItem();
     this.updateStatus();
     plugin.registerInterval(window.setInterval(() => this.tick(), 1e3));
+  }
+  /** 恢复上次状态；运行中离开的这段时间按真实流逝扣减。 */
+  restore() {
+    const saved = this.plugin.store.data.pomodoro;
+    if (!saved) return;
+    this.mode = saved.mode;
+    this.completed = saved.completed;
+    this.remaining = saved.remaining;
+    this.running = saved.running;
+    if (this.running) {
+      const elapsed = Math.max(0, Math.floor((Date.now() - saved.savedAt) / 1e3));
+      this.remaining -= elapsed;
+      if (this.remaining <= 0) {
+        this.complete(true);
+      }
+    }
+  }
+  persist() {
+    this.plugin.store.data.pomodoro = {
+      mode: this.mode,
+      remaining: this.remaining,
+      running: this.running,
+      completed: this.completed,
+      savedAt: Date.now()
+    };
+    this.plugin.store.scheduleSave();
   }
   state() {
     return { mode: this.mode, remaining: this.remaining, running: this.running, completed: this.completed };
@@ -1876,21 +2128,25 @@ var PomodoroManager = class {
   start() {
     if (this.running) return;
     this.running = true;
+    this.persist();
     this.emit();
   }
   pause() {
     this.running = false;
+    this.persist();
     this.emit();
   }
   reset() {
     this.running = false;
     this.remaining = DURATION[this.mode];
+    this.persist();
     this.emit();
   }
   skip() {
     this.running = false;
     this.mode = this.mode === "focus" ? this.completed % 4 === 3 ? "long" : "short" : "focus";
     this.remaining = DURATION[this.mode];
+    this.persist();
     this.emit();
   }
   toggle() {
@@ -1905,19 +2161,28 @@ var PomodoroManager = class {
     }
     this.emit();
   }
-  complete() {
+  complete(silent = false) {
+    const now = /* @__PURE__ */ new Date();
     if (this.mode === "focus") {
       this.completed += 1;
       this.plugin.store.updateDay(this.plugin.store.todayKey(), (day) => {
         day.focusMinutes += 25;
       });
-      new import_obsidian5.Notice("\u756A\u8304\u5B8C\u6210\uFF0C\u5DF2\u8BB0\u5165 25 \u5206\u949F\u4E13\u6CE8");
-    } else {
+      this.plugin.store.addFocusSession({
+        date: dateKey(now),
+        time: hhmm(now),
+        mode: "focus",
+        minutes: 25,
+        source: "measured"
+      });
+      if (!silent) new import_obsidian5.Notice("\u756A\u8304\u5B8C\u6210\uFF0C\u5DF2\u8BB0\u5165 25 \u5206\u949F\u4E13\u6CE8\uFF08\u5B9E\u6D4B\uFF09");
+    } else if (!silent) {
       new import_obsidian5.Notice("\u4F11\u606F\u7ED3\u675F");
     }
     this.mode = this.mode === "focus" ? this.completed % 4 === 0 ? "long" : "short" : "focus";
     this.remaining = DURATION[this.mode];
     this.running = false;
+    this.persist();
   }
   emit() {
     this.updateStatus();
@@ -1946,7 +2211,7 @@ var TaskManager = class {
   }
   async list(scope = "all") {
     if (scope === "agent") {
-      return this.plugin.store.data.memos.filter((memo) => memo.tags.includes("to-agent") && !memo.converted).map((memo) => ({
+      return this.plugin.store.data.memos.filter((memo) => memo.tags.includes("to-agent") && !memo.converted && !memo.archived).map((memo) => ({
         path: "",
         line: 0,
         text: memo.text,
@@ -2185,8 +2450,436 @@ function exportTodayReport(data) {
   download(canvas, `sediment-today-${data.date}.png`);
 }
 
+// src/features/rebuild.ts
+async function rebuildHistory(store, vault) {
+  var _a2;
+  const settings = store.settings;
+  const excluded = [
+    settings.dailyNoteFolder,
+    settings.reviewFolder,
+    settings.workLogFolder,
+    settings.backupFolder
+  ].map(normalizeFolder).filter((folder) => folder.length > 0);
+  const byDate = /* @__PURE__ */ new Map();
+  let scanned = 0;
+  for (const file of vault.getMarkdownFiles()) {
+    if (excluded.some((folder) => file.path.startsWith(`${folder}/`))) continue;
+    let text = "";
+    try {
+      text = await vault.cachedRead(file);
+    } catch (error) {
+      continue;
+    }
+    if (/^source\s*:\s*agent\b/m.test(text.slice(0, 800))) continue;
+    const words2 = countWords(text);
+    if (words2 === 0) continue;
+    scanned += 1;
+    const key = noteDateKey(text, new Date(file.stat.ctime));
+    const bucket = (_a2 = byDate.get(key)) != null ? _a2 : { notes: 0, words: 0 };
+    bucket.notes += 1;
+    bucket.words += words2;
+    byDate.set(key, bucket);
+  }
+  let filledDays = 0;
+  let notes = 0;
+  let words = 0;
+  for (const [key, bucket] of byDate) {
+    const existing = store.data.days[key];
+    const isEmpty = !existing || existing.wordsAdded === 0 && existing.notesCreated === 0 && existing.edits === 0 && existing.tasksCompleted === 0 && existing.focusMinutes === 0;
+    if (!isEmpty) continue;
+    store.updateDay(key, (day) => {
+      day.notesCreated = bucket.notes;
+      day.wordsAdded = bucket.words;
+    });
+    filledDays += 1;
+    notes += bucket.notes;
+    words += bucket.words;
+  }
+  store.recomputeContributions();
+  return { scanned, filledDays, notes, words };
+}
+
 // src/ui/quick-memo-modal.ts
 var import_obsidian7 = require("obsidian");
+
+// src/i18n.ts
+var locale = "zh";
+function setLocale(next) {
+  locale = next;
+}
+function detectLocale() {
+  try {
+    const moment = window.moment;
+    const lang = typeof (moment == null ? void 0 : moment.locale) === "function" ? String(moment.locale()) : "";
+    return lang.toLowerCase().startsWith("zh") ? "zh" : "en";
+  } catch (e) {
+    return "zh";
+  }
+}
+function resolveLocale(setting) {
+  return setting === "auto" ? detectLocale() : setting;
+}
+var EN = {
+  // 通用 / 命令 / ribbon
+  "Sediment\uFF1A\u770B\u677F": "Sediment: Dashboard",
+  "Sediment\uFF1A\u901F\u8BB0": "Sediment: Memos",
+  "\u6253\u5F00\u77E5\u8BC6\u8109\u51B2\u770B\u677F": "Open Knowledge Pulse dashboard",
+  "\u6253\u5F00\u901F\u8BB0\u9762\u677F": "Open memo panel",
+  "\u8BB0\u4E00\u6761\u901F\u8BB0": "Add a memo",
+  "\u751F\u6210\u672C\u5468\u5DE5\u4F5C\u590D\u76D8": "Generate this week's review",
+  "\u5F00\u59CB / \u6682\u505C\u756A\u8304\u949F": "Start / pause pomodoro",
+  "\u8DF3\u8FC7\u5F53\u524D\u756A\u8304 / \u4F11\u606F": "Skip current pomodoro / break",
+  "\u8BB0\u5F55\u4ECA\u65E5\u9057\u7559\u5F85\u529E\u5230\u65E5\u8BB0": "Snapshot today's pending tasks to daily note",
+  "\u5BFC\u51FA\u4ECA\u65E5\u6218\u62A5\u56FE\u7247": "Export today's report image",
+  "\u5907\u4EFD\u7EDF\u8BA1\u6570\u636E\u5230\u5E93\u5185": "Back up stats into the vault",
+  "\u91CD\u5EFA\u5386\u53F2\u7EDF\u8BA1\uFF08\u6309\u7B14\u8BB0\u65E5\u671F\u8865\u9F50\u7A7A\u65E5\u671F\uFF09": "Rebuild history (fill empty days by note date)",
+  "\u626B\u63CF\u7B14\u8BB0\u5065\u5EB7\u5EA6\uFF08\u5B64\u513F/\u65AD\u94FE/\u4E45\u672A\u66F4\u65B0\uFF09": "Scan note health (orphan / broken link / stale)",
+  "\u5BFC\u51FA\u6570\u636E\uFF08CSV/JSON\uFF0C\u9ED8\u8BA4\u8131\u654F\uFF09": "Export data (CSV/JSON, sanitized by default)",
+  "\u67E5\u770B\u66F4\u65B0\u8BB0\u5F55": "View changelog",
+  "\u5207\u6362\u770B\u677F\u9876\u90E8\u548C\u5E95\u90E8\u7684\u753B\u98CE": "Cycle dashboard banner art style",
+  "\u5468\u590D\u76D8\u5DF2\u751F\u6210\u5E76\u6253\u5F00": "Weekly review generated and opened",
+  "Sediment \u5DF2\u66F4\u65B0\u5230 v{version}\uFF0C\u53EF\u5728\u300C\u67E5\u770B\u66F4\u65B0\u8BB0\u5F55\u300D\u4E2D\u4E86\u89E3\u53D8\u5316": "Sediment updated to v{version}; see \u201CView changelog\u201D for what's new",
+  "\u5DF2\u8BB0\u5F55 {n} \u6761\u9057\u7559\u5F85\u529E": "Recorded {n} pending tasks",
+  "\u5DF2\u626B\u63CF {scanned} \u7BC7\u7B14\u8BB0\uFF0C\u8865\u9F50 {days} \u5929\uFF08{notes} \u7BC7 / {words} \u8BCD\uFF09": "Scanned {scanned} notes; filled {days} days ({notes} notes / {words} words)",
+  "\u626B\u63CF\u4E86 {scanned} \u7BC7\u7B14\u8BB0\uFF0C\u6CA1\u6709\u9700\u8981\u8865\u9F50\u7684\u7A7A\u65E5\u671F": "Scanned {scanned} notes; no empty days to fill",
+  "\u6570\u636E\u5DF2\u5907\u4EFD\u5230\u5E93\u5185": "Data backed up into the vault",
+  "\u5907\u4EFD\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u8BBE\u7F6E\u4E2D\u7684\u5907\u4EFD\u76EE\u5F55": "Backup failed; check the backup folder in settings",
+  "\u6CA1\u6709\u9057\u7559\u5F85\u529E": "No pending tasks",
+  "\u5237\u65B0": "Refresh",
+  "\u5168\u90E8": "All",
+  "\u590D\u5236": "Copy",
+  "\u5DF2\u590D\u5236": "Copied",
+  "\u4FDD\u5B58": "Save",
+  "\u53D6\u6D88": "Cancel",
+  "\u5220\u9664": "Delete",
+  "\u7F16\u8F91": "Edit",
+  "\u5F52\u6863": "Archive",
+  "\u53D6\u6D88\u5F52\u6863": "Unarchive",
+  "\u542B\u5F52\u6863": "Include archived",
+  "\u5DF2\u5F52\u6863": "Archived",
+  "\u5206\u4EAB\u56FE": "Share image",
+  "\u8F6C Agent": "To Agent",
+  "\u5DF2\u52A0\u5165 Agent \u5F85\u529E": "Added to Agent backlog",
+  "\u5DF2\u590D\u5236\uFF0C\u53EF\u7C98\u8D34\u5230\u5BA2\u6237\u7AEF": "Copied; paste into your client",
+  // 页签 / 范围 / 指标
+  "\u4ECA\u65E5\u8109\u51B2": "Today",
+  "\u77E5\u8BC6\u5730\u5C42": "Insights",
+  "\u667A\u80FD\u4F53\u5DE5\u574A": "Agent Hub",
+  "\u8FD1 7 \u5929": "Last 7 days",
+  "\u8FD1 30 \u5929": "Last 30 days",
+  "\u8FD1 90 \u5929": "Last 90 days",
+  "\u4ECA\u5E74": "This year",
+  "\u8FD1\u4E00\u5E74": "Last year",
+  "\u8D21\u732E\u5206": "Contribution",
+  "\u65B0\u589E\u8BCD\u6570": "Words added",
+  "\u7F16\u8F91\u4F1A\u8BDD": "Edit sessions",
+  "\u65B0\u5EFA\u7B14\u8BB0": "Notes created",
+  "\u5B8C\u6210\u4EFB\u52A1": "Tasks done",
+  "\u4E13\u6CE8\u5206\u949F": "Focus minutes",
+  "\u7EFC\u5408\u52A0\u6743\u5F97\u5206": "Weighted composite score",
+  "\u81EA\u5DF1\u6253\u7684\u5B57": "Words you typed",
+  "\u6709\u6548\u7F16\u8F91\u6B21\u6570": "Effective edit count",
+  "\u5F53\u5929\u6709\u5185\u5BB9\u7684\u65B0\u7B14\u8BB0": "New notes with content that day",
+  "\u65B0\u589E\u52FE\u9009\u7684\u5F85\u529E": "Newly checked tasks",
+  "\u9884\u7559\u7ED9\u4E13\u6CE8\u63D2\u4EF6\u8054\u52A8": "Reserved for focus-plugin integration",
+  // 速记面板
+  "\u901F\u8BB0": "Memos",
+  "\u56DE\u987E": "Review",
+  "\u6F2B\u6B65": "Walk",
+  "\u6807\u7B7E": "Tags",
+  "\u6C89\u6DC0": "Knowledge",
+  "\u60F3\u5230\u4EC0\u4E48\uFF0C\u968F\u624B\u8BB0\u4E0B\u2026\uFF08\u53EF\u7C98\u8D34\u56FE\u7247\uFF09": "Jot anything down\u2026 (paste images)",
+  "\u60F3\u5230\u4EC0\u4E48\uFF0C\u968F\u624B\u8BB0\u4E0B\u2026": "Jot anything down\u2026",
+  "\u6807\u7B7E\uFF0C\u7A7A\u683C\u5206\u9694": "Tags, space separated",
+  "\u8BB0\u4E00\u6761": "Add",
+  "\u641C\u7D22\u901F\u8BB0 / \u8F93\u5165 #\u6807\u7B7E \u7B5B\u9009": "Search memos / type #tag to filter",
+  "\u8FD8\u6CA1\u6709\u901F\u8BB0\uFF0C\u6216\u6CA1\u6709\u5339\u914D\u7684\u901F\u8BB0\u3002": "No memos yet, or none match.",
+  "\u8FD8\u6CA1\u6709\u901F\u8BB0\u53EF\u4EE5\u6F2B\u6B65\u3002": "No memos to walk yet.",
+  "\u8FD8\u6CA1\u6709\u6807\u7B7E\u3002": "No tags yet.",
+  "\u56FE\u7247\u5DF2\u63D2\u5165\u901F\u8BB0": "Image inserted into memo",
+  "\u5185\u5BB9\u4E3A\u7A7A\uFF0C\u672A\u4FDD\u5B58": "Empty content; not saved",
+  "\u5220\u9664\u8FD9\u6761\u901F\u8BB0\uFF1F\u65E5\u8BB0\u4E2D\u5BF9\u5E94\u7684\u901F\u8BB0\u8BB0\u5F55\u4E5F\u4F1A\u4E00\u5E76\u79FB\u9664\u3002": "Delete this memo? The matching daily-note entry is removed too.",
+  "\u5DF2\u5F52\u6863\uFF0C\u53EF\u5728\u300C\u542B\u5F52\u6863\u300D\u4E2D\u67E5\u770B": "Archived; view under \u201CInclude archived\u201D",
+  "\u5DF2\u53D6\u6D88\u5F52\u6863": "Unarchived",
+  "\u8FD9\u5929\u6CA1\u6709\u901F\u8BB0\u3002": "No memos on this day.",
+  "\u5171\u540C\u7684\u8BCD\uFF1A": "Shared words: ",
+  "\u7EE7\u7EED\u6F2B\u6B65 \u2192": "Keep walking \u2192",
+  "\u8FD8\u6CA1\u6709\u6C89\u6DC0\u3002\u8BA9\u667A\u80FD\u4F53\u8C03\u7528 add_knowledge \u6216 record_work_log \u540E\uFF0C\u7B14\u8BB0\u4F1A\u51FA\u73B0\u5728\u8FD9\u91CC\u3002": "No knowledge yet. Notes appear here after an agent calls add_knowledge or record_work_log.",
+  "\u77E5\u8BC6\u6C89\u6DC0": "Knowledge",
+  "\u5DE5\u4F5C\u65E5\u5FD7": "Work logs",
+  "\u672A\u5206\u7C7B": "Uncategorized",
+  "\u8FD9\u7BC7\u7B14\u8BB0\u8FD8\u6CA1\u6709\u76F8\u5173\u7684\u901F\u8BB0\u6216\u5DE5\u4F5C\u65E5\u5FD7\u3002": "No related memos or work logs for this note yet.",
+  "\u4E0E\u300A{name}\u300B\u76F8\u5173": "Related to \u201C{name}\u201D",
+  "\u539F\u5F85\u529E": "Source task",
+  "\u6BCF\u65E5\u56DE\u987E": "Daily review",
+  "\u53BB\u5E74\u4ECA\u65E5": "This day last year",
+  "\u4E0A\u6708\u4ECA\u65E5": "This day last month",
+  "\u5171\u540C\u7684\u8BCD\uFF1A{n} \u4E2A": "Shared words: {n}",
+  "{n} \u4E2A": "{n}",
+  // 看板 · 今日
+  "\u4ECA\u5929": "Today",
+  "Sediment \u77E5\u8BC6\u8109\u51B2": "Sediment Knowledge Pulse",
+  "{n} \u5206": "{n} pts",
+  "\u5199\u4F5C {words} / {goal} \u5B57": "Writing {words} / {goal} words",
+  "\u8FDE\u7EED {streak} \u5929 \xB7 \u6700\u957F {longest} \u5929": "Streak {streak} days \xB7 best {longest}",
+  "\u8FD1": "Last",
+  "\u8FD1 53 \u5468": "Last 53 weeks",
+  "{active} \u5929\u6709\u8BB0\u5F55 \xB7 \u65E5\u5747 {avg} \u5206": "{active} days recorded \xB7 avg {avg} pts/day",
+  "{n} \u5929": "{n} days",
+  "\u6700\u957F {n} \u5929 \xB7 \u6309\u5168\u90E8\u5386\u53F2": "Best {n} days \xB7 all history",
+  "0 \u5C0F\u65F6": "0 hours",
+  "\u9010\u6B65\u5199\u5165 {typed} \u5B57 \xB7 \u5927\u6BB5\u6355\u83B7 {captured} \u5B57": "Typed {typed} words \xB7 pasted {captured} words",
+  "{words} \u5B57 \xB7 {percent}%": "{words} words \xB7 {percent}%",
+  "\u5C55\u5F00\u5176\u4F59 {n} \u9879": "Show {n} more",
+  "\u8FD8\u6CA1\u5F00\u59CB": "Not started",
+  "\u6218\u62A5\u56FE\u7247": "Report image",
+  "\u5FEB\u901F\u901F\u8BB0": "Quick memo",
+  "\u4ECA\u65E5 Agent \u52A8\u6001": "Today's agent activity",
+  "\u4ECA\u5929\u8FD8\u6CA1\u6709\u667A\u80FD\u4F53\u6D3B\u52A8\u3002": "No agent activity today yet.",
+  "\u8DF3\u8FC7": "Skip",
+  // 看板 · 洞察
+  "\u8109\u51B2\u6982\u89C8": "Overview",
+  "\u70ED\u529B\u56FE": "Heatmap",
+  "\u5199\u4F5C\u8D8B\u52BF": "Writing trend",
+  "\u6295\u5165\u5206\u5E03": "Distribution",
+  "\u5E74\u5EA6\u753B\u50CF": "Yearly",
+  "\u672C\u5468\u590D\u76D8": "Weekly review",
+  "\u77E5\u8BC6\u8109\u51B2\u6982\u89C8": "Knowledge Pulse overview",
+  "\u53EF\u9760\u8BB0\u5F55": "reliable records",
+  "\u7D2F\u8BA1\u8D21\u732E\u5206": "Total contribution",
+  "\u6D3B\u8DC3\u5929\u6570": "Active days",
+  "\u5F53\u524D\u8FDE\u7EED": "Current streak",
+  "\u6295\u5165\u65F6\u95F4": "Time invested",
+  "\u6700\u9AD8\u7684\u4E00\u5929": "Best day",
+  "\u6709\u8BB0\u5F55\u7684\u65E5\u5B50": "Days with records",
+  "\u4EA4\u4E92 / \u4E13\u6CE8": "Interaction / focus",
+  "\u4EBA\u673A\u53CC\u8272\u70ED\u529B\u56FE": "Human / AI dual heatmap",
+  "\u5E74\u5EA6\u77E5\u8BC6\u6D3B\u8DC3\u8109\u51B2": "Yearly knowledge pulse",
+  "\u4EBA": "Human",
+  "AI": "AI",
+  "\u5C11": "Less",
+  "\u591A": "More",
+  "\u5199\u4F5C\u4E0E\u65F6\u95F4\u8D8B\u52BF": "Writing & time trend",
+  "\u6BCF\u65E5\u5199\u4F5C": "Daily writing",
+  "\u5199\u4F5C\u53D8\u5316": "Writing change",
+  "\u65F6\u95F4\u6295\u5165": "Time invested",
+  "\u5199\u4F5C\u6765\u6E90": "Writing source",
+  "\u9010\u6B65\u5199\u5165 / \u5927\u6BB5\u6355\u83B7": "Typed / pasted",
+  "\u6295\u5165\u53BB\u5411": "Where words go",
+  "\u6309\u76EE\u5F55\u7EDF\u8BA1\uFF08\u7B14\u8BB0 \xD7 \u5929\uFF09": "By folder (note \xD7 day)",
+  "\u6536\u8D77": "Collapse",
+  "\u6D3B\u8DC3\u65F6\u6BB5": "Active hours",
+  "\u6309\u5C0F\u65F6\u7684\u65B0\u589E\u8BCD\u6570": "Words added by hour",
+  "\u6295\u5165\u8282\u5F8B\u77E9\u9635": "Rhythm matrix",
+  "\u516D\u9879\u6307\u6807\u6309\u5929\u5BF9\u9F50": "Six metrics aligned by day",
+  "\u4EC5\u6D3B\u8DC3\u65E5\u671F": "Active days only",
+  "\u5168\u90E8\u65E5\u671F": "All days",
+  "\u65E5\u671F": "Date",
+  "\u8D21\u732E": "Contrib",
+  "\u65B0\u589E\u8BCD": "Words",
+  "\u6D3B\u8DC3": "Active",
+  "\u4E13\u6CE8": "Focus",
+  "\u65B0\u7B14\u8BB0": "Notes",
+  "\u4EFB\u52A1": "Tasks",
+  "\u5E74\u8F6E": "Year wheel",
+  "\u5730\u5E73\u7EBF \xB7 \u6700\u8FD1 60 \u5929": "Horizon \xB7 last 60 days",
+  "AI \u65B0\u589E\u8BCD": "AI words",
+  // 设置
+  "Sediment \u8BBE\u7F6E": "Sediment settings",
+  "\u65E5\u8BB0\u6587\u4EF6\u5939": "Daily note folder",
+  "\u901F\u8BB0\u5199\u5165\u7684\u76EE\u5F55\uFF0C\u7559\u7A7A\u8868\u793A\u5E93\u6839\u76EE\u5F55\u3002": "Folder for memos; empty means vault root.",
+  "\u65E5\u8BB0\u6587\u4EF6\u540D\u683C\u5F0F": "Daily note filename format",
+  "\u652F\u6301 YYYY / MM / DD \u5360\u4F4D\u7B26\u3002": "Supports YYYY / MM / DD placeholders.",
+  "\u901F\u8BB0\u6BB5\u843D\u6807\u9898": "Memo section heading",
+  "\u6BCF\u5468\u8D77\u59CB\u65E5": "Week starts on",
+  "\u5468\u4E00": "Monday",
+  "\u5468\u65E5": "Sunday",
+  "\u70ED\u529B\u56FE\u9ED8\u8BA4\u6307\u6807": "Default heatmap metric",
+  "\u7EDF\u8BA1\u6709\u6548\u7F16\u8F91\u4F1A\u8BDD": "Count effective edit sessions",
+  "\u540C\u4E00\u6587\u4EF6\u540C\u4E00\u5929\u6700\u591A\u8BB0\u4E00\u6B21\uFF0C\u907F\u514D\u8FDE\u7EED\u952E\u5165\u5237\u5206\u3002": "At most once per file per day, to avoid inflating by continuous typing.",
+  "\u590D\u76D8\u5F52\u6863\u6587\u4EF6\u5939": "Review archive folder",
+  "Agent \u5DE5\u4F5C\u65E5\u5FD7\u76EE\u5F55": "Agent work-log folder",
+  "\u667A\u80FD\u4F53\u6BCF\u6B21\u5DE5\u4F5C\u7684\u6C89\u6DC0\u65E5\u5FD7\uFF0C\u9ED8\u8BA4\u6309\u5929\u5199\u5165\u4E00\u4E2A\u6587\u4EF6\u3002": "Per-session agent logs; one file per day by default.",
+  "\u77E5\u8BC6\u6C89\u6DC0\u76EE\u5F55": "Knowledge folder",
+  "\u667A\u80FD\u4F53\u901A\u8FC7 add_knowledge \u5199\u5165\u7684\u957F\u671F\u7B14\u8BB0\u76EE\u5F55\u3002": "Long-term notes written by agents via add_knowledge.",
+  "\u77E5\u8BC6\u5E93\u5206\u7C7B": "Knowledge categories",
+  "\u9017\u53F7\u5206\u9694\uFF0C\u667A\u80FD\u4F53\u6C89\u6DC0\u7B14\u8BB0\u65F6\u4F1A\u6309\u5206\u7C7B\u5EFA\u5B50\u76EE\u5F55\u3002": "Comma separated; agents create subfolders per category.",
+  "Agent \u7981\u6B62\u8BBF\u95EE\u7684\u6587\u4EF6\u5939": "Folders denied to Agent",
+  "\u9017\u53F7\u5206\u9694\uFF1B\u8FD9\u4E9B\u76EE\u5F55\u5BF9 Agent \u7684\u8BFB\u5199\u548C\u641C\u7D22\u5168\u90E8\u9690\u85CF\u3002": "Comma separated; hidden from agent read/write/search.",
+  "Agent \u7981\u6B62\u8BBF\u95EE\u7684\u6807\u7B7E": "Tags denied to Agent",
+  "\u9017\u53F7\u5206\u9694\uFF1B\u5E26\u8FD9\u4E9B\u6807\u7B7E\u7684\u7B14\u8BB0\u5BF9 Agent \u4E0D\u53EF\u8BFB\u3002": "Comma separated; notes with these tags are unreadable to agents.",
+  "Agent \u6743\u9650\uFF08\u53EF\u9009\uFF09": "Agent permissions (optional)",
+  "\u8BBF\u95EE\u6A21\u5F0F": "Access mode",
+  "allowlist \u6A21\u5F0F\u4E0B Agent \u53EA\u80FD\u8BBF\u95EE\u4E0B\u65B9\u767D\u540D\u5355\u76EE\u5F55\u3002\u9ED8\u8BA4\u5168\u5E93\uFF0C\u4F46\u7CFB\u7EDF\u76EE\u5F55\u59CB\u7EC8\u7981\u6B62\u3002": "In allowlist mode agents only reach the folders below. Default is whole vault; system folders always denied.",
+  "\u5168\u5E93\u53EF\u8BBF\u95EE\uFF08\u9ED8\u8BA4\uFF09": "Whole vault (default)",
+  "\u4EC5\u767D\u540D\u5355\u76EE\u5F55": "Allowlist only",
+  "\u767D\u540D\u5355\u76EE\u5F55": "Allowed folders",
+  "\u9017\u53F7\u5206\u9694\uFF0C\u4F8B\u5982 knowledge,projects,agent-logs\u3002": "Comma separated, e.g. knowledge,projects,agent-logs.",
+  "\u5141\u8BB8\u8BFB\u53D6": "Allow read",
+  "\u5141\u8BB8\u65B0\u5EFA": "Allow create",
+  "\u5141\u8BB8\u5C40\u90E8\u4FEE\u6539": "Allow patch",
+  "\u5141\u8BB8\u5168\u91CF\u8986\u76D6": "Allow overwrite",
+  "\u9ED8\u8BA4\u5F00\u542F\u4EE5\u517C\u5BB9\u65E7\u5DE5\u4F5C\u6D41\uFF1B\u5173\u95ED\u540E Agent \u5FC5\u987B\u7528 patch_note\u3002": "On by default for legacy workflows; off forces agents to use patch_note.",
+  "\u5141\u8BB8\u5220\u9664": "Allow delete",
+  "\u5F53\u524D\u63D2\u4EF6\u672A\u5F00\u653E\u5220\u9664\u5DE5\u5177\uFF0C\u9ED8\u8BA4\u5173\u95ED\u3002": "No delete tool is exposed; off by default.",
+  "\u4FEE\u6539\u524D\u5B58\u5FEB\u7167": "Snapshot before changes",
+  "\u8986\u76D6\u6216 Patch \u524D\u4FDD\u5B58\u539F\u6587\uFF0C\u652F\u6301 Agent \u53D8\u66F4\u5BA1\u67E5\u4E0E\u4E00\u952E\u6062\u590D\u3002": "Save original before overwrite/patch; enables review and one-click restore.",
+  "\u81EA\u52A8\u5907\u4EFD\u7EDF\u8BA1\u6570\u636E": "Auto-backup stats",
+  "\u628A data.json \u5FEB\u7167\u5199\u5165\u5E93\u5185\u666E\u901A\u6587\u4EF6\u5939\uFF0C\u907F\u514D .obsidian \u88AB\u540C\u6B65\u5DE5\u5177\u5FFD\u7565\u3002": "Write data.json snapshots to a normal vault folder, since .obsidian may be ignored by sync tools.",
+  "\u5907\u4EFD\u76EE\u5F55": "Backup folder",
+  "\u5E93\u5185\u76F8\u5BF9\u8DEF\u5F84\uFF0C\u9ED8\u8BA4 sediment-backup/\u3002": "Vault-relative path; default sediment-backup/.",
+  "\u4FDD\u7559\u5907\u4EFD\u4EFD\u6570": "Backups to keep",
+  "\u770B\u677F\u753B\u98CE": "Dashboard art style",
+  "\u50CF\u7D20\u6E56\u9762 / \u6C34\u58A8\u5C71\u6C34 / \u50CF\u7D20\u57CE\u5E02\uFF0C\u4E5F\u53EF\u5728\u770B\u677F\u9875\u811A\u70B9\u300C\u6362\u753B\u98CE\u300D\u3002": "Pixel lake / ink landscape / pixel city; also via the dashboard footer.",
+  "\u50CF\u7D20\u6E56\u9762": "Pixel lake",
+  "\u6C34\u58A8\u5C71\u6C34": "Ink landscape",
+  "\u50CF\u7D20\u57CE\u5E02": "Pixel city",
+  "\u6BCF\u65E5\u5199\u4F5C\u76EE\u6807": "Daily writing goal",
+  "\u770B\u677F\u4ECA\u5929\u5361\u7247\u663E\u793A\u8FDB\u5EA6\uFF0C0 \u8868\u793A\u5173\u95ED\u3002": "Shown on the Today card; 0 disables.",
+  "\u7EDF\u8BA1\u53E3\u5F84\uFF08\u8D21\u732E\u5206\u5C01\u9876\u4E0E\u6743\u91CD\uFF09": "Statistics (contribution cap & weights)",
+  "\u5355\u65E5\u8D21\u732E\u5206\u5C01\u9876": "Daily contribution cap",
+  "\u9632\u6B62\u5355\u65E5\u5237\u5206\u62C9\u7206\u70ED\u529B\u56FE\uFF0C0 \u8868\u793A\u4E0D\u5C01\u9876\u3002\u9ED8\u8BA4 120\u3002": "Prevents a single day from blowing up the heatmap; 0 = no cap. Default 120.",
+  "\u5355\u6B21\u5199\u5165\u8BCD\u6570\u4E0A\u9650": "Per-write word cap",
+  "\u4E00\u6B21\u4FDD\u5B58/\u7C98\u8D34\u6700\u591A\u8BA1\u5165\u7684\u8BCD\u6570\uFF0C0 \u8868\u793A\u4E0D\u5C01\u9876\u3002\u9ED8\u8BA4 4000\u3002": "Max words counted per save/paste; 0 = no cap. Default 4000.",
+  "\u6743\u91CD\uFF1A\u65B0\u5EFA\u7B14\u8BB0\uFF08\u6BCF\u7BC7\uFF09": "Weight: note created (each)",
+  "\u9ED8\u8BA4 2 \u5206\u3002": "Default 2 points.",
+  "\u6743\u91CD\uFF1A\u7F16\u8F91\u4F1A\u8BDD\uFF08\u6BCF\u6B21\uFF09": "Weight: edit session (each)",
+  "\u9ED8\u8BA4 1 \u5206\u3002": "Default 1 point.",
+  "\u6743\u91CD\uFF1A\u5B8C\u6210\u4EFB\u52A1\uFF08\u6BCF\u6761\uFF09": "Weight: task completed (each)",
+  "\u6743\u91CD\uFF1A\u6BCF\u591A\u5C11\u65B0\u589E\u8BCD\u5F97 1 \u5206": "Weight: words per point",
+  "\u9ED8\u8BA4 100 \u8BCD\u3002": "Default 100 words.",
+  "\u6743\u91CD\uFF1A\u6BCF\u591A\u5C11\u4E13\u6CE8\u5206\u949F\u5F97 1 \u5206": "Weight: focus minutes per point",
+  "\u9ED8\u8BA4 25 \u5206\u949F\u3002": "Default 25 minutes.",
+  "\u4FEE\u6539\u6743\u91CD\u6216\u5C01\u9876\u540E\u4F1A\u7ACB\u5373\u5168\u91CF\u91CD\u7B97\u5386\u53F2\u8D21\u732E\u5206\u3002Agent \u5199\u5165\u53EA\u8BA1\u300CAI \u65B0\u589E\u8BCD\u300D\uFF0C\u4E0D\u91CD\u590D\u8BA1\u5165\u4EBA\u7C7B\u5199\u4F5C\u7EDF\u8BA1\u3002": "Changing weights or cap recomputes all history immediately. Agent writes count only as AI words, not human writing.",
+  "Agent \u63A5\u5165\uFF08\u672C\u5730 HTTP / MCP\uFF09": "Agent access (local HTTP / MCP)",
+  "\u542F\u7528\u672C\u5730 Agent API": "Enable local Agent API",
+  "\u53EA\u76D1\u542C 127.0.0.1\uFF0C\u4F9B MCP \u6865\u63A5\u548C\u672C\u5730\u811A\u672C\u8C03\u7528\u4E2A\u4EBA\u77E5\u8BC6\u5E93\u3002": "Listens on 127.0.0.1 only, for the MCP bridge and local scripts.",
+  "\u7AEF\u53E3": "Port",
+  "\u9ED8\u8BA4 27123\uFF0C\u4FEE\u6539\u540E\u670D\u52A1\u4F1A\u81EA\u52A8\u91CD\u542F\u3002": "Default 27123; the server restarts on change.",
+  "\u8BBF\u95EE\u4EE4\u724C": "Access token",
+  "HTTP \u8BF7\u6C42\u4E0E MCP \u6865\u63A5\u90FD\u5FC5\u987B\u643A\u5E26\u6B64\u4EE4\u724C\u3002": "Required for both HTTP requests and the MCP bridge.",
+  "\u70B9\u51FB\u53F3\u4FA7\u6309\u94AE\u751F\u6210": "Click the button to generate",
+  "\u91CD\u65B0\u751F\u6210\u4EE4\u724C": "Regenerate token",
+  "\u6CC4\u9732\u6216\u9057\u5FD8\u65F6\u70B9\u51FB\uFF0C\u65E7\u4EE4\u724C\u7ACB\u5373\u5931\u6548\u3002": "Click if leaked or forgotten; the old token is invalidated immediately.",
+  "\u751F\u6210\u65B0\u4EE4\u724C": "Generate new token",
+  "\u4E00\u952E\u914D\u7F6E\u667A\u80FD\u4F53\u5BA2\u6237\u7AEF": "One-click agent client setup",
+  "\u81EA\u52A8\u63A2\u6D4B\u672C\u673A\u5DF2\u5B89\u88C5\u7684\u667A\u80FD\u4F53\uFF0C\u52FE\u9009\u540E\u4E00\u952E\u5199\u5165 MCP \u914D\u7F6E\u3002\u5199\u5165\u524D\u4F1A\u5907\u4EFD\u539F\u6587\u4EF6\uFF0C\u91CD\u542F\u5BA2\u6237\u7AEF\u5373\u53EF\u751F\u6548\u3002": "Detects installed agents and writes MCP config in one click. The original file is backed up first; restart the client to apply.",
+  "\u6CA1\u6709\u63A2\u6D4B\u5230\u53D7\u652F\u6301\u7684\u667A\u80FD\u4F53\u5BA2\u6237\u7AEF\u3002": "No supported agent client detected.",
+  "\u5DF2\u914D\u7F6E": "configured",
+  "\u91CD\u65B0\u5199\u5165": "Rewrite",
+  "\u4E00\u952E\u914D\u7F6E": "Set up",
+  "\u590D\u5236\u914D\u7F6E JSON": "Copy config JSON",
+  "\u624B\u52A8\u7C98\u8D34\u5230\u5BA2\u6237\u7AEF\u7684 MCP \u914D\u7F6E\u6587\u4EF6\u4E2D\u3002": "Paste manually into the client's MCP config file.",
+  "\u914D\u7F6E\u5DF2\u590D\u5236": "Config copied",
+  "\u914D\u7F6E\u5931\u8D25": "Setup failed",
+  "\u914D\u7F6E\u5DF2\u5199\u5165\uFF0C\u91CD\u542F\u5BA2\u6237\u7AEF\u540E\u751F\u6548": "config written; restart the client to apply",
+  "\u754C\u9762\u8BED\u8A00": "Interface language",
+  "\u8DDF\u968F Obsidian\uFF08auto\uFF09\uFF0C\u6216\u5F3A\u5236\u4E2D\u6587 / \u82F1\u6587\u3002": "Follow Obsidian (auto), or force Chinese / English.",
+  "\u8DDF\u968F\u7CFB\u7EDF": "Follow system",
+  "\u4E2D\u6587": "Chinese",
+  "\u82F1\u6587": "English",
+  // 模态框
+  "\u7B14\u8BB0\u5065\u5EB7\u5EA6": "Note health",
+  "\u5BFC\u51FA\u6570\u636E": "Export data",
+  "\u66F4\u65B0\u8BB0\u5F55": "Changelog",
+  "\u8F6C\u4E3A Agent \u4EFB\u52A1": "Convert to Agent tasks",
+  "\u683C\u5F0F": "Format",
+  "\u5305\u542B\u901F\u8BB0\u6B63\u6587": "Include memo text",
+  "\u5305\u542B\u6587\u4EF6\u8DEF\u5F84": "Include file paths",
+  "\u5BFC\u51FA": "Export",
+  "\u9ED8\u8BA4\u8131\u654F\uFF1A\u4E0D\u542B\u901F\u8BB0\u6B63\u6587\u4E0E\u8DEF\u5F84\uFF0C\u4E5F\u4E0D\u542B\u4EE4\u724C\u3002": "Sanitized by default: no memo text, paths, or token.",
+  "\u6807\u7B7E\uFF08\u7A7A\u683C\u5206\u9694\uFF09": "Tags (space separated)",
+  "\u5B64\u513F\u7B14\u8BB0\uFF1D\u65E0\u51FA\u94FE\u65E0\u53CD\u94FE\uFF1B\u65AD\u94FE\uFF1D\u94FE\u63A5\u6307\u5411\u4E0D\u5B58\u5728\u7684\u7B14\u8BB0\uFF1B\u4E45\u672A\u66F4\u65B0\uFF1D90 \u5929\u4EE5\u4E0A\u3002\u52FE\u9009\u540E\u8F6C\u4E3A Agent \u4EFB\u52A1\uFF0C\u667A\u80FD\u4F53\u6574\u7406\u5B8C\u6210\u4F1A\u6807\u8BB0 #agent-done\u3002": "Orphan = no outgoing or back links; broken link = target note missing; stale = untouched for 90+ days. Select to convert into Agent tasks; agents mark #agent-done when finished.",
+  "\u6CA1\u6709\u53D1\u73B0\u5065\u5EB7\u95EE\u9898\uFF0C\u5E93\u5F88\u6574\u6D01\u3002": "No health issues found; your vault is tidy.",
+  "\u65AD\u94FE {broken} \xB7 \u5B64\u513F {orphan} \xB7 \u4E45\u672A\u66F4\u65B0 {stale}": "Broken {broken} \xB7 orphan {orphan} \xB7 stale {stale}",
+  "\u5B64\u513F\u7B14\u8BB0": "Orphan",
+  "\u65AD\u94FE": "Broken link",
+  "\u4E45\u672A\u66F4\u65B0": "Stale",
+  "\u5DF2\u521B\u5EFA {n} \u6761 Agent \u6574\u7406\u4EFB\u52A1\uFF08#to-agent #note-health\uFF09": "Created {n} agent cleanup tasks (#to-agent #note-health)",
+  "\u6240\u9009\u95EE\u9898\u90FD\u5DF2\u6709\u5BF9\u5E94\u7684\u672A\u5B8C\u6210\u4EFB\u52A1": "All selected issues already have pending tasks",
+  "\u8F6C\u4E3A Agent \u4EFB\u52A1\uFF08{n}\uFF09": "Convert to Agent tasks ({n})",
+  "\u8BBF\u95EE\u4EE4\u724C\u7B49\u654F\u611F\u8BBE\u7F6E\u6C38\u4E0D\u5BFC\u51FA\u3002\u901F\u8BB0\u6B63\u6587\u4E0E\u6587\u4EF6\u8DEF\u5F84\u9ED8\u8BA4\u5254\u9664\uFF0C\u52FE\u9009\u540E\u624D\u5305\u542B\u3002\u6587\u4EF6\u5199\u5165\u5E93\u5185 sediment-export/ \u76EE\u5F55\u3002": "Sensitive settings such as the access token are never exported. Memo text and file paths are excluded unless enabled. Files are written to sediment-export/ in the vault.",
+  "CSV \u53EA\u542B\u6BCF\u65E5\u805A\u5408\u6307\u6807\uFF1BJSON \u542B\u5929\u8BB0\u5F55\u3001\u901F\u8BB0\u5143\u6570\u636E\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\u3002": "CSV holds daily aggregates only; JSON holds day records, memo metadata, and work logs.",
+  "JSON\uFF08\u5B8C\u6574\u7ED3\u6784\uFF09": "JSON (full structure)",
+  "CSV\uFF08\u6BCF\u65E5\u6307\u6807\uFF09": "CSV (daily metrics)",
+  "\u5173\u95ED\u65F6\u53EA\u5BFC\u51FA\u901F\u8BB0\u7684\u65F6\u95F4\u3001\u6807\u7B7E\u4E0E\u72B6\u6001\u3002": "When off, only memo time, tags, and status are exported.",
+  "\u5173\u95ED\u65F6\u5254\u9664\u6765\u6E90\u5F85\u529E\u8DEF\u5F84\u3001\u4EA7\u51FA\u8DEF\u5F84\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\u6D89\u53CA\u6587\u4EF6\u3002": "When off, source task paths, result paths, and work-log files are removed.",
+  "\u5DF2\u5BFC\u51FA\uFF1A{path}": "Exported: {path}",
+  "\u5BFC\u51FA\u5931\u8D25": "Export failed",
+  // 看板 · 智能体工坊 / 年度 / 复盘 / 参照线
+  "\u6708\u62A5": "Monthly",
+  "Agent \u53D8\u66F4\u5BA1\u67E5": "Agent change review",
+  "\u6682\u65E0 Agent \u53D8\u66F4\u8BB0\u5F55\u3002": "No agent changes yet.",
+  "\u5C40\u90E8\u4FEE\u6539": "Patch",
+  "\u5C5E\u6027": "Frontmatter",
+  "\u65B0\u5EFA/\u8986\u76D6": "Create/overwrite",
+  "\u5DEE\u5F02({n})": "Diff ({n})",
+  "\u53D8\u66F4\u5BF9\u6BD4": "change diff",
+  "\u6062\u590D": "Restore",
+  "\u5DF2\u6062\u590D\u5230\u6700\u8FD1\u5907\u4EFD": "Restored to the latest backup",
+  "\u5F85\u529E \xB7 \u4ECA\u65E5 / \u9057\u7559 / Agent": "Tasks \xB7 today / overdue / agent",
+  "\u52A0\u8F7D\u4E2D\u2026": "Loading\u2026",
+  "\u6CA1\u6709\u672A\u5B8C\u6210\u5F85\u529E\u3002": "No pending tasks.",
+  "Agent \u4EFB\u52A1": "Agent task",
+  "\u8FDE\u63A5\u4E0E\u8C03\u7528\u72B6\u6001": "Connection & call status",
+  "\u672C\u5730 API": "Local API",
+  "\u5728\u7EBF": "Online",
+  "\u672A\u542F\u7528": "Disabled",
+  "\u7D2F\u8BA1\u8C03\u7528": "Total calls",
+  "{n} \u6B21": "{n} calls",
+  "\u6700\u8FD1\u8C03\u7528": "Last call",
+  "AI \u6C89\u6DC0\u5BA1\u6838": "AI knowledge review",
+  "\u6CA1\u6709\u5F85\u5BA1\u6838\u7684 AI \u8349\u7A3F\u3002": "No AI drafts awaiting review.",
+  "\u91C7\u7EB3\u5E76\u5F52\u6863": "Accept & archive",
+  "\u5DF2\u91C7\u7EB3": "Accepted",
+  "\u5408\u5E76\u5230\u5173\u8054\u7B14\u8BB0": "Merge into linked note",
+  "\u9A73\u56DE\u5220\u9664": "Reject & delete",
+  "\u5DF2\u9A73\u56DE\u5E76\u79FB\u5165\u56DE\u6536\u7AD9": "Rejected and moved to trash",
+  "\u8FD9\u5F20\u8349\u7A3F\u6CA1\u6709\u5173\u8054\u7B14\u8BB0\uFF0C\u65E0\u6CD5\u5408\u5E76": "This draft has no linked note to merge into",
+  "\u627E\u4E0D\u5230\u5173\u8054\u7B14\u8BB0\uFF1A{name}": "Linked note not found: {name}",
+  "\u5DF2\u5408\u5E76\u5230 {name}": "Merged into {name}",
+  "\u667A\u80FD\u4F53\u5DE5\u4F5C\u65E5\u5FD7": "Agent work logs",
+  "\u8FD8\u6CA1\u6709\u5DE5\u4F5C\u65E5\u5FD7\u3002": "No work logs yet.",
+  "\u6570\u636E\u53EA\u7559\u5728\u672C\u5730": "data stays local",
+  "\u6362\u753B\u98CE": "Change art",
+  "\u77E5\u8BC6\u6307\u7EB9": "Knowledge fingerprint",
+  "\u6BCF\u5929\u4E00\u6839\u8272\u6761": "One bar per day",
+  "\u6708\u76F8\u65E5\u5386": "Moon-phase calendar",
+  "\u6EE1\u6708\u662F\u9AD8\u5CF0\u65E5\uFF0C\u65B0\u6708\u662F\u4F11\u606F\u65E5": "Full moon = peak day, new moon = rest day",
+  "\u6708\u62A5\u6D77\u62A5": "Monthly poster",
+  "\u70B9\u5DE6\u53F3\u7BAD\u5934\u5207\u6362\u6708\u4EFD": "Use the arrows to change month",
+  "{year} \u5E74 \xB7 \u6BCF\u5929\u4E00\u7247\u82B1\u74E3": "{year} \xB7 one petal per day",
+  "\u672C\u6708\u8D21\u732E\u5206": "Contribution this month",
+  "\u6D3B\u8DC3 {n} \u5929": "Active {n} days",
+  "\u65B0\u589E {n} \u5B57": "{n} words added",
+  "\u5BFC\u51FA PNG": "Export PNG",
+  "\u77E5\u8BC6\u590D\u76D8 \xB7 \u672C\u5468": "Knowledge review \xB7 this week",
+  "\u590D\u5236 Markdown": "Copy Markdown",
+  "\u5468\u590D\u76D8\u5DF2\u590D\u5236": "Weekly review copied",
+  "\u756A\u8304": "Focus",
+  "\u77ED\u4F11": "Short break",
+  "\u957F\u4F11": "Long break",
+  "\u5E74\u5EA6\u6D3B\u8DC3\u70ED\u529B\u56FE\uFF0C\u65B9\u5411\u952E\u79FB\u52A8\uFF0C\u56DE\u8F66\u9009\u4E2D": "Yearly activity heatmap; arrow keys to move, Enter to select",
+  "\u5747\u503C {n}": "Mean {n}",
+  "\u76EE\u6807 {n}": "Goal {n}",
+  "\u65B0\u589E\u5747\u503C {n}": "Added mean {n}",
+  "\u6D3B\u8DC3\u5747\u503C {n}": "Active mean {n}",
+  "Sediment \u66F4\u65B0\u8BB0\u5F55": "Sediment changelog",
+  "\u5907\u4EFD\u7248\u672C": "Backup version",
+  "\u5F53\u524D\u7248\u672C": "Current version"
+};
+function t(zh) {
+  var _a2;
+  return locale === "en" ? (_a2 = EN[zh]) != null ? _a2 : zh : zh;
+}
+function tf(zh, vars) {
+  return t(zh).replace(
+    /\{(\w+)\}/g,
+    (_match, key) => key in vars ? String(vars[key]) : `{${key}}`
+  );
+}
+
+// src/ui/quick-memo-modal.ts
 var QuickMemoModal = class extends import_obsidian7.Modal {
   constructor(app, onSubmit) {
     super(app);
@@ -2197,23 +2890,23 @@ var QuickMemoModal = class extends import_obsidian7.Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.addClass("kp-modal");
-    contentEl.createEl("h2", { text: "\u8BB0\u4E00\u6761\u901F\u8BB0" });
+    contentEl.createEl("h2", { text: t("\u8BB0\u4E00\u6761\u901F\u8BB0") });
     const area = contentEl.createEl("textarea", { cls: "kp-modal-input" });
-    area.placeholder = "\u60F3\u5230\u4EC0\u4E48\uFF0C\u968F\u624B\u8BB0\u4E0B\u2026";
+    area.placeholder = t("\u60F3\u5230\u4EC0\u4E48\uFF0C\u968F\u624B\u8BB0\u4E0B\u2026");
     area.rows = 6;
     area.addEventListener("input", () => {
       this.text = area.value;
     });
     const tagRow = contentEl.createDiv({ cls: "kp-modal-tags" });
-    tagRow.createSpan({ text: "\u6807\u7B7E\uFF08\u7A7A\u683C\u5206\u9694\uFF09" });
+    tagRow.createSpan({ text: t("\u6807\u7B7E\uFF08\u7A7A\u683C\u5206\u9694\uFF09") });
     const tagInput = tagRow.createEl("input", { type: "text", placeholder: "\u7075\u611F \u9605\u8BFB" });
     tagInput.addEventListener("input", () => {
       this.tags = tagInput.value;
     });
     const actions = contentEl.createDiv({ cls: "kp-modal-actions" });
-    const cancel = actions.createEl("button", { text: "\u53D6\u6D88" });
+    const cancel = actions.createEl("button", { text: t("\u53D6\u6D88") });
     cancel.onclick = () => this.close();
-    const save = actions.createEl("button", { cls: "mod-cta", text: "\u4FDD\u5B58" });
+    const save = actions.createEl("button", { cls: "mod-cta", text: t("\u4FDD\u5B58") });
     save.onclick = () => {
       if (!this.text.trim()) return;
       const tags = this.tags.split(/\s+/).map((tag) => tag.replace(/^#/, "")).filter(Boolean);
@@ -2227,8 +2920,307 @@ var QuickMemoModal = class extends import_obsidian7.Modal {
   }
 };
 
-// src/ui/settings-tab.ts
+// src/ui/health-modal.ts
 var import_obsidian8 = require("obsidian");
+
+// src/features/health.ts
+var STALE_DAYS = 90;
+var MAX_ISSUES = 300;
+function scanNoteHealth(plugin) {
+  var _a2, _b, _c, _d, _e, _f;
+  const settings = plugin.store.settings;
+  const excluded = [
+    settings.dailyNoteFolder,
+    settings.reviewFolder,
+    settings.workLogFolder,
+    settings.backupFolder
+  ].map(normalizeFolder).filter((folder) => folder.length > 0);
+  const resolved = (_a2 = plugin.app.metadataCache.resolvedLinks) != null ? _a2 : {};
+  const unresolved = (_b = plugin.app.metadataCache.unresolvedLinks) != null ? _b : {};
+  const backlinkCount = /* @__PURE__ */ new Map();
+  for (const links of Object.values(resolved)) {
+    for (const target of Object.keys(links)) {
+      backlinkCount.set(target, ((_c = backlinkCount.get(target)) != null ? _c : 0) + 1);
+    }
+  }
+  const issues = [];
+  const staleBefore = Date.now() - STALE_DAYS * 864e5;
+  for (const file of plugin.app.vault.getMarkdownFiles()) {
+    if (excluded.some((folder) => file.path.startsWith(`${folder}/`))) continue;
+    const outgoing = Object.keys((_d = resolved[file.path]) != null ? _d : {}).length;
+    const incoming = (_e = backlinkCount.get(file.path)) != null ? _e : 0;
+    if (outgoing === 0 && incoming === 0) {
+      issues.push({ kind: "orphan", path: file.path, detail: "\u6CA1\u6709\u51FA\u94FE\u4E5F\u6CA1\u6709\u53CD\u94FE\uFF0C\u53EF\u80FD\u662F\u4E00\u5EA7\u5B64\u5C9B" });
+    }
+    const broken = Object.keys((_f = unresolved[file.path]) != null ? _f : {});
+    if (broken.length > 0) {
+      issues.push({
+        kind: "broken-link",
+        path: file.path,
+        detail: `\u65AD\u94FE\uFF1A${broken.slice(0, 3).join("\u3001")}${broken.length > 3 ? ` \u7B49 ${broken.length} \u5904` : ""}`
+      });
+    }
+    if (file.stat.mtime < staleBefore && (outgoing > 0 || incoming > 0)) {
+      const days = Math.floor((Date.now() - file.stat.mtime) / 864e5);
+      issues.push({ kind: "stale", path: file.path, detail: `\u5DF2 ${days} \u5929\u672A\u66F4\u65B0` });
+    }
+    if (issues.length >= MAX_ISSUES) break;
+  }
+  const order = { "broken-link": 0, orphan: 1, stale: 2 };
+  return issues.sort((a, b) => order[a.kind] - order[b.kind]);
+}
+var HEALTH_LABEL = {
+  orphan: "\u5B64\u513F\u7B14\u8BB0",
+  "broken-link": "\u65AD\u94FE",
+  stale: "\u4E45\u672A\u66F4\u65B0"
+};
+async function delegateHealthIssues(plugin, issues) {
+  let created = 0;
+  for (const issue of issues.slice(0, 50)) {
+    const text = `\u3010\u7B14\u8BB0\u5065\u5EB7\u3011${HEALTH_LABEL[issue.kind]}\uFF1A${issue.path}\uFF08${issue.detail}\uFF09\u3002\u8BF7\u6574\u7406\uFF1A\u8865\u53CC\u94FE/\u4FEE\u65AD\u94FE/\u66F4\u65B0\u6216\u5F52\u6863\uFF0C\u5B8C\u6210\u540E\u7528 complete_agent_task \u5173\u8054\u4EA7\u51FA\u3002`;
+    const duplicate = plugin.store.data.memos.some(
+      (memo2) => memo2.text === text && !memo2.converted && !memo2.archived
+    );
+    if (duplicate) continue;
+    const memo = await plugin.memos.add(text, ["to-agent", "note-health"]);
+    if (memo) created += 1;
+  }
+  return created;
+}
+
+// src/ui/health-modal.ts
+var HealthModal = class extends import_obsidian8.Modal {
+  constructor(app, plugin) {
+    super(app);
+    this.plugin = plugin;
+    this.issues = scanNoteHealth(plugin);
+    this.selected = new Set(this.issues.map((issue) => `${issue.kind}|${issue.path}`));
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h2", { text: t("\u7B14\u8BB0\u5065\u5EB7\u5EA6") });
+    contentEl.createDiv({
+      cls: "sd-setup-hint",
+      text: t("\u5B64\u513F\u7B14\u8BB0\uFF1D\u65E0\u51FA\u94FE\u65E0\u53CD\u94FE\uFF1B\u65AD\u94FE\uFF1D\u94FE\u63A5\u6307\u5411\u4E0D\u5B58\u5728\u7684\u7B14\u8BB0\uFF1B\u4E45\u672A\u66F4\u65B0\uFF1D90 \u5929\u4EE5\u4E0A\u3002\u52FE\u9009\u540E\u8F6C\u4E3A Agent \u4EFB\u52A1\uFF0C\u667A\u80FD\u4F53\u6574\u7406\u5B8C\u6210\u4F1A\u6807\u8BB0 #agent-done\u3002")
+    });
+    if (this.issues.length === 0) {
+      contentEl.createDiv({ cls: "kp-empty", text: t("\u6CA1\u6709\u53D1\u73B0\u5065\u5EB7\u95EE\u9898\uFF0C\u5E93\u5F88\u6574\u6D01\u3002") });
+      return;
+    }
+    const counts = { orphan: 0, "broken-link": 0, stale: 0 };
+    for (const issue of this.issues) counts[issue.kind] += 1;
+    contentEl.createDiv({
+      cls: "sd-health-summary",
+      text: tf("\u65AD\u94FE {broken} \xB7 \u5B64\u513F {orphan} \xB7 \u4E45\u672A\u66F4\u65B0 {stale}", {
+        broken: counts["broken-link"],
+        orphan: counts.orphan,
+        stale: counts.stale
+      })
+    });
+    const list = contentEl.createDiv({ cls: "sd-health-list" });
+    for (const issue of this.issues) {
+      const key = `${issue.kind}|${issue.path}`;
+      const row = list.createDiv({ cls: "sd-health-item" });
+      const box = row.createEl("input", { type: "checkbox" });
+      box.checked = this.selected.has(key);
+      box.addEventListener("change", () => {
+        if (box.checked) this.selected.add(key);
+        else this.selected.delete(key);
+        this.updateButton();
+      });
+      const body = row.createDiv({ cls: "sd-health-body" });
+      const head = body.createDiv({ cls: "sd-health-head" });
+      head.createSpan({ cls: `sd-health-badge is-${issue.kind}`, text: t(HEALTH_LABEL[issue.kind]) });
+      const open = head.createEl("button", { cls: "sd-knowledge-open", text: issue.path });
+      open.onclick = () => {
+        void this.plugin.app.workspace.openLinkText(issue.path, "", false);
+      };
+      body.createDiv({ cls: "sd-health-detail", text: issue.detail });
+    }
+    const footer = contentEl.createDiv({ cls: "sd-health-footer" });
+    this.button = footer.createEl("button", { cls: "mod-cta" });
+    this.updateButton();
+    this.button.onclick = () => {
+      const chosen = this.issues.filter(
+        (issue) => this.selected.has(`${issue.kind}|${issue.path}`)
+      );
+      if (chosen.length === 0) return;
+      this.button.disabled = true;
+      void delegateHealthIssues(this.plugin, chosen).then((count) => {
+        new import_obsidian8.Notice(
+          count > 0 ? tf("\u5DF2\u521B\u5EFA {n} \u6761 Agent \u6574\u7406\u4EFB\u52A1\uFF08#to-agent #note-health\uFF09", { n: count }) : t("\u6240\u9009\u95EE\u9898\u90FD\u5DF2\u6709\u5BF9\u5E94\u7684\u672A\u5B8C\u6210\u4EFB\u52A1")
+        );
+        this.close();
+        this.plugin.refreshViews(true);
+      });
+    };
+  }
+  updateButton() {
+    this.button.setText(tf("\u8F6C\u4E3A Agent \u4EFB\u52A1\uFF08{n}\uFF09", { n: this.selected.size }));
+    this.button.disabled = this.selected.size === 0;
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
+
+// src/ui/export-modal.ts
+var import_obsidian9 = require("obsidian");
+
+// src/features/export.ts
+var DEFAULT_EXPORT_OPTIONS = {
+  format: "json",
+  includeMemoText: false,
+  includePaths: false
+};
+function csvEscape(value) {
+  const text = String(value);
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+function buildStatsCsv(store) {
+  const header = [
+    "date",
+    "contribution",
+    "wordsAdded",
+    "wordsRemoved",
+    "edits",
+    "notesCreated",
+    "tasksCompleted",
+    "focusMinutes",
+    "activeMinutes",
+    "capturedWords",
+    "aiWordsAdded"
+  ];
+  const rows = Object.keys(store.data.days).sort().map((key) => {
+    const day = store.getDay(key);
+    return [
+      key,
+      day.contribution,
+      day.wordsAdded,
+      day.wordsRemoved,
+      day.edits,
+      day.notesCreated,
+      day.tasksCompleted,
+      day.focusMinutes,
+      day.activeMinutes,
+      day.capturedWords,
+      day.aiWordsAdded
+    ].map(csvEscape).join(",");
+  });
+  return [header.join(","), ...rows].join("\n");
+}
+function buildExportJson(store, options) {
+  var _a2;
+  const memos = store.data.memos.map((memo) => {
+    var _a3;
+    return {
+      id: memo.id,
+      date: memo.date,
+      time: memo.time,
+      tags: memo.tags,
+      converted: memo.converted,
+      archived: Boolean(memo.archived),
+      ...options.includeMemoText ? { text: memo.text } : {},
+      ...options.includePaths && memo.sourcePath ? { sourcePath: memo.sourcePath, sourceLine: (_a3 = memo.sourceLine) != null ? _a3 : 0 } : {},
+      ...options.includePaths && memo.resultPath ? { resultPath: memo.resultPath } : {}
+    };
+  });
+  const workLogs = store.data.workLogs.map((log) => ({
+    id: log.id,
+    date: log.date,
+    time: log.time,
+    agent: log.agent,
+    task: log.task,
+    summary: log.summary,
+    decisions: log.decisions,
+    learnings: log.learnings,
+    openQuestions: log.openQuestions,
+    tags: log.tags,
+    ...options.includePaths ? { files: log.files } : {}
+  }));
+  const payload = {
+    exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    plugin: "sediment",
+    sanitization: {
+      memoText: options.includeMemoText ? "included" : "removed",
+      paths: options.includePaths ? "included" : "removed",
+      secrets: "never-exported"
+    },
+    days: store.data.days,
+    memos,
+    workLogs,
+    focusSessions: (_a2 = store.data.focusSessions) != null ? _a2 : []
+  };
+  return JSON.stringify(payload, null, 2);
+}
+async function exportData(store, vault, options) {
+  const folder = normalizeFolder("sediment-export");
+  await ensureFolder(vault, folder);
+  const stamp = dateKey(/* @__PURE__ */ new Date());
+  const extension = options.format === "csv" ? "csv" : "json";
+  let path = `${folder}/sediment-${stamp}.${extension}`;
+  let counter = 2;
+  while (vault.getAbstractFileByPath(path)) {
+    path = `${folder}/sediment-${stamp}-${counter}.${extension}`;
+    counter += 1;
+  }
+  const content = options.format === "csv" ? buildStatsCsv(store) : buildExportJson(store, options);
+  await vault.create(path, content);
+  return path;
+}
+
+// src/ui/export-modal.ts
+var ExportModal = class extends import_obsidian9.Modal {
+  constructor(app, plugin) {
+    super(app);
+    this.plugin = plugin;
+    this.options = { ...DEFAULT_EXPORT_OPTIONS };
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h2", { text: t("\u5BFC\u51FA\u6570\u636E") });
+    contentEl.createDiv({
+      cls: "sd-setup-hint",
+      text: t("\u8BBF\u95EE\u4EE4\u724C\u7B49\u654F\u611F\u8BBE\u7F6E\u6C38\u4E0D\u5BFC\u51FA\u3002\u901F\u8BB0\u6B63\u6587\u4E0E\u6587\u4EF6\u8DEF\u5F84\u9ED8\u8BA4\u5254\u9664\uFF0C\u52FE\u9009\u540E\u624D\u5305\u542B\u3002\u6587\u4EF6\u5199\u5165\u5E93\u5185 sediment-export/ \u76EE\u5F55\u3002")
+    });
+    new import_obsidian9.Setting(contentEl).setName(t("\u683C\u5F0F")).setDesc(t("CSV \u53EA\u542B\u6BCF\u65E5\u805A\u5408\u6307\u6807\uFF1BJSON \u542B\u5929\u8BB0\u5F55\u3001\u901F\u8BB0\u5143\u6570\u636E\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\u3002")).addDropdown(
+      (dropdown) => dropdown.addOption("json", t("JSON\uFF08\u5B8C\u6574\u7ED3\u6784\uFF09")).addOption("csv", t("CSV\uFF08\u6BCF\u65E5\u6307\u6807\uFF09")).setValue(this.options.format).onChange((value) => {
+        this.options.format = value;
+      })
+    );
+    new import_obsidian9.Setting(contentEl).setName(t("\u5305\u542B\u901F\u8BB0\u6B63\u6587")).setDesc(t("\u5173\u95ED\u65F6\u53EA\u5BFC\u51FA\u901F\u8BB0\u7684\u65F6\u95F4\u3001\u6807\u7B7E\u4E0E\u72B6\u6001\u3002")).addToggle(
+      (toggle) => toggle.setValue(this.options.includeMemoText).onChange((value) => {
+        this.options.includeMemoText = value;
+      })
+    );
+    new import_obsidian9.Setting(contentEl).setName(t("\u5305\u542B\u6587\u4EF6\u8DEF\u5F84")).setDesc(t("\u5173\u95ED\u65F6\u5254\u9664\u6765\u6E90\u5F85\u529E\u8DEF\u5F84\u3001\u4EA7\u51FA\u8DEF\u5F84\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\u6D89\u53CA\u6587\u4EF6\u3002")).addToggle(
+      (toggle) => toggle.setValue(this.options.includePaths).onChange((value) => {
+        this.options.includePaths = value;
+      })
+    );
+    new import_obsidian9.Setting(contentEl).addButton(
+      (button) => button.setButtonText(t("\u5BFC\u51FA")).setCta().onClick(() => {
+        button.setDisabled(true);
+        void exportData(this.plugin.store, this.plugin.app.vault, this.options).then((path) => {
+          new import_obsidian9.Notice(tf("\u5DF2\u5BFC\u51FA\uFF1A{path}", { path }));
+          this.close();
+          void this.plugin.app.workspace.openLinkText(path, "", false);
+        }).catch((error) => {
+          button.setDisabled(false);
+          new import_obsidian9.Notice(`${t("\u5BFC\u51FA\u5931\u8D25")}: ${error instanceof Error ? error.message : String(error)}`);
+        });
+      })
+    );
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
+
+// src/ui/settings-tab.ts
+var import_obsidian10 = require("obsidian");
 
 // src/agent/setup.ts
 function nodeModule(name) {
@@ -2301,7 +3293,6 @@ function resolveBridgePath(plugin, target) {
       adapter.getFullPath(`${plugin.app.vault.configDir}/plugins/sediment/mcp-server/index.mjs`)
     );
   }
-  candidates.push("D:/project/Obsidian_plugin/mcp-server/index.mjs");
   return (_e = (_d = candidates.find((path) => fs.existsSync(path))) != null ? _d : candidates[0]) != null ? _e : "";
 }
 function buildEntry(plugin, target, bridge) {
@@ -2344,7 +3335,7 @@ function configureAgent(plugin, target) {
 }
 
 // src/ui/settings-tab.ts
-var PulseSettingTab = class extends import_obsidian8.PluginSettingTab {
+var PulseSettingTab = class extends import_obsidian10.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -2352,161 +3343,170 @@ var PulseSettingTab = class extends import_obsidian8.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "Sediment \u8BBE\u7F6E" });
+    containerEl.createEl("h2", { text: t("Sediment \u8BBE\u7F6E") });
     const settings = this.plugin.store.settings;
     const save = () => void this.plugin.saveSettings();
-    new import_obsidian8.Setting(containerEl).setName("\u65E5\u8BB0\u6587\u4EF6\u5939").setDesc("\u901F\u8BB0\u5199\u5165\u7684\u76EE\u5F55\uFF0C\u7559\u7A7A\u8868\u793A\u5E93\u6839\u76EE\u5F55\u3002").addText(
+    new import_obsidian10.Setting(containerEl).setName(t("\u754C\u9762\u8BED\u8A00")).setDesc(t("\u8DDF\u968F Obsidian\uFF08auto\uFF09\uFF0C\u6216\u5F3A\u5236\u4E2D\u6587 / \u82F1\u6587\u3002")).addDropdown(
+      (dropdown) => dropdown.addOption("auto", t("\u8DDF\u968F\u7CFB\u7EDF")).addOption("zh", t("\u4E2D\u6587")).addOption("en", t("\u82F1\u6587")).setValue(settings.language).onChange((value) => {
+        settings.language = value;
+        setLocale(resolveLocale(settings.language));
+        save();
+        this.plugin.refreshViews();
+        this.display();
+      })
+    );
+    new import_obsidian10.Setting(containerEl).setName(t("\u65E5\u8BB0\u6587\u4EF6\u5939")).setDesc(t("\u901F\u8BB0\u5199\u5165\u7684\u76EE\u5F55\uFF0C\u7559\u7A7A\u8868\u793A\u5E93\u6839\u76EE\u5F55\u3002")).addText(
       (text) => text.setPlaceholder("daily").setValue(settings.dailyNoteFolder).onChange((value) => {
         settings.dailyNoteFolder = value;
         save();
       })
     );
-    new import_obsidian8.Setting(containerEl).setName("\u65E5\u8BB0\u6587\u4EF6\u540D\u683C\u5F0F").setDesc("\u652F\u6301 YYYY / MM / DD \u5360\u4F4D\u7B26\u3002").addText(
+    new import_obsidian10.Setting(containerEl).setName(t("\u65E5\u8BB0\u6587\u4EF6\u540D\u683C\u5F0F")).setDesc(t("\u652F\u6301 YYYY / MM / DD \u5360\u4F4D\u7B26\u3002")).addText(
       (text) => text.setPlaceholder("YYYY-MM-DD").setValue(settings.dailyNoteFormat).onChange((value) => {
         settings.dailyNoteFormat = value || "YYYY-MM-DD";
         save();
       })
     );
-    new import_obsidian8.Setting(containerEl).setName("\u901F\u8BB0\u6BB5\u843D\u6807\u9898").addText(
+    new import_obsidian10.Setting(containerEl).setName(t("\u901F\u8BB0\u6BB5\u843D\u6807\u9898")).addText(
       (text) => text.setPlaceholder("## \u901F\u8BB0").setValue(settings.memoHeading).onChange((value) => {
         settings.memoHeading = value || "## \u901F\u8BB0";
         save();
       })
     );
-    new import_obsidian8.Setting(containerEl).setName("\u6BCF\u5468\u8D77\u59CB\u65E5").addDropdown(
-      (dropdown) => dropdown.addOption("1", "\u5468\u4E00").addOption("0", "\u5468\u65E5").setValue(String(settings.weekStart)).onChange((value) => {
+    new import_obsidian10.Setting(containerEl).setName(t("\u6BCF\u5468\u8D77\u59CB\u65E5")).addDropdown(
+      (dropdown) => dropdown.addOption("1", t("\u5468\u4E00")).addOption("0", t("\u5468\u65E5")).setValue(String(settings.weekStart)).onChange((value) => {
         settings.weekStart = value === "0" ? 0 : 1;
         save();
         this.plugin.refreshViews();
       })
     );
-    new import_obsidian8.Setting(containerEl).setName("\u70ED\u529B\u56FE\u9ED8\u8BA4\u6307\u6807").addDropdown((dropdown) => {
-      for (const metric of METRICS) dropdown.addOption(metric.key, metric.label);
+    new import_obsidian10.Setting(containerEl).setName(t("\u70ED\u529B\u56FE\u9ED8\u8BA4\u6307\u6807")).addDropdown((dropdown) => {
+      for (const metric of METRICS) dropdown.addOption(metric.key, t(metric.label));
       dropdown.setValue(settings.heatmapMetric).onChange((value) => {
         settings.heatmapMetric = value;
         save();
         this.plugin.refreshViews();
       });
     });
-    new import_obsidian8.Setting(containerEl).setName("\u7EDF\u8BA1\u6709\u6548\u7F16\u8F91\u4F1A\u8BDD").setDesc("\u540C\u4E00\u6587\u4EF6\u540C\u4E00\u5929\u6700\u591A\u8BB0\u4E00\u6B21\uFF0C\u907F\u514D\u8FDE\u7EED\u952E\u5165\u5237\u5206\u3002").addToggle(
+    new import_obsidian10.Setting(containerEl).setName(t("\u7EDF\u8BA1\u6709\u6548\u7F16\u8F91\u4F1A\u8BDD")).setDesc(t("\u540C\u4E00\u6587\u4EF6\u540C\u4E00\u5929\u6700\u591A\u8BB0\u4E00\u6B21\uFF0C\u907F\u514D\u8FDE\u7EED\u952E\u5165\u5237\u5206\u3002")).addToggle(
       (toggle) => toggle.setValue(settings.trackEdits).onChange((value) => {
         settings.trackEdits = value;
         save();
       })
     );
-    new import_obsidian8.Setting(containerEl).setName("\u590D\u76D8\u5F52\u6863\u6587\u4EF6\u5939").addText(
+    new import_obsidian10.Setting(containerEl).setName(t("\u590D\u76D8\u5F52\u6863\u6587\u4EF6\u5939")).addText(
       (text) => text.setPlaceholder("reviews").setValue(settings.reviewFolder).onChange((value) => {
         settings.reviewFolder = value;
         save();
       })
     );
-    new import_obsidian8.Setting(containerEl).setName("Agent \u5DE5\u4F5C\u65E5\u5FD7\u76EE\u5F55").setDesc("\u667A\u80FD\u4F53\u6BCF\u6B21\u5DE5\u4F5C\u7684\u6C89\u6DC0\u65E5\u5FD7\uFF0C\u9ED8\u8BA4\u6309\u5929\u5199\u5165\u4E00\u4E2A\u6587\u4EF6\u3002").addText(
+    new import_obsidian10.Setting(containerEl).setName(t("Agent \u5DE5\u4F5C\u65E5\u5FD7\u76EE\u5F55")).setDesc(t("\u667A\u80FD\u4F53\u6BCF\u6B21\u5DE5\u4F5C\u7684\u6C89\u6DC0\u65E5\u5FD7\uFF0C\u9ED8\u8BA4\u6309\u5929\u5199\u5165\u4E00\u4E2A\u6587\u4EF6\u3002")).addText(
       (text) => text.setPlaceholder("agent-logs").setValue(settings.workLogFolder).onChange((value) => {
         settings.workLogFolder = value;
         save();
       })
     );
-    new import_obsidian8.Setting(containerEl).setName("\u77E5\u8BC6\u6C89\u6DC0\u76EE\u5F55").setDesc("\u667A\u80FD\u4F53\u901A\u8FC7 add_knowledge \u5199\u5165\u7684\u957F\u671F\u7B14\u8BB0\u76EE\u5F55\u3002").addText(
+    new import_obsidian10.Setting(containerEl).setName(t("\u77E5\u8BC6\u6C89\u6DC0\u76EE\u5F55")).setDesc(t("\u667A\u80FD\u4F53\u901A\u8FC7 add_knowledge \u5199\u5165\u7684\u957F\u671F\u7B14\u8BB0\u76EE\u5F55\u3002")).addText(
       (text) => text.setPlaceholder("knowledge").setValue(settings.knowledgeFolder).onChange((value) => {
         settings.knowledgeFolder = value;
         save();
       })
     );
-    new import_obsidian8.Setting(containerEl).setName("\u77E5\u8BC6\u5E93\u5206\u7C7B").setDesc("\u9017\u53F7\u5206\u9694\uFF0C\u667A\u80FD\u4F53\u6C89\u6DC0\u7B14\u8BB0\u65F6\u4F1A\u6309\u5206\u7C7B\u5EFA\u5B50\u76EE\u5F55\u3002").addText(
+    new import_obsidian10.Setting(containerEl).setName(t("\u77E5\u8BC6\u5E93\u5206\u7C7B")).setDesc(t("\u9017\u53F7\u5206\u9694\uFF0C\u667A\u80FD\u4F53\u6C89\u6DC0\u7B14\u8BB0\u65F6\u4F1A\u6309\u5206\u7C7B\u5EFA\u5B50\u76EE\u5F55\u3002")).addText(
       (text) => text.setPlaceholder("\u6280\u672F,\u9879\u76EE,\u65B9\u6CD5,\u7075\u611F,\u590D\u76D8").setValue(settings.knowledgeCategories).onChange((value) => {
         settings.knowledgeCategories = value;
         save();
         this.plugin.refreshViews();
       })
     );
-    new import_obsidian8.Setting(containerEl).setName("Agent \u7981\u6B62\u8BBF\u95EE\u7684\u6587\u4EF6\u5939").setDesc("\u9017\u53F7\u5206\u9694\uFF1B\u8FD9\u4E9B\u76EE\u5F55\u5BF9 Agent \u7684\u8BFB\u5199\u548C\u641C\u7D22\u5168\u90E8\u9690\u85CF\u3002").addText(
+    new import_obsidian10.Setting(containerEl).setName(t("Agent \u7981\u6B62\u8BBF\u95EE\u7684\u6587\u4EF6\u5939")).setDesc(t("\u9017\u53F7\u5206\u9694\uFF1B\u8FD9\u4E9B\u76EE\u5F55\u5BF9 Agent \u7684\u8BFB\u5199\u548C\u641C\u7D22\u5168\u90E8\u9690\u85CF\u3002")).addText(
       (text) => text.setPlaceholder("\u4F8B\u5982\uFF1A\u8D22\u52A1,\u79C1\u4EBA\u65E5\u8BB0").setValue(settings.deniedFolders).onChange((value) => {
         settings.deniedFolders = value;
         save();
       })
     );
-    new import_obsidian8.Setting(containerEl).setName("Agent \u7981\u6B62\u8BBF\u95EE\u7684\u6807\u7B7E").setDesc("\u9017\u53F7\u5206\u9694\uFF1B\u5E26\u8FD9\u4E9B\u6807\u7B7E\u7684\u7B14\u8BB0\u5BF9 Agent \u4E0D\u53EF\u8BFB\u3002").addText(
+    new import_obsidian10.Setting(containerEl).setName(t("Agent \u7981\u6B62\u8BBF\u95EE\u7684\u6807\u7B7E")).setDesc(t("\u9017\u53F7\u5206\u9694\uFF1B\u5E26\u8FD9\u4E9B\u6807\u7B7E\u7684\u7B14\u8BB0\u5BF9 Agent \u4E0D\u53EF\u8BFB\u3002")).addText(
       (text) => text.setPlaceholder("\u4F8B\u5982\uFF1A\u79C1\u5BC6,\u5BC6\u7801").setValue(settings.deniedTags).onChange((value) => {
         settings.deniedTags = value;
         save();
       })
     );
-    containerEl.createEl("h3", { text: "Agent \u6743\u9650\uFF08\u53EF\u9009\uFF09" });
-    new import_obsidian8.Setting(containerEl).setName("\u8BBF\u95EE\u6A21\u5F0F").setDesc("allowlist \u6A21\u5F0F\u4E0B Agent \u53EA\u80FD\u8BBF\u95EE\u4E0B\u65B9\u767D\u540D\u5355\u76EE\u5F55\u3002\u9ED8\u8BA4\u5168\u5E93\uFF0C\u4F46\u7CFB\u7EDF\u76EE\u5F55\u59CB\u7EC8\u7981\u6B62\u3002").addDropdown(
-      (dropdown) => dropdown.addOption("allow-all", "\u5168\u5E93\u53EF\u8BBF\u95EE\uFF08\u9ED8\u8BA4\uFF09").addOption("allowlist", "\u4EC5\u767D\u540D\u5355\u76EE\u5F55").setValue(settings.agentAccessMode).onChange((value) => {
+    containerEl.createEl("h3", { text: t("Agent \u6743\u9650\uFF08\u53EF\u9009\uFF09") });
+    new import_obsidian10.Setting(containerEl).setName(t("\u8BBF\u95EE\u6A21\u5F0F")).setDesc(t("allowlist \u6A21\u5F0F\u4E0B Agent \u53EA\u80FD\u8BBF\u95EE\u4E0B\u65B9\u767D\u540D\u5355\u76EE\u5F55\u3002\u9ED8\u8BA4\u5168\u5E93\uFF0C\u4F46\u7CFB\u7EDF\u76EE\u5F55\u59CB\u7EC8\u7981\u6B62\u3002")).addDropdown(
+      (dropdown) => dropdown.addOption("allow-all", t("\u5168\u5E93\u53EF\u8BBF\u95EE\uFF08\u9ED8\u8BA4\uFF09")).addOption("allowlist", t("\u4EC5\u767D\u540D\u5355\u76EE\u5F55")).setValue(settings.agentAccessMode).onChange((value) => {
         settings.agentAccessMode = value;
         save();
       })
     );
-    new import_obsidian8.Setting(containerEl).setName("\u767D\u540D\u5355\u76EE\u5F55").setDesc("\u9017\u53F7\u5206\u9694\uFF0C\u4F8B\u5982 knowledge,projects,agent-logs\u3002").addText(
+    new import_obsidian10.Setting(containerEl).setName(t("\u767D\u540D\u5355\u76EE\u5F55")).setDesc(t("\u9017\u53F7\u5206\u9694\uFF0C\u4F8B\u5982 knowledge,projects,agent-logs\u3002")).addText(
       (text) => text.setPlaceholder("knowledge,projects").setValue(settings.agentAllowedFolders).onChange((value) => {
         settings.agentAllowedFolders = value;
         save();
       })
     );
-    new import_obsidian8.Setting(containerEl).setName("\u5141\u8BB8\u8BFB\u53D6").addToggle(
+    new import_obsidian10.Setting(containerEl).setName(t("\u5141\u8BB8\u8BFB\u53D6")).addToggle(
       (toggle) => toggle.setValue(settings.agentAllowRead).onChange((value) => {
         settings.agentAllowRead = value;
         save();
       })
     );
-    new import_obsidian8.Setting(containerEl).setName("\u5141\u8BB8\u65B0\u5EFA").addToggle(
+    new import_obsidian10.Setting(containerEl).setName(t("\u5141\u8BB8\u65B0\u5EFA")).addToggle(
       (toggle) => toggle.setValue(settings.agentAllowCreate).onChange((value) => {
         settings.agentAllowCreate = value;
         save();
       })
     );
-    new import_obsidian8.Setting(containerEl).setName("\u5141\u8BB8\u5C40\u90E8\u4FEE\u6539").addToggle(
+    new import_obsidian10.Setting(containerEl).setName(t("\u5141\u8BB8\u5C40\u90E8\u4FEE\u6539")).addToggle(
       (toggle) => toggle.setValue(settings.agentAllowPatch).onChange((value) => {
         settings.agentAllowPatch = value;
         save();
       })
     );
-    new import_obsidian8.Setting(containerEl).setName("\u5141\u8BB8\u5168\u91CF\u8986\u76D6").setDesc("\u9ED8\u8BA4\u5F00\u542F\u4EE5\u517C\u5BB9\u65E7\u5DE5\u4F5C\u6D41\uFF1B\u5173\u95ED\u540E Agent \u5FC5\u987B\u7528 patch_note\u3002").addToggle(
+    new import_obsidian10.Setting(containerEl).setName(t("\u5141\u8BB8\u5168\u91CF\u8986\u76D6")).setDesc(t("\u9ED8\u8BA4\u5F00\u542F\u4EE5\u517C\u5BB9\u65E7\u5DE5\u4F5C\u6D41\uFF1B\u5173\u95ED\u540E Agent \u5FC5\u987B\u7528 patch_note\u3002")).addToggle(
       (toggle) => toggle.setValue(settings.agentAllowOverwrite).onChange((value) => {
         settings.agentAllowOverwrite = value;
         save();
       })
     );
-    new import_obsidian8.Setting(containerEl).setName("\u5141\u8BB8\u5220\u9664").setDesc("\u5F53\u524D\u63D2\u4EF6\u672A\u5F00\u653E\u5220\u9664\u5DE5\u5177\uFF0C\u9ED8\u8BA4\u5173\u95ED\u3002").addToggle(
+    new import_obsidian10.Setting(containerEl).setName(t("\u5141\u8BB8\u5220\u9664")).setDesc(t("\u5F53\u524D\u63D2\u4EF6\u672A\u5F00\u653E\u5220\u9664\u5DE5\u5177\uFF0C\u9ED8\u8BA4\u5173\u95ED\u3002")).addToggle(
       (toggle) => toggle.setValue(settings.agentAllowDelete).onChange((value) => {
         settings.agentAllowDelete = value;
         save();
       })
     );
-    new import_obsidian8.Setting(containerEl).setName("\u4FEE\u6539\u524D\u5B58\u5FEB\u7167").setDesc("\u8986\u76D6\u6216 Patch \u524D\u4FDD\u5B58\u539F\u6587\uFF0C\u652F\u6301 Agent \u53D8\u66F4\u5BA1\u67E5\u4E0E\u4E00\u952E\u6062\u590D\u3002").addToggle(
+    new import_obsidian10.Setting(containerEl).setName(t("\u4FEE\u6539\u524D\u5B58\u5FEB\u7167")).setDesc(t("\u8986\u76D6\u6216 Patch \u524D\u4FDD\u5B58\u539F\u6587\uFF0C\u652F\u6301 Agent \u53D8\u66F4\u5BA1\u67E5\u4E0E\u4E00\u952E\u6062\u590D\u3002")).addToggle(
       (toggle) => toggle.setValue(settings.enableAuditSnapshot).onChange((value) => {
         settings.enableAuditSnapshot = value;
         save();
       })
     );
-    new import_obsidian8.Setting(containerEl).setName("\u81EA\u52A8\u5907\u4EFD\u7EDF\u8BA1\u6570\u636E").setDesc("\u628A data.json \u5FEB\u7167\u5199\u5165\u5E93\u5185\u666E\u901A\u6587\u4EF6\u5939\uFF0C\u907F\u514D .obsidian \u88AB\u540C\u6B65\u5DE5\u5177\u5FFD\u7565\u3002").addToggle(
+    new import_obsidian10.Setting(containerEl).setName(t("\u81EA\u52A8\u5907\u4EFD\u7EDF\u8BA1\u6570\u636E")).setDesc(t("\u628A data.json \u5FEB\u7167\u5199\u5165\u5E93\u5185\u666E\u901A\u6587\u4EF6\u5939\uFF0C\u907F\u514D .obsidian \u88AB\u540C\u6B65\u5DE5\u5177\u5FFD\u7565\u3002")).addToggle(
       (toggle) => toggle.setValue(settings.backupEnabled).onChange((value) => {
         settings.backupEnabled = value;
         save();
       })
     );
-    new import_obsidian8.Setting(containerEl).setName("\u5907\u4EFD\u76EE\u5F55").setDesc("\u5E93\u5185\u76F8\u5BF9\u8DEF\u5F84\uFF0C\u9ED8\u8BA4 sediment-backup/\u3002").addText(
+    new import_obsidian10.Setting(containerEl).setName(t("\u5907\u4EFD\u76EE\u5F55")).setDesc(t("\u5E93\u5185\u76F8\u5BF9\u8DEF\u5F84\uFF0C\u9ED8\u8BA4 sediment-backup/\u3002")).addText(
       (text) => text.setPlaceholder("sediment-backup").setValue(settings.backupFolder).onChange((value) => {
         settings.backupFolder = value;
         save();
       })
     );
-    new import_obsidian8.Setting(containerEl).setName("\u4FDD\u7559\u5907\u4EFD\u4EFD\u6570").addText(
+    new import_obsidian10.Setting(containerEl).setName(t("\u4FDD\u7559\u5907\u4EFD\u4EFD\u6570")).addText(
       (text) => text.setPlaceholder("10").setValue(String(settings.backupKeep)).onChange((value) => {
         const count = Number(value);
         settings.backupKeep = Number.isInteger(count) && count > 0 ? count : 10;
         save();
       })
     );
-    new import_obsidian8.Setting(containerEl).setName("\u770B\u677F\u753B\u98CE").setDesc("\u50CF\u7D20\u6E56\u9762 / \u6C34\u58A8\u5C71\u6C34 / \u50CF\u7D20\u57CE\u5E02\uFF0C\u4E5F\u53EF\u5728\u770B\u677F\u9875\u811A\u70B9\u300C\u6362\u753B\u98CE\u300D\u3002").addDropdown(
-      (dropdown) => dropdown.addOption("lake", "\u50CF\u7D20\u6E56\u9762").addOption("ink", "\u6C34\u58A8\u5C71\u6C34").addOption("city", "\u50CF\u7D20\u57CE\u5E02").setValue(settings.artStyle).onChange((value) => {
+    new import_obsidian10.Setting(containerEl).setName(t("\u770B\u677F\u753B\u98CE")).setDesc(t("\u50CF\u7D20\u6E56\u9762 / \u6C34\u58A8\u5C71\u6C34 / \u50CF\u7D20\u57CE\u5E02\uFF0C\u4E5F\u53EF\u5728\u770B\u677F\u9875\u811A\u70B9\u300C\u6362\u753B\u98CE\u300D\u3002")).addDropdown(
+      (dropdown) => dropdown.addOption("lake", t("\u50CF\u7D20\u6E56\u9762")).addOption("ink", t("\u6C34\u58A8\u5C71\u6C34")).addOption("city", t("\u50CF\u7D20\u57CE\u5E02")).setValue(settings.artStyle).onChange((value) => {
         settings.artStyle = value;
         save();
         this.plugin.refreshViews();
       })
     );
-    new import_obsidian8.Setting(containerEl).setName("\u6BCF\u65E5\u5199\u4F5C\u76EE\u6807").setDesc("\u770B\u677F\u4ECA\u5929\u5361\u7247\u663E\u793A\u8FDB\u5EA6\uFF0C0 \u8868\u793A\u5173\u95ED\u3002").addText(
+    new import_obsidian10.Setting(containerEl).setName(t("\u6BCF\u65E5\u5199\u4F5C\u76EE\u6807")).setDesc(t("\u770B\u677F\u4ECA\u5929\u5361\u7247\u663E\u793A\u8FDB\u5EA6\uFF0C0 \u8868\u793A\u5173\u95ED\u3002")).addText(
       (text) => text.setPlaceholder("1000").setValue(String(settings.dailyWordGoal)).onChange((value) => {
         const goal = Number(value);
         settings.dailyWordGoal = Number.isFinite(goal) && goal >= 0 ? goal : 1e3;
@@ -2514,14 +3514,40 @@ var PulseSettingTab = class extends import_obsidian8.PluginSettingTab {
         this.plugin.refreshViews();
       })
     );
-    containerEl.createEl("h3", { text: "Agent \u63A5\u5165\uFF08\u672C\u5730 HTTP / MCP\uFF09" });
-    new import_obsidian8.Setting(containerEl).setName("\u542F\u7528\u672C\u5730 Agent API").setDesc("\u53EA\u76D1\u542C 127.0.0.1\uFF0C\u4F9B MCP \u6865\u63A5\u548C\u672C\u5730\u811A\u672C\u8C03\u7528\u4E2A\u4EBA\u77E5\u8BC6\u5E93\u3002").addToggle(
+    containerEl.createEl("h3", { text: t("\u7EDF\u8BA1\u53E3\u5F84\uFF08\u8D21\u732E\u5206\u5C01\u9876\u4E0E\u6743\u91CD\uFF09") });
+    const recompute = () => {
+      this.plugin.store.recomputeContributions();
+      this.plugin.refreshViews();
+    };
+    const numberSetting = (name, desc, key, fallback, min = 0) => {
+      new import_obsidian10.Setting(containerEl).setName(t(name)).setDesc(t(desc)).addText(
+        (text) => text.setPlaceholder(String(fallback)).setValue(String(settings[key])).onChange((value) => {
+          const parsed = Number(value);
+          settings[key] = Number.isFinite(parsed) && parsed >= min ? parsed : fallback;
+          save();
+          recompute();
+        })
+      );
+    };
+    numberSetting("\u5355\u65E5\u8D21\u732E\u5206\u5C01\u9876", "\u9632\u6B62\u5355\u65E5\u5237\u5206\u62C9\u7206\u70ED\u529B\u56FE\uFF0C0 \u8868\u793A\u4E0D\u5C01\u9876\u3002\u9ED8\u8BA4 120\u3002", "contributionDailyCap", 120);
+    numberSetting("\u5355\u6B21\u5199\u5165\u8BCD\u6570\u4E0A\u9650", "\u4E00\u6B21\u4FDD\u5B58/\u7C98\u8D34\u6700\u591A\u8BA1\u5165\u7684\u8BCD\u6570\uFF0C0 \u8868\u793A\u4E0D\u5C01\u9876\u3002\u9ED8\u8BA4 4000\u3002", "wordsPerWriteCap", 4e3);
+    numberSetting("\u6743\u91CD\uFF1A\u65B0\u5EFA\u7B14\u8BB0\uFF08\u6BCF\u7BC7\uFF09", "\u9ED8\u8BA4 2 \u5206\u3002", "weightNotesCreated", 2);
+    numberSetting("\u6743\u91CD\uFF1A\u7F16\u8F91\u4F1A\u8BDD\uFF08\u6BCF\u6B21\uFF09", "\u9ED8\u8BA4 1 \u5206\u3002", "weightEdits", 1);
+    numberSetting("\u6743\u91CD\uFF1A\u5B8C\u6210\u4EFB\u52A1\uFF08\u6BCF\u6761\uFF09", "\u9ED8\u8BA4 1 \u5206\u3002", "weightTasks", 1);
+    numberSetting("\u6743\u91CD\uFF1A\u6BCF\u591A\u5C11\u65B0\u589E\u8BCD\u5F97 1 \u5206", "\u9ED8\u8BA4 100 \u8BCD\u3002", "wordsPerPoint", 100, 1);
+    numberSetting("\u6743\u91CD\uFF1A\u6BCF\u591A\u5C11\u4E13\u6CE8\u5206\u949F\u5F97 1 \u5206", "\u9ED8\u8BA4 25 \u5206\u949F\u3002", "focusMinutesPerPoint", 25, 1);
+    containerEl.createDiv({
+      cls: "sd-setup-hint",
+      text: t("\u4FEE\u6539\u6743\u91CD\u6216\u5C01\u9876\u540E\u4F1A\u7ACB\u5373\u5168\u91CF\u91CD\u7B97\u5386\u53F2\u8D21\u732E\u5206\u3002Agent \u5199\u5165\u53EA\u8BA1\u300CAI \u65B0\u589E\u8BCD\u300D\uFF0C\u4E0D\u91CD\u590D\u8BA1\u5165\u4EBA\u7C7B\u5199\u4F5C\u7EDF\u8BA1\u3002")
+    });
+    containerEl.createEl("h3", { text: t("Agent \u63A5\u5165\uFF08\u672C\u5730 HTTP / MCP\uFF09") });
+    new import_obsidian10.Setting(containerEl).setName(t("\u542F\u7528\u672C\u5730 Agent API")).setDesc(t("\u53EA\u76D1\u542C 127.0.0.1\uFF0C\u4F9B MCP \u6865\u63A5\u548C\u672C\u5730\u811A\u672C\u8C03\u7528\u4E2A\u4EBA\u77E5\u8BC6\u5E93\u3002")).addToggle(
       (toggle) => toggle.setValue(settings.agentServerEnabled).onChange((value) => {
         settings.agentServerEnabled = value;
         save();
       })
     );
-    new import_obsidian8.Setting(containerEl).setName("\u7AEF\u53E3").setDesc("\u9ED8\u8BA4 27123\uFF0C\u4FEE\u6539\u540E\u670D\u52A1\u4F1A\u81EA\u52A8\u91CD\u542F\u3002").addText(
+    new import_obsidian10.Setting(containerEl).setName(t("\u7AEF\u53E3")).setDesc(t("\u9ED8\u8BA4 27123\uFF0C\u4FEE\u6539\u540E\u670D\u52A1\u4F1A\u81EA\u52A8\u91CD\u542F\u3002")).addText(
       (text) => text.setPlaceholder("27123").setValue(String(settings.agentServerPort)).onChange((value) => {
         const port = Number(value);
         if (Number.isInteger(port) && port > 0 && port < 65536) {
@@ -2530,69 +3556,72 @@ var PulseSettingTab = class extends import_obsidian8.PluginSettingTab {
         }
       })
     );
-    new import_obsidian8.Setting(containerEl).setName("\u8BBF\u95EE\u4EE4\u724C").setDesc("HTTP \u8BF7\u6C42\u4E0E MCP \u6865\u63A5\u90FD\u5FC5\u987B\u643A\u5E26\u6B64\u4EE4\u724C\u3002").addText(
-      (text) => text.setPlaceholder("\u70B9\u51FB\u53F3\u4FA7\u6309\u94AE\u751F\u6210").setValue(settings.agentServerToken).onChange((value) => {
+    new import_obsidian10.Setting(containerEl).setName(t("\u8BBF\u95EE\u4EE4\u724C")).setDesc(t("HTTP \u8BF7\u6C42\u4E0E MCP \u6865\u63A5\u90FD\u5FC5\u987B\u643A\u5E26\u6B64\u4EE4\u724C\u3002")).addText(
+      (text) => text.setPlaceholder(t("\u70B9\u51FB\u53F3\u4FA7\u6309\u94AE\u751F\u6210")).setValue(settings.agentServerToken).onChange((value) => {
         settings.agentServerToken = value.trim();
         save();
       })
     );
-    new import_obsidian8.Setting(containerEl).setName("\u91CD\u65B0\u751F\u6210\u4EE4\u724C").setDesc("\u6CC4\u9732\u6216\u9057\u5FD8\u65F6\u70B9\u51FB\uFF0C\u65E7\u4EE4\u724C\u7ACB\u5373\u5931\u6548\u3002").addButton(
-      (button) => button.setButtonText("\u751F\u6210\u65B0\u4EE4\u724C").onClick(() => {
+    new import_obsidian10.Setting(containerEl).setName(t("\u91CD\u65B0\u751F\u6210\u4EE4\u724C")).setDesc(t("\u6CC4\u9732\u6216\u9057\u5FD8\u65F6\u70B9\u51FB\uFF0C\u65E7\u4EE4\u724C\u7ACB\u5373\u5931\u6548\u3002")).addButton(
+      (button) => button.setButtonText(t("\u751F\u6210\u65B0\u4EE4\u724C")).onClick(() => {
         settings.agentServerToken = generateToken();
         save();
         this.display();
       })
     );
-    containerEl.createEl("h3", { text: "\u4E00\u952E\u914D\u7F6E\u667A\u80FD\u4F53\u5BA2\u6237\u7AEF" });
+    containerEl.createEl("h3", { text: t("\u4E00\u952E\u914D\u7F6E\u667A\u80FD\u4F53\u5BA2\u6237\u7AEF") });
     const hint = containerEl.createDiv({ cls: "sd-setup-hint" });
     hint.setText(
-      "\u81EA\u52A8\u63A2\u6D4B\u672C\u673A\u5DF2\u5B89\u88C5\u7684\u667A\u80FD\u4F53\uFF0C\u52FE\u9009\u540E\u4E00\u952E\u5199\u5165 MCP \u914D\u7F6E\u3002\u5199\u5165\u524D\u4F1A\u5907\u4EFD\u539F\u6587\u4EF6\uFF0C\u91CD\u542F\u5BA2\u6237\u7AEF\u5373\u53EF\u751F\u6548\u3002"
+      t("\u81EA\u52A8\u63A2\u6D4B\u672C\u673A\u5DF2\u5B89\u88C5\u7684\u667A\u80FD\u4F53\uFF0C\u52FE\u9009\u540E\u4E00\u952E\u5199\u5165 MCP \u914D\u7F6E\u3002\u5199\u5165\u524D\u4F1A\u5907\u4EFD\u539F\u6587\u4EF6\uFF0C\u91CD\u542F\u5BA2\u6237\u7AEF\u5373\u53EF\u751F\u6548\u3002")
     );
     const agents = detectAgents();
     if (agents.length === 0) {
-      containerEl.createDiv({ cls: "kp-empty", text: "\u6CA1\u6709\u63A2\u6D4B\u5230\u53D7\u652F\u6301\u7684\u667A\u80FD\u4F53\u5BA2\u6237\u7AEF\u3002" });
+      containerEl.createDiv({ cls: "kp-empty", text: t("\u6CA1\u6709\u63A2\u6D4B\u5230\u53D7\u652F\u6301\u7684\u667A\u80FD\u4F53\u5BA2\u6237\u7AEF\u3002") });
     }
     for (const agent of agents) {
       const configured = isAgentConfigured(agent);
-      new import_obsidian8.Setting(containerEl).setName(`${agent.name}${configured ? " \xB7 \u5DF2\u914D\u7F6E" : ""}`).setDesc(agent.configPath).addButton(
-        (button) => button.setButtonText(configured ? "\u91CD\u65B0\u5199\u5165" : "\u4E00\u952E\u914D\u7F6E").onClick(() => {
+      new import_obsidian10.Setting(containerEl).setName(`${agent.name}${configured ? ` \xB7 ${t("\u5DF2\u914D\u7F6E")}` : ""}`).setDesc(agent.configPath).addButton(
+        (button) => button.setButtonText(configured ? t("\u91CD\u65B0\u5199\u5165") : t("\u4E00\u952E\u914D\u7F6E")).onClick(() => {
           try {
             configureAgent(this.plugin, agent);
-            new import_obsidian8.Notice(`${agent.name} \u914D\u7F6E\u5DF2\u5199\u5165\uFF0C\u91CD\u542F\u5BA2\u6237\u7AEF\u540E\u751F\u6548`);
+            new import_obsidian10.Notice(tfAgentConfigured(agent.name));
             this.display();
           } catch (error) {
-            new import_obsidian8.Notice(`\u914D\u7F6E\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}`);
+            new import_obsidian10.Notice(`${t("\u914D\u7F6E\u5931\u8D25")}: ${error instanceof Error ? error.message : String(error)}`);
           }
         })
       );
     }
-    new import_obsidian8.Setting(containerEl).setName("\u590D\u5236\u914D\u7F6E JSON").setDesc("\u624B\u52A8\u7C98\u8D34\u5230\u5BA2\u6237\u7AEF\u7684 MCP \u914D\u7F6E\u6587\u4EF6\u4E2D\u3002").addButton(
-      (button) => button.setButtonText("\u590D\u5236").onClick(() => {
-        void navigator.clipboard.writeText(configSnippet(this.plugin)).then(() => new import_obsidian8.Notice("\u914D\u7F6E\u5DF2\u590D\u5236"));
+    new import_obsidian10.Setting(containerEl).setName(t("\u590D\u5236\u914D\u7F6E JSON")).setDesc(t("\u624B\u52A8\u7C98\u8D34\u5230\u5BA2\u6237\u7AEF\u7684 MCP \u914D\u7F6E\u6587\u4EF6\u4E2D\u3002")).addButton(
+      (button) => button.setButtonText(t("\u590D\u5236")).onClick(() => {
+        void navigator.clipboard.writeText(configSnippet(this.plugin)).then(() => new import_obsidian10.Notice(t("\u914D\u7F6E\u5DF2\u590D\u5236")));
       })
     );
   }
 };
+function tfAgentConfigured(name) {
+  return `${name} ${t("\u914D\u7F6E\u5DF2\u5199\u5165\uFF0C\u91CD\u542F\u5BA2\u6237\u7AEF\u540E\u751F\u6548")}`;
+}
 
 // src/ui/changelog-modal.ts
-var import_obsidian9 = require("obsidian");
+var import_obsidian11 = require("obsidian");
 
 // src/changelog.ts
-var CHANGELOG = "# \u66F4\u65B0\u8BB0\u5F55\n\n\u672C\u6587\u4EF6\u8BB0\u5F55\u6BCF\u4E2A\u7248\u672C\u7684\u589E\u91CF\u53D8\u5316\uFF0C\u683C\u5F0F\u9075\u5FAA [Keep a Changelog](https://keepachangelog.com/)\u3002\u6784\u5EFA\u65F6\u7531 `scripts/sync-changelog.mjs` \u540C\u6B65\u5230\u63D2\u4EF6\u5185\uFF0C\u53EF\u5728\u770B\u677F\u9875\u811A\u7684\u300C\u66F4\u65B0\u8BB0\u5F55\u300D\u91CC\u67E5\u770B\u3002\n\n## [0.8.4] - 2026-11-19\n\n### \u6539\u8FDB\n- \u6570\u636E\u4E0D\u8DB3 14 \u5929\u65F6\u6982\u89C8\u4E0E\u8D8B\u52BF\u56FE\u9ED8\u8BA4\u805A\u7126\u6700\u8FD1 14 \u5929\uFF1B\u6298\u7EBF\u52A0\u9762\u79EF\u6E10\u53D8\u3001\u975E\u96F6\u6563\u70B9\u4E0E\u5CF0\u503C\u6C14\u6CE1\n- \u5E74\u8F6E\u8865\u5168\u4E09\u5C42\u73AF\u5F62\u5E95\u8F68\u300112 \u6708\u523B\u5EA6\u4E0E\u5E74\u4EFD\u6C34\u5370\uFF0C\u5C04\u7EBF\u8BBE\u6700\u5C0F\u957F\u5EA6\n- \u5730\u5E73\u7EBF\u589E\u52A0\u8FDC\u666F\u5C71\u810A\u4E0E\u6C34\u6CE2\u5149\u5F71\n- \u4E09\u5F20\u6298\u7EBF\u56FE\u5408\u5E76\u4E3A\u300C\u5199\u4F5C\u4E0E\u65F6\u95F4\u8D8B\u52BF\u300D\u5206\u6BB5\u63A7\u4EF6\uFF0C\u77E5\u8BC6\u5730\u5C42\u52A0\u5438\u9876\u951A\u70B9\u5BFC\u822A\n- \u6295\u5165\u53BB\u5411\u6539\u4E3A\u6392\u540D\u8FDB\u5EA6\u6761\uFF08\u663E\u793A\u5B8C\u6574\u8DEF\u5F84\u3001\u5360\u6BD4\u4E0E\u5C55\u5F00\uFF09\n- \u8282\u5F8B\u77E9\u9635\u9ED8\u8BA4\u4EC5\u663E\u793A\u6D3B\u8DC3\u65E5\u671F\uFF0C\u7A7A\u884C\u538B\u7F29\u4E3A 4px\n- \u4ECA\u5929\u5361\u7247\u52A0\u76EE\u6807\u8FBE\u6210\u7387\u5706\u73AF\uFF0CAgent \u52A8\u6001\u884C\u5C3E\u663E\u793A\u76EE\u6807\u6587\u4EF6\u540D\uFF0C\u53D8\u66F4\u5BA1\u67E5\u52A0\u64CD\u4F5C\u7C7B\u578B\u5FBD\u7AE0\n\n### \u65B0\u589E\n- Agent \u6743\u9650\uFF1A\u7CFB\u7EDF\u76EE\u5F55 `.obsidian/` / `.git/` \u786C\u7F16\u7801\u62E6\u622A\uFF1B\u53EF\u9009\u767D\u540D\u5355\u6A21\u5F0F\u3001\u6309\u64CD\u4F5C\uFF08\u8BFB/\u5EFA/Patch/\u8986\u76D6/\u5220\u9664\uFF09\u5F00\u5173\uFF1B\u4FEE\u6539\u524D\u5FEB\u7167\u5F00\u5173\n- `patch_note` \u65B0\u589E `operation`\uFF08append/prepend/replace/update_frontmatter\uFF09\u3001`dryRun` Diff \u9884\u89C8\u3001`expectedMtime` \u4E50\u89C2\u9501\u3001`diffSummary`\u3001`createdHeading`\n- `replace_block` \u591A\u5904\u5339\u914D\u8FD4\u56DE `AMBIGUOUS_MATCH`\uFF1B\u6807\u9898\u4E0D\u5B58\u5728\u65F6\u81EA\u52A8\u521B\u5EFA\n- \u65B0\u589E MCP \u5DE5\u5177 `list_agent_changes` / `revert_agent_change` \u4E0E\u5BF9\u5E94 HTTP \u63A5\u53E3\uFF0CAgent \u53EF\u81EA\u67E5\u53D8\u66F4\u5E76\u56DE\u6EDA\n\n## [0.8.3] - 2026-11-19\n\n### \u65B0\u589E\n- data.json \u81EA\u52A8\u5907\u4EFD\u5230\u5E93\u5185\u666E\u901A\u6587\u4EF6\u5939\uFF08\u9ED8\u8BA4 `sediment-backup/`\uFF09\uFF0C\u6309\u4EFD\u6570\u4FDD\u7559\uFF1B\u65B0\u589E\u300C\u5907\u4EFD\u7EDF\u8BA1\u6570\u636E\u5230\u5E93\u5185\u300D\u547D\u4EE4\n- Style Settings \u9002\u914D\uFF1A\u53EF\u53EF\u89C6\u5316\u8C03\u8282\u5361\u7247\u5706\u89D2\u3001\u5185\u8FB9\u8DDD\u3001\u6B63\u6587\u5B57\u53F7\u3001\u70ED\u529B\u56FE\u683C\u5B50\u5C3A\u5BF8\n- \u4EE3\u7801\u5757\u5D4C\u5165\uFF1A```sediment-heatmap``` \u4E0E ```sediment-today``` \u53EF\u5199\u8FDB Home.md\n- \u70ED\u529B\u56FE\u5BCC Tooltip\uFF08\u5F53\u5929\u7B14\u8BB0\u6807\u9898\u4E0E\u901F\u8BB0\u6458\u8981\uFF09\u3001\u6700\u957F\u8FDE\u7EED\u5929\u6570\u5FBD\u7AE0\n- \u901F\u8BB0\u5361\u7247 hover \u64CD\u4F5C\u680F\uFF08\u590D\u5236 / \u5206\u4EAB\u56FE / \u8F6C Agent\uFF09\u3001\u53CC\u51FB\u5165\u53E3\u9884\u7559\n- \u901F\u8BB0\u5206\u4EAB\u5361\u4E0E\u300C\u4ECA\u65E5\u6218\u62A5\u300DPNG \u5BFC\u51FA\uFF08\u6781\u7B80 / \u7968\u636E / \u6C34\u58A8\u4E09\u6A21\u677F\uFF09\n- Agent \u53D8\u66F4\u5BA1\u67E5\uFF1A\u6700\u8FD1\u53D8\u66F4\u5217\u8868\u3001\u5907\u4EFD Diff \u5E76\u6392\u5BF9\u6BD4\u3001\u4E00\u952E\u6062\u590D\n\n### \u4FEE\u590D\n- \u5F85\u529E\u6807\u9898\u8FC7\u957F\u65F6\u4E0D\u518D\u6491\u7834\u5361\u7247\uFF0C\u6539\u4E3A\u7701\u7565\u53F7\u622A\u65AD\n- \u4ECA\u65E5\u9875 bento \u5361\u7247\u7B49\u9AD8\u5BF9\u9F50\uFF1BAgent \u52A8\u6001\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\u6539\u4E3A\u5355\u5217\u4FE1\u606F\u6D41\uFF0C\u4E0D\u518D\u6324\u6210\u591A\u5217\u7A84\u6761\n- \u901F\u8BB0\u4FA7\u680F\u6C89\u6DC0\u5217\u8868\u6807\u9898\u5DE6\u5BF9\u9F50\u5E76\u53BB\u6389\u9ED8\u8BA4\u6309\u94AE\u767D\u5E95\u65B9\u5757\uFF0C\u5143\u4FE1\u606F\u66F4\u7D27\u51D1\n\n## [0.8.2] - 2026-11-19\n\n### \u6539\u8FDB\n- \u7ED3\u6784\u6027\u7F8E\u5316\uFF1A\u4ECA\u65E5\u8109\u51B2\u6539\u4E3A bento \u7F51\u683C\uFF08\u4ECA\u65E5/\u901F\u8BB0/\u5F85\u529E/Agent \u52A8\u6001\u9519\u843D\u6392\u5E03\uFF09\uFF0C\u6A2A\u5E45\u52A0\u5929\u7A7A\u6E10\u53D8\u3001\u4E91\u96FE\u3001\u5149\u6655\u4E0E\u9897\u7C92\u8D28\u611F\uFF0C\u4FA7\u680F\u6807\u7B7E\u4E0E\u8F93\u5165\u533A\u7EDF\u4E00\u4E3A\u80F6\u56CA\u5206\u6BB5\u63A7\u4EF6\u4E0E\u5185\u5D4C\u9762\u677F\uFF0C\u4E3B\u8981\u5361\u7247\u91C7\u7528\u53CC\u5C42\u5185\u5D4C\u8D28\u611F\n- \u770B\u677F\u89C6\u89C9\u5347\u7EA7\uFF1A\u7B49\u5BBD\u6570\u5B57\u3001\u66F4\u6E05\u6670\u7684\u6807\u9898\u5C42\u7EA7\u3001\u5217\u8868\u4E24\u680F\u5BF9\u9F50\u4E0E\u60AC\u505C\u53CD\u9988\u3001\u7A7A\u72B6\u6001\u91CD\u505A\u3001\u5361\u7247\u9519\u843D\u5165\u573A\u52A8\u753B\n- `#to-agent` \u901F\u8BB0\u8BB0\u4F4F\u539F\u5F85\u529E\u7684 `sourcePath` / `sourceLine`\uFF0C\u901F\u8BB0\u5361\u7247\u548C\u5F85\u529E\u6A21\u5757\u53EF\u4E00\u952E\u8DF3\u56DE\u539F\u590D\u9009\u6846\u5E76\u5B9A\u4F4D\u884C\u53F7\n- `add_memo` \u652F\u6301\u4F20\u5165\u6765\u6E90\u8DEF\u5F84\u4E0E\u884C\u53F7\n\n## [0.8.1] - 2026-11-19\n\n### \u65B0\u589E\n- \u5F85\u529E\u6A21\u5757\uFF1A\u626B\u63CF vault \u539F\u751F `- [ ]` \u5F85\u529E\uFF0C\u5206\u4ECA\u65E5 / \u9057\u7559 / Agent \u4E09\u7C7B\u5C55\u793A\n- MCP \u5DE5\u5177 `list_tasks` / `complete_task` / `delegate_task` / `snapshot_tasks`\uFF0831 \u4E2A\u5DE5\u5177\uFF09\n- \u547D\u4EE4\u300C\u8BB0\u5F55\u4ECA\u65E5\u9057\u7559\u5F85\u529E\u5230\u65E5\u8BB0\u300D\uFF0C\u6309\u9700\u5199\u5165\uFF0C\u4E0D\u9ED8\u8BA4\u6539\u7B14\u8BB0\n\n### \u6539\u8FDB\n- \u6C89\u6DC0\u5217\u8868\u89C6\u89C9\uFF1A\u53BB\u6389\u6807\u9898\u65E5\u671F\u524D\u7F00\u3001\u5206\u7C7B\u5FBD\u7AE0\u4E0E\u8BA1\u6570\u3001\u76EE\u5F55/\u6807\u7B7E\u5143\u4FE1\u606F\u3001\u60AC\u505C\u9AD8\u4EAE\n\n## [0.8.0] - 2026-11-19\n\n### \u65B0\u589E\n- \u672C\u5730\u8BED\u4E49\u641C\u7D22 `semantic_search`\uFF1ATF-IDF \u5411\u91CF + \u4E2D\u6587\u53CC\u5B57\u5207\u5206 + \u8F7B\u91CF\u540C\u4E49\u8BCD\u6269\u5C55\uFF0C\u6309\u610F\u4E49\u68C0\u7D22\u7B14\u8BB0\uFF0C\u4E0D\u8054\u7F51\u3001\u4E0D\u4E0B\u8F7D\u6A21\u578B\n- \u7D22\u5F15\u5E38\u9A7B\u5185\u5B58\uFF0Cvault \u53D8\u5316\u65F6\u81EA\u52A8\u5931\u6548\u91CD\u5EFA\uFF0C\u5E76\u9075\u5B88\u6587\u4EF6\u5939/\u6807\u7B7E\u9ED1\u540D\u5355\n- AGENTS.md \u5DE5\u4F5C\u6D41\u8865\u5145\u8BED\u4E49\u63A2\u7D22\u6B65\u9AA4\n\n## [0.7.0] - 2026-11-19\n\n### \u65B0\u589E\n- \u8BBE\u7F6E\u9875\u300C\u4E00\u952E\u914D\u7F6E\u667A\u80FD\u4F53\u5BA2\u6237\u7AEF\u300D\uFF1A\u81EA\u52A8\u63A2\u6D4B OpenCode / Qoder / Claude Desktop / Cursor / Cline / Gemini CLI / Windsurf \u7B49\u914D\u7F6E\u6587\u4EF6\n- \u9009\u62E9\u5BA2\u6237\u7AEF\u540E\u4E00\u952E\u5199\u5165 MCP \u914D\u7F6E\uFF08\u81EA\u52A8\u5907\u4EFD\u539F\u6587\u4EF6\u3001\u4FDD\u7559\u5DF2\u6709\u914D\u7F6E\u3001\u590D\u7528\u5DF2\u5B58\u5728\u7684\u6865\u63A5\u8DEF\u5F84\uFF09\n- \u300C\u590D\u5236\u914D\u7F6E JSON\u300D\u6309\u94AE\uFF0C\u4FBF\u4E8E\u624B\u52A8\u7C98\u8D34\n\n## [0.6.0] - 2026-11-19\n\n### \u65B0\u589E\n- P2 UI\uFF1A\u4E09\u6BB5\u5F0F\u4E3B\u770B\u677F\uFF08\u4ECA\u65E5\u8109\u51B2 / \u77E5\u8BC6\u5730\u5C42 / \u667A\u80FD\u4F53\u5DE5\u574A\uFF09\uFF0C\u77E5\u8BC6\u590D\u76D8\u79FB\u5165\u77E5\u8BC6\u5730\u5C42\n- \u667A\u80FD\u4F53\u5DE5\u574A\uFF1A\u8FDE\u63A5\u4E0E\u8C03\u7528\u72B6\u6001\u3001AI \u8349\u7A3F\u5BA1\u6838\u6D41\uFF08\u91C7\u7EB3 / \u5408\u5E76\u5230\u5173\u8054\u7B14\u8BB0 / \u9A73\u56DE\u5220\u9664\uFF09\u3001\u5DE5\u4F5C\u65E5\u5FD7\u5217\u8868\n- \u4EBA\u673A\u53CC\u8272\u70ED\u529B\u56FE\uFF1A\u6309 `aiWordsAdded` \u5360\u6BD4\u7528\u6E10\u53D8\u533A\u5206\u4EBA\u7C7B\u7F16\u8F91\u4E0E AI \u6C89\u6DC0\n- \u4ECA\u65E5\u8109\u51B2\u9875\u65B0\u589E\u5FEB\u901F\u901F\u8BB0\u6846\u4E0E\u300C\u4ECA\u65E5 Agent \u52A8\u6001\u300D\n- \u901F\u8BB0\u4FA7\u680F\u65B0\u589E\u300C\u4E0E\u5F53\u524D\u7B14\u8BB0\u76F8\u5173\u300D\u533A\u5757\uFF0C\u968F\u6253\u5F00\u7684\u6587\u4EF6\u81EA\u52A8\u66F4\u65B0\n\n## [0.5.1] - 2026-11-19\n\n### \u4FEE\u590D\n- `get_active_context` \u5728\u4E3B\u533A\u6253\u5F00\u770B\u677F/\u56FE\u8C31\u65F6\u56DE\u9000\u5230\u6700\u8FD1\u4E00\u4E2A Markdown \u6807\u7B7E\u9875\uFF0C\u4E0D\u518D\u8FD4\u56DE\u7A7A\u7ED3\u679C\n\n## [0.5.0] - 2026-11-19\n\n### \u65B0\u589E\n- P1 \u7CBE\u51C6\u5199\u5165\uFF1A`patch_note`\uFF08\u6309\u6807\u9898/\u6587\u672C\u7247\u6BB5\u5C40\u90E8\u4FEE\u6539\u3001`vault.process` \u539F\u5B50\u5199\u5165\u3001\u5199\u524D\u81EA\u52A8\u5907\u4EFD\u3001`ifMatch` \u7248\u672C\u6821\u9A8C\uFF09\u4E0E `update_frontmatter`\n- `#to-agent` \u4EFB\u52A1\u95ED\u73AF\uFF1A`get_daily_context` \u8FD4\u56DE `agentTasks`\uFF0C\u65B0\u589E `claim_agent_task` / `complete_agent_task`\uFF0C\u72B6\u6001\u4ECE `#to-agent` \u2192 `#agent-in-progress` \u2192 `#agent-done`\n- \u5728 vault \u6839\u76EE\u5F55\u5199\u5165 `AGENTS.md` \u4E09\u9636\u6BB5\u534F\u4F5C\u534F\u8BAE\uFF08\u5F00\u5DE5\u5BF9\u9F50 / \u7CBE\u51C6\u8BFB\u5199 / \u6536\u5DE5\u6C89\u6DC0\uFF09\n- MCP \u5DE5\u5177\u589E\u81F3 26 \u4E2A\n\n## [0.4.0] - 2026-11-19\n\n### \u65B0\u589E\n- P0 \u5DE5\u5177\u5C42\uFF1A`get_active_context`\uFF08\u5F53\u524D\u7B14\u8BB0/\u9009\u4E2D\u6587\u672C/\u5149\u6807\u6BB5\u843D\uFF09\u3001`get_note_metadata`\uFF08\u53EA\u8BFB\u5143\u6570\u636E\u7701 Token\uFF09\u3001`get_graph_neighbors`\uFF08\u51FA\u94FE/\u53CD\u94FE/\u540C\u6807\u7B7E\uFF09\u3001`get_tool_activity`\uFF08\u8C03\u7528\u7EDF\u8BA1\uFF09\n- \u65B0\u589E\u6587\u4EF6\u5939/\u6807\u7B7E\u9ED1\u540D\u5355\uFF0CAgent \u7684\u8BFB\u5199\u4E0E\u641C\u7D22\u5168\u90E8\u53D7\u63A7\n- Agent \u5199\u5165\u7684\u5185\u5BB9\u5355\u72EC\u8BA1\u5165 `aiWordsAdded`\uFF0C\u4E3A\u540E\u7EED\u4EBA\u673A\u53CC\u8272\u70ED\u529B\u56FE\u6253\u57FA\u7840\n- MCP/HTTP \u8C03\u7528\u5BA1\u8BA1\u65E5\u5FD7\uFF08\u9650 500 \u6761\uFF09\uFF0C\u5E76\u8BB0\u5F55\u5BA2\u6237\u7AEF\u540D `AGENT_NAME`\n- AI \u6C89\u6DC0\u7B14\u8BB0\u9ED8\u8BA4\u5E26 `sediment_status: draft`\n\n## [0.3.4] - 2026-11-19\n\n### \u65B0\u589E\n- \u589E\u91CF\u53D8\u66F4\u8BB0\u5F55\uFF1A\u65B0\u589E `CHANGELOG.md`\uFF0C\u6309\u7248\u672C\u5206\u7EC4\u8BB0\u5F55\u65B0\u589E / \u53D8\u66F4 / \u4FEE\u590D\n- \u6784\u5EFA\u65F6\u81EA\u52A8\u540C\u6B65\u5230\u63D2\u4EF6\u5185\uFF0C\u770B\u677F\u9875\u811A\u300C\u66F4\u65B0\u8BB0\u5F55\u300D\u548C\u547D\u4EE4\u300C\u67E5\u770B\u66F4\u65B0\u8BB0\u5F55\u300D\u53EF\u968F\u65F6\u67E5\u770B\n- \u5347\u7EA7\u540E\u81EA\u52A8\u63D0\u793A\u65B0\u7248\u672C\u53F7\n- GitHub Release \u6B63\u6587\u4ECE\u5BF9\u5E94\u7248\u672C\u7684 CHANGELOG \u7AE0\u8282\u81EA\u52A8\u751F\u6210\uFF0C\u53D1\u5E03\u9875\u4E0E\u63D2\u4EF6\u5185\u8BF4\u660E\u4E00\u81F4\n\n## [0.3.3] - 2026-11-19\n\n### \u4FEE\u590D\n- Agent \u901A\u8FC7 MCP \u5199\u5165\u7B14\u8BB0\u540E\uFF0C\u770B\u677F\u4E0E\u901F\u8BB0\u9762\u677F 400ms \u5185\u81EA\u52A8\u5237\u65B0\uFF0C\u4E14\u4E0D\u6E05\u7A7A\u6B63\u5728\u8F93\u5165\u7684\u6587\u5B57\n- \u76D1\u542C create / modify / delete / rename \u4E8B\u4EF6\uFF0C\u8986\u76D6\u77E5\u8BC6\u5E93\u3001\u5DE5\u4F5C\u65E5\u5FD7\u4E0E\u65E5\u8BB0\u76EE\u5F55\n\n## [0.3.2] - 2026-11-19\n\n### \u4FEE\u590D\n- \u901F\u8BB0\u9762\u677F\u300C\u5168\u90E8\u300D\u9875\u7B7E\u4E0B\u7684\u6C89\u6DC0\u5217\u8868\u6539\u4E3A\u663E\u793A\u5168\u90E8\u7B14\u8BB0\uFF0C\u4E0D\u518D\u53EA\u663E\u793A 5 \u6761\n\n## [0.3.1] - 2026-11-19\n\n### \u65B0\u589E\n- \u901F\u8BB0\u9762\u677F\u300C\u5168\u90E8\u300D\u9875\u7B7E\u4E0B\u65B9\u76F4\u63A5\u663E\u793A\u300C\u77E5\u8BC6\u6C89\u6DC0\u300D\u5C0F\u533A\u5757\uFF0C\u4E0D\u7528\u5207\u9875\u7B7E\u5373\u53EF\u770B\u5230\uFF0C\u5E26\u300C\u5168\u90E8\u300D\u8DF3\u8F6C\u6309\u94AE\n\n## [0.3.0] - 2026-11-19\n\n### \u65B0\u589E\n- \u6C89\u6DC0\u9875\u7B7E\u6309\u5206\u7C7B\u5206\u7EC4\u663E\u793A\uFF08\u6280\u672F / \u65B9\u6CD5 / \u5DE5\u4F5C\u65E5\u5FD7\uFF09\n- \u667A\u80FD\u5206\u7C7B\uFF1AAgent \u4E0D\u4F20 category \u65F6\u6839\u636E\u6807\u9898\u3001\u6807\u7B7E\u3001\u6B63\u6587\u5173\u952E\u8BCD\u81EA\u52A8\u63A8\u65AD\uFF1B\u4E5F\u53EF\u4F20\u4EFB\u610F\u81EA\u5B9A\u4E49\u5206\u7C7B\u540D\n- \u65B0\u589E MCP \u5DE5\u5177 `list_categories`\n\n## [0.2.9] - 2026-11-19\n\n### \u65B0\u589E\n- \u77E5\u8BC6\u5E93\u5206\u7C7B\uFF1A\u9ED8\u8BA4\u300C\u6280\u672F / \u9879\u76EE / \u65B9\u6CD5 / \u7075\u611F / \u590D\u76D8\u300D\uFF0C\u6C89\u6DC0\u65F6\u6309\u5206\u7C7B\u5EFA\u5B50\u76EE\u5F55\n- \u77E5\u8BC6\u7B14\u8BB0\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\u7684\u7248\u5F0F\u7F8E\u5316\uFF1Afrontmatter\u3001\u901F\u89C8 Callout\u3001\u6B63\u6587\u3001\u5173\u8054\u6765\u6E90\u3001\u6C89\u6DC0\u4FE1\u606F\n- \u5DF2\u6709 7 \u7BC7\u7B14\u8BB0\u6309\u5206\u7C7B\u91CD\u65B0\u6392\u7248\u5F52\u4F4D\n\n## [0.2.8] - 2026-11-19\n\n### \u53D8\u66F4\n- \u300C\u77E5\u8BC6\u6C89\u6DC0\u300D\u4ECE\u770B\u677F\u5E95\u90E8\u79FB\u5230\u901F\u8BB0\u9762\u677F\uFF0C\u4F5C\u4E3A\u7B2C\u4E94\u4E2A\u9875\u7B7E\n\n## [0.2.7] - 2026-11-19\n\n### \u65B0\u589E\n- \u770B\u677F\u5E95\u90E8\u5217\u51FA Agent \u5199\u5165\u7684\u77E5\u8BC6\u7B14\u8BB0\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\uFF0C\u53EF\u70B9\u51FB\u6253\u5F00\n\n## [0.2.6] - 2026-11-19\n\n### \u4FEE\u590D\n- Obsidian \u91CD\u542F\u65F6\u4E3A\u5DF2\u6709\u6587\u4EF6\u8865\u53D1 create \u4E8B\u4EF6\uFF0C\u65E7\u7248\u4F1A\u8BEF\u7B97\u6210\u65B0\u5EFA\u7B14\u8BB0\uFF0822 \u7BC7 / 5512 \u5B57 / 121 \u5206\uFF09\n\n## [0.2.5] - 2026-11-19\n\n### \u4FEE\u590D\n- MCP \u6865\u63A5\u7684 GET \u5DE5\u5177\u53C2\u6570\u672A\u62FC\u8FDB URL\uFF0C\u5BFC\u81F4\u641C\u7D22\u65E0\u7ED3\u679C\u3001\u8BFB\u7B14\u8BB0\u62A5\u300C\u8DEF\u5F84\u4E0D\u80FD\u4E3A\u7A7A\u300D\n\n## [0.2.4] - 2026-11-19\n\n### \u4FEE\u590D\n- MCP \u6865\u63A5\u5728 Node 16 \u4E0B\u62A5 `fetch is not defined`\uFF0C\u6539\u7528 node:http\n\n## [0.2.3] - 2026-11-19\n\n### \u65B0\u589E\n- \u5185\u7F6E\u756A\u8304\u949F\uFF0825/5/15 \u5206\u949F\uFF09\uFF0C\u72B6\u6001\u680F\u5012\u8BA1\u65F6\uFF0C\u5B8C\u6210\u8BB0\u5165 focusMinutes\uFF0CAgent \u4E5F\u53EF\u901A\u8FC7 MCP \u63A7\u5236\n- \u65B0\u589E `get_pomodoro` / `control_pomodoro`\n\n### \u4FEE\u590D\n- \u5730\u5E73\u7EBF\u91CD\u505A\u4E3A\u5C71\u810A + \u6E56\u9762\u5012\u5F71 + \u65E5\u6708 + \u5B63\u8282\u6811 + \u4E13\u6CE8\u65F6\u5E06\u8239\n- \u9875\u811A\u7248\u672C\u53F7\u6539\u4E3A\u52A8\u6001\u8BFB\u53D6 manifest\n\n## [0.2.2] - 2026-11-19\n\n### \u4FEE\u590D\n- \u77E5\u8BC6\u590D\u76D8\u4ECE\u539F\u59CB Markdown \u6539\u4E3A\u6E32\u67D3\u9884\u89C8\uFF0C\u5E76\u52A0\u590D\u5236\u6309\u94AE\n\n## [0.2.1] - 2026-11-19\n\n### \u65B0\u589E\n- \u901F\u8BB0\uFF1A\u7C98\u8D34\u56FE\u7247\u81EA\u52A8\u5165\u5E93\u3001\u6BCF\u65E5\u56DE\u987E\uFF08\u53BB\u5E74\u4ECA\u65E5 / \u4E0A\u6708\u4ECA\u65E5\uFF09\u3001\u672C\u5730\u76F8\u4F3C\u5EA6\u6F2B\u6B65\u3001\u6807\u7B7E\u6811\n\n## [0.2.0] - 2026-11-19\n\n### \u65B0\u589E\n- \u6570\u636E\u5206\u6790\u9875\uFF1A\u5199\u4F5C\u67F1\u72B6\u56FE\u3001\u5199\u4F5C\u53D8\u5316\u6298\u7EBF\u3001\u65F6\u95F4\u6295\u5165\u3001\u5199\u4F5C\u6765\u6E90\u3001\u6295\u5165\u53BB\u5411\u3001\u6D3B\u8DC3\u65F6\u6BB5\u3001\u6295\u5165\u8282\u5F8B\u77E9\u9635\n- \u5E74\u5EA6\u753B\u50CF\uFF1A\u5E74\u8F6E\u3001\u77E5\u8BC6\u6307\u7EB9\u3001\u6708\u76F8\u65E5\u5386\u3001\u77E5\u8BC6\u5730\u5C42\u3001\u6708\u62A5\u6D77\u62A5 PNG \u5BFC\u51FA\n- \u4E09\u79CD\u753B\u98CE\uFF08\u50CF\u7D20\u6E56\u9762 / \u6C34\u58A8\u5C71\u6C34 / \u50CF\u7D20\u57CE\u5E02\uFF09\u4E0E\u968F\u65F6\u6BB5\u79FB\u52A8\u7684\u65E5\u6708\u6A2A\u5E45\n\n## [0.1.3] - 2026-11-19\n\n### \u4FEE\u590D\n- \u65E7\u7248\u6B8B\u7559\u5728\u4FA7\u680F\u7684\u770B\u677F\u6807\u7B7E\u88AB\u590D\u7528\u5BFC\u81F4\u4E00\u76F4\u7A84\u5C4F\uFF0C\u6539\u4E3A\u5F3A\u5236\u5728\u4E3B\u533A\u65B0\u5F00\u6807\u7B7E\u9875\n\n## [0.1.2] - 2026-11-19\n\n### \u65B0\u589E\n- \u5B8C\u6574\u4E3B\u89C6\u56FE\uFF1A\u901A\u680F\u6A2A\u5E45\u3001\u4ECA\u5929\u5361\u7247\u3001\u6982\u89C8\u5361 + SVG \u8D8B\u52BF\u300153 \u5468\u70ED\u529B\u56FE\u3001\u5730\u5E73\u7EBF\u3001\u56DB\u4E2A\u9875\u7B7E\n\n## [0.1.1] - 2026-11-19\n\n### \u4FEE\u590D\n- \u770B\u677F\u6539\u5230\u4E3B\u7F16\u8F91\u533A\u6253\u5F00\uFF0C\u901F\u8BB0\u7559\u5728\u53F3\u4FA7\u680F\n\n## [0.1.0] - 2026-11-19\n\n### \u65B0\u589E\n- \u9996\u4E2A\u7248\u672C\uFF1A\u70ED\u529B\u56FE\u770B\u677F\u3001\u5199\u4F5C\u7EDF\u8BA1\u3001flomo \u5F0F\u901F\u8BB0\u3001\u5468\u590D\u76D8\n- \u672C\u5730 HTTP API + MCP \u6865\u63A5\uFF0CAgent \u53EF\u8BFB\u5199\u77E5\u8BC6\u5E93\n- \u5DE5\u4F5C\u65E5\u5FD7\u4E0E\u77E5\u8BC6\u7B14\u8BB0\u6C89\u6DC0\uFF0CAgent \u4EA7\u51FA\u8BA1\u5165\u7EDF\u8BA1\n";
+var CHANGELOG = "# \u66F4\u65B0\u8BB0\u5F55\r\n\r\n\u672C\u6587\u4EF6\u8BB0\u5F55\u6BCF\u4E2A\u7248\u672C\u7684\u589E\u91CF\u53D8\u5316\uFF0C\u683C\u5F0F\u9075\u5FAA [Keep a Changelog](https://keepachangelog.com/)\u3002\u6784\u5EFA\u65F6\u7531 `scripts/sync-changelog.mjs` \u540C\u6B65\u5230\u63D2\u4EF6\u5185\uFF0C\u53EF\u5728\u770B\u677F\u9875\u811A\u7684\u300C\u66F4\u65B0\u8BB0\u5F55\u300D\u91CC\u67E5\u770B\u3002\r\n\r\n## [0.8.5] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- \u7EDF\u8BA1\u53E3\u5F84\uFF1AAgent \u7ECF API \u5199\u5165\u7684\u5185\u5BB9\u4E0D\u518D\u91CD\u590D\u8BA1\u5165\u4EBA\u7C7B\u5199\u4F5C\u6307\u6807\uFF08\u6765\u6E90\u6807\u8BB0 + \u6291\u5236\u7A97\u53E3\uFF09\uFF0C\u53EA\u8BA1 `aiWordsAdded`\r\n- \u7B14\u8BB0\u5F52\u5C5E\u65E5\u671F\u4F18\u5148\u8BFB frontmatter \u7684 `created` / `date`\uFF0C\u5BFC\u5165\u7684\u65E7\u7B14\u8BB0\u80FD\u5F52\u5230\u6B63\u786E\u7684\u65E5\u5B50\r\n- \u8D21\u732E\u5206\u6309\u53EF\u914D\u6743\u91CD\u8BA1\u7B97\u5E76\u652F\u6301\u5355\u65E5\u5C01\u9876\uFF0C\u63D0\u4F9B\u5168\u91CF\u91CD\u7B97\u4E0E\u5168\u5E93\u5386\u53F2\u91CD\u5EFA\u547D\u4EE4\r\n\r\n### \u65B0\u589E\r\n- \u901F\u8BB0\u652F\u6301\u7F16\u8F91 / \u5220\u9664 / \u5F52\u6863\uFF0C\u5E76\u4E0E\u65E5\u8BB0 Callout \u53CC\u5199\u540C\u6B65\r\n- \u7B14\u8BB0\u5065\u5EB7\u5EA6\u68C0\u67E5\uFF08\u5B64\u513F / \u65AD\u94FE / \u4E45\u672A\u66F4\u65B0\uFF09\uFF0C\u53EF\u4E00\u952E\u8F6C\u4E3A `#to-agent` \u4EFB\u52A1\r\n- \u6570\u636E\u5BFC\u51FA CSV / JSON\uFF0C\u9ED8\u8BA4\u8131\u654F\uFF08\u4E0D\u542B\u901F\u8BB0\u6B63\u6587\u3001\u6587\u4EF6\u8DEF\u5F84\u4E0E\u4EFB\u4F55\u4EE4\u724C\uFF09\uFF0C\u9700\u663E\u5F0F\u52FE\u9009\u624D\u5305\u542B\r\n- \u756A\u8304\u949F\u72B6\u6001\u6301\u4E45\u5316\u4E0E\u4F1A\u8BDD\u65E5\u5FD7\r\n- \u56FE\u8868\u53C2\u7167\u7EBF\uFF08\u5747\u503C / \u76EE\u6807\uFF09\u3001\u540C\u9875\u5237\u65B0\u4FDD\u7559\u6EDA\u52A8\u4F4D\u7F6E\u3001\u6BCF\u9875\u4E3B\u8272\u4E0E\u5361\u7247\u6750\u8D28\u3001\u70ED\u529B\u56FE\u65B9\u5411\u952E\u5BFC\u822A\r\n- \u754C\u9762\u8BED\u8A00\u5207\u6362\uFF08\u8DDF\u968F\u7CFB\u7EDF / \u4E2D\u6587 / English\uFF09\uFF0C\u8986\u76D6\u547D\u4EE4\u3001\u8BBE\u7F6E\u3001\u901F\u8BB0\u3001\u770B\u677F\u4E0E\u5F39\u7A97\r\n- \u7EAF\u51FD\u6570\u5355\u5143\u6D4B\u8BD5\u6846\u67B6\uFF08Node \u5185\u7F6E `node:test` + fake obsidian\uFF0C\u65E0\u65B0\u589E\u4F9D\u8D56\uFF09\uFF1A`npm run test:unit`\uFF0C`npm test` \u4E32\u8054\u5355\u6D4B\u4E0E MCP \u5192\u70DF\r\n\r\n## [0.8.4] - 2026-11-19\r\n\r\n### \u6539\u8FDB\r\n- \u6570\u636E\u4E0D\u8DB3 14 \u5929\u65F6\u6982\u89C8\u4E0E\u8D8B\u52BF\u56FE\u9ED8\u8BA4\u805A\u7126\u6700\u8FD1 14 \u5929\uFF1B\u6298\u7EBF\u52A0\u9762\u79EF\u6E10\u53D8\u3001\u975E\u96F6\u6563\u70B9\u4E0E\u5CF0\u503C\u6C14\u6CE1\r\n- \u5E74\u8F6E\u8865\u5168\u4E09\u5C42\u73AF\u5F62\u5E95\u8F68\u300112 \u6708\u523B\u5EA6\u4E0E\u5E74\u4EFD\u6C34\u5370\uFF0C\u5C04\u7EBF\u8BBE\u6700\u5C0F\u957F\u5EA6\r\n- \u5730\u5E73\u7EBF\u589E\u52A0\u8FDC\u666F\u5C71\u810A\u4E0E\u6C34\u6CE2\u5149\u5F71\r\n- \u4E09\u5F20\u6298\u7EBF\u56FE\u5408\u5E76\u4E3A\u300C\u5199\u4F5C\u4E0E\u65F6\u95F4\u8D8B\u52BF\u300D\u5206\u6BB5\u63A7\u4EF6\uFF0C\u77E5\u8BC6\u5730\u5C42\u52A0\u5438\u9876\u951A\u70B9\u5BFC\u822A\r\n- \u6295\u5165\u53BB\u5411\u6539\u4E3A\u6392\u540D\u8FDB\u5EA6\u6761\uFF08\u663E\u793A\u5B8C\u6574\u8DEF\u5F84\u3001\u5360\u6BD4\u4E0E\u5C55\u5F00\uFF09\r\n- \u8282\u5F8B\u77E9\u9635\u9ED8\u8BA4\u4EC5\u663E\u793A\u6D3B\u8DC3\u65E5\u671F\uFF0C\u7A7A\u884C\u538B\u7F29\u4E3A 4px\r\n- \u4ECA\u5929\u5361\u7247\u52A0\u76EE\u6807\u8FBE\u6210\u7387\u5706\u73AF\uFF0CAgent \u52A8\u6001\u884C\u5C3E\u663E\u793A\u76EE\u6807\u6587\u4EF6\u540D\uFF0C\u53D8\u66F4\u5BA1\u67E5\u52A0\u64CD\u4F5C\u7C7B\u578B\u5FBD\u7AE0\r\n\r\n### \u65B0\u589E\r\n- Agent \u6743\u9650\uFF1A\u7CFB\u7EDF\u76EE\u5F55 `.obsidian/` / `.git/` \u786C\u7F16\u7801\u62E6\u622A\uFF1B\u53EF\u9009\u767D\u540D\u5355\u6A21\u5F0F\u3001\u6309\u64CD\u4F5C\uFF08\u8BFB/\u5EFA/Patch/\u8986\u76D6/\u5220\u9664\uFF09\u5F00\u5173\uFF1B\u4FEE\u6539\u524D\u5FEB\u7167\u5F00\u5173\r\n- `patch_note` \u65B0\u589E `operation`\uFF08append/prepend/replace/update_frontmatter\uFF09\u3001`dryRun` Diff \u9884\u89C8\u3001`expectedMtime` \u4E50\u89C2\u9501\u3001`diffSummary`\u3001`createdHeading`\r\n- `replace_block` \u591A\u5904\u5339\u914D\u8FD4\u56DE `AMBIGUOUS_MATCH`\uFF1B\u6807\u9898\u4E0D\u5B58\u5728\u65F6\u81EA\u52A8\u521B\u5EFA\r\n- \u65B0\u589E MCP \u5DE5\u5177 `list_agent_changes` / `revert_agent_change` \u4E0E\u5BF9\u5E94 HTTP \u63A5\u53E3\uFF0CAgent \u53EF\u81EA\u67E5\u53D8\u66F4\u5E76\u56DE\u6EDA\r\n\r\n## [0.8.3] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- data.json \u81EA\u52A8\u5907\u4EFD\u5230\u5E93\u5185\u666E\u901A\u6587\u4EF6\u5939\uFF08\u9ED8\u8BA4 `sediment-backup/`\uFF09\uFF0C\u6309\u4EFD\u6570\u4FDD\u7559\uFF1B\u65B0\u589E\u300C\u5907\u4EFD\u7EDF\u8BA1\u6570\u636E\u5230\u5E93\u5185\u300D\u547D\u4EE4\r\n- Style Settings \u9002\u914D\uFF1A\u53EF\u53EF\u89C6\u5316\u8C03\u8282\u5361\u7247\u5706\u89D2\u3001\u5185\u8FB9\u8DDD\u3001\u6B63\u6587\u5B57\u53F7\u3001\u70ED\u529B\u56FE\u683C\u5B50\u5C3A\u5BF8\r\n- \u4EE3\u7801\u5757\u5D4C\u5165\uFF1A```sediment-heatmap``` \u4E0E ```sediment-today``` \u53EF\u5199\u8FDB Home.md\r\n- \u70ED\u529B\u56FE\u5BCC Tooltip\uFF08\u5F53\u5929\u7B14\u8BB0\u6807\u9898\u4E0E\u901F\u8BB0\u6458\u8981\uFF09\u3001\u6700\u957F\u8FDE\u7EED\u5929\u6570\u5FBD\u7AE0\r\n- \u901F\u8BB0\u5361\u7247 hover \u64CD\u4F5C\u680F\uFF08\u590D\u5236 / \u5206\u4EAB\u56FE / \u8F6C Agent\uFF09\u3001\u53CC\u51FB\u5165\u53E3\u9884\u7559\r\n- \u901F\u8BB0\u5206\u4EAB\u5361\u4E0E\u300C\u4ECA\u65E5\u6218\u62A5\u300DPNG \u5BFC\u51FA\uFF08\u6781\u7B80 / \u7968\u636E / \u6C34\u58A8\u4E09\u6A21\u677F\uFF09\r\n- Agent \u53D8\u66F4\u5BA1\u67E5\uFF1A\u6700\u8FD1\u53D8\u66F4\u5217\u8868\u3001\u5907\u4EFD Diff \u5E76\u6392\u5BF9\u6BD4\u3001\u4E00\u952E\u6062\u590D\r\n\r\n### \u4FEE\u590D\r\n- \u5F85\u529E\u6807\u9898\u8FC7\u957F\u65F6\u4E0D\u518D\u6491\u7834\u5361\u7247\uFF0C\u6539\u4E3A\u7701\u7565\u53F7\u622A\u65AD\r\n- \u4ECA\u65E5\u9875 bento \u5361\u7247\u7B49\u9AD8\u5BF9\u9F50\uFF1BAgent \u52A8\u6001\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\u6539\u4E3A\u5355\u5217\u4FE1\u606F\u6D41\uFF0C\u4E0D\u518D\u6324\u6210\u591A\u5217\u7A84\u6761\r\n- \u901F\u8BB0\u4FA7\u680F\u6C89\u6DC0\u5217\u8868\u6807\u9898\u5DE6\u5BF9\u9F50\u5E76\u53BB\u6389\u9ED8\u8BA4\u6309\u94AE\u767D\u5E95\u65B9\u5757\uFF0C\u5143\u4FE1\u606F\u66F4\u7D27\u51D1\r\n\r\n## [0.8.2] - 2026-11-19\r\n\r\n### \u6539\u8FDB\r\n- \u7ED3\u6784\u6027\u7F8E\u5316\uFF1A\u4ECA\u65E5\u8109\u51B2\u6539\u4E3A bento \u7F51\u683C\uFF08\u4ECA\u65E5/\u901F\u8BB0/\u5F85\u529E/Agent \u52A8\u6001\u9519\u843D\u6392\u5E03\uFF09\uFF0C\u6A2A\u5E45\u52A0\u5929\u7A7A\u6E10\u53D8\u3001\u4E91\u96FE\u3001\u5149\u6655\u4E0E\u9897\u7C92\u8D28\u611F\uFF0C\u4FA7\u680F\u6807\u7B7E\u4E0E\u8F93\u5165\u533A\u7EDF\u4E00\u4E3A\u80F6\u56CA\u5206\u6BB5\u63A7\u4EF6\u4E0E\u5185\u5D4C\u9762\u677F\uFF0C\u4E3B\u8981\u5361\u7247\u91C7\u7528\u53CC\u5C42\u5185\u5D4C\u8D28\u611F\r\n- \u770B\u677F\u89C6\u89C9\u5347\u7EA7\uFF1A\u7B49\u5BBD\u6570\u5B57\u3001\u66F4\u6E05\u6670\u7684\u6807\u9898\u5C42\u7EA7\u3001\u5217\u8868\u4E24\u680F\u5BF9\u9F50\u4E0E\u60AC\u505C\u53CD\u9988\u3001\u7A7A\u72B6\u6001\u91CD\u505A\u3001\u5361\u7247\u9519\u843D\u5165\u573A\u52A8\u753B\r\n- `#to-agent` \u901F\u8BB0\u8BB0\u4F4F\u539F\u5F85\u529E\u7684 `sourcePath` / `sourceLine`\uFF0C\u901F\u8BB0\u5361\u7247\u548C\u5F85\u529E\u6A21\u5757\u53EF\u4E00\u952E\u8DF3\u56DE\u539F\u590D\u9009\u6846\u5E76\u5B9A\u4F4D\u884C\u53F7\r\n- `add_memo` \u652F\u6301\u4F20\u5165\u6765\u6E90\u8DEF\u5F84\u4E0E\u884C\u53F7\r\n\r\n## [0.8.1] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u5F85\u529E\u6A21\u5757\uFF1A\u626B\u63CF vault \u539F\u751F `- [ ]` \u5F85\u529E\uFF0C\u5206\u4ECA\u65E5 / \u9057\u7559 / Agent \u4E09\u7C7B\u5C55\u793A\r\n- MCP \u5DE5\u5177 `list_tasks` / `complete_task` / `delegate_task` / `snapshot_tasks`\uFF0831 \u4E2A\u5DE5\u5177\uFF09\r\n- \u547D\u4EE4\u300C\u8BB0\u5F55\u4ECA\u65E5\u9057\u7559\u5F85\u529E\u5230\u65E5\u8BB0\u300D\uFF0C\u6309\u9700\u5199\u5165\uFF0C\u4E0D\u9ED8\u8BA4\u6539\u7B14\u8BB0\r\n\r\n### \u6539\u8FDB\r\n- \u6C89\u6DC0\u5217\u8868\u89C6\u89C9\uFF1A\u53BB\u6389\u6807\u9898\u65E5\u671F\u524D\u7F00\u3001\u5206\u7C7B\u5FBD\u7AE0\u4E0E\u8BA1\u6570\u3001\u76EE\u5F55/\u6807\u7B7E\u5143\u4FE1\u606F\u3001\u60AC\u505C\u9AD8\u4EAE\r\n\r\n## [0.8.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u672C\u5730\u8BED\u4E49\u641C\u7D22 `semantic_search`\uFF1ATF-IDF \u5411\u91CF + \u4E2D\u6587\u53CC\u5B57\u5207\u5206 + \u8F7B\u91CF\u540C\u4E49\u8BCD\u6269\u5C55\uFF0C\u6309\u610F\u4E49\u68C0\u7D22\u7B14\u8BB0\uFF0C\u4E0D\u8054\u7F51\u3001\u4E0D\u4E0B\u8F7D\u6A21\u578B\r\n- \u7D22\u5F15\u5E38\u9A7B\u5185\u5B58\uFF0Cvault \u53D8\u5316\u65F6\u81EA\u52A8\u5931\u6548\u91CD\u5EFA\uFF0C\u5E76\u9075\u5B88\u6587\u4EF6\u5939/\u6807\u7B7E\u9ED1\u540D\u5355\r\n- AGENTS.md \u5DE5\u4F5C\u6D41\u8865\u5145\u8BED\u4E49\u63A2\u7D22\u6B65\u9AA4\r\n\r\n## [0.7.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u8BBE\u7F6E\u9875\u300C\u4E00\u952E\u914D\u7F6E\u667A\u80FD\u4F53\u5BA2\u6237\u7AEF\u300D\uFF1A\u81EA\u52A8\u63A2\u6D4B OpenCode / Qoder / Claude Desktop / Cursor / Cline / Gemini CLI / Windsurf \u7B49\u914D\u7F6E\u6587\u4EF6\r\n- \u9009\u62E9\u5BA2\u6237\u7AEF\u540E\u4E00\u952E\u5199\u5165 MCP \u914D\u7F6E\uFF08\u81EA\u52A8\u5907\u4EFD\u539F\u6587\u4EF6\u3001\u4FDD\u7559\u5DF2\u6709\u914D\u7F6E\u3001\u590D\u7528\u5DF2\u5B58\u5728\u7684\u6865\u63A5\u8DEF\u5F84\uFF09\r\n- \u300C\u590D\u5236\u914D\u7F6E JSON\u300D\u6309\u94AE\uFF0C\u4FBF\u4E8E\u624B\u52A8\u7C98\u8D34\r\n\r\n## [0.6.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- P2 UI\uFF1A\u4E09\u6BB5\u5F0F\u4E3B\u770B\u677F\uFF08\u4ECA\u65E5\u8109\u51B2 / \u77E5\u8BC6\u5730\u5C42 / \u667A\u80FD\u4F53\u5DE5\u574A\uFF09\uFF0C\u77E5\u8BC6\u590D\u76D8\u79FB\u5165\u77E5\u8BC6\u5730\u5C42\r\n- \u667A\u80FD\u4F53\u5DE5\u574A\uFF1A\u8FDE\u63A5\u4E0E\u8C03\u7528\u72B6\u6001\u3001AI \u8349\u7A3F\u5BA1\u6838\u6D41\uFF08\u91C7\u7EB3 / \u5408\u5E76\u5230\u5173\u8054\u7B14\u8BB0 / \u9A73\u56DE\u5220\u9664\uFF09\u3001\u5DE5\u4F5C\u65E5\u5FD7\u5217\u8868\r\n- \u4EBA\u673A\u53CC\u8272\u70ED\u529B\u56FE\uFF1A\u6309 `aiWordsAdded` \u5360\u6BD4\u7528\u6E10\u53D8\u533A\u5206\u4EBA\u7C7B\u7F16\u8F91\u4E0E AI \u6C89\u6DC0\r\n- \u4ECA\u65E5\u8109\u51B2\u9875\u65B0\u589E\u5FEB\u901F\u901F\u8BB0\u6846\u4E0E\u300C\u4ECA\u65E5 Agent \u52A8\u6001\u300D\r\n- \u901F\u8BB0\u4FA7\u680F\u65B0\u589E\u300C\u4E0E\u5F53\u524D\u7B14\u8BB0\u76F8\u5173\u300D\u533A\u5757\uFF0C\u968F\u6253\u5F00\u7684\u6587\u4EF6\u81EA\u52A8\u66F4\u65B0\r\n\r\n## [0.5.1] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- `get_active_context` \u5728\u4E3B\u533A\u6253\u5F00\u770B\u677F/\u56FE\u8C31\u65F6\u56DE\u9000\u5230\u6700\u8FD1\u4E00\u4E2A Markdown \u6807\u7B7E\u9875\uFF0C\u4E0D\u518D\u8FD4\u56DE\u7A7A\u7ED3\u679C\r\n\r\n## [0.5.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- P1 \u7CBE\u51C6\u5199\u5165\uFF1A`patch_note`\uFF08\u6309\u6807\u9898/\u6587\u672C\u7247\u6BB5\u5C40\u90E8\u4FEE\u6539\u3001`vault.process` \u539F\u5B50\u5199\u5165\u3001\u5199\u524D\u81EA\u52A8\u5907\u4EFD\u3001`ifMatch` \u7248\u672C\u6821\u9A8C\uFF09\u4E0E `update_frontmatter`\r\n- `#to-agent` \u4EFB\u52A1\u95ED\u73AF\uFF1A`get_daily_context` \u8FD4\u56DE `agentTasks`\uFF0C\u65B0\u589E `claim_agent_task` / `complete_agent_task`\uFF0C\u72B6\u6001\u4ECE `#to-agent` \u2192 `#agent-in-progress` \u2192 `#agent-done`\r\n- \u5728 vault \u6839\u76EE\u5F55\u5199\u5165 `AGENTS.md` \u4E09\u9636\u6BB5\u534F\u4F5C\u534F\u8BAE\uFF08\u5F00\u5DE5\u5BF9\u9F50 / \u7CBE\u51C6\u8BFB\u5199 / \u6536\u5DE5\u6C89\u6DC0\uFF09\r\n- MCP \u5DE5\u5177\u589E\u81F3 26 \u4E2A\r\n\r\n## [0.4.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- P0 \u5DE5\u5177\u5C42\uFF1A`get_active_context`\uFF08\u5F53\u524D\u7B14\u8BB0/\u9009\u4E2D\u6587\u672C/\u5149\u6807\u6BB5\u843D\uFF09\u3001`get_note_metadata`\uFF08\u53EA\u8BFB\u5143\u6570\u636E\u7701 Token\uFF09\u3001`get_graph_neighbors`\uFF08\u51FA\u94FE/\u53CD\u94FE/\u540C\u6807\u7B7E\uFF09\u3001`get_tool_activity`\uFF08\u8C03\u7528\u7EDF\u8BA1\uFF09\r\n- \u65B0\u589E\u6587\u4EF6\u5939/\u6807\u7B7E\u9ED1\u540D\u5355\uFF0CAgent \u7684\u8BFB\u5199\u4E0E\u641C\u7D22\u5168\u90E8\u53D7\u63A7\r\n- Agent \u5199\u5165\u7684\u5185\u5BB9\u5355\u72EC\u8BA1\u5165 `aiWordsAdded`\uFF0C\u4E3A\u540E\u7EED\u4EBA\u673A\u53CC\u8272\u70ED\u529B\u56FE\u6253\u57FA\u7840\r\n- MCP/HTTP \u8C03\u7528\u5BA1\u8BA1\u65E5\u5FD7\uFF08\u9650 500 \u6761\uFF09\uFF0C\u5E76\u8BB0\u5F55\u5BA2\u6237\u7AEF\u540D `AGENT_NAME`\r\n- AI \u6C89\u6DC0\u7B14\u8BB0\u9ED8\u8BA4\u5E26 `sediment_status: draft`\r\n\r\n## [0.3.4] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u589E\u91CF\u53D8\u66F4\u8BB0\u5F55\uFF1A\u65B0\u589E `CHANGELOG.md`\uFF0C\u6309\u7248\u672C\u5206\u7EC4\u8BB0\u5F55\u65B0\u589E / \u53D8\u66F4 / \u4FEE\u590D\r\n- \u6784\u5EFA\u65F6\u81EA\u52A8\u540C\u6B65\u5230\u63D2\u4EF6\u5185\uFF0C\u770B\u677F\u9875\u811A\u300C\u66F4\u65B0\u8BB0\u5F55\u300D\u548C\u547D\u4EE4\u300C\u67E5\u770B\u66F4\u65B0\u8BB0\u5F55\u300D\u53EF\u968F\u65F6\u67E5\u770B\r\n- \u5347\u7EA7\u540E\u81EA\u52A8\u63D0\u793A\u65B0\u7248\u672C\u53F7\r\n- GitHub Release \u6B63\u6587\u4ECE\u5BF9\u5E94\u7248\u672C\u7684 CHANGELOG \u7AE0\u8282\u81EA\u52A8\u751F\u6210\uFF0C\u53D1\u5E03\u9875\u4E0E\u63D2\u4EF6\u5185\u8BF4\u660E\u4E00\u81F4\r\n\r\n## [0.3.3] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- Agent \u901A\u8FC7 MCP \u5199\u5165\u7B14\u8BB0\u540E\uFF0C\u770B\u677F\u4E0E\u901F\u8BB0\u9762\u677F 400ms \u5185\u81EA\u52A8\u5237\u65B0\uFF0C\u4E14\u4E0D\u6E05\u7A7A\u6B63\u5728\u8F93\u5165\u7684\u6587\u5B57\r\n- \u76D1\u542C create / modify / delete / rename \u4E8B\u4EF6\uFF0C\u8986\u76D6\u77E5\u8BC6\u5E93\u3001\u5DE5\u4F5C\u65E5\u5FD7\u4E0E\u65E5\u8BB0\u76EE\u5F55\r\n\r\n## [0.3.2] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- \u901F\u8BB0\u9762\u677F\u300C\u5168\u90E8\u300D\u9875\u7B7E\u4E0B\u7684\u6C89\u6DC0\u5217\u8868\u6539\u4E3A\u663E\u793A\u5168\u90E8\u7B14\u8BB0\uFF0C\u4E0D\u518D\u53EA\u663E\u793A 5 \u6761\r\n\r\n## [0.3.1] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u901F\u8BB0\u9762\u677F\u300C\u5168\u90E8\u300D\u9875\u7B7E\u4E0B\u65B9\u76F4\u63A5\u663E\u793A\u300C\u77E5\u8BC6\u6C89\u6DC0\u300D\u5C0F\u533A\u5757\uFF0C\u4E0D\u7528\u5207\u9875\u7B7E\u5373\u53EF\u770B\u5230\uFF0C\u5E26\u300C\u5168\u90E8\u300D\u8DF3\u8F6C\u6309\u94AE\r\n\r\n## [0.3.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u6C89\u6DC0\u9875\u7B7E\u6309\u5206\u7C7B\u5206\u7EC4\u663E\u793A\uFF08\u6280\u672F / \u65B9\u6CD5 / \u5DE5\u4F5C\u65E5\u5FD7\uFF09\r\n- \u667A\u80FD\u5206\u7C7B\uFF1AAgent \u4E0D\u4F20 category \u65F6\u6839\u636E\u6807\u9898\u3001\u6807\u7B7E\u3001\u6B63\u6587\u5173\u952E\u8BCD\u81EA\u52A8\u63A8\u65AD\uFF1B\u4E5F\u53EF\u4F20\u4EFB\u610F\u81EA\u5B9A\u4E49\u5206\u7C7B\u540D\r\n- \u65B0\u589E MCP \u5DE5\u5177 `list_categories`\r\n\r\n## [0.2.9] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u77E5\u8BC6\u5E93\u5206\u7C7B\uFF1A\u9ED8\u8BA4\u300C\u6280\u672F / \u9879\u76EE / \u65B9\u6CD5 / \u7075\u611F / \u590D\u76D8\u300D\uFF0C\u6C89\u6DC0\u65F6\u6309\u5206\u7C7B\u5EFA\u5B50\u76EE\u5F55\r\n- \u77E5\u8BC6\u7B14\u8BB0\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\u7684\u7248\u5F0F\u7F8E\u5316\uFF1Afrontmatter\u3001\u901F\u89C8 Callout\u3001\u6B63\u6587\u3001\u5173\u8054\u6765\u6E90\u3001\u6C89\u6DC0\u4FE1\u606F\r\n- \u5DF2\u6709 7 \u7BC7\u7B14\u8BB0\u6309\u5206\u7C7B\u91CD\u65B0\u6392\u7248\u5F52\u4F4D\r\n\r\n## [0.2.8] - 2026-11-19\r\n\r\n### \u53D8\u66F4\r\n- \u300C\u77E5\u8BC6\u6C89\u6DC0\u300D\u4ECE\u770B\u677F\u5E95\u90E8\u79FB\u5230\u901F\u8BB0\u9762\u677F\uFF0C\u4F5C\u4E3A\u7B2C\u4E94\u4E2A\u9875\u7B7E\r\n\r\n## [0.2.7] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u770B\u677F\u5E95\u90E8\u5217\u51FA Agent \u5199\u5165\u7684\u77E5\u8BC6\u7B14\u8BB0\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\uFF0C\u53EF\u70B9\u51FB\u6253\u5F00\r\n\r\n## [0.2.6] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- Obsidian \u91CD\u542F\u65F6\u4E3A\u5DF2\u6709\u6587\u4EF6\u8865\u53D1 create \u4E8B\u4EF6\uFF0C\u65E7\u7248\u4F1A\u8BEF\u7B97\u6210\u65B0\u5EFA\u7B14\u8BB0\uFF0822 \u7BC7 / 5512 \u5B57 / 121 \u5206\uFF09\r\n\r\n## [0.2.5] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- MCP \u6865\u63A5\u7684 GET \u5DE5\u5177\u53C2\u6570\u672A\u62FC\u8FDB URL\uFF0C\u5BFC\u81F4\u641C\u7D22\u65E0\u7ED3\u679C\u3001\u8BFB\u7B14\u8BB0\u62A5\u300C\u8DEF\u5F84\u4E0D\u80FD\u4E3A\u7A7A\u300D\r\n\r\n## [0.2.4] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- MCP \u6865\u63A5\u5728 Node 16 \u4E0B\u62A5 `fetch is not defined`\uFF0C\u6539\u7528 node:http\r\n\r\n## [0.2.3] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u5185\u7F6E\u756A\u8304\u949F\uFF0825/5/15 \u5206\u949F\uFF09\uFF0C\u72B6\u6001\u680F\u5012\u8BA1\u65F6\uFF0C\u5B8C\u6210\u8BB0\u5165 focusMinutes\uFF0CAgent \u4E5F\u53EF\u901A\u8FC7 MCP \u63A7\u5236\r\n- \u65B0\u589E `get_pomodoro` / `control_pomodoro`\r\n\r\n### \u4FEE\u590D\r\n- \u5730\u5E73\u7EBF\u91CD\u505A\u4E3A\u5C71\u810A + \u6E56\u9762\u5012\u5F71 + \u65E5\u6708 + \u5B63\u8282\u6811 + \u4E13\u6CE8\u65F6\u5E06\u8239\r\n- \u9875\u811A\u7248\u672C\u53F7\u6539\u4E3A\u52A8\u6001\u8BFB\u53D6 manifest\r\n\r\n## [0.2.2] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- \u77E5\u8BC6\u590D\u76D8\u4ECE\u539F\u59CB Markdown \u6539\u4E3A\u6E32\u67D3\u9884\u89C8\uFF0C\u5E76\u52A0\u590D\u5236\u6309\u94AE\r\n\r\n## [0.2.1] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u901F\u8BB0\uFF1A\u7C98\u8D34\u56FE\u7247\u81EA\u52A8\u5165\u5E93\u3001\u6BCF\u65E5\u56DE\u987E\uFF08\u53BB\u5E74\u4ECA\u65E5 / \u4E0A\u6708\u4ECA\u65E5\uFF09\u3001\u672C\u5730\u76F8\u4F3C\u5EA6\u6F2B\u6B65\u3001\u6807\u7B7E\u6811\r\n\r\n## [0.2.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u6570\u636E\u5206\u6790\u9875\uFF1A\u5199\u4F5C\u67F1\u72B6\u56FE\u3001\u5199\u4F5C\u53D8\u5316\u6298\u7EBF\u3001\u65F6\u95F4\u6295\u5165\u3001\u5199\u4F5C\u6765\u6E90\u3001\u6295\u5165\u53BB\u5411\u3001\u6D3B\u8DC3\u65F6\u6BB5\u3001\u6295\u5165\u8282\u5F8B\u77E9\u9635\r\n- \u5E74\u5EA6\u753B\u50CF\uFF1A\u5E74\u8F6E\u3001\u77E5\u8BC6\u6307\u7EB9\u3001\u6708\u76F8\u65E5\u5386\u3001\u77E5\u8BC6\u5730\u5C42\u3001\u6708\u62A5\u6D77\u62A5 PNG \u5BFC\u51FA\r\n- \u4E09\u79CD\u753B\u98CE\uFF08\u50CF\u7D20\u6E56\u9762 / \u6C34\u58A8\u5C71\u6C34 / \u50CF\u7D20\u57CE\u5E02\uFF09\u4E0E\u968F\u65F6\u6BB5\u79FB\u52A8\u7684\u65E5\u6708\u6A2A\u5E45\r\n\r\n## [0.1.3] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- \u65E7\u7248\u6B8B\u7559\u5728\u4FA7\u680F\u7684\u770B\u677F\u6807\u7B7E\u88AB\u590D\u7528\u5BFC\u81F4\u4E00\u76F4\u7A84\u5C4F\uFF0C\u6539\u4E3A\u5F3A\u5236\u5728\u4E3B\u533A\u65B0\u5F00\u6807\u7B7E\u9875\r\n\r\n## [0.1.2] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u5B8C\u6574\u4E3B\u89C6\u56FE\uFF1A\u901A\u680F\u6A2A\u5E45\u3001\u4ECA\u5929\u5361\u7247\u3001\u6982\u89C8\u5361 + SVG \u8D8B\u52BF\u300153 \u5468\u70ED\u529B\u56FE\u3001\u5730\u5E73\u7EBF\u3001\u56DB\u4E2A\u9875\u7B7E\r\n\r\n## [0.1.1] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- \u770B\u677F\u6539\u5230\u4E3B\u7F16\u8F91\u533A\u6253\u5F00\uFF0C\u901F\u8BB0\u7559\u5728\u53F3\u4FA7\u680F\r\n\r\n## [0.1.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u9996\u4E2A\u7248\u672C\uFF1A\u70ED\u529B\u56FE\u770B\u677F\u3001\u5199\u4F5C\u7EDF\u8BA1\u3001flomo \u5F0F\u901F\u8BB0\u3001\u5468\u590D\u76D8\r\n- \u672C\u5730 HTTP API + MCP \u6865\u63A5\uFF0CAgent \u53EF\u8BFB\u5199\u77E5\u8BC6\u5E93\r\n- \u5DE5\u4F5C\u65E5\u5FD7\u4E0E\u77E5\u8BC6\u7B14\u8BB0\u6C89\u6DC0\uFF0CAgent \u4EA7\u51FA\u8BA1\u5165\u7EDF\u8BA1\r\n";
 
 // src/ui/changelog-modal.ts
-var ChangelogModal = class extends import_obsidian9.Modal {
+var ChangelogModal = class extends import_obsidian11.Modal {
   constructor(app) {
     super(app);
-    this.component = new import_obsidian9.Component();
+    this.component = new import_obsidian11.Component();
   }
   onOpen() {
     this.component.load();
     const { contentEl } = this;
     contentEl.addClass("sd-changelog-modal");
-    contentEl.createEl("h2", { text: "Sediment \u66F4\u65B0\u8BB0\u5F55" });
+    contentEl.createEl("h2", { text: t("Sediment \u66F4\u65B0\u8BB0\u5F55") });
     const body = contentEl.createDiv({ cls: "sd-changelog-body" });
-    void import_obsidian9.MarkdownRenderer.render(this.app, CHANGELOG, body, "", this.component);
+    void import_obsidian11.MarkdownRenderer.render(this.app, CHANGELOG, body, "", this.component);
   }
   onClose() {
     this.component.unload();
@@ -2601,11 +3630,11 @@ var ChangelogModal = class extends import_obsidian9.Modal {
 };
 
 // src/views/dashboard-view.ts
-var import_obsidian11 = require("obsidian");
+var import_obsidian13 = require("obsidian");
 
 // src/ui/diff-modal.ts
-var import_obsidian10 = require("obsidian");
-var DiffModal = class extends import_obsidian10.Modal {
+var import_obsidian12 = require("obsidian");
+var DiffModal = class extends import_obsidian12.Modal {
   constructor(app, titleText, before, after) {
     super(app);
     this.titleText = titleText;
@@ -2622,8 +3651,8 @@ var DiffModal = class extends import_obsidian10.Modal {
       box.createDiv({ cls: "sd-diff-head", text: title });
       box.createEl("pre", { cls: "sd-diff-body", text: content });
     };
-    column("\u5907\u4EFD\u7248\u672C", this.before);
-    column("\u5F53\u524D\u7248\u672C", this.after);
+    column(t("\u5907\u4EFD\u7248\u672C"), this.before);
+    column(t("\u5F53\u524D\u7248\u672C"), this.after);
   }
   onClose() {
     this.contentEl.empty();
@@ -2645,7 +3674,7 @@ var RANGE_OPTIONS = [
   ["1y", "\u8FD1\u4E00\u5E74"]
 ];
 var WEEKDAYS = ["\u65E5", "\u4E00", "\u4E8C", "\u4E09", "\u56DB", "\u4E94", "\u516D"];
-var DashboardView = class extends import_obsidian11.ItemView {
+var DashboardView = class extends import_obsidian13.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
@@ -2660,13 +3689,15 @@ var DashboardView = class extends import_obsidian11.ItemView {
     this.bannerEl = null;
     this.heatTooltip = null;
     this.unsubscribePomodoro = null;
+    this.lastRenderedTab = null;
+    this.pendingFocusDate = null;
     this.metric = plugin.store.settings.heatmapMetric;
   }
   getViewType() {
     return DASHBOARD_VIEW_TYPE;
   }
   getDisplayText() {
-    return "Sediment \u77E5\u8BC6\u8109\u51B2";
+    return t("Sediment \u77E5\u8BC6\u8109\u51B2");
   }
   getIcon() {
     return "activity";
@@ -2683,12 +3714,35 @@ var DashboardView = class extends import_obsidian11.ItemView {
   }
   render() {
     const root = this.contentEl;
+    const scroller = this.scrollParent(root);
+    const sameTab = this.lastRenderedTab === this.tab;
+    const scrollTop = sameTab && scroller ? scroller.scrollTop : 0;
     root.empty();
     root.addClass("sd-dashboard");
+    root.setAttribute("data-tab", this.tab);
     this.renderHeader(root);
     if (this.tab === "today") this.renderToday(root);
     else if (this.tab === "insights") this.renderInsights(root);
     else this.renderAgentHub(root);
+    this.lastRenderedTab = this.tab;
+    if (scroller) scroller.scrollTop = scrollTop;
+    if (this.pendingFocusDate) {
+      const target = root.querySelector(
+        `.kp-cell[data-date="${this.pendingFocusDate}"]`
+      );
+      this.pendingFocusDate = null;
+      target == null ? void 0 : target.focus();
+    }
+  }
+  /** 找到看板真正滚动的祖先容器（Obsidian 的 .view-content）。 */
+  scrollParent(el) {
+    let node = el;
+    while (node) {
+      const style = window.getComputedStyle(node);
+      if (/(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight) return node;
+      node = node.parentElement;
+    }
+    return null;
   }
   value(key) {
     return Number(this.plugin.store.getDay(key)[this.metric]) || 0;
@@ -2726,7 +3780,7 @@ var DashboardView = class extends import_obsidian11.ItemView {
     for (const [key, label] of TABS) {
       const button = tabs.createEl("button", {
         cls: `sd-tab ${key === this.tab ? "is-active" : ""}`,
-        text: label
+        text: t(label)
       });
       button.onclick = () => {
         this.tab = key;
@@ -2735,7 +3789,7 @@ var DashboardView = class extends import_obsidian11.ItemView {
     }
     const spacer = bar.createDiv({ cls: "sd-spacer" });
     spacer.setAttribute("style", "flex:1");
-    const refresh = bar.createEl("button", { cls: "sd-refresh", text: "\u5237\u65B0" });
+    const refresh = bar.createEl("button", { cls: "sd-refresh", text: t("\u5237\u65B0") });
     refresh.onclick = () => this.render();
   }
   renderToday(root) {
@@ -2758,11 +3812,11 @@ var DashboardView = class extends import_obsidian11.ItemView {
     const goal = this.plugin.store.settings.dailyWordGoal || 1e3;
     const card = root.createDiv({ cls: "sd-card sd-today" });
     const head = card.createDiv({ cls: "sd-today-head" });
-    head.createDiv({ cls: "sd-today-title", text: "\u4ECA\u5929" });
-    head.createDiv({ cls: "sd-pill", text: day.contribution > 0 ? `${day.contribution} \u5206` : "\u8FD8\u6CA1\u5F00\u59CB" });
+    head.createDiv({ cls: "sd-today-title", text: t("\u4ECA\u5929") });
+    head.createDiv({ cls: "sd-pill", text: day.contribution > 0 ? tf("{n} \u5206", { n: day.contribution }) : t("\u8FD8\u6CA1\u5F00\u59CB") });
     const goalRing = head.createDiv({ cls: "sd-goal-ring" });
     goalRing.innerHTML = this.goalRing(day.wordsAdded, goal);
-    head.createEl("button", { cls: "sd-share-today", text: "\u6218\u62A5\u56FE\u7247" }).onclick = () => {
+    head.createEl("button", { cls: "sd-share-today", text: t("\u6218\u62A5\u56FE\u7247") }).onclick = () => {
       exportTodayReport({
         date: today,
         contribution: day.contribution,
@@ -2774,23 +3828,23 @@ var DashboardView = class extends import_obsidian11.ItemView {
       });
     };
     const row = card.createDiv({ cls: "sd-today-row" });
-    row.createSpan({ text: `\u5199\u4F5C ${day.wordsAdded} / ${goal.toLocaleString()} \u5B57` });
-    row.createSpan({ text: `\u8FDE\u7EED ${streak} \u5929 \xB7 \u6700\u957F ${this.longestStreak()} \u5929` });
+    row.createSpan({ text: tf("\u5199\u4F5C {words} / {goal} \u5B57", { words: day.wordsAdded, goal: goal.toLocaleString() }) });
+    row.createSpan({ text: tf("\u8FDE\u7EED {streak} \u5929 \xB7 \u6700\u957F {longest} \u5929", { streak, longest: this.longestStreak() }) });
     const pomoButton = row.createEl("button", { cls: "sd-pomodoro-button" });
     pomoButton.onclick = () => this.plugin.pomodoro.toggle();
     this.updatePomodoroButton();
-    const skip = row.createEl("button", { cls: "sd-pomodoro-skip", text: "\u8DF3\u8FC7" });
+    const skip = row.createEl("button", { cls: "sd-pomodoro-skip", text: t("\u8DF3\u8FC7") });
     skip.onclick = () => this.plugin.pomodoro.skip();
     const progress = card.createDiv({ cls: "sd-progress" });
     progress.createDiv({ cls: "sd-progress-fill" }).style.width = `${Math.min(100, day.wordsAdded / goal * 100)}%`;
   }
   renderQuickMemo(root) {
     const card = root.createDiv({ cls: "sd-card sd-quick-memo" });
-    card.createDiv({ cls: "sd-card-title", text: "\u5FEB\u901F\u901F\u8BB0" });
+    card.createDiv({ cls: "sd-card-title", text: t("\u5FEB\u901F\u901F\u8BB0") });
     const area = card.createEl("textarea", { cls: "kp-memo-input" });
-    area.placeholder = "\u60F3\u5230\u4EC0\u4E48\uFF0C\u968F\u624B\u8BB0\u4E0B\u2026";
+    area.placeholder = t("\u60F3\u5230\u4EC0\u4E48\uFF0C\u968F\u624B\u8BB0\u4E0B\u2026");
     area.rows = 2;
-    const submit = card.createEl("button", { cls: "mod-cta", text: "\u8BB0\u4E00\u6761" });
+    const submit = card.createEl("button", { cls: "mod-cta", text: t("\u8BB0\u4E00\u6761") });
     submit.onclick = () => {
       const text = area.value.trim();
       if (!text) return;
@@ -2802,12 +3856,12 @@ var DashboardView = class extends import_obsidian11.ItemView {
   }
   renderTodayAgent(root) {
     const card = root.createDiv({ cls: "sd-card sd-agent-feed" });
-    card.createDiv({ cls: "sd-card-title", text: "\u4ECA\u65E5 Agent \u52A8\u6001" });
+    card.createDiv({ cls: "sd-card-title", text: t("\u4ECA\u65E5 Agent \u52A8\u6001") });
     const today = dateKey(/* @__PURE__ */ new Date());
     const calls = this.plugin.store.data.toolCalls.filter((call) => call.time.startsWith(today));
     const logs = this.plugin.store.data.workLogs.filter((log) => log.date === today);
     if (calls.length === 0 && logs.length === 0) {
-      card.createDiv({ cls: "kp-empty", text: "\u4ECA\u5929\u8FD8\u6CA1\u6709\u667A\u80FD\u4F53\u6D3B\u52A8\u3002" });
+      card.createDiv({ cls: "kp-empty", text: t("\u4ECA\u5929\u8FD8\u6CA1\u6709\u667A\u80FD\u4F53\u6D3B\u52A8\u3002") });
       return;
     }
     const list = card.createDiv({ cls: "sd-feed-list" });
@@ -2828,12 +3882,12 @@ var DashboardView = class extends import_obsidian11.ItemView {
     const body = root.createDiv({ cls: "sd-body" });
     const subnav = body.createDiv({ cls: "sd-subnav" });
     const anchors = [
-      ["sd-overview", "\u8109\u51B2\u6982\u89C8"],
-      ["sd-heatmap", "\u70ED\u529B\u56FE"],
-      ["sd-trend", "\u5199\u4F5C\u8D8B\u52BF"],
-      ["sd-folders", "\u6295\u5165\u5206\u5E03"],
-      ["sd-yearly", "\u5E74\u5EA6\u753B\u50CF"],
-      ["sd-review-card", "\u672C\u5468\u590D\u76D8"]
+      ["sd-overview", t("\u8109\u51B2\u6982\u89C8")],
+      ["sd-heatmap", t("\u70ED\u529B\u56FE")],
+      ["sd-trend", t("\u5199\u4F5C\u8D8B\u52BF")],
+      ["sd-folders", t("\u6295\u5165\u5206\u5E03")],
+      ["sd-yearly", t("\u5E74\u5EA6\u753B\u50CF")],
+      ["sd-review-card", t("\u672C\u5468\u590D\u76D8")]
     ];
     for (const [id, label] of anchors) {
       const button = subnav.createEl("button", { text: label });
@@ -2849,7 +3903,7 @@ var DashboardView = class extends import_obsidian11.ItemView {
     this.renderYearly(body);
     this.renderReview(body);
     const footer = this.renderFooter(body);
-    footer.createEl("button", { text: "\u6708\u62A5" }).onclick = () => {
+    footer.createEl("button", { text: t("\u6708\u62A5") }).onclick = () => {
       this.posterMonth = (/* @__PURE__ */ new Date()).getMonth();
       this.render();
     };
@@ -2866,7 +3920,7 @@ var DashboardView = class extends import_obsidian11.ItemView {
   }
   renderAgentChanges(root) {
     const card = root.createDiv({ cls: "sd-card" });
-    card.createDiv({ cls: "sd-card-title", text: "Agent \u53D8\u66F4\u5BA1\u67E5" });
+    card.createDiv({ cls: "sd-card-title", text: t("Agent \u53D8\u66F4\u5BA1\u67E5") });
     const seen = /* @__PURE__ */ new Set();
     const calls = this.plugin.store.data.toolCalls.filter((call) => {
       if (!call.path || seen.has(call.path)) return false;
@@ -2874,35 +3928,35 @@ var DashboardView = class extends import_obsidian11.ItemView {
       return true;
     }).filter((call) => /\.(md|json)$/.test(call.path)).slice(0, 8);
     if (calls.length === 0) {
-      card.createDiv({ cls: "kp-empty", text: "\u6682\u65E0 Agent \u53D8\u66F4\u8BB0\u5F55\u3002" });
+      card.createDiv({ cls: "kp-empty", text: t("\u6682\u65E0 Agent \u53D8\u66F4\u8BB0\u5F55\u3002") });
       return;
     }
     const list = card.createDiv({ cls: "sd-feed-list" });
     for (const call of calls) {
       const file = this.plugin.app.vault.getAbstractFileByPath(call.path);
-      if (!(file instanceof import_obsidian11.TFile)) continue;
+      if (!(file instanceof import_obsidian13.TFile)) continue;
       const backups = listBackups(this.plugin, call.path);
       const row = list.createDiv({ cls: "sd-feed-row" });
       row.createSpan({ text: `${call.time.slice(5, 16)} \xB7 ${call.tool.replace(/^(GET|POST) /, "")}` });
       const actions = row.createDiv({ cls: "sd-audit-actions" });
-      const type = call.tool.includes("patch") ? "\u5C40\u90E8\u4FEE\u6539" : call.tool.includes("frontmatter") ? "\u5C5E\u6027" : call.tool.includes("knowledge") ? "\u6C89\u6DC0" : call.tool.includes("memo") ? "\u901F\u8BB0" : "\u65B0\u5EFA/\u8986\u76D6";
+      const type = call.tool.includes("patch") ? t("\u5C40\u90E8\u4FEE\u6539") : call.tool.includes("frontmatter") ? t("\u5C5E\u6027") : call.tool.includes("knowledge") ? t("\u6C89\u6DC0") : call.tool.includes("memo") ? t("\u901F\u8BB0") : t("\u65B0\u5EFA/\u8986\u76D6");
       actions.createSpan({ cls: "sd-audit-badge", text: type });
       const open = actions.createEl("button", { text: file.basename, cls: "sd-audit-open" });
       open.onclick = () => void this.plugin.app.workspace.openLinkText(call.path, "", false);
       if (backups.length > 0) {
-        actions.createEl("button", { text: `\u5DEE\u5F02(${backups.length})` }).onclick = () => {
+        actions.createEl("button", { text: tf("\u5DEE\u5F02({n})", { n: backups.length }) }).onclick = () => {
           void this.plugin.app.vault.read(file).then((current) => {
             new DiffModal(
               this.plugin.app,
-              `${file.basename} \xB7 \u53D8\u66F4\u5BF9\u6BD4`,
+              `${file.basename} \xB7 ${t("\u53D8\u66F4\u5BF9\u6BD4")}`,
               readBackup(this.plugin, backups[0].name),
               current
             ).open();
           });
         };
-        actions.createEl("button", { text: "\u6062\u590D" }).onclick = () => {
+        actions.createEl("button", { text: t("\u6062\u590D") }).onclick = () => {
           void restoreBackup(this.plugin, file, backups[0].name).then(() => {
-            new import_obsidian11.Notice("\u5DF2\u6062\u590D\u5230\u6700\u8FD1\u5907\u4EFD");
+            new import_obsidian13.Notice(t("\u5DF2\u6062\u590D\u5230\u6700\u8FD1\u5907\u4EFD"));
             this.render();
           });
         };
@@ -2911,9 +3965,9 @@ var DashboardView = class extends import_obsidian11.ItemView {
   }
   renderTasksCard(root) {
     const card = root.createDiv({ cls: "sd-card sd-tasks" });
-    card.createDiv({ cls: "sd-card-title", text: "\u5F85\u529E \xB7 \u4ECA\u65E5 / \u9057\u7559 / Agent" });
+    card.createDiv({ cls: "sd-card-title", text: t("\u5F85\u529E \xB7 \u4ECA\u65E5 / \u9057\u7559 / Agent") });
     const list = card.createDiv({ cls: "sd-task-list" });
-    list.createDiv({ cls: "kp-empty", text: "\u52A0\u8F7D\u4E2D\u2026" });
+    list.createDiv({ cls: "kp-empty", text: t("\u52A0\u8F7D\u4E2D\u2026") });
     void Promise.all([
       this.plugin.tasks.list("today"),
       this.plugin.tasks.list("overdue"),
@@ -2923,7 +3977,7 @@ var DashboardView = class extends import_obsidian11.ItemView {
       list.empty();
       const items = [...today.filter((task) => !task.checked), ...overdue, ...agent];
       if (items.length === 0) {
-        list.createDiv({ cls: "kp-empty", text: "\u6CA1\u6709\u672A\u5B8C\u6210\u5F85\u529E\u3002" });
+        list.createDiv({ cls: "kp-empty", text: t("\u6CA1\u6709\u672A\u5B8C\u6210\u5F85\u529E\u3002") });
         return;
       }
       for (const task of items.slice(0, 12)) {
@@ -2931,14 +3985,14 @@ var DashboardView = class extends import_obsidian11.ItemView {
         const button = row.createEl("button", {
           cls: "sd-task-open",
           text: task.text,
-          attr: { title: task.path || "Agent \u4EFB\u52A1" }
+          attr: { title: task.path || t("Agent \u4EFB\u52A1") }
         });
         if (task.path) button.onclick = () => void this.plugin.app.workspace.openLinkText(task.path, "", false);
         else if (task.sourcePath)
           button.onclick = () => void this.openTaskSource(task.sourcePath, task.sourceLine);
         row.createDiv({
           cls: "sd-task-meta",
-          text: task.path ? `${task.date} \xB7 ${task.path.split("/").pop()}:${task.line}` : task.sourcePath ? `Agent \xB7 \u539F\u5F85\u529E ${task.sourcePath.split("/").pop()}:${(_a2 = task.sourceLine) != null ? _a2 : 1}` : `Agent \xB7 ${task.date}`
+          text: task.path ? `${task.date} \xB7 ${task.path.split("/").pop()}:${task.line}` : task.sourcePath ? `Agent \xB7 ${t("\u539F\u5F85\u529E")} ${task.sourcePath.split("/").pop()}:${(_a2 = task.sourceLine) != null ? _a2 : 1}` : `Agent \xB7 ${task.date}`
         });
       }
     });
@@ -2955,7 +4009,7 @@ var DashboardView = class extends import_obsidian11.ItemView {
   renderAgentStatus(root) {
     var _a2;
     const card = root.createDiv({ cls: "sd-card" });
-    card.createDiv({ cls: "sd-card-title", text: "\u8FDE\u63A5\u4E0E\u8C03\u7528\u72B6\u6001" });
+    card.createDiv({ cls: "sd-card-title", text: t("\u8FDE\u63A5\u4E0E\u8C03\u7528\u72B6\u6001") });
     const settings = this.plugin.store.settings;
     const calls = this.plugin.store.data.toolCalls;
     const byAgent = {};
@@ -2966,23 +4020,23 @@ var DashboardView = class extends import_obsidian11.ItemView {
       box.createDiv({ cls: "sd-mini-label", text: label });
       box.createDiv({ cls: "sd-mini-value", text: value });
     };
-    item("\u672C\u5730 API", settings.agentServerEnabled ? `\u5728\u7EBF \xB7 ${settings.agentServerPort}` : "\u672A\u542F\u7528");
-    item("\u7D2F\u8BA1\u8C03\u7528", String(calls.length));
-    for (const [agent, count] of Object.entries(byAgent)) item(agent, `${count} \u6B21`);
+    item(t("\u672C\u5730 API"), settings.agentServerEnabled ? `${t("\u5728\u7EBF")} \xB7 ${settings.agentServerPort}` : t("\u672A\u542F\u7528"));
+    item(t("\u7D2F\u8BA1\u8C03\u7528"), String(calls.length));
+    for (const [agent, count] of Object.entries(byAgent)) item(agent, tf("{n} \u6B21", { n: count }));
     const last = calls[0];
-    if (last) card.createDiv({ cls: "sd-card-sub", text: `\u6700\u8FD1\u8C03\u7528\uFF1A${last.time.slice(0, 16)} \xB7 ${last.tool}` });
+    if (last) card.createDiv({ cls: "sd-card-sub", text: `${t("\u6700\u8FD1\u8C03\u7528")}\uFF1A${last.time.slice(0, 16)} \xB7 ${last.tool}` });
   }
   renderDrafts(root) {
     var _a2, _b, _c;
     const card = root.createDiv({ cls: "sd-card" });
-    card.createDiv({ cls: "sd-card-title", text: "AI \u6C89\u6DC0\u5BA1\u6838" });
+    card.createDiv({ cls: "sd-card-title", text: t("AI \u6C89\u6DC0\u5BA1\u6838") });
     const drafts = [];
     for (const file of this.plugin.app.vault.getMarkdownFiles()) {
       const cache = this.plugin.app.metadataCache.getFileCache(file);
       if (((_a2 = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a2.sediment_status) === "draft") drafts.push(file);
     }
     if (drafts.length === 0) {
-      card.createDiv({ cls: "kp-empty", text: "\u6CA1\u6709\u5F85\u5BA1\u6838\u7684 AI \u8349\u7A3F\u3002" });
+      card.createDiv({ cls: "kp-empty", text: t("\u6CA1\u6709\u5F85\u5BA1\u6838\u7684 AI \u8349\u7A3F\u3002") });
       return;
     }
     const list = card.createDiv({ cls: "sd-draft-list" });
@@ -2991,19 +4045,19 @@ var DashboardView = class extends import_obsidian11.ItemView {
       const title = item.createEl("button", { cls: "sd-draft-title", text: file.basename });
       title.onclick = () => void this.plugin.app.workspace.openLinkText(file.path, "", false);
       const cache = this.plugin.app.metadataCache.getFileCache(file);
-      const category = String((_c = (_b = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _b.category) != null ? _c : "\u672A\u5206\u7C7B");
+      const category = String((_c = (_b = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _b.category) != null ? _c : t("\u672A\u5206\u7C7B"));
       item.createDiv({ cls: "sd-card-sub", text: `${category} \xB7 ${file.path}` });
       const actions = item.createDiv({ cls: "sd-draft-actions" });
-      actions.createEl("button", { text: "\u91C7\u7EB3\u5E76\u5F52\u6863" }).onclick = () => {
+      actions.createEl("button", { text: t("\u91C7\u7EB3\u5E76\u5F52\u6863") }).onclick = () => {
         void this.plugin.agentApi.updateFrontmatter(file.path, { sediment_status: "accepted" }).then(() => {
-          new import_obsidian11.Notice("\u5DF2\u91C7\u7EB3");
+          new import_obsidian13.Notice(t("\u5DF2\u91C7\u7EB3"));
           this.render();
         });
       };
-      actions.createEl("button", { text: "\u5408\u5E76\u5230\u5173\u8054\u7B14\u8BB0" }).onclick = () => void this.mergeDraft(file);
-      actions.createEl("button", { text: "\u9A73\u56DE\u5220\u9664" }).onclick = () => {
+      actions.createEl("button", { text: t("\u5408\u5E76\u5230\u5173\u8054\u7B14\u8BB0") }).onclick = () => void this.mergeDraft(file);
+      actions.createEl("button", { text: t("\u9A73\u56DE\u5220\u9664") }).onclick = () => {
         void this.plugin.app.vault.trash(file, false).then(() => {
-          new import_obsidian11.Notice("\u5DF2\u9A73\u56DE\u5E76\u79FB\u5165\u56DE\u6536\u7AD9");
+          new import_obsidian13.Notice(t("\u5DF2\u9A73\u56DE\u5E76\u79FB\u5165\u56DE\u6536\u7AD9"));
           this.render();
         });
       };
@@ -3015,12 +4069,12 @@ var DashboardView = class extends import_obsidian11.ItemView {
     const links = (_a2 = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a2.links;
     const first = Array.isArray(links) && links.length > 0 ? String(links[0]) : "";
     if (!first) {
-      new import_obsidian11.Notice("\u8FD9\u5F20\u8349\u7A3F\u6CA1\u6709\u5173\u8054\u7B14\u8BB0\uFF0C\u65E0\u6CD5\u5408\u5E76");
+      new import_obsidian13.Notice(t("\u8FD9\u5F20\u8349\u7A3F\u6CA1\u6709\u5173\u8054\u7B14\u8BB0\uFF0C\u65E0\u6CD5\u5408\u5E76"));
       return;
     }
     const target = this.plugin.app.vault.getMarkdownFiles().find((item) => item.basename === first || item.path === first);
     if (!target) {
-      new import_obsidian11.Notice(`\u627E\u4E0D\u5230\u5173\u8054\u7B14\u8BB0\uFF1A${first}`);
+      new import_obsidian13.Notice(tf("\u627E\u4E0D\u5230\u5173\u8054\u7B14\u8BB0\uFF1A{name}", { name: first }));
       return;
     }
     const source = await this.plugin.app.vault.read(file);
@@ -3030,15 +4084,15 @@ var DashboardView = class extends import_obsidian11.ItemView {
 ${body.trim()}
 `);
     await this.plugin.app.vault.trash(file, false);
-    new import_obsidian11.Notice(`\u5DF2\u5408\u5E76\u5230 ${target.basename}`);
+    new import_obsidian13.Notice(tf("\u5DF2\u5408\u5E76\u5230 {name}", { name: target.basename }));
     this.render();
   }
   renderWorkLogs(root) {
     const card = root.createDiv({ cls: "sd-card" });
-    card.createDiv({ cls: "sd-card-title", text: "\u667A\u80FD\u4F53\u5DE5\u4F5C\u65E5\u5FD7" });
+    card.createDiv({ cls: "sd-card-title", text: t("\u667A\u80FD\u4F53\u5DE5\u4F5C\u65E5\u5FD7") });
     const logs = this.plugin.store.data.workLogs.slice(0, 10);
     if (logs.length === 0) {
-      card.createDiv({ cls: "kp-empty", text: "\u8FD8\u6CA1\u6709\u5DE5\u4F5C\u65E5\u5FD7\u3002" });
+      card.createDiv({ cls: "kp-empty", text: t("\u8FD8\u6CA1\u6709\u5DE5\u4F5C\u65E5\u5FD7\u3002") });
       return;
     }
     const list = card.createDiv({ cls: "sd-feed-list" });
@@ -3050,10 +4104,10 @@ ${body.trim()}
   }
   renderFooter(root) {
     const footer = root.createDiv({ cls: "sd-footer" });
-    footer.createSpan({ text: `Sediment ${this.plugin.manifest.version} \xB7 \u6570\u636E\u53EA\u7559\u5728\u672C\u5730` });
-    const changelog = footer.createEl("button", { text: "\u66F4\u65B0\u8BB0\u5F55" });
+    footer.createSpan({ text: `Sediment ${this.plugin.manifest.version} \xB7 ${t("\u6570\u636E\u53EA\u7559\u5728\u672C\u5730")}` });
+    const changelog = footer.createEl("button", { text: t("\u66F4\u65B0\u8BB0\u5F55") });
     changelog.onclick = () => new ChangelogModal(this.plugin.app).open();
-    const styleButton = footer.createEl("button", { text: "\u6362\u753B\u98CE" });
+    const styleButton = footer.createEl("button", { text: t("\u6362\u753B\u98CE") });
     styleButton.onclick = () => this.cycleArtStyle();
     return footer;
   }
@@ -3064,23 +4118,24 @@ ${body.trim()}
     if (subtitle) head.createDiv({ cls: "sd-card-sub", text: subtitle });
     return card;
   }
-  barChart(values, color = "var(--interactive-accent)") {
+  barChart(values, color = "var(--interactive-accent)", refs = []) {
     const width = 900;
     const height = 120;
     const pad = 4;
-    const max = Math.max(1, ...values);
+    const max = Math.max(1, ...values, ...refs.map((ref) => ref.value));
     const barWidth = (width - pad * 2) / Math.max(1, values.length);
     const rects = values.map((value, index) => {
       const h = value / max * (height - pad * 2);
       return `<rect x="${(pad + index * barWidth).toFixed(1)}" y="${(height - pad - h).toFixed(1)}" width="${(barWidth * 0.72).toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${color}" opacity="${value > 0 ? 0.8 : 0.12}"/>`;
     }).join("");
-    return `<svg class="sd-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${rects}</svg>`;
+    const refLines = this.referenceLines(refs, max, width, height, pad);
+    return `<svg class="sd-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${rects}${refLines}</svg>`;
   }
-  multiLine(series) {
+  multiLine(series, refs = []) {
     const width = 900;
     const height = 140;
     const pad = 6;
-    const max = Math.max(1, ...series.flatMap((item) => item.values));
+    const max = Math.max(1, ...series.flatMap((item) => item.values), ...refs.map((ref) => ref.value));
     const lines = series.map((item) => {
       const points = item.values.map((value, index) => {
         const x = pad + index / Math.max(1, item.values.length - 1) * (width - pad * 2);
@@ -3089,7 +4144,21 @@ ${body.trim()}
       }).join(" ");
       return `<polyline points="${points}" fill="none" stroke="${item.color}" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
     }).join("");
-    return `<svg class="sd-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${lines}</svg>`;
+    const refLines = this.referenceLines(refs, max, width, height, pad);
+    return `<svg class="sd-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${lines}${refLines}</svg>`;
+  }
+  /** 数字参照线：均值/目标等水平虚线，右上角带数值标签。 */
+  referenceLines(refs, max, width, height, pad) {
+    return refs.filter((ref) => ref.value > 0).map((ref) => {
+      var _a2;
+      const y = height - pad - Math.min(ref.value, max) / max * (height - pad * 2);
+      const stroke = (_a2 = ref.color) != null ? _a2 : "var(--text-muted)";
+      return `<line x1="${pad}" y1="${y.toFixed(1)}" x2="${width - pad}" y2="${y.toFixed(1)}" stroke="${stroke}" stroke-width="1" stroke-dasharray="4 4" vector-effect="non-scaling-stroke" opacity="0.75"/><text x="${width - pad - 2}" y="${Math.max(9, y - 3).toFixed(1)}" text-anchor="end" font-size="9" fill="${stroke}">${ref.label}</text>`;
+    }).join("");
+  }
+  mean(values) {
+    if (values.length === 0) return 0;
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
   }
   currentStreak() {
     let streak = 0;
@@ -3145,13 +4214,13 @@ ${body.trim()}
     var _a2, _b, _c;
     const card = root.createDiv({ cls: "sd-card sd-overview", attr: { id: "sd-overview" } });
     const head = card.createDiv({ cls: "sd-card-head" });
-    head.createDiv({ cls: "sd-card-title", text: "\u77E5\u8BC6\u8109\u51B2\u6982\u89C8" });
-    head.createDiv({ cls: "sd-card-sub", text: `\u8FD1 ${(_b = (_a2 = RANGE_OPTIONS.find((r) => r[0] === this.range)) == null ? void 0 : _a2[1]) != null ? _b : ""} \xB7 \u53EF\u9760\u8BB0\u5F55` });
+    head.createDiv({ cls: "sd-card-title", text: t("\u77E5\u8BC6\u8109\u51B2\u6982\u89C8") });
+    head.createDiv({ cls: "sd-card-sub", text: `${t("\u8FD1")} ${t((_b = (_a2 = RANGE_OPTIONS.find((r) => r[0] === this.range)) == null ? void 0 : _a2[1]) != null ? _b : "")} \xB7 ${t("\u53EF\u9760\u8BB0\u5F55")}` });
     const ranges = card.createDiv({ cls: "sd-ranges" });
     for (const [key, label] of RANGE_OPTIONS) {
       const button = ranges.createEl("button", {
         cls: `sd-range ${key === this.range ? "is-active" : ""}`,
-        text: label
+        text: t(label)
       });
       button.onclick = () => {
         this.range = key;
@@ -3167,10 +4236,15 @@ ${body.trim()}
     );
     const grid = card.createDiv({ cls: "sd-overview-grid" });
     const left = grid.createDiv({ cls: "sd-overview-left" });
-    left.createDiv({ cls: "sd-metric-label", text: "\u7D2F\u8BA1\u8D21\u732E\u5206" });
+    left.createDiv({ cls: "sd-metric-label", text: t("\u7D2F\u8BA1\u8D21\u732E\u5206") });
     left.createDiv({ cls: "sd-metric-value", text: String(total) });
-    left.createDiv({ cls: "sd-metric-hint", text: `${active} \u5929\u6709\u8BB0\u5F55 \xB7 \u65E5\u5747 ${keys.length ? Math.round(total / keys.length) : 0} \u5206` });
-    left.innerHTML += this.sparkline(keys.map((key) => this.value(key)));
+    left.createDiv({ cls: "sd-metric-hint", text: tf("{active} \u5929\u6709\u8BB0\u5F55 \xB7 \u65E5\u5747 {avg} \u5206", { active, avg: keys.length ? Math.round(total / keys.length) : 0 }) });
+    const overviewValues = keys.map((key) => this.value(key));
+    const overviewMean = this.mean(overviewValues);
+    left.innerHTML += this.sparkline(
+      overviewValues,
+      overviewMean > 0 ? [{ value: overviewMean, label: tf("\u5747\u503C {n}", { n: Math.round(overviewMean) }) }] : []
+    );
     const right = grid.createDiv({ cls: "sd-overview-right" });
     const mini = (label, value, hint, ring) => {
       const item = right.createDiv({ cls: "sd-mini" });
@@ -3179,16 +4253,16 @@ ${body.trim()}
       item.createDiv({ cls: "sd-mini-hint", text: hint });
       if (ring) item.createDiv({ cls: "sd-mini-ring" }).innerHTML = ring;
     };
-    mini("\u6D3B\u8DC3\u5929\u6570", `${active} / ${keys.length}`, "\u6709\u8BB0\u5F55\u7684\u65E5\u5B50", this.ring(active, keys.length));
-    mini("\u5F53\u524D\u8FDE\u7EED", `${this.currentStreak()} \u5929`, `\u6700\u957F ${this.longestStreak()} \u5929 \xB7 \u6309\u5168\u90E8\u5386\u53F2`);
-    mini("\u6295\u5165\u65F6\u95F4", "0 \u5C0F\u65F6", "\u4EA4\u4E92 / \u4E13\u6CE8");
-    mini("\u6700\u9AD8\u7684\u4E00\u5929", this.value(best) > 0 ? String(this.value(best)) : "\u2014", best);
+    mini(t("\u6D3B\u8DC3\u5929\u6570"), `${active} / ${keys.length}`, t("\u6709\u8BB0\u5F55\u7684\u65E5\u5B50"), this.ring(active, keys.length));
+    mini(t("\u5F53\u524D\u8FDE\u7EED"), tf("{n} \u5929", { n: this.currentStreak() }), tf("\u6700\u957F {n} \u5929 \xB7 \u6309\u5168\u90E8\u5386\u53F2", { n: this.longestStreak() }));
+    mini(t("\u6295\u5165\u65F6\u95F4"), t("0 \u5C0F\u65F6"), t("\u4EA4\u4E92 / \u4E13\u6CE8"));
+    mini(t("\u6700\u9AD8\u7684\u4E00\u5929"), this.value(best) > 0 ? String(this.value(best)) : "\u2014", best);
   }
-  sparkline(values) {
+  sparkline(values, refs = []) {
     const width = 620;
     const height = 96;
     const pad = 10;
-    const max = Math.max(1, ...values);
+    const max = Math.max(1, ...values, ...refs.map((ref) => ref.value));
     const coordinates = values.map((value, index) => ({
       x: pad + index / Math.max(1, values.length - 1) * (width - pad * 2),
       y: height - pad - value / max * (height - pad * 2),
@@ -3201,6 +4275,7 @@ ${body.trim()}
     const peakIndex = values.indexOf(max);
     const peak = coordinates[peakIndex];
     const peakLabel = peak && max > 0 ? `<text x="${peak.x.toFixed(1)}" y="${Math.max(10, peak.y - 10).toFixed(1)}" text-anchor="middle" font-size="10" fill="var(--text-normal)">${max}</text>` : "";
+    const refLines = this.referenceLines(refs, max, width, height, pad);
     return `<svg class="sd-spark" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
 <defs><linearGradient id="sd-spark-fill" x1="0" y1="0" x2="0" y2="1">
 <stop offset="0%" stop-color="var(--interactive-accent)" stop-opacity="0.28"/>
@@ -3208,7 +4283,7 @@ ${body.trim()}
 </linearGradient></defs>
 <polygon points="${pad},${height - pad} ${points} ${width - pad},${height - pad}" fill="url(#sd-spark-fill)"/>
 <polyline points="${points}" fill="none" stroke="var(--interactive-accent)" stroke-width="2" vector-effect="non-scaling-stroke"/>
-${dots}${peakLabel}</svg>`;
+${refLines}${dots}${peakLabel}</svg>`;
   }
   ring(active, total) {
     const radius = 26;
@@ -3232,16 +4307,17 @@ ${dots}${peakLabel}</svg>`;
 <text x="23" y="27" text-anchor="middle" font-size="11" fill="var(--text-normal)">${Math.round(ratio * 100)}%</text></svg>`;
   }
   renderHeatmap(root, dual) {
+    var _a2;
     const card = root.createDiv({ cls: "sd-card sd-heatmap", attr: { id: "sd-heatmap" } });
     const head = card.createDiv({ cls: "sd-card-head" });
-    head.createDiv({ cls: "sd-card-title", text: dual ? "\u4EBA\u673A\u53CC\u8272\u70ED\u529B\u56FE" : "\u5E74\u5EA6\u77E5\u8BC6\u6D3B\u8DC3\u8109\u51B2" });
-    head.createDiv({ cls: "sd-card-sub", text: `\u8FD1 53 \u5468 \xB7 ${this.metricLabel()}` });
+    head.createDiv({ cls: "sd-card-title", text: dual ? t("\u4EBA\u673A\u53CC\u8272\u70ED\u529B\u56FE") : t("\u5E74\u5EA6\u77E5\u8BC6\u6D3B\u8DC3\u8109\u51B2") });
+    head.createDiv({ cls: "sd-card-sub", text: `${t("\u8FD1 53 \u5468")} \xB7 ${this.metricLabel()}` });
     const metrics = card.createDiv({ cls: "sd-metrics" });
     for (const metric of METRICS) {
       const button = metrics.createEl("button", {
         cls: `sd-metric-tab ${metric.key === this.metric ? "is-active" : ""}`,
-        text: metric.label,
-        attr: { title: metric.hint }
+        text: t(metric.label),
+        attr: { title: t(metric.hint) }
       });
       button.onclick = () => {
         this.metric = metric.key;
@@ -3274,13 +4350,19 @@ ${dots}${peakLabel}</svg>`;
         const key = dateKey(date);
         const record = store.getDay(key);
         const cellValue = Number(record[this.metric]) || 0;
-        const element = column.createDiv({ cls: "kp-cell", attr: { "data-date": key } });
+        const element = column.createDiv({
+          cls: "kp-cell",
+          attr: { "data-date": key, role: "gridcell", tabindex: "-1" }
+        });
         if (date > today) {
           element.addClass("kp-future");
+          element.setAttribute("aria-disabled", "true");
         } else {
+          element.setAttribute("aria-label", `${key} \xB7 ${this.metricLabel()} ${cellValue}`);
           element.onclick = () => {
             this.hideHeatTooltip();
             this.selected = key;
+            this.pendingFocusDate = key;
             this.render();
           };
           element.onmouseenter = (event) => this.showHeatTooltip(event, key);
@@ -3311,9 +4393,34 @@ ${dots}${peakLabel}</svg>`;
       );
     }
     const legend = wrap.createDiv({ cls: "kp-legend" });
-    legend.createSpan({ text: dual ? "\u4EBA" : "\u5C11" });
+    legend.createSpan({ text: dual ? t("\u4EBA") : t("\u5C11") });
     for (let level = 0; level <= 4; level += 1) legend.createDiv({ cls: `kp-cell kp-lvl-${level}` });
-    legend.createSpan({ text: dual ? "AI" : "\u591A" });
+    legend.createSpan({ text: dual ? t("AI") : t("\u591A") });
+    const selectable = cells.filter((cell) => !cell.el.hasClass("kp-future"));
+    const focusKey = this.selected && selectable.some((cell) => cell.key === this.selected) ? this.selected : (_a2 = selectable[selectable.length - 1]) == null ? void 0 : _a2.key;
+    for (const cell of selectable) cell.el.setAttribute("tabindex", cell.key === focusKey ? "0" : "-1");
+    columns.setAttribute("role", "grid");
+    columns.setAttribute("aria-label", t("\u5E74\u5EA6\u6D3B\u8DC3\u70ED\u529B\u56FE\uFF0C\u65B9\u5411\u952E\u79FB\u52A8\uFF0C\u56DE\u8F66\u9009\u4E2D"));
+    columns.addEventListener("keydown", (event) => {
+      const target = event.target;
+      const index = cells.findIndex((cell) => cell.el === target);
+      if (index < 0) return;
+      const deltas = { ArrowRight: 7, ArrowLeft: -7, ArrowDown: 1, ArrowUp: -1 };
+      if (event.key in deltas) {
+        event.preventDefault();
+        const next = index + deltas[event.key];
+        if (next < 0 || next >= cells.length || cells[next].el.hasClass("kp-future")) return;
+        cells[index].el.setAttribute("tabindex", "-1");
+        cells[next].el.setAttribute("tabindex", "0");
+        cells[next].el.focus();
+      } else if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        this.hideHeatTooltip();
+        this.selected = cells[index].key;
+        this.pendingFocusDate = cells[index].key;
+        this.render();
+      }
+    });
     if (this.selected) {
       const day = store.getDay(this.selected);
       const detail = card.createDiv({ cls: "sd-day-detail" });
@@ -3328,14 +4435,14 @@ ${dots}${peakLabel}</svg>`;
       ];
       for (const [label, value] of rows) {
         const item = detail.createDiv({ cls: "sd-day-item" });
-        item.createDiv({ cls: "kp-detail-label", text: label });
+        item.createDiv({ cls: "kp-detail-label", text: t(label) });
         item.createEl("strong", { text: String(value) });
       }
     }
   }
   renderHorizon(root) {
     const card = root.createDiv({ cls: "sd-card sd-horizon" });
-    card.createDiv({ cls: "sd-card-title", text: "\u5730\u5E73\u7EBF \xB7 \u6700\u8FD1 60 \u5929" });
+    card.createDiv({ cls: "sd-card-title", text: t("\u5730\u5E73\u7EBF \xB7 \u6700\u8FD1 60 \u5929") });
     const values = lastNDays(60).map((key) => this.value(key));
     const max = Math.max(1, ...values);
     const step = 1600 / values.length;
@@ -3366,14 +4473,14 @@ ${sailing}
     var _a2, _b, _c, _d, _e;
     const keys = this.chartKeys();
     const days = keys.map((key) => this.plugin.store.getDay(key));
-    const label = (_b = (_a2 = RANGE_OPTIONS.find((range) => range[0] === this.range)) == null ? void 0 : _a2[1]) != null ? _b : "";
-    const trend = this.analyticsCard(root, "\u5199\u4F5C\u4E0E\u65F6\u95F4\u8D8B\u52BF", label);
+    const label = t((_b = (_a2 = RANGE_OPTIONS.find((range) => range[0] === this.range)) == null ? void 0 : _a2[1]) != null ? _b : "");
+    const trend = this.analyticsCard(root, t("\u5199\u4F5C\u4E0E\u65F6\u95F4\u8D8B\u52BF"), label);
     trend.setAttribute("id", "sd-trend");
     const trendTabs = (_c = trend.querySelector(".sd-card-head")) == null ? void 0 : _c.createDiv({ cls: "sd-trend-tabs" });
     const trendOptions = [
-      ["writing", "\u6BCF\u65E5\u5199\u4F5C"],
-      ["changes", "\u5199\u4F5C\u53D8\u5316"],
-      ["time", "\u65F6\u95F4\u6295\u5165"]
+      ["writing", t("\u6BCF\u65E5\u5199\u4F5C")],
+      ["changes", t("\u5199\u4F5C\u53D8\u5316")],
+      ["time", t("\u65F6\u95F4\u6295\u5165")]
     ];
     for (const [key, title] of trendOptions) {
       const button = trendTabs == null ? void 0 : trendTabs.createEl("button", {
@@ -3387,28 +4494,44 @@ ${sailing}
     }
     const trendContent = trend.createDiv({ cls: "sd-trend-content" });
     if (this.trendTab === "writing") {
-      trendContent.innerHTML += this.barChart(days.map((day) => day.wordsAdded));
+      const writingValues = days.map((day) => day.wordsAdded);
+      const goal = this.plugin.store.settings.dailyWordGoal || 0;
+      const writingMean = this.mean(writingValues);
+      const writingRefs = [];
+      if (goal > 0) writingRefs.push({ value: goal, label: tf("\u76EE\u6807 {n}", { n: goal }), color: "var(--text-accent)" });
+      if (writingMean > 0) writingRefs.push({ value: writingMean, label: tf("\u5747\u503C {n}", { n: Math.round(writingMean) }) });
+      trendContent.innerHTML += this.barChart(writingValues, "var(--interactive-accent)", writingRefs);
     } else if (this.trendTab === "changes") {
-      trendContent.innerHTML += this.multiLine([
-        { values: days.map((day) => day.wordsAdded), color: "var(--interactive-accent)" },
-        { values: days.map((day) => day.wordsRemoved), color: "var(--text-faint)" },
-        { values: days.map((day) => day.capturedWords), color: "var(--text-muted)" }
-      ]);
+      const addedValues = days.map((day) => day.wordsAdded);
+      const addedMean = this.mean(addedValues);
+      trendContent.innerHTML += this.multiLine(
+        [
+          { values: addedValues, color: "var(--interactive-accent)" },
+          { values: days.map((day) => day.wordsRemoved), color: "var(--text-faint)" },
+          { values: days.map((day) => day.capturedWords), color: "var(--text-muted)" }
+        ],
+        addedMean > 0 ? [{ value: addedMean, label: tf("\u65B0\u589E\u5747\u503C {n}", { n: Math.round(addedMean) }) }] : []
+      );
     } else {
-      trendContent.innerHTML += this.multiLine([
-        { values: days.map((day) => day.activeMinutes), color: "var(--interactive-accent)" },
-        { values: days.map((day) => day.focusMinutes), color: "var(--text-faint)" }
-      ]);
+      const activeValues = days.map((day) => day.activeMinutes);
+      const activeMean = this.mean(activeValues);
+      trendContent.innerHTML += this.multiLine(
+        [
+          { values: activeValues, color: "var(--interactive-accent)" },
+          { values: days.map((day) => day.focusMinutes), color: "var(--text-faint)" }
+        ],
+        activeMean > 0 ? [{ value: activeMean, label: tf("\u6D3B\u8DC3\u5747\u503C {n}", { n: Math.round(activeMean) }) }] : []
+      );
     }
     const totalWords = days.reduce((sum, day) => sum + day.wordsAdded, 0);
     const captured = days.reduce((sum, day) => sum + day.capturedWords, 0);
-    const source = this.analyticsCard(root, "\u5199\u4F5C\u6765\u6E90", "\u9010\u6B65\u5199\u5165 / \u5927\u6BB5\u6355\u83B7");
+    const source = this.analyticsCard(root, t("\u5199\u4F5C\u6765\u6E90"), t("\u9010\u6B65\u5199\u5165 / \u5927\u6BB5\u6355\u83B7"));
     const typed = Math.max(0, totalWords - captured);
     const bar = source.createDiv({ cls: "sd-source-bar" });
     bar.createDiv({ cls: "sd-source-typed" }).style.width = `${totalWords ? typed / totalWords * 100 : 0}%`;
     bar.createDiv({ cls: "sd-source-capture" }).style.width = `${totalWords ? captured / totalWords * 100 : 0}%`;
-    source.createDiv({ cls: "sd-card-sub", text: `\u9010\u6B65\u5199\u5165 ${typed} \u5B57 \xB7 \u5927\u6BB5\u6355\u83B7 ${captured} \u5B57` });
-    const folders = this.analyticsCard(root, "\u6295\u5165\u53BB\u5411", "\u6309\u76EE\u5F55\u7EDF\u8BA1\uFF08\u7B14\u8BB0 \xD7 \u5929\uFF09");
+    source.createDiv({ cls: "sd-card-sub", text: tf("\u9010\u6B65\u5199\u5165 {typed} \u5B57 \xB7 \u5927\u6BB5\u6355\u83B7 {captured} \u5B57", { typed, captured }) });
+    const folders = this.analyticsCard(root, t("\u6295\u5165\u53BB\u5411"), t("\u6309\u76EE\u5F55\u7EDF\u8BA1\uFF08\u7B14\u8BB0 \xD7 \u5929\uFF09"));
     folders.setAttribute("id", "sd-folders");
     const folderTotals = /* @__PURE__ */ new Map();
     for (const day of days) {
@@ -3426,10 +4549,10 @@ ${sailing}
       const track = row.createDiv({ cls: "sd-folder-track" });
       const percent = folderWordsTotal > 0 ? words / folderWordsTotal * 100 : 0;
       track.createDiv({ cls: "sd-folder-fill" }).style.width = `${percent}%`;
-      row.createEl("strong", { text: `${words} \u5B57 \xB7 ${percent.toFixed(0)}%` });
+      row.createEl("strong", { text: tf("{words} \u5B57 \xB7 {percent}%", { words, percent: percent.toFixed(0) }) });
     }
     if (sortedFolders.length > 6) {
-      folders.createEl("button", { text: this.foldersExpanded ? "\u6536\u8D77" : `\u5C55\u5F00\u5176\u4F59 ${sortedFolders.length - 6} \u9879` }).onclick = () => {
+      folders.createEl("button", { text: this.foldersExpanded ? t("\u6536\u8D77") : tf("\u5C55\u5F00\u5176\u4F59 {n} \u9879", { n: sortedFolders.length - 6 }) }).onclick = () => {
         this.foldersExpanded = !this.foldersExpanded;
         this.render();
       };
@@ -3441,8 +4564,13 @@ ${sailing}
         return sum + ((_a3 = day.hourlyWords[hour]) != null ? _a3 : 0);
       }, 0)
     );
-    const hours = this.analyticsCard(root, "\u6D3B\u8DC3\u65F6\u6BB5", "\u6309\u5C0F\u65F6\u7684\u65B0\u589E\u8BCD\u6570");
-    hours.innerHTML += this.barChart(hourly);
+    const hours = this.analyticsCard(root, t("\u6D3B\u8DC3\u65F6\u6BB5"), t("\u6309\u5C0F\u65F6\u7684\u65B0\u589E\u8BCD\u6570"));
+    const hourlyMean = this.mean(hourly);
+    hours.innerHTML += this.barChart(
+      hourly,
+      "var(--interactive-accent)",
+      hourlyMean > 0 ? [{ value: hourlyMean, label: tf("\u5747\u503C {n}", { n: Math.round(hourlyMean) }) }] : []
+    );
     const weekdayHour = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0));
     for (const key of keys) {
       const day = this.plugin.store.getDay(key);
@@ -3458,11 +4586,11 @@ ${sailing}
         cell.setAttribute("style", `background:var(--interactive-accent);opacity:${ratio > 0 ? 0.1 + ratio * 0.9 : 0.05}`);
       }
     }
-    const rhythm = this.analyticsCard(root, "\u6295\u5165\u8282\u5F8B\u77E9\u9635", "\u516D\u9879\u6307\u6807\u6309\u5929\u5BF9\u9F50");
+    const rhythm = this.analyticsCard(root, t("\u6295\u5165\u8282\u5F8B\u77E9\u9635"), t("\u516D\u9879\u6307\u6807\u6309\u5929\u5BF9\u9F50"));
     const rhythmHead = rhythm.querySelector(".sd-card-head");
     if (rhythmHead) {
       const toggle = rhythmHead.createEl("button", {
-        text: this.rhythmActiveOnly ? "\u4EC5\u6D3B\u8DC3\u65E5\u671F" : "\u5168\u90E8\u65E5\u671F"
+        text: this.rhythmActiveOnly ? t("\u4EC5\u6D3B\u8DC3\u65E5\u671F") : t("\u5168\u90E8\u65E5\u671F")
       });
       toggle.onclick = () => {
         this.rhythmActiveOnly = !this.rhythmActiveOnly;
@@ -3471,7 +4599,7 @@ ${sailing}
     }
     const grid = rhythm.createDiv({ cls: "sd-rhythm" });
     const metricKeys = ["contribution", "wordsAdded", "activeMinutes", "focusMinutes", "notesCreated", "tasksCompleted"];
-    grid.createDiv({ cls: "sd-rhythm-label", text: "\u65E5\u671F" });
+    grid.createDiv({ cls: "sd-rhythm-label", text: t("\u65E5\u671F") });
     for (const key of metricKeys) grid.createDiv({ cls: "sd-rhythm-label", text: this.shortMetric(key) });
     const maxima = metricKeys.map((key) => Math.max(1, ...days.map((day) => Number(day[key]) || 0)));
     const rhythmKeys = (this.rhythmActiveOnly ? keys.filter((key) => this.plugin.store.getDay(key).contribution > 0) : keys).slice(-30);
@@ -3486,7 +4614,6 @@ ${sailing}
     }
   }
   shortMetric(key) {
-    var _a2;
     const names = {
       contribution: "\u8D21\u732E",
       wordsAdded: "\u65B0\u589E\u8BCD",
@@ -3495,7 +4622,7 @@ ${sailing}
       notesCreated: "\u65B0\u7B14\u8BB0",
       tasksCompleted: "\u4EFB\u52A1"
     };
-    return (_a2 = names[key]) != null ? _a2 : key;
+    return names[key] ? t(names[key]) : key;
   }
   moonGlyph(date) {
     const synodic = 29.530588853 * 864e5;
@@ -3513,7 +4640,7 @@ ${sailing}
   renderYearly(root) {
     const year = (/* @__PURE__ */ new Date()).getFullYear();
     const entries = Object.entries(this.plugin.store.data.days).filter(([key]) => key.startsWith(`${year}-`));
-    const wheel = this.analyticsCard(root, "\u5E74\u8F6E", `${year} \u5E74 \xB7 \u6BCF\u5929\u4E00\u7247\u82B1\u74E3`);
+    const wheel = this.analyticsCard(root, t("\u5E74\u8F6E"), tf("{year} \u5E74 \xB7 \u6BCF\u5929\u4E00\u7247\u82B1\u74E3", { year }));
     wheel.setAttribute("id", "sd-yearly");
     const petals = entries.map(([key, day]) => {
       const dayOfYear = Math.floor((parseKey(key).getTime() - new Date(year, 0, 0).getTime()) / 864e5);
@@ -3545,7 +4672,7 @@ ${sailing}
     }).join("");
     const watermark = `<text x="110" y="116" text-anchor="middle" font-size="26" font-weight="600" fill="var(--text-faint)" opacity="0.18">${year}</text>`;
     wheel.innerHTML += `<svg viewBox="0 0 220 220" class="sd-wheel">${tracks}${monthTicks}${watermark}${petals}</svg>`;
-    const fingerprint = this.analyticsCard(root, "\u77E5\u8BC6\u6307\u7EB9", "\u6BCF\u5929\u4E00\u6839\u8272\u6761");
+    const fingerprint = this.analyticsCard(root, t("\u77E5\u8BC6\u6307\u7EB9"), t("\u6BCF\u5929\u4E00\u6839\u8272\u6761"));
     const fingerprintSvg = Array.from({ length: 12 }, (_, month) => {
       const bars = Array.from({ length: 31 }, (_2, index) => {
         const key = `${year}-${String(month + 1).padStart(2, "0")}-${String(index + 1).padStart(2, "0")}`;
@@ -3555,7 +4682,7 @@ ${sailing}
       return `<text x="0" y="${month * 20 + 11}" font-size="9" fill="var(--text-faint)">${month + 1}</text>${bars}`;
     }).join("");
     fingerprint.innerHTML += `<svg viewBox="0 0 420 248" class="sd-fingerprint">${fingerprintSvg}</svg>`;
-    const calendar = this.analyticsCard(root, "\u6708\u76F8\u65E5\u5386", "\u6EE1\u6708\u662F\u9AD8\u5CF0\u65E5\uFF0C\u65B0\u6708\u662F\u4F11\u606F\u65E5");
+    const calendar = this.analyticsCard(root, t("\u6708\u76F8\u65E5\u5386"), t("\u6EE1\u6708\u662F\u9AD8\u5CF0\u65E5\uFF0C\u65B0\u6708\u662F\u4F11\u606F\u65E5"));
     for (let month = 0; month < 12; month += 1) {
       const section = calendar.createDiv({ cls: "sd-calendar-month" });
       section.createDiv({ cls: "sd-calendar-title", text: `${month + 1} \u6708` });
@@ -3568,7 +4695,7 @@ ${sailing}
         cell.createDiv({ cls: "sd-calendar-value", text: value > 0 ? String(value) : "\xB7" });
       }
     }
-    const poster = this.analyticsCard(root, "\u6708\u62A5\u6D77\u62A5", "\u70B9\u5DE6\u53F3\u7BAD\u5934\u5207\u6362\u6708\u4EFD");
+    const poster = this.analyticsCard(root, t("\u6708\u62A5\u6D77\u62A5"), t("\u70B9\u5DE6\u53F3\u7BAD\u5934\u5207\u6362\u6708\u4EFD"));
     const posterHead = poster.createDiv({ cls: "sd-poster-head" });
     const prev = posterHead.createEl("button", { text: "\u2039" });
     const title = posterHead.createDiv({ cls: "sd-poster-title", text: `${year} \u5E74 ${this.posterMonth + 1} \u6708` });
@@ -3588,10 +4715,10 @@ ${sailing}
     const monthWords = monthDays.reduce((sum, [, day]) => sum + day.wordsAdded, 0);
     const monthActive = monthDays.filter(([, day]) => day.contribution > 0).length;
     post.createDiv({ cls: "sd-poster-big", text: String(monthTotal) });
-    post.createDiv({ cls: "sd-poster-sub", text: "\u672C\u6708\u8D21\u732E\u5206" });
+    post.createDiv({ cls: "sd-poster-sub", text: t("\u672C\u6708\u8D21\u732E\u5206") });
     const stats = post.createDiv({ cls: "sd-poster-stats" });
-    stats.createSpan({ text: `\u6D3B\u8DC3 ${monthActive} \u5929` });
-    stats.createSpan({ text: `\u65B0\u589E ${monthWords} \u5B57` });
+    stats.createSpan({ text: tf("\u6D3B\u8DC3 {n} \u5929", { n: monthActive }) });
+    stats.createSpan({ text: tf("\u65B0\u589E {n} \u5B57", { n: monthWords }) });
     const grid = post.createDiv({ cls: "sd-poster-grid" });
     for (let day = 1; day <= new Date(year, this.posterMonth + 1, 0).getDate(); day += 1) {
       const value = this.plugin.store.getDay(`${prefix}-${String(day).padStart(2, "0")}`).contribution;
@@ -3600,7 +4727,7 @@ ${sailing}
         `background:var(--interactive-accent);opacity:${value > 0 ? 0.2 + Math.min(0.8, value / 12) : 0.06}`
       );
     }
-    poster.createEl("button", { cls: "sd-poster-export", text: "\u5BFC\u51FA PNG" }).onclick = () => void this.exportPoster(title.textContent, monthTotal, monthWords, monthActive);
+    poster.createEl("button", { cls: "sd-poster-export", text: t("\u5BFC\u51FA PNG") }).onclick = () => void this.exportPoster(title.textContent, monthTotal, monthWords, monthActive);
   }
   async exportPoster(title, total, words, active) {
     const canvas = document.createElement("canvas");
@@ -3628,13 +4755,13 @@ ${sailing}
   renderReview(root) {
     const card = root.createDiv({ cls: "sd-card sd-text-view", attr: { id: "sd-review-card" } });
     const head = card.createDiv({ cls: "sd-card-head" });
-    head.createDiv({ cls: "sd-card-title", text: "\u77E5\u8BC6\u590D\u76D8 \xB7 \u672C\u5468" });
+    head.createDiv({ cls: "sd-card-title", text: t("\u77E5\u8BC6\u590D\u76D8 \xB7 \u672C\u5468") });
     const markdown = buildWeeklyReview(this.plugin.store, /* @__PURE__ */ new Date());
-    head.createEl("button", { text: "\u590D\u5236 Markdown" }).onclick = () => {
-      void navigator.clipboard.writeText(markdown).then(() => new import_obsidian11.Notice("\u5468\u590D\u76D8\u5DF2\u590D\u5236"));
+    head.createEl("button", { text: t("\u590D\u5236 Markdown") }).onclick = () => {
+      void navigator.clipboard.writeText(markdown).then(() => new import_obsidian13.Notice(t("\u5468\u590D\u76D8\u5DF2\u590D\u5236")));
     };
     const preview = card.createDiv({ cls: "sd-review-preview" });
-    void import_obsidian11.MarkdownRenderer.render(this.plugin.app, markdown, preview, "", this);
+    void import_obsidian13.MarkdownRenderer.render(this.plugin.app, markdown, preview, "", this);
   }
   bannerSvg() {
     const style = this.plugin.store.settings.artStyle;
@@ -3707,7 +4834,7 @@ ${celestial}
     const state = this.plugin.pomodoro.state();
     const minutes = String(Math.floor(state.remaining / 60)).padStart(2, "0");
     const seconds = String(state.remaining % 60).padStart(2, "0");
-    const mode = state.mode === "focus" ? "\u756A\u8304" : state.mode === "short" ? "\u77ED\u4F11" : "\u957F\u4F11";
+    const mode = state.mode === "focus" ? t("\u756A\u8304") : state.mode === "short" ? t("\u77ED\u4F11") : t("\u957F\u4F11");
     button.textContent = `${state.running ? "\u23F8" : "\u25B6"} ${mode} ${minutes}:${seconds}`;
   }
   cycleArtStyle() {
@@ -3718,8 +4845,9 @@ ${celestial}
     this.render();
   }
   metricLabel() {
-    var _a2, _b;
-    return (_b = (_a2 = METRICS.find((metric) => metric.key === this.metric)) == null ? void 0 : _a2.label) != null ? _b : this.metric;
+    var _a2;
+    const label = (_a2 = METRICS.find((metric) => metric.key === this.metric)) == null ? void 0 : _a2.label;
+    return label ? t(label) : this.metric;
   }
 };
 function startOfWeekFor(date, weekStart) {
@@ -3731,21 +4859,22 @@ function startOfWeekFor(date, weekStart) {
 }
 
 // src/views/memo-view.ts
-var import_obsidian12 = require("obsidian");
+var import_obsidian14 = require("obsidian");
 var MEMO_VIEW_TYPE = "sediment-memo";
-var MemoView = class extends import_obsidian12.ItemView {
+var MemoView = class extends import_obsidian14.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
     this.tab = "all";
     this.filter = "";
     this.walkId = null;
+    this.showArchived = false;
   }
   getViewType() {
     return MEMO_VIEW_TYPE;
   }
   getDisplayText() {
-    return "\u901F\u8BB0";
+    return t("\u901F\u8BB0");
   }
   getIcon() {
     return "sticky-note";
@@ -3775,11 +4904,11 @@ var MemoView = class extends import_obsidian12.ItemView {
     root.addClass("kp-memo-view");
     const tabs = root.createDiv({ cls: "sd-memo-tabs" });
     const options = [
-      ["all", "\u5168\u90E8"],
-      ["review", "\u56DE\u987E"],
-      ["walk", "\u6F2B\u6B65"],
-      ["tags", "\u6807\u7B7E"],
-      ["knowledge", "\u6C89\u6DC0"]
+      ["all", t("\u5168\u90E8")],
+      ["review", t("\u56DE\u987E")],
+      ["walk", t("\u6F2B\u6B65")],
+      ["tags", t("\u6807\u7B7E")],
+      ["knowledge", t("\u6C89\u6DC0")]
     ];
     for (const [key, label] of options) {
       const button = tabs.createEl("button", {
@@ -3800,11 +4929,11 @@ var MemoView = class extends import_obsidian12.ItemView {
   renderAll(root) {
     const form = root.createDiv({ cls: "kp-memo-form" });
     const area = form.createEl("textarea", { cls: "kp-memo-input" });
-    area.placeholder = "\u60F3\u5230\u4EC0\u4E48\uFF0C\u968F\u624B\u8BB0\u4E0B\u2026\uFF08\u53EF\u7C98\u8D34\u56FE\u7247\uFF09";
+    area.placeholder = t("\u60F3\u5230\u4EC0\u4E48\uFF0C\u968F\u624B\u8BB0\u4E0B\u2026\uFF08\u53EF\u7C98\u8D34\u56FE\u7247\uFF09");
     area.rows = 3;
     const row = form.createDiv({ cls: "kp-memo-row" });
-    const tagInput = row.createEl("input", { type: "text", placeholder: "\u6807\u7B7E\uFF0C\u7A7A\u683C\u5206\u9694" });
-    const submit = row.createEl("button", { cls: "mod-cta", text: "\u8BB0\u4E00\u6761" });
+    const tagInput = row.createEl("input", { type: "text", placeholder: t("\u6807\u7B7E\uFF0C\u7A7A\u683C\u5206\u9694") });
+    const submit = row.createEl("button", { cls: "mod-cta", text: t("\u8BB0\u4E00\u6761") });
     area.addEventListener("paste", (event) => {
       var _a2;
       const items = (_a2 = event.clipboardData) == null ? void 0 : _a2.items;
@@ -3838,11 +4967,19 @@ var MemoView = class extends import_obsidian12.ItemView {
     const filterRow = root.createDiv({ cls: "kp-memo-filter" });
     const filterInput = filterRow.createEl("input", {
       type: "text",
-      placeholder: "\u641C\u7D22\u901F\u8BB0 / \u8F93\u5165 #\u6807\u7B7E \u7B5B\u9009"
+      placeholder: t("\u641C\u7D22\u901F\u8BB0 / \u8F93\u5165 #\u6807\u7B7E \u7B5B\u9009")
     });
     filterInput.value = this.filter;
     filterInput.addEventListener("input", () => {
       this.filter = filterInput.value.trim().toLowerCase();
+      this.renderList(root);
+    });
+    const archiveLabel = filterRow.createEl("label", { cls: "sd-archive-toggle" });
+    const archiveBox = archiveLabel.createEl("input", { type: "checkbox" });
+    archiveBox.checked = this.showArchived;
+    archiveLabel.createSpan({ text: t("\u542B\u5F52\u6863") });
+    archiveBox.addEventListener("change", () => {
+      this.showArchived = archiveBox.checked;
       this.renderList(root);
     });
     this.renderList(root);
@@ -3854,11 +4991,11 @@ var MemoView = class extends import_obsidian12.ItemView {
     const file = this.plugin.app.workspace.getActiveFile();
     if (!file) return;
     const card = root.createDiv({ cls: "sd-card sd-context-card" });
-    card.createDiv({ cls: "sd-card-title", text: `\u4E0E\u300A${file.basename}\u300B\u76F8\u5173` });
+    card.createDiv({ cls: "sd-card-title", text: tf("\u4E0E\u300A{name}\u300B\u76F8\u5173", { name: file.basename }) });
     const relatedMemos = this.plugin.store.data.memos.filter((memo) => memo.text.includes(file.basename) || memo.text.includes(file.path)).slice(0, 5);
     const relatedLogs = this.plugin.store.data.workLogs.filter((log) => log.files.some((item) => item === file.path || item.endsWith(`/${file.basename}`))).slice(0, 5);
     if (relatedMemos.length === 0 && relatedLogs.length === 0) {
-      card.createDiv({ cls: "kp-empty", text: "\u8FD9\u7BC7\u7B14\u8BB0\u8FD8\u6CA1\u6709\u76F8\u5173\u7684\u901F\u8BB0\u6216\u5DE5\u4F5C\u65E5\u5FD7\u3002" });
+      card.createDiv({ cls: "kp-empty", text: t("\u8FD9\u7BC7\u7B14\u8BB0\u8FD8\u6CA1\u6709\u76F8\u5173\u7684\u901F\u8BB0\u6216\u5DE5\u4F5C\u65E5\u5FD7\u3002") });
       return;
     }
     const list = card.createDiv({ cls: "sd-knowledge-list" });
@@ -3889,13 +5026,14 @@ var MemoView = class extends import_obsidian12.ItemView {
       area.value += ` ![[${name}]]`;
       area.focus();
     }
-    new import_obsidian12.Notice("\u56FE\u7247\u5DF2\u63D2\u5165\u901F\u8BB0");
+    new import_obsidian14.Notice(t("\u56FE\u7247\u5DF2\u63D2\u5165\u901F\u8BB0"));
   }
   renderList(root) {
     var _a2;
     (_a2 = root.querySelector(".kp-memo-list")) == null ? void 0 : _a2.remove();
     const list = root.createDiv({ cls: "kp-memo-list" });
     let memos = this.plugin.store.data.memos.slice();
+    if (!this.showArchived) memos = memos.filter((memo) => !memo.archived);
     if (this.filter) {
       const term = this.filter.replace(/^#/, "");
       memos = memos.filter(
@@ -3903,7 +5041,7 @@ var MemoView = class extends import_obsidian12.ItemView {
       );
     }
     if (memos.length === 0) {
-      list.createDiv({ cls: "kp-empty", text: "\u8FD8\u6CA1\u6709\u901F\u8BB0\uFF0C\u6216\u6CA1\u6709\u5339\u914D\u7684\u901F\u8BB0\u3002" });
+      list.createDiv({ cls: "kp-empty", text: t("\u8FD8\u6CA1\u6709\u901F\u8BB0\uFF0C\u6216\u6CA1\u6709\u5339\u914D\u7684\u901F\u8BB0\u3002") });
       return;
     }
     let currentDate = "";
@@ -3919,8 +5057,9 @@ var MemoView = class extends import_obsidian12.ItemView {
     var _a2;
     const card = document.createElement("div");
     card.className = "kp-memo-card";
-    card.createDiv({ cls: "kp-memo-time", text: memo.time });
-    card.createDiv({ cls: "kp-memo-text", text: memo.text });
+    if (memo.archived) card.addClass("is-archived");
+    card.createDiv({ cls: "kp-memo-time", text: memo.archived ? `${memo.time} \xB7 ${t("\u5DF2\u5F52\u6863")}` : memo.time });
+    const textEl = card.createDiv({ cls: "kp-memo-text", text: memo.text });
     if (memo.tags.length > 0) {
       const tags = card.createDiv({ cls: "kp-memo-tags" });
       for (const tag of memo.tags) {
@@ -3935,20 +5074,58 @@ var MemoView = class extends import_obsidian12.ItemView {
     if (memo.sourcePath) {
       const source = card.createEl("button", {
         cls: "sd-memo-source",
-        text: `\u539F\u5F85\u529E \xB7 ${memo.sourcePath.split("/").pop()}:${(_a2 = memo.sourceLine) != null ? _a2 : 1}`
+        text: `${t("\u539F\u5F85\u529E")} \xB7 ${memo.sourcePath.split("/").pop()}:${(_a2 = memo.sourceLine) != null ? _a2 : 1}`
       });
       source.onclick = () => void this.openSource(memo.sourcePath, memo.sourceLine);
     }
     const actions = card.createDiv({ cls: "sd-memo-actions" });
-    actions.createEl("button", { text: "\u590D\u5236" }).onclick = () => {
-      void navigator.clipboard.writeText(memo.text).then(() => new import_obsidian12.Notice("\u5DF2\u590D\u5236"));
+    actions.createEl("button", { text: t("\u590D\u5236") }).onclick = () => {
+      void navigator.clipboard.writeText(memo.text).then(() => new import_obsidian14.Notice(t("\u5DF2\u590D\u5236")));
     };
-    actions.createEl("button", { text: "\u5206\u4EAB\u56FE" }).onclick = () => exportMemoCard(memo, "minimal");
-    if (!memo.tags.includes("to-agent")) {
-      actions.createEl("button", { text: "\u8F6C Agent" }).onclick = () => {
+    actions.createEl("button", { text: t("\u5206\u4EAB\u56FE") }).onclick = () => exportMemoCard(memo, "minimal");
+    actions.createEl("button", { text: t("\u7F16\u8F91") }).onclick = () => {
+      const area = document.createElement("textarea");
+      area.className = "kp-memo-edit";
+      area.value = memo.text;
+      area.rows = Math.min(8, Math.max(3, memo.text.split("\n").length + 1));
+      textEl.replaceWith(area);
+      area.focus();
+      const bar = document.createElement("div");
+      bar.className = "sd-memo-edit-bar";
+      const save = bar.createEl("button", { cls: "mod-cta", text: t("\u4FDD\u5B58") });
+      const cancel = bar.createEl("button", { text: t("\u53D6\u6D88") });
+      area.after(bar);
+      save.onclick = () => {
+        void this.plugin.memos.edit(memo.id, area.value).then((updated) => {
+          if (updated) this.render();
+          else new import_obsidian14.Notice(t("\u5185\u5BB9\u4E3A\u7A7A\uFF0C\u672A\u4FDD\u5B58"));
+        });
+      };
+      cancel.onclick = () => this.render();
+      area.addEventListener("keydown", (event) => {
+        if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+          event.preventDefault();
+          save.click();
+        } else if (event.key === "Escape") {
+          cancel.click();
+        }
+      });
+    };
+    actions.createEl("button", { text: memo.archived ? t("\u53D6\u6D88\u5F52\u6863") : t("\u5F52\u6863") }).onclick = () => {
+      this.plugin.memos.setArchived(memo.id, !memo.archived);
+      new import_obsidian14.Notice(memo.archived ? t("\u5DF2\u5F52\u6863\uFF0C\u53EF\u5728\u300C\u542B\u5F52\u6863\u300D\u4E2D\u67E5\u770B") : t("\u5DF2\u53D6\u6D88\u5F52\u6863"));
+      this.render();
+    };
+    actions.createEl("button", { cls: "sd-memo-delete", text: t("\u5220\u9664") }).onclick = () => {
+      if (!window.confirm(t("\u5220\u9664\u8FD9\u6761\u901F\u8BB0\uFF1F\u65E5\u8BB0\u4E2D\u5BF9\u5E94\u7684\u901F\u8BB0\u8BB0\u5F55\u4E5F\u4F1A\u4E00\u5E76\u79FB\u9664\u3002"))) return;
+      void this.plugin.memos.remove(memo.id).then(() => this.render());
+    };
+    if (!memo.tags.includes("to-agent") && !memo.converted) {
+      actions.createEl("button", { text: t("\u8F6C Agent") }).onclick = () => {
         memo.tags.push("to-agent");
         this.plugin.store.scheduleSave();
-        new import_obsidian12.Notice("\u5DF2\u52A0\u5165 Agent \u5F85\u529E");
+        void this.plugin.memos.syncTags(memo);
+        new import_obsidian14.Notice(t("\u5DF2\u52A0\u5165 Agent \u5F85\u529E"));
         this.render();
       };
     }
@@ -3967,14 +5144,14 @@ var MemoView = class extends import_obsidian12.ItemView {
       const card = root.createDiv({ cls: "sd-card sd-review-section" });
       card.createDiv({ cls: "sd-card-title", text: title });
       if (items.length === 0) {
-        card.createDiv({ cls: "kp-empty", text: "\u8FD9\u5929\u6CA1\u6709\u901F\u8BB0\u3002" });
+        card.createDiv({ cls: "kp-empty", text: t("\u8FD9\u5929\u6CA1\u6709\u901F\u8BB0\u3002") });
         return;
       }
       for (const memo of items.slice(0, 3)) card.appendChild(this.memoCard(memo));
     };
-    section(`\u6BCF\u65E5\u56DE\u987E \xB7 ${todayKey}`, this.pick(todays, todayKey));
-    section(`\u53BB\u5E74\u4ECA\u65E5 \xB7 ${lastYearKey}`, memos.filter((memo) => memo.date === lastYearKey));
-    section(`\u4E0A\u6708\u4ECA\u65E5 \xB7 ${lastMonthKey}`, memos.filter((memo) => memo.date === lastMonthKey));
+    section(`${t("\u6BCF\u65E5\u56DE\u987E")} \xB7 ${todayKey}`, this.pick(todays, todayKey));
+    section(`${t("\u53BB\u5E74\u4ECA\u65E5")} \xB7 ${lastYearKey}`, memos.filter((memo) => memo.date === lastYearKey));
+    section(`${t("\u4E0A\u6708\u4ECA\u65E5")} \xB7 ${lastMonthKey}`, memos.filter((memo) => memo.date === lastMonthKey));
   }
   pick(items, seed) {
     if (items.length <= 3) return items;
@@ -4003,12 +5180,12 @@ var MemoView = class extends import_obsidian12.ItemView {
     var _a2, _b;
     const memos = this.plugin.store.data.memos;
     if (memos.length === 0) {
-      root.createDiv({ cls: "kp-empty", text: "\u8FD8\u6CA1\u6709\u901F\u8BB0\u53EF\u4EE5\u6F2B\u6B65\u3002" });
+      root.createDiv({ cls: "kp-empty", text: t("\u8FD8\u6CA1\u6709\u901F\u8BB0\u53EF\u4EE5\u6F2B\u6B65\u3002") });
       return;
     }
     let current = (_a2 = memos.find((memo) => memo.id === this.walkId)) != null ? _a2 : memos[0];
     const card = root.createDiv({ cls: "sd-card sd-walk" });
-    card.createDiv({ cls: "sd-card-sub", text: `\u6F2B\u6B65 \xB7 ${current.date} ${current.time}` });
+    card.createDiv({ cls: "sd-card-sub", text: `${t("\u6F2B\u6B65")} \xB7 ${current.date} ${current.time}` });
     card.appendChild(this.memoCard(current));
     const currentTokens = new Set(this.tokens(current.text));
     const ranked = memos.filter((memo) => memo.id !== current.id).map((memo) => ({
@@ -4018,8 +5195,8 @@ var MemoView = class extends import_obsidian12.ItemView {
     const next = (_b = ranked[0]) == null ? void 0 : _b.memo;
     if (next) {
       const shared = ranked[0].score;
-      card.createDiv({ cls: "sd-card-sub", text: `\u5171\u540C\u7684\u8BCD\uFF1A${shared} \u4E2A` });
-      const button = card.createEl("button", { text: "\u7EE7\u7EED\u6F2B\u6B65 \u2192" });
+      card.createDiv({ cls: "sd-card-sub", text: tf("\u5171\u540C\u7684\u8BCD\uFF1A{n} \u4E2A", { n: shared }) });
+      const button = card.createEl("button", { text: t("\u7EE7\u7EED\u6F2B\u6B65 \u2192") });
       button.onclick = () => {
         this.walkId = next.id;
         this.render();
@@ -4045,7 +5222,7 @@ var MemoView = class extends import_obsidian12.ItemView {
       if (!compact) {
         root.createDiv({
           cls: "kp-empty",
-          text: "\u8FD8\u6CA1\u6709\u6C89\u6DC0\u3002\u8BA9\u667A\u80FD\u4F53\u8C03\u7528 add_knowledge \u6216 record_work_log \u540E\uFF0C\u7B14\u8BB0\u4F1A\u51FA\u73B0\u5728\u8FD9\u91CC\u3002"
+          text: t("\u8FD8\u6CA1\u6709\u6C89\u6DC0\u3002\u8BA9\u667A\u80FD\u4F53\u8C03\u7528 add_knowledge \u6216 record_work_log \u540E\uFF0C\u7B14\u8BB0\u4F1A\u51FA\u73B0\u5728\u8FD9\u91CC\u3002")
         });
       }
       return;
@@ -4053,10 +5230,10 @@ var MemoView = class extends import_obsidian12.ItemView {
     const knowledgeFolder = normalizeFolder(settings.knowledgeFolder);
     const groups = /* @__PURE__ */ new Map();
     for (const file of files) {
-      let category = "\u5DE5\u4F5C\u65E5\u5FD7";
+      let category = t("\u5DE5\u4F5C\u65E5\u5FD7");
       if (knowledgeFolder && file.path.startsWith(`${knowledgeFolder}/`)) {
         const parts = file.path.split("/");
-        category = parts.length > 1 ? parts[1] : "\u672A\u5206\u7C7B";
+        category = parts.length > 1 ? parts[1] : t("\u672A\u5206\u7C7B");
       }
       const group = (_a2 = groups.get(category)) != null ? _a2 : [];
       group.push(file);
@@ -4067,10 +5244,10 @@ var MemoView = class extends import_obsidian12.ItemView {
     const head = card.createDiv({ cls: "sd-card-head" });
     head.createDiv({
       cls: "sd-card-title",
-      text: `\u77E5\u8BC6\u6C89\u6DC0 \xB7 ${files.length}`
+      text: `${t("\u77E5\u8BC6\u6C89\u6DC0")} \xB7 ${files.length}`
     });
     if (compact) {
-      const more = head.createEl("button", { text: "\u5168\u90E8" });
+      const more = head.createEl("button", { text: t("\u5168\u90E8") });
       more.onclick = () => {
         this.tab = "knowledge";
         this.render();
@@ -4110,9 +5287,9 @@ var MemoView = class extends import_obsidian12.ItemView {
       for (const tag of memo.tags) counts.set(tag, ((_a2 = counts.get(tag)) != null ? _a2 : 0) + 1);
     }
     const card = root.createDiv({ cls: "sd-card sd-tag-tree" });
-    card.createDiv({ cls: "sd-card-title", text: `\u6807\u7B7E \xB7 ${counts.size} \u4E2A` });
+    card.createDiv({ cls: "sd-card-title", text: `${t("\u6807\u7B7E")} \xB7 ${tf("{n} \u4E2A", { n: counts.size })}` });
     if (counts.size === 0) {
-      card.createDiv({ cls: "kp-empty", text: "\u8FD8\u6CA1\u6709\u6807\u7B7E\u3002" });
+      card.createDiv({ cls: "kp-empty", text: t("\u8FD8\u6CA1\u6709\u6807\u7B7E\u3002") });
       return;
     }
     for (const [tag, count] of [...counts.entries()].sort((a, b) => b[1] - a[1])) {
@@ -4127,7 +5304,7 @@ var MemoView = class extends import_obsidian12.ItemView {
 };
 
 // src/main.ts
-var SedimentPlugin = class extends import_obsidian13.Plugin {
+var SedimentPlugin = class extends import_obsidian15.Plugin {
   constructor() {
     super(...arguments);
     this.serverRestartTimer = null;
@@ -4136,10 +5313,11 @@ var SedimentPlugin = class extends import_obsidian13.Plugin {
   async onload() {
     this.store = new Store(this);
     await this.store.load();
+    setLocale(resolveLocale(this.store.settings.language));
     if (this.store.settings.lastSeenVersion !== this.manifest.version) {
       this.store.settings.lastSeenVersion = this.manifest.version;
       await this.store.save();
-      new import_obsidian13.Notice(`Sediment \u5DF2\u66F4\u65B0\u5230 v${this.manifest.version}\uFF0C\u53EF\u5728\u300C\u67E5\u770B\u66F4\u65B0\u8BB0\u5F55\u300D\u4E2D\u4E86\u89E3\u53D8\u5316`);
+      new import_obsidian15.Notice(tf("Sediment \u5DF2\u66F4\u65B0\u5230 v{version}\uFF0C\u53EF\u5728\u300C\u67E5\u770B\u66F4\u65B0\u8BB0\u5F55\u300D\u4E2D\u4E86\u89E3\u53D8\u5316", { version: this.manifest.version }));
     }
     if (!this.store.settings.agentServerToken) {
       this.store.settings.agentServerToken = generateToken();
@@ -4188,52 +5366,52 @@ var SedimentPlugin = class extends import_obsidian13.Plugin {
       tasks: this.tasks,
       plugin: this
     };
-    this.addRibbonIcon("activity", "Sediment\uFF1A\u770B\u677F", () => {
+    this.addRibbonIcon("activity", t("Sediment\uFF1A\u770B\u677F"), () => {
       void this.activateView(DASHBOARD_VIEW_TYPE);
     });
-    this.addRibbonIcon("sticky-note", "Sediment\uFF1A\u901F\u8BB0", () => {
+    this.addRibbonIcon("sticky-note", t("Sediment\uFF1A\u901F\u8BB0"), () => {
       void this.activateView(MEMO_VIEW_TYPE);
     });
     this.addCommand({
       id: "open-dashboard",
-      name: "\u6253\u5F00\u77E5\u8BC6\u8109\u51B2\u770B\u677F",
+      name: t("\u6253\u5F00\u77E5\u8BC6\u8109\u51B2\u770B\u677F"),
       callback: () => void this.activateView(DASHBOARD_VIEW_TYPE)
     });
     this.addCommand({
       id: "open-memos",
-      name: "\u6253\u5F00\u901F\u8BB0\u9762\u677F",
+      name: t("\u6253\u5F00\u901F\u8BB0\u9762\u677F"),
       callback: () => void this.activateView(MEMO_VIEW_TYPE)
     });
     this.addCommand({
       id: "quick-memo",
-      name: "\u8BB0\u4E00\u6761\u901F\u8BB0",
+      name: t("\u8BB0\u4E00\u6761\u901F\u8BB0"),
       callback: () => new QuickMemoModal(this.app, (text, tags) => void this.memos.add(text, tags)).open()
     });
     this.addCommand({
       id: "weekly-review",
-      name: "\u751F\u6210\u672C\u5468\u5DE5\u4F5C\u590D\u76D8",
+      name: t("\u751F\u6210\u672C\u5468\u5DE5\u4F5C\u590D\u76D8"),
       callback: () => void this.generateReview()
     });
     this.addCommand({
       id: "pomodoro-toggle",
-      name: "\u5F00\u59CB / \u6682\u505C\u756A\u8304\u949F",
+      name: t("\u5F00\u59CB / \u6682\u505C\u756A\u8304\u949F"),
       callback: () => this.pomodoro.toggle()
     });
     this.addCommand({
       id: "pomodoro-skip",
-      name: "\u8DF3\u8FC7\u5F53\u524D\u756A\u8304 / \u4F11\u606F",
+      name: t("\u8DF3\u8FC7\u5F53\u524D\u756A\u8304 / \u4F11\u606F"),
       callback: () => this.pomodoro.skip()
     });
     this.addCommand({
       id: "snapshot-open-tasks",
-      name: "\u8BB0\u5F55\u4ECA\u65E5\u9057\u7559\u5F85\u529E\u5230\u65E5\u8BB0",
+      name: t("\u8BB0\u5F55\u4ECA\u65E5\u9057\u7559\u5F85\u529E\u5230\u65E5\u8BB0"),
       callback: () => void this.tasks.snapshot().then((count) => {
-        new import_obsidian13.Notice(count > 0 ? `\u5DF2\u8BB0\u5F55 ${count} \u6761\u9057\u7559\u5F85\u529E` : "\u6CA1\u6709\u9057\u7559\u5F85\u529E");
+        new import_obsidian15.Notice(count > 0 ? tf("\u5DF2\u8BB0\u5F55 {n} \u6761\u9057\u7559\u5F85\u529E", { n: count }) : t("\u6CA1\u6709\u9057\u7559\u5F85\u529E"));
       })
     });
     this.addCommand({
       id: "export-today-report",
-      name: "\u5BFC\u51FA\u4ECA\u65E5\u6218\u62A5\u56FE\u7247",
+      name: t("\u5BFC\u51FA\u4ECA\u65E5\u6218\u62A5\u56FE\u7247"),
       callback: () => {
         const today = dateKey(/* @__PURE__ */ new Date());
         const day = this.store.getDay(today);
@@ -4250,19 +5428,44 @@ var SedimentPlugin = class extends import_obsidian13.Plugin {
     });
     this.addCommand({
       id: "backup-data",
-      name: "\u5907\u4EFD\u7EDF\u8BA1\u6570\u636E\u5230\u5E93\u5185",
+      name: t("\u5907\u4EFD\u7EDF\u8BA1\u6570\u636E\u5230\u5E93\u5185"),
       callback: () => void this.store.backupData(true).then((count) => {
-        new import_obsidian13.Notice(count > 0 ? "\u6570\u636E\u5DF2\u5907\u4EFD\u5230\u5E93\u5185" : "\u5907\u4EFD\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u8BBE\u7F6E\u4E2D\u7684\u5907\u4EFD\u76EE\u5F55");
+        new import_obsidian15.Notice(count > 0 ? t("\u6570\u636E\u5DF2\u5907\u4EFD\u5230\u5E93\u5185") : t("\u5907\u4EFD\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u8BBE\u7F6E\u4E2D\u7684\u5907\u4EFD\u76EE\u5F55"));
       })
     });
     this.addCommand({
+      id: "rebuild-history",
+      name: t("\u91CD\u5EFA\u5386\u53F2\u7EDF\u8BA1\uFF08\u6309\u7B14\u8BB0\u65E5\u671F\u8865\u9F50\u7A7A\u65E5\u671F\uFF09"),
+      callback: () => void rebuildHistory(this.store, this.app.vault).then((result) => {
+        this.refreshViews();
+        new import_obsidian15.Notice(
+          result.filledDays > 0 ? tf("\u5DF2\u626B\u63CF {scanned} \u7BC7\u7B14\u8BB0\uFF0C\u8865\u9F50 {days} \u5929\uFF08{notes} \u7BC7 / {words} \u8BCD\uFF09", {
+            scanned: result.scanned,
+            days: result.filledDays,
+            notes: result.notes,
+            words: result.words
+          }) : tf("\u626B\u63CF\u4E86 {scanned} \u7BC7\u7B14\u8BB0\uFF0C\u6CA1\u6709\u9700\u8981\u8865\u9F50\u7684\u7A7A\u65E5\u671F", { scanned: result.scanned })
+        );
+      })
+    });
+    this.addCommand({
+      id: "note-health",
+      name: t("\u626B\u63CF\u7B14\u8BB0\u5065\u5EB7\u5EA6\uFF08\u5B64\u513F/\u65AD\u94FE/\u4E45\u672A\u66F4\u65B0\uFF09"),
+      callback: () => new HealthModal(this.app, this).open()
+    });
+    this.addCommand({
+      id: "export-data",
+      name: t("\u5BFC\u51FA\u6570\u636E\uFF08CSV/JSON\uFF0C\u9ED8\u8BA4\u8131\u654F\uFF09"),
+      callback: () => new ExportModal(this.app, this).open()
+    });
+    this.addCommand({
       id: "show-changelog",
-      name: "\u67E5\u770B\u66F4\u65B0\u8BB0\u5F55",
+      name: t("\u67E5\u770B\u66F4\u65B0\u8BB0\u5F55"),
       callback: () => new ChangelogModal(this.app).open()
     });
     this.addCommand({
       id: "cycle-art-style",
-      name: "\u5207\u6362\u770B\u677F\u9876\u90E8\u548C\u5E95\u90E8\u7684\u753B\u98CE",
+      name: t("\u5207\u6362\u770B\u677F\u9876\u90E8\u548C\u5E95\u90E8\u7684\u753B\u98CE"),
       callback: () => {
         const styles = ["lake", "ink", "city"];
         const current = this.store.settings.artStyle;
@@ -4362,7 +5565,7 @@ var SedimentPlugin = class extends import_obsidian13.Plugin {
     var _a2;
     let parent = leaf.parent;
     while (parent) {
-      if (parent instanceof import_obsidian13.WorkspaceSidedock) return true;
+      if (parent instanceof import_obsidian15.WorkspaceSidedock) return true;
       parent = (_a2 = parent.parent) != null ? _a2 : null;
     }
     return false;
@@ -4376,7 +5579,7 @@ var SedimentPlugin = class extends import_obsidian13.Plugin {
     const path = folder ? `${folder}/${name}` : name;
     const existing = this.app.vault.getAbstractFileByPath(path);
     let file;
-    if (existing instanceof import_obsidian13.TFile) {
+    if (existing instanceof import_obsidian15.TFile) {
       const previous = await this.app.vault.read(existing);
       await this.app.vault.modify(existing, `${previous.trimEnd()}
 
@@ -4388,7 +5591,7 @@ ${markdown}`);
       file = await this.app.vault.create(path, markdown);
     }
     await this.app.workspace.getLeaf(true).openFile(file);
-    new import_obsidian13.Notice("\u5468\u590D\u76D8\u5DF2\u751F\u6210\u5E76\u6253\u5F00");
+    new import_obsidian15.Notice(t("\u5468\u590D\u76D8\u5DF2\u751F\u6210\u5E76\u6253\u5F00"));
   }
 };
 var main_default = SedimentPlugin;

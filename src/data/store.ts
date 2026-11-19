@@ -5,6 +5,7 @@ import {
   DEFAULT_DATA,
   DEFAULT_SETTINGS,
   type DayRecord,
+  type FocusSessionRecord,
   type MemoRecord,
   type PulseData,
   type PulseSettings,
@@ -33,8 +34,16 @@ export class Store {
       workLogs: loaded.workLogs ?? [],
       toolCalls: loaded.toolCalls ?? [],
       snapshots: loaded.snapshots ?? [],
+      editSessions: loaded.editSessions ?? {},
+      focusSessions: loaded.focusSessions ?? [],
+      pomodoro: loaded.pomodoro ?? null,
       settings: { ...DEFAULT_SETTINGS, ...(loaded.settings ?? {}) },
     };
+    // 编辑会话去重表只保留最近两天，避免无限增长。
+    const keepSince = dateKey(new Date(Date.now() - 86400000));
+    for (const key of Object.keys(this.data.editSessions)) {
+      if (key < keepSince) delete this.data.editSessions[key];
+    }
     for (const key of Object.keys(this.data.days)) {
       const day = { ...createEmptyDay(), ...this.data.days[key] };
       day.hourlyWords = Array.from({ length: 24 }, (_, hour) => Number(day.hourlyWords?.[hour]) || 0);
@@ -42,9 +51,17 @@ export class Store {
       day.activeMinutes = Math.max(0, Math.round(day.activeMinutes));
       day.capturedWords = Math.max(0, Math.round(day.capturedWords));
       day.aiWordsAdded = Math.max(0, Math.round(day.aiWordsAdded));
-      day.contribution = computeContribution(day);
+      day.contribution = computeContribution(day, this.data.settings);
       this.data.days[key] = day;
     }
+  }
+
+  /** 权重或封顶变更后，按当前设置全量重算历史贡献分。 */
+  recomputeContributions(): void {
+    for (const key of Object.keys(this.data.days)) {
+      this.data.days[key].contribution = computeContribution(this.data.days[key], this.settings);
+    }
+    this.scheduleSave();
   }
 
   async save(): Promise<void> {
@@ -122,7 +139,7 @@ export class Store {
     day.notesCreated = Math.max(0, Math.round(day.notesCreated));
     day.tasksCompleted = Math.max(0, Math.round(day.tasksCompleted));
     day.focusMinutes = Math.max(0, Math.round(day.focusMinutes));
-    day.contribution = computeContribution(day);
+    day.contribution = computeContribution(day, this.settings);
     this.scheduleSave();
     return day;
   }
@@ -147,5 +164,11 @@ export class Store {
     this.data.snapshots.unshift(record);
     if (this.data.snapshots.length > 200) this.data.snapshots.length = 200;
     this.scheduleSave(2000);
+  }
+
+  addFocusSession(record: FocusSessionRecord): void {
+    this.data.focusSessions.unshift(record);
+    if (this.data.focusSessions.length > 500) this.data.focusSessions.length = 500;
+    this.scheduleSave();
   }
 }

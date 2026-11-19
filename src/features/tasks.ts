@@ -30,7 +30,7 @@ export class TaskManager {
   async list(scope: "today" | "overdue" | "all" | "agent" = "all"): Promise<TaskItem[]> {
     if (scope === "agent") {
       return this.plugin.store.data.memos
-        .filter((memo) => memo.tags.includes("to-agent") && !memo.converted)
+        .filter((memo) => memo.tags.includes("to-agent") && !memo.converted && !memo.archived)
         .map((memo) => ({
           path: "",
           line: 0,

@@ -59,6 +59,8 @@ export interface MemoRecord {
   text: string;
   tags: string[];
   converted: boolean;
+  /** 归档后不在默认列表与积压统计中出现，日记 Callout 保留作为历史 */
+  archived?: boolean;
   /** 任务完成时关联的产出笔记路径 */
   resultPath?: string;
   /** 由原生待办转来时，记录原始复选框所在的笔记与行号 */
@@ -82,6 +84,8 @@ export interface WorkLogRecord {
 }
 
 export interface PulseSettings {
+  /** 界面语言：auto 跟随 Obsidian，zh / en 强制 */
+  language: "auto" | "zh" | "en";
   /** 速记写入的目录，留空表示库根目录 */
   dailyNoteFolder: string;
   /** 日记文件名格式，支持 YYYY / MM / DD */
@@ -130,12 +134,45 @@ export interface PulseSettings {
   artStyle: "lake" | "ink" | "city";
   /** 每天写作目标字数，0 表示关闭 */
   dailyWordGoal: number;
+  /** 单日贡献分封顶，0 表示不封顶 */
+  contributionDailyCap: number;
+  /** 单次写入计入统计的词数上限（防大段粘贴刷分），0 表示不封顶 */
+  wordsPerWriteCap: number;
+  /** 贡献公式权重：新建笔记每篇得分 */
+  weightNotesCreated: number;
+  /** 贡献公式权重：编辑会话每次得分 */
+  weightEdits: number;
+  /** 贡献公式权重：完成任务每条得分 */
+  weightTasks: number;
+  /** 贡献公式权重：每多少新增词得 1 分 */
+  wordsPerPoint: number;
+  /** 贡献公式权重：每多少专注分钟得 1 分 */
+  focusMinutesPerPoint: number;
   /** 是否开启 127.0.0.1 上的 Agent HTTP API */
   agentServerEnabled: boolean;
   /** Agent HTTP API 端口 */
   agentServerPort: number;
   /** Agent HTTP API / MCP 访问令牌 */
   agentServerToken: string;
+}
+
+/** 一次专注会话记录（番茄钟完成时写入，实测口径）。 */
+export interface FocusSessionRecord {
+  date: string; // YYYY-MM-DD
+  time: string; // HH:mm 完成时刻
+  mode: "focus" | "short" | "long";
+  minutes: number;
+  /** measured = 番茄钟实测；estimated = 估算 */
+  source: "measured" | "estimated";
+}
+
+/** 番茄钟持久化状态：重启后按 savedAt 推算剩余时间。 */
+export interface PersistedPomodoro {
+  mode: "focus" | "short" | "long";
+  remaining: number;
+  running: boolean;
+  completed: number;
+  savedAt: number;
 }
 
 export interface PulseData {
@@ -145,6 +182,12 @@ export interface PulseData {
   workLogs: WorkLogRecord[];
   toolCalls: ToolCallRecord[];
   snapshots: SnapshotRecord[];
+  /** 已计过编辑会话的 日期→文件路径 列表，重启后不重复计分 */
+  editSessions: Record<string, string[]>;
+  /** 专注会话日志（实测），最多保留 500 条 */
+  focusSessions: FocusSessionRecord[];
+  /** 番茄钟状态，退出/重启不丢 */
+  pomodoro: PersistedPomodoro | null;
   settings: PulseSettings;
 }
 
@@ -164,6 +207,7 @@ export const METRICS: MetricDef[] = [
 ];
 
 export const DEFAULT_SETTINGS: PulseSettings = {
+  language: "auto",
   dailyNoteFolder: "daily",
   dailyNoteFormat: "YYYY-MM-DD",
   memoHeading: "## 速记",
@@ -190,6 +234,13 @@ export const DEFAULT_SETTINGS: PulseSettings = {
   backupKeep: 10,
   artStyle: "lake",
   dailyWordGoal: 1000,
+  contributionDailyCap: 120,
+  wordsPerWriteCap: 4000,
+  weightNotesCreated: 2,
+  weightEdits: 1,
+  weightTasks: 1,
+  wordsPerPoint: 100,
+  focusMinutesPerPoint: 25,
   agentServerEnabled: false,
   agentServerPort: 27123,
   agentServerToken: "",
@@ -213,18 +264,21 @@ export function createEmptyDay(): DayRecord {
 }
 
 /**
- * 透明公开的贡献公式：
- * 新建笔记×2 + 编辑会话 + 完成任务 + 新增词数/100 + 专注分钟/25
- * 分项之和严格等于总分。
+ * 透明公开的贡献公式（权重与封顶可在设置中调整）：
+ * 新建笔记×wN + 编辑会话×wE + 完成任务×wT + floor(新增词数/每分词数) + floor(专注分钟/每分时长)，
+ * 再按单日封顶截断。默认权重下分项之和严格等于总分。
  */
-export function computeContribution(d: DayRecord): number {
-  return (
-    d.notesCreated * 2 +
-    d.edits +
-    d.tasksCompleted +
-    Math.floor(d.wordsAdded / 100) +
-    Math.floor(d.focusMinutes / 25)
-  );
+export function computeContribution(d: DayRecord, settings: PulseSettings = DEFAULT_SETTINGS): number {
+  const wordsPer = Math.max(1, settings.wordsPerPoint || 100);
+  const focusPer = Math.max(1, settings.focusMinutesPerPoint || 25);
+  const raw =
+    d.notesCreated * (settings.weightNotesCreated ?? 2) +
+    d.edits * (settings.weightEdits ?? 1) +
+    d.tasksCompleted * (settings.weightTasks ?? 1) +
+    Math.floor(d.wordsAdded / wordsPer) +
+    Math.floor(d.focusMinutes / focusPer);
+  const cap = settings.contributionDailyCap ?? 0;
+  return cap > 0 ? Math.min(raw, cap) : raw;
 }
 
 export const DEFAULT_DATA: PulseData = {
@@ -234,5 +288,8 @@ export const DEFAULT_DATA: PulseData = {
   workLogs: [],
   toolCalls: [],
   snapshots: [],
+  editSessions: {},
+  focusSessions: [],
+  pomodoro: null,
   settings: DEFAULT_SETTINGS,
 };

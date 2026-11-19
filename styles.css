@@ -1943,3 +1943,155 @@ settings:
   height: 4px;
   min-height: 4px;
 }
+
+/* ── P1：速记编辑 / 归档 / 删除 ───────────────────────── */
+.kp-memo-edit {
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-normal);
+  background: var(--background-primary);
+  border: 1px solid var(--interactive-accent);
+  border-radius: 6px;
+  resize: vertical;
+}
+
+.sd-memo-edit-bar {
+  display: flex;
+  gap: 6px;
+  margin-top: 5px;
+}
+
+.sd-memo-edit-bar button {
+  padding: 2px 10px;
+  font-size: 11px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.sd-memo-actions .sd-memo-delete:hover {
+  color: var(--text-on-accent);
+  background: var(--background-modifier-error);
+  border-color: var(--background-modifier-error);
+}
+
+.kp-memo-card.is-archived {
+  opacity: 0.6;
+}
+
+.kp-memo-card.is-archived .kp-memo-text {
+  text-decoration: line-through;
+  text-decoration-color: var(--text-faint);
+}
+
+.sd-archive-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* ── P1：笔记健康度 ─────────────────────────────────── */
+.sd-health-summary {
+  margin: 8px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.sd-health-list {
+  max-height: 50vh;
+  overflow-y: auto;
+  margin: 8px 0;
+}
+
+.sd-health-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 4px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.sd-health-item input[type="checkbox"] {
+  margin-top: 3px;
+}
+
+.sd-health-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.sd-health-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sd-health-badge {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  font-size: 10px;
+  border-radius: 6px;
+  color: var(--text-on-accent);
+}
+
+.sd-health-badge.is-broken-link {
+  background: var(--background-modifier-error);
+}
+
+.sd-health-badge.is-orphan {
+  background: var(--interactive-accent);
+}
+
+.sd-health-badge.is-stale {
+  background: var(--text-faint);
+}
+
+.sd-health-detail {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.sd-health-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+/* ===== P2：每页主色 + 材质 + 热力图键盘焦点 ===== */
+/* 按页签覆盖局部 --interactive-accent，看板内所有图表/圆环/按钮自动继承各自的主色。 */
+.sd-dashboard[data-tab="today"] {
+  --interactive-accent: #d98a3d;
+  --sd-accent: #d98a3d;
+}
+
+.sd-dashboard[data-tab="insights"] {
+  --interactive-accent: #3f9d8f;
+  --sd-accent: #3f9d8f;
+}
+
+.sd-dashboard[data-tab="agent"] {
+  --interactive-accent: #8a63d2;
+  --sd-accent: #8a63d2;
+}
+
+/* 卡片材质：主色描边顶缘 + 轻微磨砂与投影，随页签主色变化。 */
+.sd-dashboard .sd-card {
+  border-top: 2px solid color-mix(in srgb, var(--sd-accent, var(--interactive-accent)) 55%, transparent);
+  background: color-mix(in srgb, var(--background-primary) 92%, transparent);
+  backdrop-filter: blur(4px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.sd-heatmap .kp-cell:focus-visible {
+  outline: 2px solid var(--text-normal);
+  outline-offset: 1px;
+  z-index: 1;
+}

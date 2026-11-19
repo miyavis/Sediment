@@ -8,7 +8,10 @@ import { PomodoroManager } from "./features/pomodoro";
 import { TaskManager } from "./features/tasks";
 import { exportTodayReport, heatmapSvg, parseEmbedOptions, todayLine } from "./features/embed";
 import { buildWeeklyReview } from "./features/review";
+import { rebuildHistory } from "./features/rebuild";
 import { QuickMemoModal } from "./ui/quick-memo-modal";
+import { HealthModal } from "./ui/health-modal";
+import { ExportModal } from "./ui/export-modal";
 import { PulseSettingTab } from "./ui/settings-tab";
 import { ChangelogModal } from "./ui/changelog-modal";
 import { normalizeFolder, ensureFolder } from "./utils/vault";
@@ -16,6 +19,7 @@ import { addDays, dateKey, parseKey, startOfWeek } from "./utils/dates";
 import { DashboardView, DASHBOARD_VIEW_TYPE } from "./views/dashboard-view";
 import { MemoView, MEMO_VIEW_TYPE } from "./views/memo-view";
 import { Tracker } from "./tracking/tracker";
+import { resolveLocale, setLocale, t, tf } from "./i18n";
 
 export class SedimentPlugin extends Plugin {
   store!: Store;
@@ -30,10 +34,11 @@ export class SedimentPlugin extends Plugin {
   async onload(): Promise<void> {
     this.store = new Store(this);
     await this.store.load();
+    setLocale(resolveLocale(this.store.settings.language));
     if (this.store.settings.lastSeenVersion !== this.manifest.version) {
       this.store.settings.lastSeenVersion = this.manifest.version;
       await this.store.save();
-      new Notice(`Sediment 已更新到 v${this.manifest.version}，可在「查看更新记录」中了解变化`);
+      new Notice(tf("Sediment 已更新到 v{version}，可在「查看更新记录」中了解变化", { version: this.manifest.version }));
     }
     if (!this.store.settings.agentServerToken) {
       this.store.settings.agentServerToken = generateToken();
@@ -91,55 +96,55 @@ export class SedimentPlugin extends Plugin {
       plugin: this,
     };
 
-    this.addRibbonIcon("activity", "Sediment：看板", () => {
+    this.addRibbonIcon("activity", t("Sediment：看板"), () => {
       void this.activateView(DASHBOARD_VIEW_TYPE);
     });
-    this.addRibbonIcon("sticky-note", "Sediment：速记", () => {
+    this.addRibbonIcon("sticky-note", t("Sediment：速记"), () => {
       void this.activateView(MEMO_VIEW_TYPE);
     });
 
     this.addCommand({
       id: "open-dashboard",
-      name: "打开知识脉冲看板",
+      name: t("打开知识脉冲看板"),
       callback: () => void this.activateView(DASHBOARD_VIEW_TYPE),
     });
     this.addCommand({
       id: "open-memos",
-      name: "打开速记面板",
+      name: t("打开速记面板"),
       callback: () => void this.activateView(MEMO_VIEW_TYPE),
     });
     this.addCommand({
       id: "quick-memo",
-      name: "记一条速记",
+      name: t("记一条速记"),
       callback: () =>
         new QuickMemoModal(this.app, (text, tags) => void this.memos.add(text, tags)).open(),
     });
     this.addCommand({
       id: "weekly-review",
-      name: "生成本周工作复盘",
+      name: t("生成本周工作复盘"),
       callback: () => void this.generateReview(),
     });
     this.addCommand({
       id: "pomodoro-toggle",
-      name: "开始 / 暂停番茄钟",
+      name: t("开始 / 暂停番茄钟"),
       callback: () => this.pomodoro.toggle(),
     });
     this.addCommand({
       id: "pomodoro-skip",
-      name: "跳过当前番茄 / 休息",
+      name: t("跳过当前番茄 / 休息"),
       callback: () => this.pomodoro.skip(),
     });
     this.addCommand({
       id: "snapshot-open-tasks",
-      name: "记录今日遗留待办到日记",
+      name: t("记录今日遗留待办到日记"),
       callback: () =>
         void this.tasks.snapshot().then((count) => {
-          new Notice(count > 0 ? `已记录 ${count} 条遗留待办` : "没有遗留待办");
+          new Notice(count > 0 ? tf("已记录 {n} 条遗留待办", { n: count }) : t("没有遗留待办"));
         }),
     });
     this.addCommand({
       id: "export-today-report",
-      name: "导出今日战报图片",
+      name: t("导出今日战报图片"),
       callback: () => {
         const today = dateKey(new Date());
         const day = this.store.getDay(today);
@@ -156,20 +161,48 @@ export class SedimentPlugin extends Plugin {
     });
     this.addCommand({
       id: "backup-data",
-      name: "备份统计数据到库内",
+      name: t("备份统计数据到库内"),
       callback: () =>
         void this.store.backupData(true).then((count) => {
-          new Notice(count > 0 ? "数据已备份到库内" : "备份失败，请检查设置中的备份目录");
+          new Notice(count > 0 ? t("数据已备份到库内") : t("备份失败，请检查设置中的备份目录"));
         }),
     });
     this.addCommand({
+      id: "rebuild-history",
+      name: t("重建历史统计（按笔记日期补齐空日期）"),
+      callback: () =>
+        void rebuildHistory(this.store, this.app.vault).then((result) => {
+          this.refreshViews();
+          new Notice(
+            result.filledDays > 0
+              ? tf("已扫描 {scanned} 篇笔记，补齐 {days} 天（{notes} 篇 / {words} 词）", {
+                  scanned: result.scanned,
+                  days: result.filledDays,
+                  notes: result.notes,
+                  words: result.words,
+                })
+              : tf("扫描了 {scanned} 篇笔记，没有需要补齐的空日期", { scanned: result.scanned })
+          );
+        }),
+    });
+    this.addCommand({
+      id: "note-health",
+      name: t("扫描笔记健康度（孤儿/断链/久未更新）"),
+      callback: () => new HealthModal(this.app, this).open(),
+    });
+    this.addCommand({
+      id: "export-data",
+      name: t("导出数据（CSV/JSON，默认脱敏）"),
+      callback: () => new ExportModal(this.app, this).open(),
+    });
+    this.addCommand({
       id: "show-changelog",
-      name: "查看更新记录",
+      name: t("查看更新记录"),
       callback: () => new ChangelogModal(this.app).open(),
     });
     this.addCommand({
       id: "cycle-art-style",
-      name: "切换看板顶部和底部的画风",
+      name: t("切换看板顶部和底部的画风"),
       callback: () => {
         const styles = ["lake", "ink", "city"] as const;
         const current = this.store.settings.artStyle;
@@ -313,7 +346,7 @@ export class SedimentPlugin extends Plugin {
     }
 
     await this.app.workspace.getLeaf(true).openFile(file);
-    new Notice("周复盘已生成并打开");
+    new Notice(t("周复盘已生成并打开"));
   }
 }
 

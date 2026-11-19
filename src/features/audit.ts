@@ -51,6 +51,12 @@ export async function restoreBackup(
   file: TFile,
   name: string
 ): Promise<void> {
+  const fs = nodeFs();
+  const directory = backupDirectory(plugin.app.vault);
+  // 快照文件可能已被保留策略清理；此时绝不能把笔记覆盖成空内容。
+  if (!fs || !directory || !fs.existsSync(`${directory}/${name}`)) {
+    throw new Error(`快照文件不存在或已被清理：${name}`);
+  }
   const content = readBackup(plugin, name);
   await plugin.app.vault.process(file, () => content);
 }

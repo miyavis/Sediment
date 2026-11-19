@@ -1,5 +1,6 @@
 import { Notice } from "obsidian";
 import type { SedimentPlugin } from "../main";
+import { dateKey, hhmm } from "../utils/dates";
 
 export type PomodoroMode = "focus" | "short" | "long";
 
@@ -16,7 +17,10 @@ const DURATION: Record<PomodoroMode, number> = {
   long: 15 * 60,
 };
 
-/** 内置番茄钟：不依赖其它插件，完成后把专注分钟记进当天。 */
+/**
+ * 内置番茄钟：不依赖其它插件，完成后把专注分钟记进当天（实测口径），
+ * 并写入会话日志。状态持久化到 data.json，重启 Obsidian 按时间戳推算剩余时间。
+ */
 export class PomodoroManager {
   private mode: PomodoroMode = "focus";
   private remaining = DURATION.focus;
@@ -26,9 +30,39 @@ export class PomodoroManager {
   private statusEl: HTMLElement | null = null;
 
   constructor(private plugin: SedimentPlugin) {
+    this.restore();
     this.statusEl = plugin.addStatusBarItem();
     this.updateStatus();
     plugin.registerInterval(window.setInterval(() => this.tick(), 1000));
+  }
+
+  /** 恢复上次状态；运行中离开的这段时间按真实流逝扣减。 */
+  private restore(): void {
+    const saved = this.plugin.store.data.pomodoro;
+    if (!saved) return;
+    this.mode = saved.mode;
+    this.completed = saved.completed;
+    this.remaining = saved.remaining;
+    this.running = saved.running;
+    if (this.running) {
+      const elapsed = Math.max(0, Math.floor((Date.now() - saved.savedAt) / 1000));
+      this.remaining -= elapsed;
+      if (this.remaining <= 0) {
+        // 离开期间番茄已到点：补记专注分钟并进入休息，不重复弹通知。
+        this.complete(true);
+      }
+    }
+  }
+
+  private persist(): void {
+    this.plugin.store.data.pomodoro = {
+      mode: this.mode,
+      remaining: this.remaining,
+      running: this.running,
+      completed: this.completed,
+      savedAt: Date.now(),
+    };
+    this.plugin.store.scheduleSave();
   }
 
   state(): PomodoroState {
@@ -43,17 +77,20 @@ export class PomodoroManager {
   start(): void {
     if (this.running) return;
     this.running = true;
+    this.persist();
     this.emit();
   }
 
   pause(): void {
     this.running = false;
+    this.persist();
     this.emit();
   }
 
   reset(): void {
     this.running = false;
     this.remaining = DURATION[this.mode];
+    this.persist();
     this.emit();
   }
 
@@ -61,6 +98,7 @@ export class PomodoroManager {
     this.running = false;
     this.mode = this.mode === "focus" ? (this.completed % 4 === 3 ? "long" : "short") : "focus";
     this.remaining = DURATION[this.mode];
+    this.persist();
     this.emit();
   }
 
@@ -78,19 +116,28 @@ export class PomodoroManager {
     this.emit();
   }
 
-  private complete(): void {
+  private complete(silent = false): void {
+    const now = new Date();
     if (this.mode === "focus") {
       this.completed += 1;
       this.plugin.store.updateDay(this.plugin.store.todayKey(), (day) => {
         day.focusMinutes += 25;
       });
-      new Notice("番茄完成，已记入 25 分钟专注");
-    } else {
+      this.plugin.store.addFocusSession({
+        date: dateKey(now),
+        time: hhmm(now),
+        mode: "focus",
+        minutes: 25,
+        source: "measured",
+      });
+      if (!silent) new Notice("番茄完成，已记入 25 分钟专注（实测）");
+    } else if (!silent) {
       new Notice("休息结束");
     }
     this.mode = this.mode === "focus" ? (this.completed % 4 === 0 ? "long" : "short") : "focus";
     this.remaining = DURATION[this.mode];
     this.running = false;
+    this.persist();
   }
 
   private emit(): void {

@@ -1,4 +1,5 @@
 import { App, Modal } from "obsidian";
+import { t } from "../i18n";
 
 /** 用并排纯文本展示备份与当前内容，供人工核对。 */
 export class DiffModal extends Modal {
@@ -21,8 +22,8 @@ export class DiffModal extends Modal {
       box.createDiv({ cls: "sd-diff-head", text: title });
       box.createEl("pre", { cls: "sd-diff-body", text: content });
     };
-    column("备份版本", this.before);
-    column("当前版本", this.after);
+    column(t("备份版本"), this.before);
+    column(t("当前版本"), this.after);
   }
 
   onClose(): void {

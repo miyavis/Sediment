@@ -74,9 +74,9 @@ export class AgentServer {
   }
 
   private json(response: ServerResponse, status: number, payload: unknown): void {
+    // 仅本机回环使用，不开放跨域，避免网页脚本借令牌读写知识库。
     response.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8",
-      "Access-Control-Allow-Origin": "*",
     });
     response.end(JSON.stringify(payload));
   }
@@ -122,7 +122,7 @@ export class AgentServer {
 
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
-          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.8.4" });
+          this.json(response, 200, { ok: true, plugin: "sediment", version: this.plugin.manifest.version });
           return;
         case "GET /notes":
           this.json(response, 200, api.listNotes(str(query.get("folder")), num(query.get("limit"), 50)));
@@ -281,13 +281,13 @@ export class AgentServer {
           );
           return;
         case "POST /agent-task/claim":
-          this.json(response, 200, api.claimAgentTask(str(body.id as string)));
+          this.json(response, 200, await api.claimAgentTask(str(body.id as string)));
           return;
         case "POST /agent-task/complete":
           this.json(
             response,
             200,
-            api.completeAgentTask(str(body.id as string), str(body.resultPath as string) || undefined)
+            await api.completeAgentTask(str(body.id as string), str(body.resultPath as string) || undefined)
           );
           return;
         case "GET /pomodoro":

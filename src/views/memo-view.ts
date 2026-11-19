@@ -4,6 +4,7 @@ import { exportMemoCard } from "../features/embed";
 import type { MemoRecord } from "../types";
 import { addDays, dateKey } from "../utils/dates";
 import { ensureFolder, normalizeFolder } from "../utils/vault";
+import { t, tf } from "../i18n";
 
 export const MEMO_VIEW_TYPE = "sediment-memo";
 
@@ -14,6 +15,7 @@ export class MemoView extends ItemView {
   private tab: MemoTab = "all";
   private filter = "";
   private walkId: string | null = null;
+  private showArchived = false;
 
   constructor(leaf: WorkspaceLeaf, private plugin: SedimentPlugin) {
     super(leaf);
@@ -24,7 +26,7 @@ export class MemoView extends ItemView {
   }
 
   getDisplayText(): string {
-    return "速记";
+    return t("速记");
   }
 
   getIcon(): string {
@@ -58,11 +60,11 @@ export class MemoView extends ItemView {
 
     const tabs = root.createDiv({ cls: "sd-memo-tabs" });
     const options: Array<[MemoTab, string]> = [
-      ["all", "全部"],
-      ["review", "回顾"],
-      ["walk", "漫步"],
-      ["tags", "标签"],
-      ["knowledge", "沉淀"],
+      ["all", t("全部")],
+      ["review", t("回顾")],
+      ["walk", t("漫步")],
+      ["tags", t("标签")],
+      ["knowledge", t("沉淀")],
     ];
     for (const [key, label] of options) {
       const button = tabs.createEl("button", {
@@ -85,11 +87,11 @@ export class MemoView extends ItemView {
   private renderAll(root: HTMLElement): void {
     const form = root.createDiv({ cls: "kp-memo-form" });
     const area = form.createEl("textarea", { cls: "kp-memo-input" });
-    area.placeholder = "想到什么，随手记下…（可粘贴图片）";
+    area.placeholder = t("想到什么，随手记下…（可粘贴图片）");
     area.rows = 3;
     const row = form.createDiv({ cls: "kp-memo-row" });
-    const tagInput = row.createEl("input", { type: "text", placeholder: "标签，空格分隔" });
-    const submit = row.createEl("button", { cls: "mod-cta", text: "记一条" });
+    const tagInput = row.createEl("input", { type: "text", placeholder: t("标签，空格分隔") });
+    const submit = row.createEl("button", { cls: "mod-cta", text: t("记一条") });
 
     area.addEventListener("paste", (event) => {
       const items = event.clipboardData?.items;
@@ -128,11 +130,19 @@ export class MemoView extends ItemView {
     const filterRow = root.createDiv({ cls: "kp-memo-filter" });
     const filterInput = filterRow.createEl("input", {
       type: "text",
-      placeholder: "搜索速记 / 输入 #标签 筛选",
+      placeholder: t("搜索速记 / 输入 #标签 筛选"),
     });
     filterInput.value = this.filter;
     filterInput.addEventListener("input", () => {
       this.filter = filterInput.value.trim().toLowerCase();
+      this.renderList(root);
+    });
+    const archiveLabel = filterRow.createEl("label", { cls: "sd-archive-toggle" });
+    const archiveBox = archiveLabel.createEl("input", { type: "checkbox" });
+    archiveBox.checked = this.showArchived;
+    archiveLabel.createSpan({ text: t("含归档") });
+    archiveBox.addEventListener("change", () => {
+      this.showArchived = archiveBox.checked;
       this.renderList(root);
     });
 
@@ -146,7 +156,7 @@ export class MemoView extends ItemView {
     const file = this.plugin.app.workspace.getActiveFile();
     if (!file) return;
     const card = root.createDiv({ cls: "sd-card sd-context-card" });
-    card.createDiv({ cls: "sd-card-title", text: `与《${file.basename}》相关` });
+    card.createDiv({ cls: "sd-card-title", text: tf("与《{name}》相关", { name: file.basename }) });
     const relatedMemos = this.plugin.store.data.memos
       .filter((memo) => memo.text.includes(file.basename) || memo.text.includes(file.path))
       .slice(0, 5);
@@ -154,7 +164,7 @@ export class MemoView extends ItemView {
       .filter((log) => log.files.some((item) => item === file.path || item.endsWith(`/${file.basename}`)))
       .slice(0, 5);
     if (relatedMemos.length === 0 && relatedLogs.length === 0) {
-      card.createDiv({ cls: "kp-empty", text: "这篇笔记还没有相关的速记或工作日志。" });
+      card.createDiv({ cls: "kp-empty", text: t("这篇笔记还没有相关的速记或工作日志。") });
       return;
     }
     const list = card.createDiv({ cls: "sd-knowledge-list" });
@@ -187,13 +197,14 @@ export class MemoView extends ItemView {
       area.value += ` ![[${name}]]`;
       area.focus();
     }
-    new Notice("图片已插入速记");
+    new Notice(t("图片已插入速记"));
   }
 
   private renderList(root: HTMLElement): void {
     root.querySelector(".kp-memo-list")?.remove();
     const list = root.createDiv({ cls: "kp-memo-list" });
     let memos = this.plugin.store.data.memos.slice();
+    if (!this.showArchived) memos = memos.filter((memo) => !memo.archived);
     if (this.filter) {
       const term = this.filter.replace(/^#/, "");
       memos = memos.filter(
@@ -204,7 +215,7 @@ export class MemoView extends ItemView {
       );
     }
     if (memos.length === 0) {
-      list.createDiv({ cls: "kp-empty", text: "还没有速记，或没有匹配的速记。" });
+      list.createDiv({ cls: "kp-empty", text: t("还没有速记，或没有匹配的速记。") });
       return;
     }
     let currentDate = "";
@@ -220,8 +231,9 @@ export class MemoView extends ItemView {
   private memoCard(memo: MemoRecord): HTMLElement {
     const card = document.createElement("div");
     card.className = "kp-memo-card";
-    card.createDiv({ cls: "kp-memo-time", text: memo.time });
-    card.createDiv({ cls: "kp-memo-text", text: memo.text });
+    if (memo.archived) card.addClass("is-archived");
+    card.createDiv({ cls: "kp-memo-time", text: memo.archived ? `${memo.time} · ${t("已归档")}` : memo.time });
+    const textEl = card.createDiv({ cls: "kp-memo-text", text: memo.text });
     if (memo.tags.length > 0) {
       const tags = card.createDiv({ cls: "kp-memo-tags" });
       for (const tag of memo.tags) {
@@ -236,20 +248,58 @@ export class MemoView extends ItemView {
     if (memo.sourcePath) {
       const source = card.createEl("button", {
         cls: "sd-memo-source",
-        text: `原待办 · ${memo.sourcePath.split("/").pop()}:${memo.sourceLine ?? 1}`,
+        text: `${t("原待办")} · ${memo.sourcePath.split("/").pop()}:${memo.sourceLine ?? 1}`,
       });
       source.onclick = () => void this.openSource(memo.sourcePath, memo.sourceLine);
     }
     const actions = card.createDiv({ cls: "sd-memo-actions" });
-    actions.createEl("button", { text: "复制" }).onclick = () => {
-      void navigator.clipboard.writeText(memo.text).then(() => new Notice("已复制"));
+    actions.createEl("button", { text: t("复制") }).onclick = () => {
+      void navigator.clipboard.writeText(memo.text).then(() => new Notice(t("已复制")));
     };
-    actions.createEl("button", { text: "分享图" }).onclick = () => exportMemoCard(memo, "minimal");
-    if (!memo.tags.includes("to-agent")) {
-      actions.createEl("button", { text: "转 Agent" }).onclick = () => {
+    actions.createEl("button", { text: t("分享图") }).onclick = () => exportMemoCard(memo, "minimal");
+    actions.createEl("button", { text: t("编辑") }).onclick = () => {
+      const area = document.createElement("textarea");
+      area.className = "kp-memo-edit";
+      area.value = memo.text;
+      area.rows = Math.min(8, Math.max(3, memo.text.split("\n").length + 1));
+      textEl.replaceWith(area);
+      area.focus();
+      const bar = document.createElement("div");
+      bar.className = "sd-memo-edit-bar";
+      const save = bar.createEl("button", { cls: "mod-cta", text: t("保存") });
+      const cancel = bar.createEl("button", { text: t("取消") });
+      area.after(bar);
+      save.onclick = () => {
+        void this.plugin.memos.edit(memo.id, area.value).then((updated) => {
+          if (updated) this.render();
+          else new Notice(t("内容为空，未保存"));
+        });
+      };
+      cancel.onclick = () => this.render();
+      area.addEventListener("keydown", (event) => {
+        if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+          event.preventDefault();
+          save.click();
+        } else if (event.key === "Escape") {
+          cancel.click();
+        }
+      });
+    };
+    actions.createEl("button", { text: memo.archived ? t("取消归档") : t("归档") }).onclick = () => {
+      this.plugin.memos.setArchived(memo.id, !memo.archived);
+      new Notice(memo.archived ? t("已归档，可在「含归档」中查看") : t("已取消归档"));
+      this.render();
+    };
+    actions.createEl("button", { cls: "sd-memo-delete", text: t("删除") }).onclick = () => {
+      if (!window.confirm(t("删除这条速记？日记中对应的速记记录也会一并移除。"))) return;
+      void this.plugin.memos.remove(memo.id).then(() => this.render());
+    };
+    if (!memo.tags.includes("to-agent") && !memo.converted) {
+      actions.createEl("button", { text: t("转 Agent") }).onclick = () => {
         memo.tags.push("to-agent");
         this.plugin.store.scheduleSave();
-        new Notice("已加入 Agent 待办");
+        void this.plugin.memos.syncTags(memo);
+        new Notice(t("已加入 Agent 待办"));
         this.render();
       };
     }
@@ -271,14 +321,14 @@ export class MemoView extends ItemView {
       const card = root.createDiv({ cls: "sd-card sd-review-section" });
       card.createDiv({ cls: "sd-card-title", text: title });
       if (items.length === 0) {
-        card.createDiv({ cls: "kp-empty", text: "这天没有速记。" });
+        card.createDiv({ cls: "kp-empty", text: t("这天没有速记。") });
         return;
       }
       for (const memo of items.slice(0, 3)) card.appendChild(this.memoCard(memo));
     };
-    section(`每日回顾 · ${todayKey}`, this.pick(todays, todayKey));
-    section(`去年今日 · ${lastYearKey}`, memos.filter((memo) => memo.date === lastYearKey));
-    section(`上月今日 · ${lastMonthKey}`, memos.filter((memo) => memo.date === lastMonthKey));
+    section(`${t("每日回顾")} · ${todayKey}`, this.pick(todays, todayKey));
+    section(`${t("去年今日")} · ${lastYearKey}`, memos.filter((memo) => memo.date === lastYearKey));
+    section(`${t("上月今日")} · ${lastMonthKey}`, memos.filter((memo) => memo.date === lastMonthKey));
   }
 
   private pick(items: MemoRecord[], seed: string): MemoRecord[] {
@@ -308,12 +358,12 @@ export class MemoView extends ItemView {
   private renderWalk(root: HTMLElement): void {
     const memos = this.plugin.store.data.memos;
     if (memos.length === 0) {
-      root.createDiv({ cls: "kp-empty", text: "还没有速记可以漫步。" });
+      root.createDiv({ cls: "kp-empty", text: t("还没有速记可以漫步。") });
       return;
     }
     let current = memos.find((memo) => memo.id === this.walkId) ?? memos[0];
     const card = root.createDiv({ cls: "sd-card sd-walk" });
-    card.createDiv({ cls: "sd-card-sub", text: `漫步 · ${current.date} ${current.time}` });
+    card.createDiv({ cls: "sd-card-sub", text: `${t("漫步")} · ${current.date} ${current.time}` });
     card.appendChild(this.memoCard(current));
 
     const currentTokens = new Set(this.tokens(current.text));
@@ -327,8 +377,8 @@ export class MemoView extends ItemView {
     const next = ranked[0]?.memo;
     if (next) {
       const shared = ranked[0].score;
-      card.createDiv({ cls: "sd-card-sub", text: `共同的词：${shared} 个` });
-      const button = card.createEl("button", { text: "继续漫步 →" });
+      card.createDiv({ cls: "sd-card-sub", text: tf("共同的词：{n} 个", { n: shared }) });
+      const button = card.createEl("button", { text: t("继续漫步 →") });
       button.onclick = () => {
         this.walkId = next.id;
         this.render();
@@ -360,7 +410,7 @@ export class MemoView extends ItemView {
       if (!compact) {
         root.createDiv({
           cls: "kp-empty",
-          text: "还没有沉淀。让智能体调用 add_knowledge 或 record_work_log 后，笔记会出现在这里。",
+          text: t("还没有沉淀。让智能体调用 add_knowledge 或 record_work_log 后，笔记会出现在这里。"),
         });
       }
       return;
@@ -369,10 +419,10 @@ export class MemoView extends ItemView {
     const knowledgeFolder = normalizeFolder(settings.knowledgeFolder);
     const groups = new Map<string, typeof files>();
     for (const file of files) {
-      let category = "工作日志";
+      let category = t("工作日志");
       if (knowledgeFolder && file.path.startsWith(`${knowledgeFolder}/`)) {
         const parts = file.path.split("/");
-        category = parts.length > 1 ? parts[1] : "未分类";
+        category = parts.length > 1 ? parts[1] : t("未分类");
       }
       const group = groups.get(category) ?? [];
       group.push(file);
@@ -384,10 +434,10 @@ export class MemoView extends ItemView {
     const head = card.createDiv({ cls: "sd-card-head" });
     head.createDiv({
       cls: "sd-card-title",
-      text: `知识沉淀 · ${files.length}`,
+      text: `${t("知识沉淀")} · ${files.length}`,
     });
     if (compact) {
-      const more = head.createEl("button", { text: "全部" });
+      const more = head.createEl("button", { text: t("全部") });
       more.onclick = () => {
         this.tab = "knowledge";
         this.render();
@@ -429,9 +479,9 @@ export class MemoView extends ItemView {
       for (const tag of memo.tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
     }
     const card = root.createDiv({ cls: "sd-card sd-tag-tree" });
-    card.createDiv({ cls: "sd-card-title", text: `标签 · ${counts.size} 个` });
+    card.createDiv({ cls: "sd-card-title", text: `${t("标签")} · ${tf("{n} 个", { n: counts.size })}` });
     if (counts.size === 0) {
-      card.createDiv({ cls: "kp-empty", text: "还没有标签。" });
+      card.createDiv({ cls: "kp-empty", text: t("还没有标签。") });
       return;
     }
     for (const [tag, count] of [...counts.entries()].sort((a, b) => b[1] - a[1])) {

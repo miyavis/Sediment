@@ -95,7 +95,6 @@ export function resolveBridgePath(plugin: SedimentPlugin, target?: AgentTarget):
       adapter.getFullPath(`${plugin.app.vault.configDir}/plugins/sediment/mcp-server/index.mjs`)
     );
   }
-  candidates.push("D:/project/Obsidian_plugin/mcp-server/index.mjs");
   return candidates.find((path) => fs.existsSync(path)) ?? candidates[0] ?? "";
 }
 

@@ -30,8 +30,10 @@ export function buildWeeklyReview(store: Store, anchor: Date): string {
   const lines: string[] = [];
   lines.push(`# 工作复盘 ${dateKey(start)} ~ ${dateKey(end)}`);
   lines.push("");
+  const s = store.settings;
+  const capNote = s.contributionDailyCap > 0 ? `，单日封顶 ${s.contributionDailyCap}` : "";
   lines.push(
-    `> 生成于 ${dateKey(new Date())}。口径：贡献分 = 新建笔记×2 + 编辑会话 + 完成任务 + 新增词数/100 + 专注分钟/25；未记录日期不视作零。`
+    `> 生成于 ${dateKey(new Date())}。口径：贡献分 = 新建笔记×${s.weightNotesCreated} + 编辑会话×${s.weightEdits} + 完成任务×${s.weightTasks} + 新增词数/${s.wordsPerPoint} + 专注分钟/${s.focusMinutesPerPoint}${capNote}；未记录日期不视作零。`
   );
   lines.push("");
 
@@ -81,7 +83,7 @@ export function buildWeeklyReview(store: Store, anchor: Date): string {
   if (store.getDay(best).contribution > 0) {
     clues.push(`贡献最高的一天是 ${best}（${store.getDay(best).contribution} 分）。`);
   }
-  const pending = store.data.memos.filter((memo) => !memo.converted).length;
+  const pending = store.data.memos.filter((memo) => !memo.converted && !memo.archived).length;
   if (pending > 0) clues.push(`还有 ${pending} 条速记尚未转化。`);
   if (clues.length === 0) clues.push("本期记录较少，先把记录习惯保持住。");
   for (const clue of clues) lines.push(`- ${clue}`);

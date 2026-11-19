@@ -106,15 +106,26 @@ export class SemanticIndex {
     this.vectors.clear();
     this.documentFrequency.clear();
     this.documents = files.length;
+    const rawCounts = new Map<string, Map<string, number>>();
     for (const file of files) {
       const text = await vault.cachedRead(file);
       const tokens = tokenize(text);
       const counts = new Map<string, number>();
       for (const token of tokens) counts.set(token, (counts.get(token) ?? 0) + 1);
-      this.vectors.set(file.path, counts);
+      rawCounts.set(file.path, counts);
       for (const token of counts.keys()) {
         this.documentFrequency.set(token, (this.documentFrequency.get(token) ?? 0) + 1);
       }
+    }
+    // 文档向量与查询向量同口径：TF（词频/总词数）× IDF，余弦相似度才对称可比。
+    for (const [path, counts] of rawCounts) {
+      const total = [...counts.values()].reduce((sum, count) => sum + count, 0) || 1;
+      const vector = new Map<string, number>();
+      for (const [token, count] of counts) {
+        const idf = Math.log(1 + this.documents / (1 + (this.documentFrequency.get(token) ?? 0)));
+        vector.set(token, (count / total) * idf);
+      }
+      this.vectors.set(path, vector);
     }
     this.dirty = false;
   }

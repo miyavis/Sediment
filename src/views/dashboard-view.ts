@@ -7,11 +7,13 @@ import { buildWeeklyReview } from "../features/review";
 import { exportTodayReport } from "../features/embed";
 import { METRICS, type MetricKey } from "../types";
 import { addDays, dateKey, lastNDays, parseKey } from "../utils/dates";
+import { t, tf } from "../i18n";
 
 export const DASHBOARD_VIEW_TYPE = "sediment-dashboard";
 
 type TabKey = "today" | "insights" | "agent";
 type RangeKey = "7d" | "30d" | "90d" | "ytd" | "1y";
+type ChartRef = { value: number; label: string; color?: string };
 
 const TABS: Array<[TabKey, string]> = [
   ["today", "今日脉冲"],
@@ -42,6 +44,8 @@ export class DashboardView extends ItemView {
   private bannerEl: HTMLElement | null = null;
   private heatTooltip: HTMLElement | null = null;
   private unsubscribePomodoro: (() => void) | null = null;
+  private lastRenderedTab: TabKey | null = null;
+  private pendingFocusDate: string | null = null;
 
   constructor(leaf: WorkspaceLeaf, private plugin: SedimentPlugin) {
     super(leaf);
@@ -53,7 +57,7 @@ export class DashboardView extends ItemView {
   }
 
   getDisplayText(): string {
-    return "Sediment 知识脉冲";
+    return t("Sediment 知识脉冲");
   }
 
   getIcon(): string {
@@ -73,13 +77,39 @@ export class DashboardView extends ItemView {
 
   render(): void {
     const root = this.contentEl;
+    const scroller = this.scrollParent(root);
+    const sameTab = this.lastRenderedTab === this.tab;
+    const scrollTop = sameTab && scroller ? scroller.scrollTop : 0;
     root.empty();
     root.addClass("sd-dashboard");
+    root.setAttribute("data-tab", this.tab);
     this.renderHeader(root);
 
     if (this.tab === "today") this.renderToday(root);
     else if (this.tab === "insights") this.renderInsights(root);
     else this.renderAgentHub(root);
+    this.lastRenderedTab = this.tab;
+
+    // 同页签刷新保留滚动位置，避免软刷新把用户弹回顶部。
+    if (scroller) scroller.scrollTop = scrollTop;
+    if (this.pendingFocusDate) {
+      const target = root.querySelector(
+        `.kp-cell[data-date="${this.pendingFocusDate}"]`
+      ) as HTMLElement | null;
+      this.pendingFocusDate = null;
+      target?.focus();
+    }
+  }
+
+  /** 找到看板真正滚动的祖先容器（Obsidian 的 .view-content）。 */
+  private scrollParent(el: HTMLElement): HTMLElement | null {
+    let node: HTMLElement | null = el;
+    while (node) {
+      const style = window.getComputedStyle(node);
+      if (/(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight) return node;
+      node = node.parentElement;
+    }
+    return null;
   }
 
   private value(key: string): number {
@@ -123,7 +153,7 @@ export class DashboardView extends ItemView {
     for (const [key, label] of TABS) {
       const button = tabs.createEl("button", {
         cls: `sd-tab ${key === this.tab ? "is-active" : ""}`,
-        text: label,
+        text: t(label),
       });
       button.onclick = () => {
         this.tab = key;
@@ -132,7 +162,7 @@ export class DashboardView extends ItemView {
     }
     const spacer = bar.createDiv({ cls: "sd-spacer" });
     spacer.setAttribute("style", "flex:1");
-    const refresh = bar.createEl("button", { cls: "sd-refresh", text: "刷新" });
+    const refresh = bar.createEl("button", { cls: "sd-refresh", text: t("刷新") });
     refresh.onclick = () => this.render();
   }
 
@@ -156,11 +186,11 @@ export class DashboardView extends ItemView {
     const goal = this.plugin.store.settings.dailyWordGoal || 1000;
     const card = root.createDiv({ cls: "sd-card sd-today" });
     const head = card.createDiv({ cls: "sd-today-head" });
-    head.createDiv({ cls: "sd-today-title", text: "今天" });
-    head.createDiv({ cls: "sd-pill", text: day.contribution > 0 ? `${day.contribution} 分` : "还没开始" });
+    head.createDiv({ cls: "sd-today-title", text: t("今天") });
+    head.createDiv({ cls: "sd-pill", text: day.contribution > 0 ? tf("{n} 分", { n: day.contribution }) : t("还没开始") });
     const goalRing = head.createDiv({ cls: "sd-goal-ring" });
     goalRing.innerHTML = this.goalRing(day.wordsAdded, goal);
-    head.createEl("button", { cls: "sd-share-today", text: "战报图片" }).onclick = () => {
+    head.createEl("button", { cls: "sd-share-today", text: t("战报图片") }).onclick = () => {
       exportTodayReport({
         date: today,
         contribution: day.contribution,
@@ -172,12 +202,12 @@ export class DashboardView extends ItemView {
       });
     };
     const row = card.createDiv({ cls: "sd-today-row" });
-    row.createSpan({ text: `写作 ${day.wordsAdded} / ${goal.toLocaleString()} 字` });
-    row.createSpan({ text: `连续 ${streak} 天 · 最长 ${this.longestStreak()} 天` });
+    row.createSpan({ text: tf("写作 {words} / {goal} 字", { words: day.wordsAdded, goal: goal.toLocaleString() }) });
+    row.createSpan({ text: tf("连续 {streak} 天 · 最长 {longest} 天", { streak, longest: this.longestStreak() }) });
     const pomoButton = row.createEl("button", { cls: "sd-pomodoro-button" });
     pomoButton.onclick = () => this.plugin.pomodoro.toggle();
     this.updatePomodoroButton();
-    const skip = row.createEl("button", { cls: "sd-pomodoro-skip", text: "跳过" });
+    const skip = row.createEl("button", { cls: "sd-pomodoro-skip", text: t("跳过") });
     skip.onclick = () => this.plugin.pomodoro.skip();
     const progress = card.createDiv({ cls: "sd-progress" });
     progress.createDiv({ cls: "sd-progress-fill" }).style.width = `${Math.min(100, (day.wordsAdded / goal) * 100)}%`;
@@ -185,11 +215,11 @@ export class DashboardView extends ItemView {
 
   private renderQuickMemo(root: HTMLElement): void {
     const card = root.createDiv({ cls: "sd-card sd-quick-memo" });
-    card.createDiv({ cls: "sd-card-title", text: "快速速记" });
+    card.createDiv({ cls: "sd-card-title", text: t("快速速记") });
     const area = card.createEl("textarea", { cls: "kp-memo-input" });
-    area.placeholder = "想到什么，随手记下…";
+    area.placeholder = t("想到什么，随手记下…");
     area.rows = 2;
-    const submit = card.createEl("button", { cls: "mod-cta", text: "记一条" });
+    const submit = card.createEl("button", { cls: "mod-cta", text: t("记一条") });
     submit.onclick = () => {
       const text = area.value.trim();
       if (!text) return;
@@ -202,12 +232,12 @@ export class DashboardView extends ItemView {
 
   private renderTodayAgent(root: HTMLElement): void {
     const card = root.createDiv({ cls: "sd-card sd-agent-feed" });
-    card.createDiv({ cls: "sd-card-title", text: "今日 Agent 动态" });
+    card.createDiv({ cls: "sd-card-title", text: t("今日 Agent 动态") });
     const today = dateKey(new Date());
     const calls = this.plugin.store.data.toolCalls.filter((call) => call.time.startsWith(today));
     const logs = this.plugin.store.data.workLogs.filter((log) => log.date === today);
     if (calls.length === 0 && logs.length === 0) {
-      card.createDiv({ cls: "kp-empty", text: "今天还没有智能体活动。" });
+      card.createDiv({ cls: "kp-empty", text: t("今天还没有智能体活动。") });
       return;
     }
     const list = card.createDiv({ cls: "sd-feed-list" });
@@ -229,12 +259,12 @@ export class DashboardView extends ItemView {
     const body = root.createDiv({ cls: "sd-body" });
     const subnav = body.createDiv({ cls: "sd-subnav" });
     const anchors: Array<[string, string]> = [
-      ["sd-overview", "脉冲概览"],
-      ["sd-heatmap", "热力图"],
-      ["sd-trend", "写作趋势"],
-      ["sd-folders", "投入分布"],
-      ["sd-yearly", "年度画像"],
-      ["sd-review-card", "本周复盘"],
+      ["sd-overview", t("脉冲概览")],
+      ["sd-heatmap", t("热力图")],
+      ["sd-trend", t("写作趋势")],
+      ["sd-folders", t("投入分布")],
+      ["sd-yearly", t("年度画像")],
+      ["sd-review-card", t("本周复盘")],
     ];
     for (const [id, label] of anchors) {
       const button = subnav.createEl("button", { text: label });
@@ -247,7 +277,7 @@ export class DashboardView extends ItemView {
     this.renderYearly(body);
     this.renderReview(body);
     const footer = this.renderFooter(body);
-    footer.createEl("button", { text: "月报" }).onclick = () => {
+    footer.createEl("button", { text: t("月报") }).onclick = () => {
       this.posterMonth = new Date().getMonth();
       this.render();
     };
@@ -266,7 +296,7 @@ export class DashboardView extends ItemView {
 
   private renderAgentChanges(root: HTMLElement): void {
     const card = root.createDiv({ cls: "sd-card" });
-    card.createDiv({ cls: "sd-card-title", text: "Agent 变更审查" });
+    card.createDiv({ cls: "sd-card-title", text: t("Agent 变更审查") });
     const seen = new Set<string>();
     const calls = this.plugin.store.data.toolCalls
       .filter((call) => {
@@ -278,7 +308,7 @@ export class DashboardView extends ItemView {
       .slice(0, 8);
 
     if (calls.length === 0) {
-      card.createDiv({ cls: "kp-empty", text: "暂无 Agent 变更记录。" });
+      card.createDiv({ cls: "kp-empty", text: t("暂无 Agent 变更记录。") });
       return;
     }
     const list = card.createDiv({ cls: "sd-feed-list" });
@@ -290,31 +320,31 @@ export class DashboardView extends ItemView {
       row.createSpan({ text: `${call.time.slice(5, 16)} · ${call.tool.replace(/^(GET|POST) /, "")}` });
       const actions = row.createDiv({ cls: "sd-audit-actions" });
       const type = call.tool.includes("patch")
-        ? "局部修改"
+        ? t("局部修改")
         : call.tool.includes("frontmatter")
-          ? "属性"
+          ? t("属性")
           : call.tool.includes("knowledge")
-            ? "沉淀"
+            ? t("沉淀")
             : call.tool.includes("memo")
-              ? "速记"
-              : "新建/覆盖";
+              ? t("速记")
+              : t("新建/覆盖");
       actions.createSpan({ cls: "sd-audit-badge", text: type });
       const open = actions.createEl("button", { text: file.basename, cls: "sd-audit-open" });
       open.onclick = () => void this.plugin.app.workspace.openLinkText(call.path, "", false);
       if (backups.length > 0) {
-        actions.createEl("button", { text: `差异(${backups.length})` }).onclick = () => {
+        actions.createEl("button", { text: tf("差异({n})", { n: backups.length }) }).onclick = () => {
           void this.plugin.app.vault.read(file).then((current) => {
             new DiffModal(
               this.plugin.app,
-              `${file.basename} · 变更对比`,
+              `${file.basename} · ${t("变更对比")}`,
               readBackup(this.plugin, backups[0].name),
               current
             ).open();
           });
         };
-        actions.createEl("button", { text: "恢复" }).onclick = () => {
+        actions.createEl("button", { text: t("恢复") }).onclick = () => {
           void restoreBackup(this.plugin, file, backups[0].name).then(() => {
-            new Notice("已恢复到最近备份");
+            new Notice(t("已恢复到最近备份"));
             this.render();
           });
         };
@@ -324,9 +354,9 @@ export class DashboardView extends ItemView {
 
   private renderTasksCard(root: HTMLElement): void {
     const card = root.createDiv({ cls: "sd-card sd-tasks" });
-    card.createDiv({ cls: "sd-card-title", text: "待办 · 今日 / 遗留 / Agent" });
+    card.createDiv({ cls: "sd-card-title", text: t("待办 · 今日 / 遗留 / Agent") });
     const list = card.createDiv({ cls: "sd-task-list" });
-    list.createDiv({ cls: "kp-empty", text: "加载中…" });
+    list.createDiv({ cls: "kp-empty", text: t("加载中…") });
     void Promise.all([
       this.plugin.tasks.list("today"),
       this.plugin.tasks.list("overdue"),
@@ -335,7 +365,7 @@ export class DashboardView extends ItemView {
       list.empty();
       const items = [...today.filter((task) => !task.checked), ...overdue, ...agent];
       if (items.length === 0) {
-        list.createDiv({ cls: "kp-empty", text: "没有未完成待办。" });
+        list.createDiv({ cls: "kp-empty", text: t("没有未完成待办。") });
         return;
       }
       for (const task of items.slice(0, 12)) {
@@ -343,7 +373,7 @@ export class DashboardView extends ItemView {
         const button = row.createEl("button", {
           cls: "sd-task-open",
           text: task.text,
-          attr: { title: task.path || "Agent 任务" },
+          attr: { title: task.path || t("Agent 任务") },
         });
         if (task.path) button.onclick = () => void this.plugin.app.workspace.openLinkText(task.path, "", false);
         else if (task.sourcePath)
@@ -353,7 +383,7 @@ export class DashboardView extends ItemView {
           text: task.path
             ? `${task.date} · ${task.path.split("/").pop()}:${task.line}`
             : task.sourcePath
-              ? `Agent · 原待办 ${task.sourcePath.split("/").pop()}:${task.sourceLine ?? 1}`
+              ? `Agent · ${t("原待办")} ${task.sourcePath.split("/").pop()}:${task.sourceLine ?? 1}`
               : `Agent · ${task.date}`,
         });
       }
@@ -371,7 +401,7 @@ export class DashboardView extends ItemView {
 
   private renderAgentStatus(root: HTMLElement): void {
     const card = root.createDiv({ cls: "sd-card" });
-    card.createDiv({ cls: "sd-card-title", text: "连接与调用状态" });
+    card.createDiv({ cls: "sd-card-title", text: t("连接与调用状态") });
     const settings = this.plugin.store.settings;
     const calls = this.plugin.store.data.toolCalls;
     const byAgent: Record<string, number> = {};
@@ -382,23 +412,23 @@ export class DashboardView extends ItemView {
       box.createDiv({ cls: "sd-mini-label", text: label });
       box.createDiv({ cls: "sd-mini-value", text: value });
     };
-    item("本地 API", settings.agentServerEnabled ? `在线 · ${settings.agentServerPort}` : "未启用");
-    item("累计调用", String(calls.length));
-    for (const [agent, count] of Object.entries(byAgent)) item(agent, `${count} 次`);
+    item(t("本地 API"), settings.agentServerEnabled ? `${t("在线")} · ${settings.agentServerPort}` : t("未启用"));
+    item(t("累计调用"), String(calls.length));
+    for (const [agent, count] of Object.entries(byAgent)) item(agent, tf("{n} 次", { n: count }));
     const last = calls[0];
-    if (last) card.createDiv({ cls: "sd-card-sub", text: `最近调用：${last.time.slice(0, 16)} · ${last.tool}` });
+    if (last) card.createDiv({ cls: "sd-card-sub", text: `${t("最近调用")}：${last.time.slice(0, 16)} · ${last.tool}` });
   }
 
   private renderDrafts(root: HTMLElement): void {
     const card = root.createDiv({ cls: "sd-card" });
-    card.createDiv({ cls: "sd-card-title", text: "AI 沉淀审核" });
+    card.createDiv({ cls: "sd-card-title", text: t("AI 沉淀审核") });
     const drafts: TFile[] = [];
     for (const file of this.plugin.app.vault.getMarkdownFiles()) {
       const cache = this.plugin.app.metadataCache.getFileCache(file);
       if (cache?.frontmatter?.sediment_status === "draft") drafts.push(file);
     }
     if (drafts.length === 0) {
-      card.createDiv({ cls: "kp-empty", text: "没有待审核的 AI 草稿。" });
+      card.createDiv({ cls: "kp-empty", text: t("没有待审核的 AI 草稿。") });
       return;
     }
     const list = card.createDiv({ cls: "sd-draft-list" });
@@ -407,19 +437,19 @@ export class DashboardView extends ItemView {
       const title = item.createEl("button", { cls: "sd-draft-title", text: file.basename });
       title.onclick = () => void this.plugin.app.workspace.openLinkText(file.path, "", false);
       const cache = this.plugin.app.metadataCache.getFileCache(file);
-      const category = String(cache?.frontmatter?.category ?? "未分类");
+      const category = String(cache?.frontmatter?.category ?? t("未分类"));
       item.createDiv({ cls: "sd-card-sub", text: `${category} · ${file.path}` });
       const actions = item.createDiv({ cls: "sd-draft-actions" });
-      actions.createEl("button", { text: "采纳并归档" }).onclick = () => {
+      actions.createEl("button", { text: t("采纳并归档") }).onclick = () => {
         void this.plugin.agentApi.updateFrontmatter(file.path, { sediment_status: "accepted" }).then(() => {
-          new Notice("已采纳");
+          new Notice(t("已采纳"));
           this.render();
         });
       };
-      actions.createEl("button", { text: "合并到关联笔记" }).onclick = () => void this.mergeDraft(file);
-      actions.createEl("button", { text: "驳回删除" }).onclick = () => {
+      actions.createEl("button", { text: t("合并到关联笔记") }).onclick = () => void this.mergeDraft(file);
+      actions.createEl("button", { text: t("驳回删除") }).onclick = () => {
         void this.plugin.app.vault.trash(file, false).then(() => {
-          new Notice("已驳回并移入回收站");
+          new Notice(t("已驳回并移入回收站"));
           this.render();
         });
       };
@@ -431,30 +461,30 @@ export class DashboardView extends ItemView {
     const links = cache?.frontmatter?.links;
     const first = Array.isArray(links) && links.length > 0 ? String(links[0]) : "";
     if (!first) {
-      new Notice("这张草稿没有关联笔记，无法合并");
+      new Notice(t("这张草稿没有关联笔记，无法合并"));
       return;
     }
     const target = this.plugin.app.vault
       .getMarkdownFiles()
       .find((item) => item.basename === first || item.path === first);
     if (!target) {
-      new Notice(`找不到关联笔记：${first}`);
+      new Notice(tf("找不到关联笔记：{name}", { name: first }));
       return;
     }
     const source = await this.plugin.app.vault.read(file);
     const body = source.replace(/^---[\s\S]*?---\s*/, "");
     await this.plugin.app.vault.process(target, (data) => `${data.trimEnd()}\n\n${body.trim()}\n`);
     await this.plugin.app.vault.trash(file, false);
-    new Notice(`已合并到 ${target.basename}`);
+    new Notice(tf("已合并到 {name}", { name: target.basename }));
     this.render();
   }
 
   private renderWorkLogs(root: HTMLElement): void {
     const card = root.createDiv({ cls: "sd-card" });
-    card.createDiv({ cls: "sd-card-title", text: "智能体工作日志" });
+    card.createDiv({ cls: "sd-card-title", text: t("智能体工作日志") });
     const logs = this.plugin.store.data.workLogs.slice(0, 10);
     if (logs.length === 0) {
-      card.createDiv({ cls: "kp-empty", text: "还没有工作日志。" });
+      card.createDiv({ cls: "kp-empty", text: t("还没有工作日志。") });
       return;
     }
     const list = card.createDiv({ cls: "sd-feed-list" });
@@ -467,10 +497,10 @@ export class DashboardView extends ItemView {
 
   private renderFooter(root: HTMLElement): HTMLElement {
     const footer = root.createDiv({ cls: "sd-footer" });
-    footer.createSpan({ text: `Sediment ${this.plugin.manifest.version} · 数据只留在本地` });
-    const changelog = footer.createEl("button", { text: "更新记录" });
+    footer.createSpan({ text: `Sediment ${this.plugin.manifest.version} · ${t("数据只留在本地")}` });
+    const changelog = footer.createEl("button", { text: t("更新记录") });
     changelog.onclick = () => new ChangelogModal(this.plugin.app).open();
-    const styleButton = footer.createEl("button", { text: "换画风" });
+    const styleButton = footer.createEl("button", { text: t("换画风") });
     styleButton.onclick = () => this.cycleArtStyle();
     return footer;
   }
@@ -483,11 +513,11 @@ export class DashboardView extends ItemView {
     return card;
   }
 
-  private barChart(values: number[], color = "var(--interactive-accent)"): string {
+  private barChart(values: number[], color = "var(--interactive-accent)", refs: ChartRef[] = []): string {
     const width = 900;
     const height = 120;
     const pad = 4;
-    const max = Math.max(1, ...values);
+    const max = Math.max(1, ...values, ...refs.map((ref) => ref.value));
     const barWidth = (width - pad * 2) / Math.max(1, values.length);
     const rects = values
       .map((value, index) => {
@@ -495,14 +525,15 @@ export class DashboardView extends ItemView {
         return `<rect x="${(pad + index * barWidth).toFixed(1)}" y="${(height - pad - h).toFixed(1)}" width="${(barWidth * 0.72).toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${color}" opacity="${value > 0 ? 0.8 : 0.12}"/>`;
       })
       .join("");
-    return `<svg class="sd-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${rects}</svg>`;
+    const refLines = this.referenceLines(refs, max, width, height, pad);
+    return `<svg class="sd-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${rects}${refLines}</svg>`;
   }
 
-  private multiLine(series: Array<{ values: number[]; color: string }>): string {
+  private multiLine(series: Array<{ values: number[]; color: string }>, refs: ChartRef[] = []): string {
     const width = 900;
     const height = 140;
     const pad = 6;
-    const max = Math.max(1, ...series.flatMap((item) => item.values));
+    const max = Math.max(1, ...series.flatMap((item) => item.values), ...refs.map((ref) => ref.value));
     const lines = series
       .map((item) => {
         const points = item.values
@@ -515,7 +546,28 @@ export class DashboardView extends ItemView {
         return `<polyline points="${points}" fill="none" stroke="${item.color}" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
       })
       .join("");
-    return `<svg class="sd-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${lines}</svg>`;
+    const refLines = this.referenceLines(refs, max, width, height, pad);
+    return `<svg class="sd-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${lines}${refLines}</svg>`;
+  }
+
+  /** 数字参照线：均值/目标等水平虚线，右上角带数值标签。 */
+  private referenceLines(refs: ChartRef[], max: number, width: number, height: number, pad: number): string {
+    return refs
+      .filter((ref) => ref.value > 0)
+      .map((ref) => {
+        const y = height - pad - (Math.min(ref.value, max) / max) * (height - pad * 2);
+        const stroke = ref.color ?? "var(--text-muted)";
+        return (
+          `<line x1="${pad}" y1="${y.toFixed(1)}" x2="${width - pad}" y2="${y.toFixed(1)}" stroke="${stroke}" stroke-width="1" stroke-dasharray="4 4" vector-effect="non-scaling-stroke" opacity="0.75"/>` +
+          `<text x="${width - pad - 2}" y="${Math.max(9, y - 3).toFixed(1)}" text-anchor="end" font-size="9" fill="${stroke}">${ref.label}</text>`
+        );
+      })
+      .join("");
+  }
+
+  private mean(values: number[]): number {
+    if (values.length === 0) return 0;
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
   }
 
   private currentStreak(): number {
@@ -581,14 +633,14 @@ export class DashboardView extends ItemView {
   private renderOverview(root: HTMLElement): void {
     const card = root.createDiv({ cls: "sd-card sd-overview", attr: { id: "sd-overview" } });
     const head = card.createDiv({ cls: "sd-card-head" });
-    head.createDiv({ cls: "sd-card-title", text: "知识脉冲概览" });
-    head.createDiv({ cls: "sd-card-sub", text: `近 ${RANGE_OPTIONS.find((r) => r[0] === this.range)?.[1] ?? ""} · 可靠记录` });
+    head.createDiv({ cls: "sd-card-title", text: t("知识脉冲概览") });
+    head.createDiv({ cls: "sd-card-sub", text: `${t("近")} ${t(RANGE_OPTIONS.find((r) => r[0] === this.range)?.[1] ?? "")} · ${t("可靠记录")}` });
 
     const ranges = card.createDiv({ cls: "sd-ranges" });
     for (const [key, label] of RANGE_OPTIONS) {
       const button = ranges.createEl("button", {
         cls: `sd-range ${key === this.range ? "is-active" : ""}`,
-        text: label,
+        text: t(label),
       });
       button.onclick = () => {
         this.range = key;
@@ -605,10 +657,15 @@ export class DashboardView extends ItemView {
     );
     const grid = card.createDiv({ cls: "sd-overview-grid" });
     const left = grid.createDiv({ cls: "sd-overview-left" });
-    left.createDiv({ cls: "sd-metric-label", text: "累计贡献分" });
+    left.createDiv({ cls: "sd-metric-label", text: t("累计贡献分") });
     left.createDiv({ cls: "sd-metric-value", text: String(total) });
-    left.createDiv({ cls: "sd-metric-hint", text: `${active} 天有记录 · 日均 ${keys.length ? Math.round(total / keys.length) : 0} 分` });
-    left.innerHTML += this.sparkline(keys.map((key) => this.value(key)));
+    left.createDiv({ cls: "sd-metric-hint", text: tf("{active} 天有记录 · 日均 {avg} 分", { active, avg: keys.length ? Math.round(total / keys.length) : 0 }) });
+    const overviewValues = keys.map((key) => this.value(key));
+    const overviewMean = this.mean(overviewValues);
+    left.innerHTML += this.sparkline(
+      overviewValues,
+      overviewMean > 0 ? [{ value: overviewMean, label: tf("均值 {n}", { n: Math.round(overviewMean) }) }] : []
+    );
 
     const right = grid.createDiv({ cls: "sd-overview-right" });
     const mini = (label: string, value: string, hint: string, ring?: string): void => {
@@ -618,17 +675,17 @@ export class DashboardView extends ItemView {
       item.createDiv({ cls: "sd-mini-hint", text: hint });
       if (ring) item.createDiv({ cls: "sd-mini-ring" }).innerHTML = ring;
     };
-    mini("活跃天数", `${active} / ${keys.length}`, "有记录的日子", this.ring(active, keys.length));
-    mini("当前连续", `${this.currentStreak()} 天`, `最长 ${this.longestStreak()} 天 · 按全部历史`);
-    mini("投入时间", "0 小时", "交互 / 专注");
-    mini("最高的一天", this.value(best) > 0 ? String(this.value(best)) : "—", best);
+    mini(t("活跃天数"), `${active} / ${keys.length}`, t("有记录的日子"), this.ring(active, keys.length));
+    mini(t("当前连续"), tf("{n} 天", { n: this.currentStreak() }), tf("最长 {n} 天 · 按全部历史", { n: this.longestStreak() }));
+    mini(t("投入时间"), t("0 小时"), t("交互 / 专注"));
+    mini(t("最高的一天"), this.value(best) > 0 ? String(this.value(best)) : "—", best);
   }
 
-  private sparkline(values: number[]): string {
+  private sparkline(values: number[], refs: ChartRef[] = []): string {
     const width = 620;
     const height = 96;
     const pad = 10;
-    const max = Math.max(1, ...values);
+    const max = Math.max(1, ...values, ...refs.map((ref) => ref.value));
     const coordinates = values.map((value, index) => ({
       x: pad + (index / Math.max(1, values.length - 1)) * (width - pad * 2),
       y: height - pad - (value / max) * (height - pad * 2),
@@ -648,6 +705,7 @@ export class DashboardView extends ItemView {
       peak && max > 0
         ? `<text x="${peak.x.toFixed(1)}" y="${Math.max(10, peak.y - 10).toFixed(1)}" text-anchor="middle" font-size="10" fill="var(--text-normal)">${max}</text>`
         : "";
+    const refLines = this.referenceLines(refs, max, width, height, pad);
     return `<svg class="sd-spark" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
 <defs><linearGradient id="sd-spark-fill" x1="0" y1="0" x2="0" y2="1">
 <stop offset="0%" stop-color="var(--interactive-accent)" stop-opacity="0.28"/>
@@ -655,7 +713,7 @@ export class DashboardView extends ItemView {
 </linearGradient></defs>
 <polygon points="${pad},${height - pad} ${points} ${width - pad},${height - pad}" fill="url(#sd-spark-fill)"/>
 <polyline points="${points}" fill="none" stroke="var(--interactive-accent)" stroke-width="2" vector-effect="non-scaling-stroke"/>
-${dots}${peakLabel}</svg>`;
+${refLines}${dots}${peakLabel}</svg>`;
   }
 
   private ring(active: number, total: number): string {
@@ -684,15 +742,15 @@ ${dots}${peakLabel}</svg>`;
   private renderHeatmap(root: HTMLElement, dual: boolean): void {
     const card = root.createDiv({ cls: "sd-card sd-heatmap", attr: { id: "sd-heatmap" } });
     const head = card.createDiv({ cls: "sd-card-head" });
-    head.createDiv({ cls: "sd-card-title", text: dual ? "人机双色热力图" : "年度知识活跃脉冲" });
-    head.createDiv({ cls: "sd-card-sub", text: `近 53 周 · ${this.metricLabel()}` });
+    head.createDiv({ cls: "sd-card-title", text: dual ? t("人机双色热力图") : t("年度知识活跃脉冲") });
+    head.createDiv({ cls: "sd-card-sub", text: `${t("近 53 周")} · ${this.metricLabel()}` });
 
     const metrics = card.createDiv({ cls: "sd-metrics" });
     for (const metric of METRICS) {
       const button = metrics.createEl("button", {
         cls: `sd-metric-tab ${metric.key === this.metric ? "is-active" : ""}`,
-        text: metric.label,
-        attr: { title: metric.hint },
+        text: t(metric.label),
+        attr: { title: t(metric.hint) },
       });
       button.onclick = () => {
         this.metric = metric.key;
@@ -727,13 +785,19 @@ ${dots}${peakLabel}</svg>`;
         const key = dateKey(date);
         const record = store.getDay(key);
         const cellValue = Number(record[this.metric]) || 0;
-        const element = column.createDiv({ cls: "kp-cell", attr: { "data-date": key } });
+        const element = column.createDiv({
+          cls: "kp-cell",
+          attr: { "data-date": key, role: "gridcell", tabindex: "-1" },
+        });
         if (date > today) {
           element.addClass("kp-future");
+          element.setAttribute("aria-disabled", "true");
         } else {
+          element.setAttribute("aria-label", `${key} · ${this.metricLabel()} ${cellValue}`);
           element.onclick = () => {
             this.hideHeatTooltip();
             this.selected = key;
+            this.pendingFocusDate = key;
             this.render();
           };
           element.onmouseenter = (event) => this.showHeatTooltip(event, key);
@@ -766,9 +830,39 @@ ${dots}${peakLabel}</svg>`;
       );
     }
     const legend = wrap.createDiv({ cls: "kp-legend" });
-    legend.createSpan({ text: dual ? "人" : "少" });
+    legend.createSpan({ text: dual ? t("人") : t("少") });
     for (let level = 0; level <= 4; level += 1) legend.createDiv({ cls: `kp-cell kp-lvl-${level}` });
-    legend.createSpan({ text: dual ? "AI" : "多" });
+    legend.createSpan({ text: dual ? t("AI") : t("多") });
+
+    // 键盘导航：roving tabindex，方向键在周/日间移动，Enter/空格选中。
+    const selectable = cells.filter((cell) => !cell.el.hasClass("kp-future"));
+    const focusKey =
+      this.selected && selectable.some((cell) => cell.key === this.selected)
+        ? this.selected
+        : selectable[selectable.length - 1]?.key;
+    for (const cell of selectable) cell.el.setAttribute("tabindex", cell.key === focusKey ? "0" : "-1");
+    columns.setAttribute("role", "grid");
+    columns.setAttribute("aria-label", t("年度活跃热力图，方向键移动，回车选中"));
+    columns.addEventListener("keydown", (event) => {
+      const target = event.target as HTMLElement;
+      const index = cells.findIndex((cell) => cell.el === target);
+      if (index < 0) return;
+      const deltas: Record<string, number> = { ArrowRight: 7, ArrowLeft: -7, ArrowDown: 1, ArrowUp: -1 };
+      if (event.key in deltas) {
+        event.preventDefault();
+        const next = index + deltas[event.key];
+        if (next < 0 || next >= cells.length || cells[next].el.hasClass("kp-future")) return;
+        cells[index].el.setAttribute("tabindex", "-1");
+        cells[next].el.setAttribute("tabindex", "0");
+        cells[next].el.focus();
+      } else if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        this.hideHeatTooltip();
+        this.selected = cells[index].key;
+        this.pendingFocusDate = cells[index].key;
+        this.render();
+      }
+    });
 
     if (this.selected) {
       const day = store.getDay(this.selected);
@@ -784,7 +878,7 @@ ${dots}${peakLabel}</svg>`;
       ];
       for (const [label, value] of rows) {
         const item = detail.createDiv({ cls: "sd-day-item" });
-        item.createDiv({ cls: "kp-detail-label", text: label });
+        item.createDiv({ cls: "kp-detail-label", text: t(label) });
         item.createEl("strong", { text: String(value) });
       }
     }
@@ -792,7 +886,7 @@ ${dots}${peakLabel}</svg>`;
 
   private renderHorizon(root: HTMLElement): void {
     const card = root.createDiv({ cls: "sd-card sd-horizon" });
-    card.createDiv({ cls: "sd-card-title", text: "地平线 · 最近 60 天" });
+    card.createDiv({ cls: "sd-card-title", text: t("地平线 · 最近 60 天") });
     const values = lastNDays(60).map((key) => this.value(key));
     const max = Math.max(1, ...values);
     const step = 1600 / values.length;
@@ -835,15 +929,15 @@ ${sailing}
   private renderAnalytics(root: HTMLElement): void {
     const keys = this.chartKeys();
     const days = keys.map((key) => this.plugin.store.getDay(key));
-    const label = RANGE_OPTIONS.find((range) => range[0] === this.range)?.[1] ?? "";
+    const label = t(RANGE_OPTIONS.find((range) => range[0] === this.range)?.[1] ?? "");
 
-    const trend = this.analyticsCard(root, "写作与时间趋势", label);
+    const trend = this.analyticsCard(root, t("写作与时间趋势"), label);
     trend.setAttribute("id", "sd-trend");
     const trendTabs = trend.querySelector(".sd-card-head")?.createDiv({ cls: "sd-trend-tabs" });
     const trendOptions: Array<["writing" | "changes" | "time", string]> = [
-      ["writing", "每日写作"],
-      ["changes", "写作变化"],
-      ["time", "时间投入"],
+      ["writing", t("每日写作")],
+      ["changes", t("写作变化")],
+      ["time", t("时间投入")],
     ];
     for (const [key, title] of trendOptions) {
       const button = trendTabs?.createEl("button", {
@@ -857,30 +951,46 @@ ${sailing}
     }
     const trendContent = trend.createDiv({ cls: "sd-trend-content" });
     if (this.trendTab === "writing") {
-      trendContent.innerHTML += this.barChart(days.map((day) => day.wordsAdded));
+      const writingValues = days.map((day) => day.wordsAdded);
+      const goal = this.plugin.store.settings.dailyWordGoal || 0;
+      const writingMean = this.mean(writingValues);
+      const writingRefs: ChartRef[] = [];
+      if (goal > 0) writingRefs.push({ value: goal, label: tf("目标 {n}", { n: goal }), color: "var(--text-accent)" });
+      if (writingMean > 0) writingRefs.push({ value: writingMean, label: tf("均值 {n}", { n: Math.round(writingMean) }) });
+      trendContent.innerHTML += this.barChart(writingValues, "var(--interactive-accent)", writingRefs);
     } else if (this.trendTab === "changes") {
-      trendContent.innerHTML += this.multiLine([
-        { values: days.map((day) => day.wordsAdded), color: "var(--interactive-accent)" },
-        { values: days.map((day) => day.wordsRemoved), color: "var(--text-faint)" },
-        { values: days.map((day) => day.capturedWords), color: "var(--text-muted)" },
-      ]);
+      const addedValues = days.map((day) => day.wordsAdded);
+      const addedMean = this.mean(addedValues);
+      trendContent.innerHTML += this.multiLine(
+        [
+          { values: addedValues, color: "var(--interactive-accent)" },
+          { values: days.map((day) => day.wordsRemoved), color: "var(--text-faint)" },
+          { values: days.map((day) => day.capturedWords), color: "var(--text-muted)" },
+        ],
+        addedMean > 0 ? [{ value: addedMean, label: tf("新增均值 {n}", { n: Math.round(addedMean) }) }] : []
+      );
     } else {
-      trendContent.innerHTML += this.multiLine([
-        { values: days.map((day) => day.activeMinutes), color: "var(--interactive-accent)" },
-        { values: days.map((day) => day.focusMinutes), color: "var(--text-faint)" },
-      ]);
+      const activeValues = days.map((day) => day.activeMinutes);
+      const activeMean = this.mean(activeValues);
+      trendContent.innerHTML += this.multiLine(
+        [
+          { values: activeValues, color: "var(--interactive-accent)" },
+          { values: days.map((day) => day.focusMinutes), color: "var(--text-faint)" },
+        ],
+        activeMean > 0 ? [{ value: activeMean, label: tf("活跃均值 {n}", { n: Math.round(activeMean) }) }] : []
+      );
     }
 
     const totalWords = days.reduce((sum, day) => sum + day.wordsAdded, 0);
     const captured = days.reduce((sum, day) => sum + day.capturedWords, 0);
-    const source = this.analyticsCard(root, "写作来源", "逐步写入 / 大段捕获");
+    const source = this.analyticsCard(root, t("写作来源"), t("逐步写入 / 大段捕获"));
     const typed = Math.max(0, totalWords - captured);
     const bar = source.createDiv({ cls: "sd-source-bar" });
     bar.createDiv({ cls: "sd-source-typed" }).style.width = `${totalWords ? (typed / totalWords) * 100 : 0}%`;
     bar.createDiv({ cls: "sd-source-capture" }).style.width = `${totalWords ? (captured / totalWords) * 100 : 0}%`;
-    source.createDiv({ cls: "sd-card-sub", text: `逐步写入 ${typed} 字 · 大段捕获 ${captured} 字` });
+    source.createDiv({ cls: "sd-card-sub", text: tf("逐步写入 {typed} 字 · 大段捕获 {captured} 字", { typed, captured }) });
 
-    const folders = this.analyticsCard(root, "投入去向", "按目录统计（笔记 × 天）");
+    const folders = this.analyticsCard(root, t("投入去向"), t("按目录统计（笔记 × 天）"));
     folders.setAttribute("id", "sd-folders");
     const folderTotals = new Map<string, number>();
     for (const day of days) {
@@ -899,10 +1009,10 @@ ${sailing}
       const track = row.createDiv({ cls: "sd-folder-track" });
       const percent = folderWordsTotal > 0 ? (words / folderWordsTotal) * 100 : 0;
       track.createDiv({ cls: "sd-folder-fill" }).style.width = `${percent}%`;
-      row.createEl("strong", { text: `${words} 字 · ${percent.toFixed(0)}%` });
+      row.createEl("strong", { text: tf("{words} 字 · {percent}%", { words, percent: percent.toFixed(0) }) });
     }
     if (sortedFolders.length > 6) {
-      folders.createEl("button", { text: this.foldersExpanded ? "收起" : `展开其余 ${sortedFolders.length - 6} 项` }).onclick = () => {
+      folders.createEl("button", { text: this.foldersExpanded ? t("收起") : tf("展开其余 {n} 项", { n: sortedFolders.length - 6 }) }).onclick = () => {
         this.foldersExpanded = !this.foldersExpanded;
         this.render();
       };
@@ -911,8 +1021,13 @@ ${sailing}
     const hourly = Array.from({ length: 24 }, (_, hour) =>
       days.reduce((sum, day) => sum + (day.hourlyWords[hour] ?? 0), 0)
     );
-    const hours = this.analyticsCard(root, "活跃时段", "按小时的新增词数");
-    hours.innerHTML += this.barChart(hourly);
+    const hours = this.analyticsCard(root, t("活跃时段"), t("按小时的新增词数"));
+    const hourlyMean = this.mean(hourly);
+    hours.innerHTML += this.barChart(
+      hourly,
+      "var(--interactive-accent)",
+      hourlyMean > 0 ? [{ value: hourlyMean, label: tf("均值 {n}", { n: Math.round(hourlyMean) }) }] : []
+    );
     const weekdayHour = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0));
     for (const key of keys) {
       const day = this.plugin.store.getDay(key);
@@ -929,11 +1044,11 @@ ${sailing}
       }
     }
 
-    const rhythm = this.analyticsCard(root, "投入节律矩阵", "六项指标按天对齐");
+    const rhythm = this.analyticsCard(root, t("投入节律矩阵"), t("六项指标按天对齐"));
     const rhythmHead = rhythm.querySelector(".sd-card-head");
     if (rhythmHead) {
       const toggle = rhythmHead.createEl("button", {
-        text: this.rhythmActiveOnly ? "仅活跃日期" : "全部日期",
+        text: this.rhythmActiveOnly ? t("仅活跃日期") : t("全部日期"),
       });
       toggle.onclick = () => {
         this.rhythmActiveOnly = !this.rhythmActiveOnly;
@@ -942,7 +1057,7 @@ ${sailing}
     }
     const grid = rhythm.createDiv({ cls: "sd-rhythm" });
     const metricKeys = ["contribution", "wordsAdded", "activeMinutes", "focusMinutes", "notesCreated", "tasksCompleted"] as const;
-    grid.createDiv({ cls: "sd-rhythm-label", text: "日期" });
+    grid.createDiv({ cls: "sd-rhythm-label", text: t("日期") });
     for (const key of metricKeys) grid.createDiv({ cls: "sd-rhythm-label", text: this.shortMetric(key) });
     const maxima = metricKeys.map((key) => Math.max(1, ...days.map((day) => Number(day[key]) || 0)));
     const rhythmKeys = (this.rhythmActiveOnly
@@ -969,7 +1084,7 @@ ${sailing}
       notesCreated: "新笔记",
       tasksCompleted: "任务",
     };
-    return names[key] ?? key;
+    return names[key] ? t(names[key]) : key;
   }
 
   private moonGlyph(date: Date): string {
@@ -989,7 +1104,7 @@ ${sailing}
   private renderYearly(root: HTMLElement): void {
     const year = new Date().getFullYear();
     const entries = Object.entries(this.plugin.store.data.days).filter(([key]) => key.startsWith(`${year}-`));
-    const wheel = this.analyticsCard(root, "年轮", `${year} 年 · 每天一片花瓣`);
+    const wheel = this.analyticsCard(root, t("年轮"), tf("{year} 年 · 每天一片花瓣", { year }));
     wheel.setAttribute("id", "sd-yearly");
     const petals = entries
       .map(([key, day]) => {
@@ -1024,7 +1139,7 @@ ${sailing}
     const watermark = `<text x="110" y="116" text-anchor="middle" font-size="26" font-weight="600" fill="var(--text-faint)" opacity="0.18">${year}</text>`;
     wheel.innerHTML += `<svg viewBox="0 0 220 220" class="sd-wheel">${tracks}${monthTicks}${watermark}${petals}</svg>`;
 
-    const fingerprint = this.analyticsCard(root, "知识指纹", "每天一根色条");
+    const fingerprint = this.analyticsCard(root, t("知识指纹"), t("每天一根色条"));
     const fingerprintSvg = Array.from({ length: 12 }, (_, month) => {
       const bars = Array.from({ length: 31 }, (_, index) => {
         const key = `${year}-${String(month + 1).padStart(2, "0")}-${String(index + 1).padStart(2, "0")}`;
@@ -1035,7 +1150,7 @@ ${sailing}
     }).join("");
     fingerprint.innerHTML += `<svg viewBox="0 0 420 248" class="sd-fingerprint">${fingerprintSvg}</svg>`;
 
-    const calendar = this.analyticsCard(root, "月相日历", "满月是高峰日，新月是休息日");
+    const calendar = this.analyticsCard(root, t("月相日历"), t("满月是高峰日，新月是休息日"));
     for (let month = 0; month < 12; month += 1) {
       const section = calendar.createDiv({ cls: "sd-calendar-month" });
       section.createDiv({ cls: "sd-calendar-title", text: `${month + 1} 月` });
@@ -1049,7 +1164,7 @@ ${sailing}
       }
     }
 
-    const poster = this.analyticsCard(root, "月报海报", "点左右箭头切换月份");
+    const poster = this.analyticsCard(root, t("月报海报"), t("点左右箭头切换月份"));
     const posterHead = poster.createDiv({ cls: "sd-poster-head" });
     const prev = posterHead.createEl("button", { text: "‹" });
     const title = posterHead.createDiv({ cls: "sd-poster-title", text: `${year} 年 ${this.posterMonth + 1} 月` });
@@ -1069,10 +1184,10 @@ ${sailing}
     const monthWords = monthDays.reduce((sum, [, day]) => sum + day.wordsAdded, 0);
     const monthActive = monthDays.filter(([, day]) => day.contribution > 0).length;
     post.createDiv({ cls: "sd-poster-big", text: String(monthTotal) });
-    post.createDiv({ cls: "sd-poster-sub", text: "本月贡献分" });
+    post.createDiv({ cls: "sd-poster-sub", text: t("本月贡献分") });
     const stats = post.createDiv({ cls: "sd-poster-stats" });
-    stats.createSpan({ text: `活跃 ${monthActive} 天` });
-    stats.createSpan({ text: `新增 ${monthWords} 字` });
+    stats.createSpan({ text: tf("活跃 {n} 天", { n: monthActive }) });
+    stats.createSpan({ text: tf("新增 {n} 字", { n: monthWords }) });
     const grid = post.createDiv({ cls: "sd-poster-grid" });
     for (let day = 1; day <= new Date(year, this.posterMonth + 1, 0).getDate(); day += 1) {
       const value = this.plugin.store.getDay(`${prefix}-${String(day).padStart(2, "0")}`).contribution;
@@ -1081,7 +1196,7 @@ ${sailing}
         `background:var(--interactive-accent);opacity:${value > 0 ? 0.2 + Math.min(0.8, value / 12) : 0.06}`
       );
     }
-    poster.createEl("button", { cls: "sd-poster-export", text: "导出 PNG" }).onclick = () =>
+    poster.createEl("button", { cls: "sd-poster-export", text: t("导出 PNG") }).onclick = () =>
       void this.exportPoster(title.textContent, monthTotal, monthWords, monthActive);
   }
 
@@ -1112,10 +1227,10 @@ ${sailing}
   private renderReview(root: HTMLElement): void {
     const card = root.createDiv({ cls: "sd-card sd-text-view", attr: { id: "sd-review-card" } });
     const head = card.createDiv({ cls: "sd-card-head" });
-    head.createDiv({ cls: "sd-card-title", text: "知识复盘 · 本周" });
+    head.createDiv({ cls: "sd-card-title", text: t("知识复盘 · 本周") });
     const markdown = buildWeeklyReview(this.plugin.store, new Date());
-    head.createEl("button", { text: "复制 Markdown" }).onclick = () => {
-      void navigator.clipboard.writeText(markdown).then(() => new Notice("周复盘已复制"));
+    head.createEl("button", { text: t("复制 Markdown") }).onclick = () => {
+      void navigator.clipboard.writeText(markdown).then(() => new Notice(t("周复盘已复制")));
     };
     const preview = card.createDiv({ cls: "sd-review-preview" });
     void MarkdownRenderer.render(this.plugin.app, markdown, preview, "", this);
@@ -1194,7 +1309,7 @@ ${celestial}
     const state = this.plugin.pomodoro.state();
     const minutes = String(Math.floor(state.remaining / 60)).padStart(2, "0");
     const seconds = String(state.remaining % 60).padStart(2, "0");
-    const mode = state.mode === "focus" ? "番茄" : state.mode === "short" ? "短休" : "长休";
+    const mode = state.mode === "focus" ? t("番茄") : state.mode === "short" ? t("短休") : t("长休");
     button.textContent = `${state.running ? "⏸" : "▶"} ${mode} ${minutes}:${seconds}`;
   }
 
@@ -1207,7 +1322,8 @@ ${celestial}
   }
 
   private metricLabel(): string {
-    return METRICS.find((metric) => metric.key === this.metric)?.label ?? this.metric;
+    const label = METRICS.find((metric) => metric.key === this.metric)?.label;
+    return label ? t(label) : this.metric;
   }
 }
 

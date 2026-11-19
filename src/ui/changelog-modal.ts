@@ -1,5 +1,6 @@
 import { App, Component, MarkdownRenderer, Modal } from "obsidian";
 import { CHANGELOG } from "../changelog";
+import { t } from "../i18n";
 
 /** 展示由 CHANGELOG.md 同步进插件的增量更新记录。 */
 export class ChangelogModal extends Modal {
@@ -13,7 +14,7 @@ export class ChangelogModal extends Modal {
     this.component.load();
     const { contentEl } = this;
     contentEl.addClass("sd-changelog-modal");
-    contentEl.createEl("h2", { text: "Sediment 更新记录" });
+    contentEl.createEl("h2", { text: t("Sediment 更新记录") });
     const body = contentEl.createDiv({ cls: "sd-changelog-body" });
     void MarkdownRenderer.render(this.app, CHANGELOG, body, "", this.component);
   }
