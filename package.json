@@ -1,6 +1,6 @@
 {
   "name": "sediment",
-  "version": "0.8.4",
+  "version": "0.8.5",
   "description": "Local-first Obsidian plugin: knowledge stats, heatmap, quick memos, weekly reviews and agent knowledge deposition.",
   "main": "main.js",
   "scripts": {
