@@ -31,7 +31,7 @@ module.exports = __toCommonJS(main_exports);
 var import_obsidian11 = require("obsidian");
 
 // src/agent/api.ts
-var import_obsidian = require("obsidian");
+var import_obsidian2 = require("obsidian");
 
 // src/utils/dates.ts
 function dateKey(d) {
@@ -164,6 +164,9 @@ function buildWeeklyReview(store, anchor) {
   return lines.join("\n");
 }
 
+// src/tracking/tracker.ts
+var import_obsidian = require("obsidian");
+
 // src/utils/vault.ts
 function normalizeFolder(path) {
   return path.trim().replace(/^\/+|\/+$/g, "").replace(/\/+/g, "/");
@@ -184,6 +187,138 @@ async function ensureFolder(vault, path) {
   }
 }
 
+// src/tracking/tracker.ts
+function countWords(text) {
+  var _a, _b;
+  const cjk = ((_a = text.match(/[\u3400-\u9fff]/g)) != null ? _a : []).length;
+  const latin = ((_b = text.replace(/[\u3400-\u9fff]/g, " ").match(/[A-Za-z0-9_'-]+/g)) != null ? _b : []).length;
+  return cjk + latin;
+}
+function countCheckedTasks(text) {
+  var _a;
+  return ((_a = text.match(/^\s*[-*+]\s+\[(x|X)\]/gm)) != null ? _a : []).length;
+}
+var Tracker = class {
+  constructor(plugin, store) {
+    this.plugin = plugin;
+    this.store = store;
+    this.baseline = /* @__PURE__ */ new Map();
+    this.countedSessions = /* @__PURE__ */ new Set();
+    this.activeBuckets = /* @__PURE__ */ new Set();
+    this.startedAt = Date.now();
+    this.ready = false;
+  }
+  async start() {
+    const vault = this.plugin.app.vault;
+    for (const file of vault.getMarkdownFiles()) {
+      this.baseline.set(file.path, await this.snapshot(file));
+    }
+    this.plugin.registerEvent(
+      vault.on("create", (file) => {
+        if (file instanceof import_obsidian.TFile) void this.onCreate(file);
+      })
+    );
+    this.plugin.registerEvent(
+      vault.on("modify", (file) => {
+        if (file instanceof import_obsidian.TFile) void this.onModify(file);
+      })
+    );
+    this.plugin.registerEvent(
+      vault.on("delete", (file) => {
+        this.baseline.delete(file.path);
+      })
+    );
+    this.plugin.registerEvent(
+      vault.on("rename", (file, oldPath) => {
+        const snap = this.baseline.get(oldPath);
+        if (snap) {
+          this.baseline.delete(oldPath);
+          this.baseline.set(file.path, snap);
+        }
+      })
+    );
+    this.ready = true;
+  }
+  async snapshot(file) {
+    try {
+      const text = await this.plugin.app.vault.cachedRead(file);
+      return { words: countWords(text), tasks: countCheckedTasks(text) };
+    } catch (error) {
+      return { words: 0, tasks: 0 };
+    }
+  }
+  isExcluded(path) {
+    const folder = normalizeFolder(this.store.settings.dailyNoteFolder);
+    return folder.length > 0 && path.startsWith(`${folder}/`);
+  }
+  async onCreate(file) {
+    var _a, _b;
+    if (!this.ready || !file.path.endsWith(".md") || this.isExcluded(file.path)) return;
+    if (file.stat.ctime < this.startedAt - 6e4) return;
+    const snap = await this.snapshot(file);
+    this.baseline.set(file.path, snap);
+    if (snap.words > 0) {
+      const hour = (/* @__PURE__ */ new Date()).getHours();
+      const folder = (_b = (_a = file.parent) == null ? void 0 : _a.path) != null ? _b : "/";
+      this.store.updateDay(this.store.todayKey(), (day) => {
+        var _a2, _b2;
+        day.notesCreated += 1;
+        day.wordsAdded += snap.words;
+        day.capturedWords += snap.words;
+        day.hourlyWords[hour] = ((_a2 = day.hourlyWords[hour]) != null ? _a2 : 0) + snap.words;
+        day.folderWords[folder] = ((_b2 = day.folderWords[folder]) != null ? _b2 : 0) + snap.words;
+      });
+      this.markSession(file.path);
+      this.markActive();
+    }
+  }
+  async onModify(file) {
+    var _a, _b, _c;
+    if (!this.ready || !file.path.endsWith(".md") || this.isExcluded(file.path)) return;
+    const snap = await this.snapshot(file);
+    const prev = (_a = this.baseline.get(file.path)) != null ? _a : { words: 0, tasks: 0 };
+    this.baseline.set(file.path, snap);
+    const added = Math.max(0, snap.words - prev.words);
+    const removed = Math.max(0, prev.words - snap.words);
+    const tasks = Math.max(0, snap.tasks - prev.tasks);
+    if (added === 0 && removed === 0 && tasks === 0) return;
+    const hour = (/* @__PURE__ */ new Date()).getHours();
+    const folder = (_c = (_b = file.parent) == null ? void 0 : _b.path) != null ? _c : "/";
+    const captured = added >= 200 ? added : 0;
+    this.store.updateDay(this.store.todayKey(), (day) => {
+      var _a2, _b2;
+      day.wordsAdded += added;
+      day.wordsRemoved += removed;
+      day.tasksCompleted += tasks;
+      day.capturedWords += captured;
+      day.hourlyWords[hour] = ((_a2 = day.hourlyWords[hour]) != null ? _a2 : 0) + added;
+      day.folderWords[folder] = ((_b2 = day.folderWords[folder]) != null ? _b2 : 0) + added;
+    });
+    if (added > 0) this.markSession(file.path);
+    this.markActive();
+  }
+  /** 按 5 分钟桶估算交互活跃时间。 */
+  markActive() {
+    const now = /* @__PURE__ */ new Date();
+    const bucket = `${dateKey(now)}|${now.getHours()}:${Math.floor(now.getMinutes() / 5)}`;
+    if (this.activeBuckets.has(bucket)) return;
+    this.activeBuckets.add(bucket);
+    this.store.updateDay(this.store.todayKey(), (day) => {
+      day.activeMinutes += 5;
+    });
+  }
+  /** 同一文件同一天最多记一次有效编辑会话，避免连续键入刷分。 */
+  markSession(path) {
+    if (!this.store.settings.trackEdits) return;
+    const key = `${dateKey(/* @__PURE__ */ new Date())}|${path}`;
+    if (this.countedSessions.has(key)) return;
+    this.countedSessions.add(key);
+    this.store.updateDay(this.store.todayKey(), (day) => {
+      day.edits += 1;
+    });
+  }
+};
+
 // src/agent/api.ts
 function generateToken() {
   try {
@@ -191,6 +326,9 @@ function generateToken() {
   } catch (error) {
     return Math.random().toString(36).slice(2) + Date.now().toString(36);
   }
+}
+function splitList(value) {
+  return value.split(/[,，]/).map((item) => item.trim()).filter(Boolean);
 }
 function safePath(input) {
   const path = String(input != null ? input : "").replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+/g, "/");
@@ -208,10 +346,43 @@ var AgentApi = class {
   get vault() {
     return this.plugin.app.vault;
   }
+  deniedFolders() {
+    return splitList(this.plugin.store.settings.deniedFolders);
+  }
+  deniedTags() {
+    return splitList(this.plugin.store.settings.deniedTags);
+  }
+  isDeniedPath(path) {
+    return this.deniedFolders().some((folder) => path === folder || path.startsWith(`${folder}/`));
+  }
+  assertAllowed(path) {
+    if (this.isDeniedPath(path)) throw new Error(`\u8BBF\u95EE\u88AB\u62D2\u7EDD\uFF1A${path} \u4F4D\u4E8E\u9ED1\u540D\u5355\u76EE\u5F55`);
+  }
+  cacheTags(file) {
+    var _a, _b, _c, _d;
+    const cache = this.plugin.app.metadataCache.getFileCache(file);
+    const tags = /* @__PURE__ */ new Set();
+    for (const tag of (_a = cache == null ? void 0 : cache.tags) != null ? _a : []) tags.add(tag.tag.replace(/^#/, ""));
+    const frontmatterTags = (_d = (_b = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _b.tags) != null ? _d : (_c = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _c.tag;
+    if (Array.isArray(frontmatterTags)) {
+      for (const tag of frontmatterTags) tags.add(String(tag).replace(/^#/, ""));
+    } else if (typeof frontmatterTags === "string") {
+      for (const tag of frontmatterTags.split(/[,，\s]+/).filter(Boolean)) {
+        tags.add(tag.replace(/^#/, ""));
+      }
+    }
+    return [...tags];
+  }
+  hasDeniedTag(file) {
+    const denied = this.deniedTags();
+    return denied.length > 0 && this.cacheTags(file).some((tag) => denied.includes(tag));
+  }
   /** 列出笔记。folder 为空表示整个库。 */
   listNotes(folder = "", limit = 50) {
     const prefix = normalizeFolder(folder).toLowerCase();
-    return this.vault.getMarkdownFiles().filter((file) => !prefix || file.path.toLowerCase().startsWith(`${prefix}/`)).slice(0, Math.max(1, Math.min(limit, 500))).map((file) => {
+    return this.vault.getMarkdownFiles().filter(
+      (file) => (!prefix || file.path.toLowerCase().startsWith(`${prefix}/`)) && !this.isDeniedPath(file.path) && !this.hasDeniedTag(file)
+    ).slice(0, Math.max(1, Math.min(limit, 500))).map((file) => {
       var _a, _b;
       return {
         path: file.path,
@@ -227,6 +398,7 @@ var AgentApi = class {
     const results = [];
     for (const file of this.vault.getMarkdownFiles()) {
       if (results.length >= Math.max(1, Math.min(limit, 100))) break;
+      if (this.isDeniedPath(file.path) || this.hasDeniedTag(file)) continue;
       const text = await this.vault.cachedRead(file);
       const position = text.toLowerCase().indexOf(needle);
       if (position < 0) continue;
@@ -243,27 +415,33 @@ var AgentApi = class {
   /** 读取笔记全文。 */
   async readNote(path) {
     const safe = safePath(path);
+    this.assertAllowed(safe);
     const file = this.vault.getAbstractFileByPath(safe);
-    if (!(file instanceof import_obsidian.TFile)) throw new Error(`\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`);
+    if (!(file instanceof import_obsidian2.TFile)) throw new Error(`\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`);
+    if (this.hasDeniedTag(file)) throw new Error(`\u8BBF\u95EE\u88AB\u62D2\u7EDD\uFF1A${safe} \u5E26\u6709\u7981\u6B62\u8BBF\u95EE\u7684\u6807\u7B7E`);
     return { path: safe, content: await this.vault.read(file) };
   }
   /** 新建、覆盖或追加笔记。 */
   async writeNote(path, content, mode = "create") {
     const safe = safePath(path);
+    this.assertAllowed(safe);
     const folder = safe.includes("/") ? safe.slice(0, safe.lastIndexOf("/")) : "";
     await ensureFolder(this.vault, folder);
     const existing = this.vault.getAbstractFileByPath(safe);
     if (mode === "create" && existing) throw new Error(`\u7B14\u8BB0\u5DF2\u5B58\u5728\uFF1A${safe}`);
-    if (mode === "append" && existing instanceof import_obsidian.TFile) {
+    if (mode === "append" && existing instanceof import_obsidian2.TFile) {
       const previous = await this.vault.read(existing);
       await this.vault.modify(existing, `${previous.trimEnd()}
 
 ${content}`);
-    } else if (existing instanceof import_obsidian.TFile) {
+    } else if (existing instanceof import_obsidian2.TFile) {
       await this.vault.modify(existing, content);
     } else {
       await this.vault.create(safe, content);
     }
+    this.plugin.store.updateDay(this.plugin.store.todayKey(), (day) => {
+      day.aiWordsAdded += countWords(content);
+    });
     return { path: safe };
   }
   /** 记一条速记，写入当天日记。 */
@@ -298,6 +476,82 @@ ${content}`);
       tasksCompleted: day.tasksCompleted,
       memos: todayMemos.length,
       backlog: store.data.memos.filter((memo) => !memo.converted).length
+    };
+  }
+  /** 当前打开的笔记、选中文本与光标所在段落。 */
+  getActiveContext() {
+    var _a, _b, _c;
+    const workspace = this.plugin.app.workspace;
+    const file = workspace.getActiveFile();
+    const editor = (_a = workspace.activeEditor) == null ? void 0 : _a.editor;
+    if (!file || this.isDeniedPath(file.path)) {
+      return { file: null, selection: "", cursorLine: 0, cursorParagraph: "" };
+    }
+    const selection = (_b = editor == null ? void 0 : editor.getSelection()) != null ? _b : "";
+    const cursor = (_c = editor == null ? void 0 : editor.getCursor()) != null ? _c : { line: 0, ch: 0 };
+    let cursorParagraph = "";
+    if (editor) {
+      let start = cursor.line;
+      let end = cursor.line;
+      while (start > 0 && editor.getLine(start - 1).trim() !== "") start -= 1;
+      while (end < editor.lineCount() - 1 && editor.getLine(end + 1).trim() !== "") end += 1;
+      cursorParagraph = editor.getRange(
+        { line: start, ch: 0 },
+        { line: end, ch: editor.getLine(end).length }
+      );
+    }
+    return { file: file.path, selection, cursorLine: cursor.line + 1, cursorParagraph };
+  }
+  /** 只读元数据，不返回正文，节省 Agent 的 Token。 */
+  async getNoteMetadata(path) {
+    var _a, _b, _c;
+    const safe = safePath(path);
+    this.assertAllowed(safe);
+    const file = this.vault.getAbstractFileByPath(safe);
+    if (!(file instanceof import_obsidian2.TFile)) throw new Error(`\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`);
+    const cache = this.plugin.app.metadataCache.getFileCache(file);
+    return {
+      path: safe,
+      frontmatter: (_a = cache == null ? void 0 : cache.frontmatter) != null ? _a : {},
+      tags: this.cacheTags(file),
+      headings: ((_b = cache == null ? void 0 : cache.headings) != null ? _b : []).map((heading) => `${"#".repeat(heading.level)} ${heading.heading}`),
+      links: ((_c = cache == null ? void 0 : cache.links) != null ? _c : []).map((link) => link.link)
+    };
+  }
+  /** 1-hop 图谱：出链、反链与同标签笔记。 */
+  getGraphNeighbors(path, include = ["outgoing", "backlinks", "tags"]) {
+    var _a, _b;
+    const safe = safePath(path);
+    this.assertAllowed(safe);
+    const file = this.vault.getAbstractFileByPath(safe);
+    if (!(file instanceof import_obsidian2.TFile)) throw new Error(`\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`);
+    const resolved = (_a = this.plugin.app.metadataCache.resolvedLinks) != null ? _a : {};
+    const allowed = (target) => !this.isDeniedPath(target) && target !== safe;
+    const outgoing = include.includes("outgoing") ? Object.keys((_b = resolved[safe]) != null ? _b : {}).filter(allowed) : [];
+    const backlinks = include.includes("backlinks") ? Object.entries(resolved).filter(([source, links]) => allowed(source) && Object.prototype.hasOwnProperty.call(links, safe)).map(([source]) => source) : [];
+    let sameTag = [];
+    if (include.includes("tags")) {
+      const targetTags = new Set(this.cacheTags(file));
+      sameTag = this.vault.getMarkdownFiles().filter((other) => allowed(other.path) && !this.hasDeniedTag(other)).filter((other) => this.cacheTags(other).some((tag) => targetTags.has(tag))).map((other) => other.path);
+    }
+    return { path: safe, outgoing, backlinks, sameTag };
+  }
+  logToolCall(tool, agent, path) {
+    this.plugin.store.logToolCall({ time: (/* @__PURE__ */ new Date()).toISOString(), tool, agent, path });
+  }
+  getToolActivity() {
+    var _a, _b;
+    const byTool = {};
+    const byAgent = {};
+    for (const call of this.plugin.store.data.toolCalls) {
+      byTool[call.tool] = ((_a = byTool[call.tool]) != null ? _a : 0) + 1;
+      byAgent[call.agent || "unknown"] = ((_b = byAgent[call.agent || "unknown"]) != null ? _b : 0) + 1;
+    }
+    return {
+      total: this.plugin.store.data.toolCalls.length,
+      byTool,
+      byAgent,
+      recent: this.plugin.store.data.toolCalls.slice(0, 20)
     };
   }
   categories() {
@@ -374,7 +628,7 @@ ${content}`);
     await ensureFolder(this.vault, folder);
     const path = folder ? `${folder}/${log.date}.md` : `${log.date}.md`;
     const abstract = this.vault.getAbstractFileByPath(path);
-    const file = abstract instanceof import_obsidian.TFile ? abstract : await this.vault.create(path, `# \u5DE5\u4F5C\u65E5\u5FD7 ${log.date}
+    const file = abstract instanceof import_obsidian2.TFile ? abstract : await this.vault.create(path, `# \u5DE5\u4F5C\u65E5\u5FD7 ${log.date}
 
 `);
     const previous = await this.vault.read(file);
@@ -397,6 +651,9 @@ ${content}`);
     await this.vault.modify(file, `${previous.trimEnd()}
 
 ${block}`);
+    this.plugin.store.updateDay(log.date, (day) => {
+      day.aiWordsAdded += countWords(block);
+    });
     this.plugin.store.addWorkLog(log);
     return log;
   }
@@ -429,6 +686,7 @@ ${block}`);
       `date: ${today}`,
       "type: knowledge",
       "source: agent",
+      "sediment_status: draft",
       `category: ${category}`,
       `agent: ${agent}`,
       ...input.source ? [`origin: ${String(input.source).replace(/[:#]/g, "-")}`] : [],
@@ -466,6 +724,9 @@ ${block}`);
       ""
     ].join("\n");
     await this.vault.create(path, doc);
+    this.plugin.store.updateDay(today, (day) => {
+      day.aiWordsAdded += countWords(doc);
+    });
     return { path };
   }
   /** 最近 N 天的工作日志。 */
@@ -493,7 +754,7 @@ ${block}`);
 };
 
 // src/agent/server.ts
-var import_obsidian2 = require("obsidian");
+var import_obsidian3 = require("obsidian");
 function getHttp() {
   try {
     return require("http");
@@ -520,7 +781,7 @@ var AgentServer = class {
     if (!desired.enabled) return;
     const http = getHttp();
     if (!http) {
-      new import_obsidian2.Notice("Agent API \u9700\u8981\u684C\u9762\u7248 Obsidian\uFF08\u79FB\u52A8\u7AEF\u65E0 Node http\uFF09");
+      new import_obsidian3.Notice("Agent API \u9700\u8981\u684C\u9762\u7248 Obsidian\uFF08\u79FB\u52A8\u7AEF\u65E0 Node http\uFF09");
       return;
     }
     const server = http.createServer((request, response) => {
@@ -536,9 +797,9 @@ var AgentServer = class {
       });
       this.server = server;
       this.running = desired;
-      new import_obsidian2.Notice(`Agent API \u5DF2\u542F\u52A8\uFF1Ahttp://127.0.0.1:${desired.port}`);
+      new import_obsidian3.Notice(`Agent API \u5DF2\u542F\u52A8\uFF1Ahttp://127.0.0.1:${desired.port}`);
     } catch (error) {
-      new import_obsidian2.Notice(`Agent API \u542F\u52A8\u5931\u8D25\uFF08\u7AEF\u53E3 ${desired.port}\uFF09\uFF1A${String(error)}`);
+      new import_obsidian3.Notice(`Agent API \u542F\u52A8\u5931\u8D25\uFF08\u7AEF\u53E3 ${desired.port}\uFF09\uFF1A${String(error)}`);
       this.running = null;
       this.server = null;
     }
@@ -571,7 +832,7 @@ var AgentServer = class {
     return parsed;
   }
   async handle(request, response) {
-    var _a, _b, _c;
+    var _a, _b, _c, _d;
     const url = new URL((_a = request.url) != null ? _a : "/", "http://127.0.0.1");
     const headerToken = String((_b = request.headers.authorization) != null ? _b : "").replace(/^Bearer\s+/i, "");
     const supplied = (_c = url.searchParams.get("token")) != null ? _c : headerToken;
@@ -589,9 +850,12 @@ var AgentServer = class {
         const parsed = Number(value);
         return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
       };
+      const agent = str(query.get("agent"), "") || String((_d = request.headers["x-agent"]) != null ? _d : "");
+      const loggedPath = (typeof body.path === "string" ? body.path : "") || str(query.get("path"), "");
+      api.logToolCall(`${request.method} ${url.pathname}`, agent, loggedPath);
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
-          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.3.4" });
+          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.4.0" });
           return;
         case "GET /notes":
           this.json(response, 200, api.listNotes(str(query.get("folder")), num(query.get("limit"), 50)));
@@ -674,6 +938,20 @@ var AgentServer = class {
         case "GET /categories":
           this.json(response, 200, api.getCategories());
           return;
+        case "GET /active-context":
+          this.json(response, 200, api.getActiveContext());
+          return;
+        case "GET /note-metadata":
+          this.json(response, 200, await api.getNoteMetadata(str(query.get("path"))));
+          return;
+        case "GET /graph": {
+          const types = str(query.get("types"), "outgoing,backlinks,tags").split(",").map((item) => item.trim()).filter(Boolean);
+          this.json(response, 200, api.getGraphNeighbors(str(query.get("path")), types));
+          return;
+        }
+        case "GET /activity":
+          this.json(response, 200, api.getToolActivity());
+          return;
         case "GET /pomodoro":
           this.json(response, 200, api.getPomodoro());
           return;
@@ -710,6 +988,8 @@ var DEFAULT_SETTINGS = {
   knowledgeFolder: "knowledge",
   knowledgeCategories: "\u6280\u672F,\u9879\u76EE,\u65B9\u6CD5,\u7075\u611F,\u590D\u76D8",
   lastSeenVersion: "",
+  deniedFolders: "",
+  deniedTags: "",
   artStyle: "lake",
   dailyWordGoal: 1e3,
   agentServerEnabled: false,
@@ -728,7 +1008,8 @@ function createEmptyDay() {
     hourlyWords: Array.from({ length: 24 }, () => 0),
     capturedWords: 0,
     folderWords: {},
-    activeMinutes: 0
+    activeMinutes: 0,
+    aiWordsAdded: 0
   };
 }
 function computeContribution(d) {
@@ -739,6 +1020,7 @@ var DEFAULT_DATA = {
   days: {},
   memos: [],
   workLogs: [],
+  toolCalls: [],
   settings: DEFAULT_SETTINGS
 };
 
@@ -750,7 +1032,7 @@ var Store = class {
     this.saveTimer = null;
   }
   async load() {
-    var _a, _b, _c, _d, _e, _f;
+    var _a, _b, _c, _d, _e, _f, _g;
     const raw = await this.plugin.loadData();
     const loaded = raw && typeof raw === "object" ? raw : {};
     this.data = {
@@ -758,7 +1040,8 @@ var Store = class {
       days: (_b = loaded.days) != null ? _b : {},
       memos: (_c = loaded.memos) != null ? _c : [],
       workLogs: (_d = loaded.workLogs) != null ? _d : [],
-      settings: { ...DEFAULT_SETTINGS, ...(_e = loaded.settings) != null ? _e : {} }
+      toolCalls: (_e = loaded.toolCalls) != null ? _e : [],
+      settings: { ...DEFAULT_SETTINGS, ...(_f = loaded.settings) != null ? _f : {} }
     };
     for (const key of Object.keys(this.data.days)) {
       const day = { ...createEmptyDay(), ...this.data.days[key] };
@@ -766,9 +1049,10 @@ var Store = class {
         var _a2;
         return Number((_a2 = day.hourlyWords) == null ? void 0 : _a2[hour]) || 0;
       });
-      day.folderWords = (_f = day.folderWords) != null ? _f : {};
+      day.folderWords = (_g = day.folderWords) != null ? _g : {};
       day.activeMinutes = Math.max(0, Math.round(day.activeMinutes));
       day.capturedWords = Math.max(0, Math.round(day.capturedWords));
+      day.aiWordsAdded = Math.max(0, Math.round(day.aiWordsAdded));
       day.contribution = computeContribution(day);
       this.data.days[key] = day;
     }
@@ -826,10 +1110,15 @@ var Store = class {
     this.data.workLogs.unshift(log);
     this.scheduleSave();
   }
+  logToolCall(record) {
+    this.data.toolCalls.unshift(record);
+    if (this.data.toolCalls.length > 500) this.data.toolCalls.length = 500;
+    this.scheduleSave(2e3);
+  }
 };
 
 // src/features/memo.ts
-var import_obsidian3 = require("obsidian");
+var import_obsidian4 = require("obsidian");
 var MemoManager = class {
   constructor(plugin) {
     this.plugin = plugin;
@@ -851,7 +1140,7 @@ var MemoManager = class {
     };
     this.store.addMemo(memo);
     await this.appendToDailyNote(memo);
-    new import_obsidian3.Notice("\u901F\u8BB0\u5DF2\u8BB0\u5F55");
+    new import_obsidian4.Notice("\u901F\u8BB0\u5DF2\u8BB0\u5F55");
     return memo;
   }
   async appendToDailyNote(memo) {
@@ -864,7 +1153,7 @@ var MemoManager = class {
     const path = folder ? `${folder}/${fileName}.md` : `${fileName}.md`;
     await ensureFolder(vault, folder);
     const existing = vault.getAbstractFileByPath(path);
-    const file = existing instanceof import_obsidian3.TFile ? existing : await vault.create(path, `# ${memo.date}
+    const file = existing instanceof import_obsidian4.TFile ? existing : await vault.create(path, `# ${memo.date}
 
 `);
     const content = await vault.read(file);
@@ -892,7 +1181,7 @@ ${callout}`;
 };
 
 // src/features/pomodoro.ts
-var import_obsidian4 = require("obsidian");
+var import_obsidian5 = require("obsidian");
 var DURATION = {
   focus: 25 * 60,
   short: 5 * 60,
@@ -956,9 +1245,9 @@ var PomodoroManager = class {
       this.plugin.store.updateDay(this.plugin.store.todayKey(), (day) => {
         day.focusMinutes += 25;
       });
-      new import_obsidian4.Notice("\u756A\u8304\u5B8C\u6210\uFF0C\u5DF2\u8BB0\u5165 25 \u5206\u949F\u4E13\u6CE8");
+      new import_obsidian5.Notice("\u756A\u8304\u5B8C\u6210\uFF0C\u5DF2\u8BB0\u5165 25 \u5206\u949F\u4E13\u6CE8");
     } else {
-      new import_obsidian4.Notice("\u4F11\u606F\u7ED3\u675F");
+      new import_obsidian5.Notice("\u4F11\u606F\u7ED3\u675F");
     }
     this.mode = this.mode === "focus" ? this.completed % 4 === 0 ? "long" : "short" : "focus";
     this.remaining = DURATION[this.mode];
@@ -978,8 +1267,8 @@ var PomodoroManager = class {
 };
 
 // src/ui/quick-memo-modal.ts
-var import_obsidian5 = require("obsidian");
-var QuickMemoModal = class extends import_obsidian5.Modal {
+var import_obsidian6 = require("obsidian");
+var QuickMemoModal = class extends import_obsidian6.Modal {
   constructor(app, onSubmit) {
     super(app);
     this.onSubmit = onSubmit;
@@ -1020,8 +1309,8 @@ var QuickMemoModal = class extends import_obsidian5.Modal {
 };
 
 // src/ui/settings-tab.ts
-var import_obsidian6 = require("obsidian");
-var PulseSettingTab = class extends import_obsidian6.PluginSettingTab {
+var import_obsidian7 = require("obsidian");
+var PulseSettingTab = class extends import_obsidian7.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -1032,32 +1321,32 @@ var PulseSettingTab = class extends import_obsidian6.PluginSettingTab {
     containerEl.createEl("h2", { text: "Sediment \u8BBE\u7F6E" });
     const settings = this.plugin.store.settings;
     const save = () => void this.plugin.saveSettings();
-    new import_obsidian6.Setting(containerEl).setName("\u65E5\u8BB0\u6587\u4EF6\u5939").setDesc("\u901F\u8BB0\u5199\u5165\u7684\u76EE\u5F55\uFF0C\u7559\u7A7A\u8868\u793A\u5E93\u6839\u76EE\u5F55\u3002").addText(
+    new import_obsidian7.Setting(containerEl).setName("\u65E5\u8BB0\u6587\u4EF6\u5939").setDesc("\u901F\u8BB0\u5199\u5165\u7684\u76EE\u5F55\uFF0C\u7559\u7A7A\u8868\u793A\u5E93\u6839\u76EE\u5F55\u3002").addText(
       (text) => text.setPlaceholder("daily").setValue(settings.dailyNoteFolder).onChange((value) => {
         settings.dailyNoteFolder = value;
         save();
       })
     );
-    new import_obsidian6.Setting(containerEl).setName("\u65E5\u8BB0\u6587\u4EF6\u540D\u683C\u5F0F").setDesc("\u652F\u6301 YYYY / MM / DD \u5360\u4F4D\u7B26\u3002").addText(
+    new import_obsidian7.Setting(containerEl).setName("\u65E5\u8BB0\u6587\u4EF6\u540D\u683C\u5F0F").setDesc("\u652F\u6301 YYYY / MM / DD \u5360\u4F4D\u7B26\u3002").addText(
       (text) => text.setPlaceholder("YYYY-MM-DD").setValue(settings.dailyNoteFormat).onChange((value) => {
         settings.dailyNoteFormat = value || "YYYY-MM-DD";
         save();
       })
     );
-    new import_obsidian6.Setting(containerEl).setName("\u901F\u8BB0\u6BB5\u843D\u6807\u9898").addText(
+    new import_obsidian7.Setting(containerEl).setName("\u901F\u8BB0\u6BB5\u843D\u6807\u9898").addText(
       (text) => text.setPlaceholder("## \u901F\u8BB0").setValue(settings.memoHeading).onChange((value) => {
         settings.memoHeading = value || "## \u901F\u8BB0";
         save();
       })
     );
-    new import_obsidian6.Setting(containerEl).setName("\u6BCF\u5468\u8D77\u59CB\u65E5").addDropdown(
+    new import_obsidian7.Setting(containerEl).setName("\u6BCF\u5468\u8D77\u59CB\u65E5").addDropdown(
       (dropdown) => dropdown.addOption("1", "\u5468\u4E00").addOption("0", "\u5468\u65E5").setValue(String(settings.weekStart)).onChange((value) => {
         settings.weekStart = value === "0" ? 0 : 1;
         save();
         this.plugin.refreshViews();
       })
     );
-    new import_obsidian6.Setting(containerEl).setName("\u70ED\u529B\u56FE\u9ED8\u8BA4\u6307\u6807").addDropdown((dropdown) => {
+    new import_obsidian7.Setting(containerEl).setName("\u70ED\u529B\u56FE\u9ED8\u8BA4\u6307\u6807").addDropdown((dropdown) => {
       for (const metric of METRICS) dropdown.addOption(metric.key, metric.label);
       dropdown.setValue(settings.heatmapMetric).onChange((value) => {
         settings.heatmapMetric = value;
@@ -1065,45 +1354,57 @@ var PulseSettingTab = class extends import_obsidian6.PluginSettingTab {
         this.plugin.refreshViews();
       });
     });
-    new import_obsidian6.Setting(containerEl).setName("\u7EDF\u8BA1\u6709\u6548\u7F16\u8F91\u4F1A\u8BDD").setDesc("\u540C\u4E00\u6587\u4EF6\u540C\u4E00\u5929\u6700\u591A\u8BB0\u4E00\u6B21\uFF0C\u907F\u514D\u8FDE\u7EED\u952E\u5165\u5237\u5206\u3002").addToggle(
+    new import_obsidian7.Setting(containerEl).setName("\u7EDF\u8BA1\u6709\u6548\u7F16\u8F91\u4F1A\u8BDD").setDesc("\u540C\u4E00\u6587\u4EF6\u540C\u4E00\u5929\u6700\u591A\u8BB0\u4E00\u6B21\uFF0C\u907F\u514D\u8FDE\u7EED\u952E\u5165\u5237\u5206\u3002").addToggle(
       (toggle) => toggle.setValue(settings.trackEdits).onChange((value) => {
         settings.trackEdits = value;
         save();
       })
     );
-    new import_obsidian6.Setting(containerEl).setName("\u590D\u76D8\u5F52\u6863\u6587\u4EF6\u5939").addText(
+    new import_obsidian7.Setting(containerEl).setName("\u590D\u76D8\u5F52\u6863\u6587\u4EF6\u5939").addText(
       (text) => text.setPlaceholder("reviews").setValue(settings.reviewFolder).onChange((value) => {
         settings.reviewFolder = value;
         save();
       })
     );
-    new import_obsidian6.Setting(containerEl).setName("Agent \u5DE5\u4F5C\u65E5\u5FD7\u76EE\u5F55").setDesc("\u667A\u80FD\u4F53\u6BCF\u6B21\u5DE5\u4F5C\u7684\u6C89\u6DC0\u65E5\u5FD7\uFF0C\u9ED8\u8BA4\u6309\u5929\u5199\u5165\u4E00\u4E2A\u6587\u4EF6\u3002").addText(
+    new import_obsidian7.Setting(containerEl).setName("Agent \u5DE5\u4F5C\u65E5\u5FD7\u76EE\u5F55").setDesc("\u667A\u80FD\u4F53\u6BCF\u6B21\u5DE5\u4F5C\u7684\u6C89\u6DC0\u65E5\u5FD7\uFF0C\u9ED8\u8BA4\u6309\u5929\u5199\u5165\u4E00\u4E2A\u6587\u4EF6\u3002").addText(
       (text) => text.setPlaceholder("agent-logs").setValue(settings.workLogFolder).onChange((value) => {
         settings.workLogFolder = value;
         save();
       })
     );
-    new import_obsidian6.Setting(containerEl).setName("\u77E5\u8BC6\u6C89\u6DC0\u76EE\u5F55").setDesc("\u667A\u80FD\u4F53\u901A\u8FC7 add_knowledge \u5199\u5165\u7684\u957F\u671F\u7B14\u8BB0\u76EE\u5F55\u3002").addText(
+    new import_obsidian7.Setting(containerEl).setName("\u77E5\u8BC6\u6C89\u6DC0\u76EE\u5F55").setDesc("\u667A\u80FD\u4F53\u901A\u8FC7 add_knowledge \u5199\u5165\u7684\u957F\u671F\u7B14\u8BB0\u76EE\u5F55\u3002").addText(
       (text) => text.setPlaceholder("knowledge").setValue(settings.knowledgeFolder).onChange((value) => {
         settings.knowledgeFolder = value;
         save();
       })
     );
-    new import_obsidian6.Setting(containerEl).setName("\u77E5\u8BC6\u5E93\u5206\u7C7B").setDesc("\u9017\u53F7\u5206\u9694\uFF0C\u667A\u80FD\u4F53\u6C89\u6DC0\u7B14\u8BB0\u65F6\u4F1A\u6309\u5206\u7C7B\u5EFA\u5B50\u76EE\u5F55\u3002").addText(
+    new import_obsidian7.Setting(containerEl).setName("\u77E5\u8BC6\u5E93\u5206\u7C7B").setDesc("\u9017\u53F7\u5206\u9694\uFF0C\u667A\u80FD\u4F53\u6C89\u6DC0\u7B14\u8BB0\u65F6\u4F1A\u6309\u5206\u7C7B\u5EFA\u5B50\u76EE\u5F55\u3002").addText(
       (text) => text.setPlaceholder("\u6280\u672F,\u9879\u76EE,\u65B9\u6CD5,\u7075\u611F,\u590D\u76D8").setValue(settings.knowledgeCategories).onChange((value) => {
         settings.knowledgeCategories = value;
         save();
         this.plugin.refreshViews();
       })
     );
-    new import_obsidian6.Setting(containerEl).setName("\u770B\u677F\u753B\u98CE").setDesc("\u50CF\u7D20\u6E56\u9762 / \u6C34\u58A8\u5C71\u6C34 / \u50CF\u7D20\u57CE\u5E02\uFF0C\u4E5F\u53EF\u5728\u770B\u677F\u9875\u811A\u70B9\u300C\u6362\u753B\u98CE\u300D\u3002").addDropdown(
+    new import_obsidian7.Setting(containerEl).setName("Agent \u7981\u6B62\u8BBF\u95EE\u7684\u6587\u4EF6\u5939").setDesc("\u9017\u53F7\u5206\u9694\uFF1B\u8FD9\u4E9B\u76EE\u5F55\u5BF9 Agent \u7684\u8BFB\u5199\u548C\u641C\u7D22\u5168\u90E8\u9690\u85CF\u3002").addText(
+      (text) => text.setPlaceholder("\u4F8B\u5982\uFF1A\u8D22\u52A1,\u79C1\u4EBA\u65E5\u8BB0").setValue(settings.deniedFolders).onChange((value) => {
+        settings.deniedFolders = value;
+        save();
+      })
+    );
+    new import_obsidian7.Setting(containerEl).setName("Agent \u7981\u6B62\u8BBF\u95EE\u7684\u6807\u7B7E").setDesc("\u9017\u53F7\u5206\u9694\uFF1B\u5E26\u8FD9\u4E9B\u6807\u7B7E\u7684\u7B14\u8BB0\u5BF9 Agent \u4E0D\u53EF\u8BFB\u3002").addText(
+      (text) => text.setPlaceholder("\u4F8B\u5982\uFF1A\u79C1\u5BC6,\u5BC6\u7801").setValue(settings.deniedTags).onChange((value) => {
+        settings.deniedTags = value;
+        save();
+      })
+    );
+    new import_obsidian7.Setting(containerEl).setName("\u770B\u677F\u753B\u98CE").setDesc("\u50CF\u7D20\u6E56\u9762 / \u6C34\u58A8\u5C71\u6C34 / \u50CF\u7D20\u57CE\u5E02\uFF0C\u4E5F\u53EF\u5728\u770B\u677F\u9875\u811A\u70B9\u300C\u6362\u753B\u98CE\u300D\u3002").addDropdown(
       (dropdown) => dropdown.addOption("lake", "\u50CF\u7D20\u6E56\u9762").addOption("ink", "\u6C34\u58A8\u5C71\u6C34").addOption("city", "\u50CF\u7D20\u57CE\u5E02").setValue(settings.artStyle).onChange((value) => {
         settings.artStyle = value;
         save();
         this.plugin.refreshViews();
       })
     );
-    new import_obsidian6.Setting(containerEl).setName("\u6BCF\u65E5\u5199\u4F5C\u76EE\u6807").setDesc("\u770B\u677F\u4ECA\u5929\u5361\u7247\u663E\u793A\u8FDB\u5EA6\uFF0C0 \u8868\u793A\u5173\u95ED\u3002").addText(
+    new import_obsidian7.Setting(containerEl).setName("\u6BCF\u65E5\u5199\u4F5C\u76EE\u6807").setDesc("\u770B\u677F\u4ECA\u5929\u5361\u7247\u663E\u793A\u8FDB\u5EA6\uFF0C0 \u8868\u793A\u5173\u95ED\u3002").addText(
       (text) => text.setPlaceholder("1000").setValue(String(settings.dailyWordGoal)).onChange((value) => {
         const goal = Number(value);
         settings.dailyWordGoal = Number.isFinite(goal) && goal >= 0 ? goal : 1e3;
@@ -1112,13 +1413,13 @@ var PulseSettingTab = class extends import_obsidian6.PluginSettingTab {
       })
     );
     containerEl.createEl("h3", { text: "Agent \u63A5\u5165\uFF08\u672C\u5730 HTTP / MCP\uFF09" });
-    new import_obsidian6.Setting(containerEl).setName("\u542F\u7528\u672C\u5730 Agent API").setDesc("\u53EA\u76D1\u542C 127.0.0.1\uFF0C\u4F9B MCP \u6865\u63A5\u548C\u672C\u5730\u811A\u672C\u8C03\u7528\u4E2A\u4EBA\u77E5\u8BC6\u5E93\u3002").addToggle(
+    new import_obsidian7.Setting(containerEl).setName("\u542F\u7528\u672C\u5730 Agent API").setDesc("\u53EA\u76D1\u542C 127.0.0.1\uFF0C\u4F9B MCP \u6865\u63A5\u548C\u672C\u5730\u811A\u672C\u8C03\u7528\u4E2A\u4EBA\u77E5\u8BC6\u5E93\u3002").addToggle(
       (toggle) => toggle.setValue(settings.agentServerEnabled).onChange((value) => {
         settings.agentServerEnabled = value;
         save();
       })
     );
-    new import_obsidian6.Setting(containerEl).setName("\u7AEF\u53E3").setDesc("\u9ED8\u8BA4 27123\uFF0C\u4FEE\u6539\u540E\u670D\u52A1\u4F1A\u81EA\u52A8\u91CD\u542F\u3002").addText(
+    new import_obsidian7.Setting(containerEl).setName("\u7AEF\u53E3").setDesc("\u9ED8\u8BA4 27123\uFF0C\u4FEE\u6539\u540E\u670D\u52A1\u4F1A\u81EA\u52A8\u91CD\u542F\u3002").addText(
       (text) => text.setPlaceholder("27123").setValue(String(settings.agentServerPort)).onChange((value) => {
         const port = Number(value);
         if (Number.isInteger(port) && port > 0 && port < 65536) {
@@ -1127,13 +1428,13 @@ var PulseSettingTab = class extends import_obsidian6.PluginSettingTab {
         }
       })
     );
-    new import_obsidian6.Setting(containerEl).setName("\u8BBF\u95EE\u4EE4\u724C").setDesc("HTTP \u8BF7\u6C42\u4E0E MCP \u6865\u63A5\u90FD\u5FC5\u987B\u643A\u5E26\u6B64\u4EE4\u724C\u3002").addText(
+    new import_obsidian7.Setting(containerEl).setName("\u8BBF\u95EE\u4EE4\u724C").setDesc("HTTP \u8BF7\u6C42\u4E0E MCP \u6865\u63A5\u90FD\u5FC5\u987B\u643A\u5E26\u6B64\u4EE4\u724C\u3002").addText(
       (text) => text.setPlaceholder("\u70B9\u51FB\u53F3\u4FA7\u6309\u94AE\u751F\u6210").setValue(settings.agentServerToken).onChange((value) => {
         settings.agentServerToken = value.trim();
         save();
       })
     );
-    new import_obsidian6.Setting(containerEl).setName("\u91CD\u65B0\u751F\u6210\u4EE4\u724C").setDesc("\u6CC4\u9732\u6216\u9057\u5FD8\u65F6\u70B9\u51FB\uFF0C\u65E7\u4EE4\u724C\u7ACB\u5373\u5931\u6548\u3002").addButton(
+    new import_obsidian7.Setting(containerEl).setName("\u91CD\u65B0\u751F\u6210\u4EE4\u724C").setDesc("\u6CC4\u9732\u6216\u9057\u5FD8\u65F6\u70B9\u51FB\uFF0C\u65E7\u4EE4\u724C\u7ACB\u5373\u5931\u6548\u3002").addButton(
       (button) => button.setButtonText("\u751F\u6210\u65B0\u4EE4\u724C").onClick(() => {
         settings.agentServerToken = generateToken();
         save();
@@ -1144,16 +1445,16 @@ var PulseSettingTab = class extends import_obsidian6.PluginSettingTab {
 };
 
 // src/ui/changelog-modal.ts
-var import_obsidian7 = require("obsidian");
+var import_obsidian8 = require("obsidian");
 
 // src/changelog.ts
-var CHANGELOG = "# \u66F4\u65B0\u8BB0\u5F55\n\n\u672C\u6587\u4EF6\u8BB0\u5F55\u6BCF\u4E2A\u7248\u672C\u7684\u589E\u91CF\u53D8\u5316\uFF0C\u683C\u5F0F\u9075\u5FAA [Keep a Changelog](https://keepachangelog.com/)\u3002\u6784\u5EFA\u65F6\u7531 `scripts/sync-changelog.mjs` \u540C\u6B65\u5230\u63D2\u4EF6\u5185\uFF0C\u53EF\u5728\u770B\u677F\u9875\u811A\u7684\u300C\u66F4\u65B0\u8BB0\u5F55\u300D\u91CC\u67E5\u770B\u3002\n\n## [0.3.4] - 2026-11-19\n\n### \u65B0\u589E\n- \u589E\u91CF\u53D8\u66F4\u8BB0\u5F55\uFF1A\u65B0\u589E `CHANGELOG.md`\uFF0C\u6309\u7248\u672C\u5206\u7EC4\u8BB0\u5F55\u65B0\u589E / \u53D8\u66F4 / \u4FEE\u590D\n- \u6784\u5EFA\u65F6\u81EA\u52A8\u540C\u6B65\u5230\u63D2\u4EF6\u5185\uFF0C\u770B\u677F\u9875\u811A\u300C\u66F4\u65B0\u8BB0\u5F55\u300D\u548C\u547D\u4EE4\u300C\u67E5\u770B\u66F4\u65B0\u8BB0\u5F55\u300D\u53EF\u968F\u65F6\u67E5\u770B\n- \u5347\u7EA7\u540E\u81EA\u52A8\u63D0\u793A\u65B0\u7248\u672C\u53F7\n- GitHub Release \u6B63\u6587\u4ECE\u5BF9\u5E94\u7248\u672C\u7684 CHANGELOG \u7AE0\u8282\u81EA\u52A8\u751F\u6210\uFF0C\u53D1\u5E03\u9875\u4E0E\u63D2\u4EF6\u5185\u8BF4\u660E\u4E00\u81F4\n\n## [0.3.3] - 2026-11-19\n\n### \u4FEE\u590D\n- Agent \u901A\u8FC7 MCP \u5199\u5165\u7B14\u8BB0\u540E\uFF0C\u770B\u677F\u4E0E\u901F\u8BB0\u9762\u677F 400ms \u5185\u81EA\u52A8\u5237\u65B0\uFF0C\u4E14\u4E0D\u6E05\u7A7A\u6B63\u5728\u8F93\u5165\u7684\u6587\u5B57\n- \u76D1\u542C create / modify / delete / rename \u4E8B\u4EF6\uFF0C\u8986\u76D6\u77E5\u8BC6\u5E93\u3001\u5DE5\u4F5C\u65E5\u5FD7\u4E0E\u65E5\u8BB0\u76EE\u5F55\n\n## [0.3.2] - 2026-11-19\n\n### \u4FEE\u590D\n- \u901F\u8BB0\u9762\u677F\u300C\u5168\u90E8\u300D\u9875\u7B7E\u4E0B\u7684\u6C89\u6DC0\u5217\u8868\u6539\u4E3A\u663E\u793A\u5168\u90E8\u7B14\u8BB0\uFF0C\u4E0D\u518D\u53EA\u663E\u793A 5 \u6761\n\n## [0.3.1] - 2026-11-19\n\n### \u65B0\u589E\n- \u901F\u8BB0\u9762\u677F\u300C\u5168\u90E8\u300D\u9875\u7B7E\u4E0B\u65B9\u76F4\u63A5\u663E\u793A\u300C\u77E5\u8BC6\u6C89\u6DC0\u300D\u5C0F\u533A\u5757\uFF0C\u4E0D\u7528\u5207\u9875\u7B7E\u5373\u53EF\u770B\u5230\uFF0C\u5E26\u300C\u5168\u90E8\u300D\u8DF3\u8F6C\u6309\u94AE\n\n## [0.3.0] - 2026-11-19\n\n### \u65B0\u589E\n- \u6C89\u6DC0\u9875\u7B7E\u6309\u5206\u7C7B\u5206\u7EC4\u663E\u793A\uFF08\u6280\u672F / \u65B9\u6CD5 / \u5DE5\u4F5C\u65E5\u5FD7\uFF09\n- \u667A\u80FD\u5206\u7C7B\uFF1AAgent \u4E0D\u4F20 category \u65F6\u6839\u636E\u6807\u9898\u3001\u6807\u7B7E\u3001\u6B63\u6587\u5173\u952E\u8BCD\u81EA\u52A8\u63A8\u65AD\uFF1B\u4E5F\u53EF\u4F20\u4EFB\u610F\u81EA\u5B9A\u4E49\u5206\u7C7B\u540D\n- \u65B0\u589E MCP \u5DE5\u5177 `list_categories`\n\n## [0.2.9] - 2026-11-19\n\n### \u65B0\u589E\n- \u77E5\u8BC6\u5E93\u5206\u7C7B\uFF1A\u9ED8\u8BA4\u300C\u6280\u672F / \u9879\u76EE / \u65B9\u6CD5 / \u7075\u611F / \u590D\u76D8\u300D\uFF0C\u6C89\u6DC0\u65F6\u6309\u5206\u7C7B\u5EFA\u5B50\u76EE\u5F55\n- \u77E5\u8BC6\u7B14\u8BB0\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\u7684\u7248\u5F0F\u7F8E\u5316\uFF1Afrontmatter\u3001\u901F\u89C8 Callout\u3001\u6B63\u6587\u3001\u5173\u8054\u6765\u6E90\u3001\u6C89\u6DC0\u4FE1\u606F\n- \u5DF2\u6709 7 \u7BC7\u7B14\u8BB0\u6309\u5206\u7C7B\u91CD\u65B0\u6392\u7248\u5F52\u4F4D\n\n## [0.2.8] - 2026-11-19\n\n### \u53D8\u66F4\n- \u300C\u77E5\u8BC6\u6C89\u6DC0\u300D\u4ECE\u770B\u677F\u5E95\u90E8\u79FB\u5230\u901F\u8BB0\u9762\u677F\uFF0C\u4F5C\u4E3A\u7B2C\u4E94\u4E2A\u9875\u7B7E\n\n## [0.2.7] - 2026-11-19\n\n### \u65B0\u589E\n- \u770B\u677F\u5E95\u90E8\u5217\u51FA Agent \u5199\u5165\u7684\u77E5\u8BC6\u7B14\u8BB0\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\uFF0C\u53EF\u70B9\u51FB\u6253\u5F00\n\n## [0.2.6] - 2026-11-19\n\n### \u4FEE\u590D\n- Obsidian \u91CD\u542F\u65F6\u4E3A\u5DF2\u6709\u6587\u4EF6\u8865\u53D1 create \u4E8B\u4EF6\uFF0C\u65E7\u7248\u4F1A\u8BEF\u7B97\u6210\u65B0\u5EFA\u7B14\u8BB0\uFF0822 \u7BC7 / 5512 \u5B57 / 121 \u5206\uFF09\n\n## [0.2.5] - 2026-11-19\n\n### \u4FEE\u590D\n- MCP \u6865\u63A5\u7684 GET \u5DE5\u5177\u53C2\u6570\u672A\u62FC\u8FDB URL\uFF0C\u5BFC\u81F4\u641C\u7D22\u65E0\u7ED3\u679C\u3001\u8BFB\u7B14\u8BB0\u62A5\u300C\u8DEF\u5F84\u4E0D\u80FD\u4E3A\u7A7A\u300D\n\n## [0.2.4] - 2026-11-19\n\n### \u4FEE\u590D\n- MCP \u6865\u63A5\u5728 Node 16 \u4E0B\u62A5 `fetch is not defined`\uFF0C\u6539\u7528 node:http\n\n## [0.2.3] - 2026-11-19\n\n### \u65B0\u589E\n- \u5185\u7F6E\u756A\u8304\u949F\uFF0825/5/15 \u5206\u949F\uFF09\uFF0C\u72B6\u6001\u680F\u5012\u8BA1\u65F6\uFF0C\u5B8C\u6210\u8BB0\u5165 focusMinutes\uFF0CAgent \u4E5F\u53EF\u901A\u8FC7 MCP \u63A7\u5236\n- \u65B0\u589E `get_pomodoro` / `control_pomodoro`\n\n### \u4FEE\u590D\n- \u5730\u5E73\u7EBF\u91CD\u505A\u4E3A\u5C71\u810A + \u6E56\u9762\u5012\u5F71 + \u65E5\u6708 + \u5B63\u8282\u6811 + \u4E13\u6CE8\u65F6\u5E06\u8239\n- \u9875\u811A\u7248\u672C\u53F7\u6539\u4E3A\u52A8\u6001\u8BFB\u53D6 manifest\n\n## [0.2.2] - 2026-11-19\n\n### \u4FEE\u590D\n- \u77E5\u8BC6\u590D\u76D8\u4ECE\u539F\u59CB Markdown \u6539\u4E3A\u6E32\u67D3\u9884\u89C8\uFF0C\u5E76\u52A0\u590D\u5236\u6309\u94AE\n\n## [0.2.1] - 2026-11-19\n\n### \u65B0\u589E\n- \u901F\u8BB0\uFF1A\u7C98\u8D34\u56FE\u7247\u81EA\u52A8\u5165\u5E93\u3001\u6BCF\u65E5\u56DE\u987E\uFF08\u53BB\u5E74\u4ECA\u65E5 / \u4E0A\u6708\u4ECA\u65E5\uFF09\u3001\u672C\u5730\u76F8\u4F3C\u5EA6\u6F2B\u6B65\u3001\u6807\u7B7E\u6811\n\n## [0.2.0] - 2026-11-19\n\n### \u65B0\u589E\n- \u6570\u636E\u5206\u6790\u9875\uFF1A\u5199\u4F5C\u67F1\u72B6\u56FE\u3001\u5199\u4F5C\u53D8\u5316\u6298\u7EBF\u3001\u65F6\u95F4\u6295\u5165\u3001\u5199\u4F5C\u6765\u6E90\u3001\u6295\u5165\u53BB\u5411\u3001\u6D3B\u8DC3\u65F6\u6BB5\u3001\u6295\u5165\u8282\u5F8B\u77E9\u9635\n- \u5E74\u5EA6\u753B\u50CF\uFF1A\u5E74\u8F6E\u3001\u77E5\u8BC6\u6307\u7EB9\u3001\u6708\u76F8\u65E5\u5386\u3001\u77E5\u8BC6\u5730\u5C42\u3001\u6708\u62A5\u6D77\u62A5 PNG \u5BFC\u51FA\n- \u4E09\u79CD\u753B\u98CE\uFF08\u50CF\u7D20\u6E56\u9762 / \u6C34\u58A8\u5C71\u6C34 / \u50CF\u7D20\u57CE\u5E02\uFF09\u4E0E\u968F\u65F6\u6BB5\u79FB\u52A8\u7684\u65E5\u6708\u6A2A\u5E45\n\n## [0.1.3] - 2026-11-19\n\n### \u4FEE\u590D\n- \u65E7\u7248\u6B8B\u7559\u5728\u4FA7\u680F\u7684\u770B\u677F\u6807\u7B7E\u88AB\u590D\u7528\u5BFC\u81F4\u4E00\u76F4\u7A84\u5C4F\uFF0C\u6539\u4E3A\u5F3A\u5236\u5728\u4E3B\u533A\u65B0\u5F00\u6807\u7B7E\u9875\n\n## [0.1.2] - 2026-11-19\n\n### \u65B0\u589E\n- \u5B8C\u6574\u4E3B\u89C6\u56FE\uFF1A\u901A\u680F\u6A2A\u5E45\u3001\u4ECA\u5929\u5361\u7247\u3001\u6982\u89C8\u5361 + SVG \u8D8B\u52BF\u300153 \u5468\u70ED\u529B\u56FE\u3001\u5730\u5E73\u7EBF\u3001\u56DB\u4E2A\u9875\u7B7E\n\n## [0.1.1] - 2026-11-19\n\n### \u4FEE\u590D\n- \u770B\u677F\u6539\u5230\u4E3B\u7F16\u8F91\u533A\u6253\u5F00\uFF0C\u901F\u8BB0\u7559\u5728\u53F3\u4FA7\u680F\n\n## [0.1.0] - 2026-11-19\n\n### \u65B0\u589E\n- \u9996\u4E2A\u7248\u672C\uFF1A\u70ED\u529B\u56FE\u770B\u677F\u3001\u5199\u4F5C\u7EDF\u8BA1\u3001flomo \u5F0F\u901F\u8BB0\u3001\u5468\u590D\u76D8\n- \u672C\u5730 HTTP API + MCP \u6865\u63A5\uFF0CAgent \u53EF\u8BFB\u5199\u77E5\u8BC6\u5E93\n- \u5DE5\u4F5C\u65E5\u5FD7\u4E0E\u77E5\u8BC6\u7B14\u8BB0\u6C89\u6DC0\uFF0CAgent \u4EA7\u51FA\u8BA1\u5165\u7EDF\u8BA1\n";
+var CHANGELOG = "# \u66F4\u65B0\u8BB0\u5F55\n\n\u672C\u6587\u4EF6\u8BB0\u5F55\u6BCF\u4E2A\u7248\u672C\u7684\u589E\u91CF\u53D8\u5316\uFF0C\u683C\u5F0F\u9075\u5FAA [Keep a Changelog](https://keepachangelog.com/)\u3002\u6784\u5EFA\u65F6\u7531 `scripts/sync-changelog.mjs` \u540C\u6B65\u5230\u63D2\u4EF6\u5185\uFF0C\u53EF\u5728\u770B\u677F\u9875\u811A\u7684\u300C\u66F4\u65B0\u8BB0\u5F55\u300D\u91CC\u67E5\u770B\u3002\n\n## [0.4.0] - 2026-11-19\n\n### \u65B0\u589E\n- P0 \u5DE5\u5177\u5C42\uFF1A`get_active_context`\uFF08\u5F53\u524D\u7B14\u8BB0/\u9009\u4E2D\u6587\u672C/\u5149\u6807\u6BB5\u843D\uFF09\u3001`get_note_metadata`\uFF08\u53EA\u8BFB\u5143\u6570\u636E\u7701 Token\uFF09\u3001`get_graph_neighbors`\uFF08\u51FA\u94FE/\u53CD\u94FE/\u540C\u6807\u7B7E\uFF09\u3001`get_tool_activity`\uFF08\u8C03\u7528\u7EDF\u8BA1\uFF09\n- \u65B0\u589E\u6587\u4EF6\u5939/\u6807\u7B7E\u9ED1\u540D\u5355\uFF0CAgent \u7684\u8BFB\u5199\u4E0E\u641C\u7D22\u5168\u90E8\u53D7\u63A7\n- Agent \u5199\u5165\u7684\u5185\u5BB9\u5355\u72EC\u8BA1\u5165 `aiWordsAdded`\uFF0C\u4E3A\u540E\u7EED\u4EBA\u673A\u53CC\u8272\u70ED\u529B\u56FE\u6253\u57FA\u7840\n- MCP/HTTP \u8C03\u7528\u5BA1\u8BA1\u65E5\u5FD7\uFF08\u9650 500 \u6761\uFF09\uFF0C\u5E76\u8BB0\u5F55\u5BA2\u6237\u7AEF\u540D `AGENT_NAME`\n- AI \u6C89\u6DC0\u7B14\u8BB0\u9ED8\u8BA4\u5E26 `sediment_status: draft`\n\n## [0.3.4] - 2026-11-19\n\n### \u65B0\u589E\n- \u589E\u91CF\u53D8\u66F4\u8BB0\u5F55\uFF1A\u65B0\u589E `CHANGELOG.md`\uFF0C\u6309\u7248\u672C\u5206\u7EC4\u8BB0\u5F55\u65B0\u589E / \u53D8\u66F4 / \u4FEE\u590D\n- \u6784\u5EFA\u65F6\u81EA\u52A8\u540C\u6B65\u5230\u63D2\u4EF6\u5185\uFF0C\u770B\u677F\u9875\u811A\u300C\u66F4\u65B0\u8BB0\u5F55\u300D\u548C\u547D\u4EE4\u300C\u67E5\u770B\u66F4\u65B0\u8BB0\u5F55\u300D\u53EF\u968F\u65F6\u67E5\u770B\n- \u5347\u7EA7\u540E\u81EA\u52A8\u63D0\u793A\u65B0\u7248\u672C\u53F7\n- GitHub Release \u6B63\u6587\u4ECE\u5BF9\u5E94\u7248\u672C\u7684 CHANGELOG \u7AE0\u8282\u81EA\u52A8\u751F\u6210\uFF0C\u53D1\u5E03\u9875\u4E0E\u63D2\u4EF6\u5185\u8BF4\u660E\u4E00\u81F4\n\n## [0.3.3] - 2026-11-19\n\n### \u4FEE\u590D\n- Agent \u901A\u8FC7 MCP \u5199\u5165\u7B14\u8BB0\u540E\uFF0C\u770B\u677F\u4E0E\u901F\u8BB0\u9762\u677F 400ms \u5185\u81EA\u52A8\u5237\u65B0\uFF0C\u4E14\u4E0D\u6E05\u7A7A\u6B63\u5728\u8F93\u5165\u7684\u6587\u5B57\n- \u76D1\u542C create / modify / delete / rename \u4E8B\u4EF6\uFF0C\u8986\u76D6\u77E5\u8BC6\u5E93\u3001\u5DE5\u4F5C\u65E5\u5FD7\u4E0E\u65E5\u8BB0\u76EE\u5F55\n\n## [0.3.2] - 2026-11-19\n\n### \u4FEE\u590D\n- \u901F\u8BB0\u9762\u677F\u300C\u5168\u90E8\u300D\u9875\u7B7E\u4E0B\u7684\u6C89\u6DC0\u5217\u8868\u6539\u4E3A\u663E\u793A\u5168\u90E8\u7B14\u8BB0\uFF0C\u4E0D\u518D\u53EA\u663E\u793A 5 \u6761\n\n## [0.3.1] - 2026-11-19\n\n### \u65B0\u589E\n- \u901F\u8BB0\u9762\u677F\u300C\u5168\u90E8\u300D\u9875\u7B7E\u4E0B\u65B9\u76F4\u63A5\u663E\u793A\u300C\u77E5\u8BC6\u6C89\u6DC0\u300D\u5C0F\u533A\u5757\uFF0C\u4E0D\u7528\u5207\u9875\u7B7E\u5373\u53EF\u770B\u5230\uFF0C\u5E26\u300C\u5168\u90E8\u300D\u8DF3\u8F6C\u6309\u94AE\n\n## [0.3.0] - 2026-11-19\n\n### \u65B0\u589E\n- \u6C89\u6DC0\u9875\u7B7E\u6309\u5206\u7C7B\u5206\u7EC4\u663E\u793A\uFF08\u6280\u672F / \u65B9\u6CD5 / \u5DE5\u4F5C\u65E5\u5FD7\uFF09\n- \u667A\u80FD\u5206\u7C7B\uFF1AAgent \u4E0D\u4F20 category \u65F6\u6839\u636E\u6807\u9898\u3001\u6807\u7B7E\u3001\u6B63\u6587\u5173\u952E\u8BCD\u81EA\u52A8\u63A8\u65AD\uFF1B\u4E5F\u53EF\u4F20\u4EFB\u610F\u81EA\u5B9A\u4E49\u5206\u7C7B\u540D\n- \u65B0\u589E MCP \u5DE5\u5177 `list_categories`\n\n## [0.2.9] - 2026-11-19\n\n### \u65B0\u589E\n- \u77E5\u8BC6\u5E93\u5206\u7C7B\uFF1A\u9ED8\u8BA4\u300C\u6280\u672F / \u9879\u76EE / \u65B9\u6CD5 / \u7075\u611F / \u590D\u76D8\u300D\uFF0C\u6C89\u6DC0\u65F6\u6309\u5206\u7C7B\u5EFA\u5B50\u76EE\u5F55\n- \u77E5\u8BC6\u7B14\u8BB0\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\u7684\u7248\u5F0F\u7F8E\u5316\uFF1Afrontmatter\u3001\u901F\u89C8 Callout\u3001\u6B63\u6587\u3001\u5173\u8054\u6765\u6E90\u3001\u6C89\u6DC0\u4FE1\u606F\n- \u5DF2\u6709 7 \u7BC7\u7B14\u8BB0\u6309\u5206\u7C7B\u91CD\u65B0\u6392\u7248\u5F52\u4F4D\n\n## [0.2.8] - 2026-11-19\n\n### \u53D8\u66F4\n- \u300C\u77E5\u8BC6\u6C89\u6DC0\u300D\u4ECE\u770B\u677F\u5E95\u90E8\u79FB\u5230\u901F\u8BB0\u9762\u677F\uFF0C\u4F5C\u4E3A\u7B2C\u4E94\u4E2A\u9875\u7B7E\n\n## [0.2.7] - 2026-11-19\n\n### \u65B0\u589E\n- \u770B\u677F\u5E95\u90E8\u5217\u51FA Agent \u5199\u5165\u7684\u77E5\u8BC6\u7B14\u8BB0\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\uFF0C\u53EF\u70B9\u51FB\u6253\u5F00\n\n## [0.2.6] - 2026-11-19\n\n### \u4FEE\u590D\n- Obsidian \u91CD\u542F\u65F6\u4E3A\u5DF2\u6709\u6587\u4EF6\u8865\u53D1 create \u4E8B\u4EF6\uFF0C\u65E7\u7248\u4F1A\u8BEF\u7B97\u6210\u65B0\u5EFA\u7B14\u8BB0\uFF0822 \u7BC7 / 5512 \u5B57 / 121 \u5206\uFF09\n\n## [0.2.5] - 2026-11-19\n\n### \u4FEE\u590D\n- MCP \u6865\u63A5\u7684 GET \u5DE5\u5177\u53C2\u6570\u672A\u62FC\u8FDB URL\uFF0C\u5BFC\u81F4\u641C\u7D22\u65E0\u7ED3\u679C\u3001\u8BFB\u7B14\u8BB0\u62A5\u300C\u8DEF\u5F84\u4E0D\u80FD\u4E3A\u7A7A\u300D\n\n## [0.2.4] - 2026-11-19\n\n### \u4FEE\u590D\n- MCP \u6865\u63A5\u5728 Node 16 \u4E0B\u62A5 `fetch is not defined`\uFF0C\u6539\u7528 node:http\n\n## [0.2.3] - 2026-11-19\n\n### \u65B0\u589E\n- \u5185\u7F6E\u756A\u8304\u949F\uFF0825/5/15 \u5206\u949F\uFF09\uFF0C\u72B6\u6001\u680F\u5012\u8BA1\u65F6\uFF0C\u5B8C\u6210\u8BB0\u5165 focusMinutes\uFF0CAgent \u4E5F\u53EF\u901A\u8FC7 MCP \u63A7\u5236\n- \u65B0\u589E `get_pomodoro` / `control_pomodoro`\n\n### \u4FEE\u590D\n- \u5730\u5E73\u7EBF\u91CD\u505A\u4E3A\u5C71\u810A + \u6E56\u9762\u5012\u5F71 + \u65E5\u6708 + \u5B63\u8282\u6811 + \u4E13\u6CE8\u65F6\u5E06\u8239\n- \u9875\u811A\u7248\u672C\u53F7\u6539\u4E3A\u52A8\u6001\u8BFB\u53D6 manifest\n\n## [0.2.2] - 2026-11-19\n\n### \u4FEE\u590D\n- \u77E5\u8BC6\u590D\u76D8\u4ECE\u539F\u59CB Markdown \u6539\u4E3A\u6E32\u67D3\u9884\u89C8\uFF0C\u5E76\u52A0\u590D\u5236\u6309\u94AE\n\n## [0.2.1] - 2026-11-19\n\n### \u65B0\u589E\n- \u901F\u8BB0\uFF1A\u7C98\u8D34\u56FE\u7247\u81EA\u52A8\u5165\u5E93\u3001\u6BCF\u65E5\u56DE\u987E\uFF08\u53BB\u5E74\u4ECA\u65E5 / \u4E0A\u6708\u4ECA\u65E5\uFF09\u3001\u672C\u5730\u76F8\u4F3C\u5EA6\u6F2B\u6B65\u3001\u6807\u7B7E\u6811\n\n## [0.2.0] - 2026-11-19\n\n### \u65B0\u589E\n- \u6570\u636E\u5206\u6790\u9875\uFF1A\u5199\u4F5C\u67F1\u72B6\u56FE\u3001\u5199\u4F5C\u53D8\u5316\u6298\u7EBF\u3001\u65F6\u95F4\u6295\u5165\u3001\u5199\u4F5C\u6765\u6E90\u3001\u6295\u5165\u53BB\u5411\u3001\u6D3B\u8DC3\u65F6\u6BB5\u3001\u6295\u5165\u8282\u5F8B\u77E9\u9635\n- \u5E74\u5EA6\u753B\u50CF\uFF1A\u5E74\u8F6E\u3001\u77E5\u8BC6\u6307\u7EB9\u3001\u6708\u76F8\u65E5\u5386\u3001\u77E5\u8BC6\u5730\u5C42\u3001\u6708\u62A5\u6D77\u62A5 PNG \u5BFC\u51FA\n- \u4E09\u79CD\u753B\u98CE\uFF08\u50CF\u7D20\u6E56\u9762 / \u6C34\u58A8\u5C71\u6C34 / \u50CF\u7D20\u57CE\u5E02\uFF09\u4E0E\u968F\u65F6\u6BB5\u79FB\u52A8\u7684\u65E5\u6708\u6A2A\u5E45\n\n## [0.1.3] - 2026-11-19\n\n### \u4FEE\u590D\n- \u65E7\u7248\u6B8B\u7559\u5728\u4FA7\u680F\u7684\u770B\u677F\u6807\u7B7E\u88AB\u590D\u7528\u5BFC\u81F4\u4E00\u76F4\u7A84\u5C4F\uFF0C\u6539\u4E3A\u5F3A\u5236\u5728\u4E3B\u533A\u65B0\u5F00\u6807\u7B7E\u9875\n\n## [0.1.2] - 2026-11-19\n\n### \u65B0\u589E\n- \u5B8C\u6574\u4E3B\u89C6\u56FE\uFF1A\u901A\u680F\u6A2A\u5E45\u3001\u4ECA\u5929\u5361\u7247\u3001\u6982\u89C8\u5361 + SVG \u8D8B\u52BF\u300153 \u5468\u70ED\u529B\u56FE\u3001\u5730\u5E73\u7EBF\u3001\u56DB\u4E2A\u9875\u7B7E\n\n## [0.1.1] - 2026-11-19\n\n### \u4FEE\u590D\n- \u770B\u677F\u6539\u5230\u4E3B\u7F16\u8F91\u533A\u6253\u5F00\uFF0C\u901F\u8BB0\u7559\u5728\u53F3\u4FA7\u680F\n\n## [0.1.0] - 2026-11-19\n\n### \u65B0\u589E\n- \u9996\u4E2A\u7248\u672C\uFF1A\u70ED\u529B\u56FE\u770B\u677F\u3001\u5199\u4F5C\u7EDF\u8BA1\u3001flomo \u5F0F\u901F\u8BB0\u3001\u5468\u590D\u76D8\n- \u672C\u5730 HTTP API + MCP \u6865\u63A5\uFF0CAgent \u53EF\u8BFB\u5199\u77E5\u8BC6\u5E93\n- \u5DE5\u4F5C\u65E5\u5FD7\u4E0E\u77E5\u8BC6\u7B14\u8BB0\u6C89\u6DC0\uFF0CAgent \u4EA7\u51FA\u8BA1\u5165\u7EDF\u8BA1\n";
 
 // src/ui/changelog-modal.ts
-var ChangelogModal = class extends import_obsidian7.Modal {
+var ChangelogModal = class extends import_obsidian8.Modal {
   constructor(app) {
     super(app);
-    this.component = new import_obsidian7.Component();
+    this.component = new import_obsidian8.Component();
   }
   onOpen() {
     this.component.load();
@@ -1161,7 +1462,7 @@ var ChangelogModal = class extends import_obsidian7.Modal {
     contentEl.addClass("sd-changelog-modal");
     contentEl.createEl("h2", { text: "Sediment \u66F4\u65B0\u8BB0\u5F55" });
     const body = contentEl.createDiv({ cls: "sd-changelog-body" });
-    void import_obsidian7.MarkdownRenderer.render(this.app, CHANGELOG, body, "", this.component);
+    void import_obsidian8.MarkdownRenderer.render(this.app, CHANGELOG, body, "", this.component);
   }
   onClose() {
     this.component.unload();
@@ -1170,7 +1471,7 @@ var ChangelogModal = class extends import_obsidian7.Modal {
 };
 
 // src/views/dashboard-view.ts
-var import_obsidian8 = require("obsidian");
+var import_obsidian9 = require("obsidian");
 var DASHBOARD_VIEW_TYPE = "sediment-dashboard";
 var RANGE_OPTIONS = [
   ["7d", "\u8FD1 7 \u5929"],
@@ -1186,7 +1487,7 @@ var TABS = [
   ["yearly", "\u5E74\u5EA6\u753B\u50CF"]
 ];
 var WEEKDAYS = ["\u65E5", "\u4E00", "\u4E8C", "\u4E09", "\u56DB", "\u4E94", "\u516D"];
-var DashboardView = class extends import_obsidian8.ItemView {
+var DashboardView = class extends import_obsidian9.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
@@ -1530,10 +1831,10 @@ ${sailing}
     const markdown = buildWeeklyReview(this.plugin.store, /* @__PURE__ */ new Date());
     const copy = head.createEl("button", { text: "\u590D\u5236 Markdown" });
     copy.onclick = () => {
-      void navigator.clipboard.writeText(markdown).then(() => new import_obsidian8.Notice("\u5468\u590D\u76D8\u5DF2\u590D\u5236"));
+      void navigator.clipboard.writeText(markdown).then(() => new import_obsidian9.Notice("\u5468\u590D\u76D8\u5DF2\u590D\u5236"));
     };
     const preview = card.createDiv({ cls: "sd-review-preview" });
-    void import_obsidian8.MarkdownRenderer.render(this.plugin.app, markdown, preview, "", this);
+    void import_obsidian9.MarkdownRenderer.render(this.plugin.app, markdown, preview, "", this);
   }
   analyticsCard(root, title, subtitle = "") {
     const card = root.createDiv({ cls: "sd-card" });
@@ -1904,9 +2205,9 @@ function startOfWeekFor(date, weekStart) {
 }
 
 // src/views/memo-view.ts
-var import_obsidian9 = require("obsidian");
+var import_obsidian10 = require("obsidian");
 var MEMO_VIEW_TYPE = "sediment-memo";
-var MemoView = class extends import_obsidian9.ItemView {
+var MemoView = class extends import_obsidian10.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
@@ -2034,7 +2335,7 @@ var MemoView = class extends import_obsidian9.ItemView {
       area.value += ` ![[${name}]]`;
       area.focus();
     }
-    new import_obsidian9.Notice("\u56FE\u7247\u5DF2\u63D2\u5165\u901F\u8BB0");
+    new import_obsidian10.Notice("\u56FE\u7247\u5DF2\u63D2\u5165\u901F\u8BB0");
   }
   renderList(root) {
     var _a;
@@ -2223,139 +2524,6 @@ var MemoView = class extends import_obsidian9.ItemView {
         this.render();
       };
     }
-  }
-};
-
-// src/tracking/tracker.ts
-var import_obsidian10 = require("obsidian");
-function countWords(text) {
-  var _a, _b;
-  const cjk = ((_a = text.match(/[\u3400-\u9fff]/g)) != null ? _a : []).length;
-  const latin = ((_b = text.replace(/[\u3400-\u9fff]/g, " ").match(/[A-Za-z0-9_'-]+/g)) != null ? _b : []).length;
-  return cjk + latin;
-}
-function countCheckedTasks(text) {
-  var _a;
-  return ((_a = text.match(/^\s*[-*+]\s+\[(x|X)\]/gm)) != null ? _a : []).length;
-}
-var Tracker = class {
-  constructor(plugin, store) {
-    this.plugin = plugin;
-    this.store = store;
-    this.baseline = /* @__PURE__ */ new Map();
-    this.countedSessions = /* @__PURE__ */ new Set();
-    this.activeBuckets = /* @__PURE__ */ new Set();
-    this.startedAt = Date.now();
-    this.ready = false;
-  }
-  async start() {
-    const vault = this.plugin.app.vault;
-    for (const file of vault.getMarkdownFiles()) {
-      this.baseline.set(file.path, await this.snapshot(file));
-    }
-    this.plugin.registerEvent(
-      vault.on("create", (file) => {
-        if (file instanceof import_obsidian10.TFile) void this.onCreate(file);
-      })
-    );
-    this.plugin.registerEvent(
-      vault.on("modify", (file) => {
-        if (file instanceof import_obsidian10.TFile) void this.onModify(file);
-      })
-    );
-    this.plugin.registerEvent(
-      vault.on("delete", (file) => {
-        this.baseline.delete(file.path);
-      })
-    );
-    this.plugin.registerEvent(
-      vault.on("rename", (file, oldPath) => {
-        const snap = this.baseline.get(oldPath);
-        if (snap) {
-          this.baseline.delete(oldPath);
-          this.baseline.set(file.path, snap);
-        }
-      })
-    );
-    this.ready = true;
-  }
-  async snapshot(file) {
-    try {
-      const text = await this.plugin.app.vault.cachedRead(file);
-      return { words: countWords(text), tasks: countCheckedTasks(text) };
-    } catch (error) {
-      return { words: 0, tasks: 0 };
-    }
-  }
-  isExcluded(path) {
-    const folder = normalizeFolder(this.store.settings.dailyNoteFolder);
-    return folder.length > 0 && path.startsWith(`${folder}/`);
-  }
-  async onCreate(file) {
-    var _a, _b;
-    if (!this.ready || !file.path.endsWith(".md") || this.isExcluded(file.path)) return;
-    if (file.stat.ctime < this.startedAt - 6e4) return;
-    const snap = await this.snapshot(file);
-    this.baseline.set(file.path, snap);
-    if (snap.words > 0) {
-      const hour = (/* @__PURE__ */ new Date()).getHours();
-      const folder = (_b = (_a = file.parent) == null ? void 0 : _a.path) != null ? _b : "/";
-      this.store.updateDay(this.store.todayKey(), (day) => {
-        var _a2, _b2;
-        day.notesCreated += 1;
-        day.wordsAdded += snap.words;
-        day.capturedWords += snap.words;
-        day.hourlyWords[hour] = ((_a2 = day.hourlyWords[hour]) != null ? _a2 : 0) + snap.words;
-        day.folderWords[folder] = ((_b2 = day.folderWords[folder]) != null ? _b2 : 0) + snap.words;
-      });
-      this.markSession(file.path);
-      this.markActive();
-    }
-  }
-  async onModify(file) {
-    var _a, _b, _c;
-    if (!this.ready || !file.path.endsWith(".md") || this.isExcluded(file.path)) return;
-    const snap = await this.snapshot(file);
-    const prev = (_a = this.baseline.get(file.path)) != null ? _a : { words: 0, tasks: 0 };
-    this.baseline.set(file.path, snap);
-    const added = Math.max(0, snap.words - prev.words);
-    const removed = Math.max(0, prev.words - snap.words);
-    const tasks = Math.max(0, snap.tasks - prev.tasks);
-    if (added === 0 && removed === 0 && tasks === 0) return;
-    const hour = (/* @__PURE__ */ new Date()).getHours();
-    const folder = (_c = (_b = file.parent) == null ? void 0 : _b.path) != null ? _c : "/";
-    const captured = added >= 200 ? added : 0;
-    this.store.updateDay(this.store.todayKey(), (day) => {
-      var _a2, _b2;
-      day.wordsAdded += added;
-      day.wordsRemoved += removed;
-      day.tasksCompleted += tasks;
-      day.capturedWords += captured;
-      day.hourlyWords[hour] = ((_a2 = day.hourlyWords[hour]) != null ? _a2 : 0) + added;
-      day.folderWords[folder] = ((_b2 = day.folderWords[folder]) != null ? _b2 : 0) + added;
-    });
-    if (added > 0) this.markSession(file.path);
-    this.markActive();
-  }
-  /** 按 5 分钟桶估算交互活跃时间。 */
-  markActive() {
-    const now = /* @__PURE__ */ new Date();
-    const bucket = `${dateKey(now)}|${now.getHours()}:${Math.floor(now.getMinutes() / 5)}`;
-    if (this.activeBuckets.has(bucket)) return;
-    this.activeBuckets.add(bucket);
-    this.store.updateDay(this.store.todayKey(), (day) => {
-      day.activeMinutes += 5;
-    });
-  }
-  /** 同一文件同一天最多记一次有效编辑会话，避免连续键入刷分。 */
-  markSession(path) {
-    if (!this.store.settings.trackEdits) return;
-    const key = `${dateKey(/* @__PURE__ */ new Date())}|${path}`;
-    if (this.countedSessions.has(key)) return;
-    this.countedSessions.add(key);
-    this.store.updateDay(this.store.todayKey(), (day) => {
-      day.edits += 1;
-    });
   }
 };
 

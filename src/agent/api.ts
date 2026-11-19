@@ -2,6 +2,7 @@ import { TFile } from "obsidian";
 import type { SedimentPlugin } from "../main";
 import { buildWeeklyReview } from "../features/review";
 import type { PomodoroState } from "../features/pomodoro";
+import { countWords } from "../tracking/tracker";
 import type { DayRecord, MemoRecord, WorkLogRecord } from "../types";
 import { addDays, dateKey, hhmm, lastNDays, parseKey } from "../utils/dates";
 import { ensureFolder, normalizeFolder } from "../utils/vault";
@@ -74,6 +75,13 @@ export function generateToken(): string {
   }
 }
 
+function splitList(value: string): string[] {
+  return value
+    .split(/[,，]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 /** 阻止路径逃逸出库外。 */
 function safePath(input: string): string {
   const path = String(input ?? "")
@@ -99,12 +107,53 @@ export class AgentApi {
     return this.plugin.app.vault;
   }
 
+  private deniedFolders(): string[] {
+    return splitList(this.plugin.store.settings.deniedFolders);
+  }
+
+  private deniedTags(): string[] {
+    return splitList(this.plugin.store.settings.deniedTags);
+  }
+
+  private isDeniedPath(path: string): boolean {
+    return this.deniedFolders().some((folder) => path === folder || path.startsWith(`${folder}/`));
+  }
+
+  private assertAllowed(path: string): void {
+    if (this.isDeniedPath(path)) throw new Error(`访问被拒绝：${path} 位于黑名单目录`);
+  }
+
+  private cacheTags(file: TFile): string[] {
+    const cache = this.plugin.app.metadataCache.getFileCache(file);
+    const tags = new Set<string>();
+    for (const tag of cache?.tags ?? []) tags.add(tag.tag.replace(/^#/, ""));
+    const frontmatterTags = cache?.frontmatter?.tags ?? cache?.frontmatter?.tag;
+    if (Array.isArray(frontmatterTags)) {
+      for (const tag of frontmatterTags) tags.add(String(tag).replace(/^#/, ""));
+    } else if (typeof frontmatterTags === "string") {
+      for (const tag of frontmatterTags.split(/[,，\s]+/).filter(Boolean)) {
+        tags.add(tag.replace(/^#/, ""));
+      }
+    }
+    return [...tags];
+  }
+
+  private hasDeniedTag(file: TFile): boolean {
+    const denied = this.deniedTags();
+    return denied.length > 0 && this.cacheTags(file).some((tag) => denied.includes(tag));
+  }
+
   /** 列出笔记。folder 为空表示整个库。 */
   listNotes(folder = "", limit = 50): NoteSummary[] {
     const prefix = normalizeFolder(folder).toLowerCase();
     return this.vault
       .getMarkdownFiles()
-      .filter((file) => !prefix || file.path.toLowerCase().startsWith(`${prefix}/`))
+      .filter(
+        (file) =>
+          (!prefix || file.path.toLowerCase().startsWith(`${prefix}/`)) &&
+          !this.isDeniedPath(file.path) &&
+          !this.hasDeniedTag(file)
+      )
       .slice(0, Math.max(1, Math.min(limit, 500)))
       .map((file) => ({
         path: file.path,
@@ -120,6 +169,7 @@ export class AgentApi {
     const results: SearchResult[] = [];
     for (const file of this.vault.getMarkdownFiles()) {
       if (results.length >= Math.max(1, Math.min(limit, 100))) break;
+      if (this.isDeniedPath(file.path) || this.hasDeniedTag(file)) continue;
       const text = await this.vault.cachedRead(file);
       const position = text.toLowerCase().indexOf(needle);
       if (position < 0) continue;
@@ -137,14 +187,17 @@ export class AgentApi {
   /** 读取笔记全文。 */
   async readNote(path: string): Promise<{ path: string; content: string }> {
     const safe = safePath(path);
+    this.assertAllowed(safe);
     const file = this.vault.getAbstractFileByPath(safe);
     if (!(file instanceof TFile)) throw new Error(`笔记不存在：${safe}`);
+    if (this.hasDeniedTag(file)) throw new Error(`访问被拒绝：${safe} 带有禁止访问的标签`);
     return { path: safe, content: await this.vault.read(file) };
   }
 
   /** 新建、覆盖或追加笔记。 */
   async writeNote(path: string, content: string, mode: "create" | "overwrite" | "append" = "create"): Promise<{ path: string }> {
     const safe = safePath(path);
+    this.assertAllowed(safe);
     const folder = safe.includes("/") ? safe.slice(0, safe.lastIndexOf("/")) : "";
     await ensureFolder(this.vault, folder);
     const existing = this.vault.getAbstractFileByPath(safe);
@@ -158,6 +211,9 @@ export class AgentApi {
     } else {
       await this.vault.create(safe, content);
     }
+    this.plugin.store.updateDay(this.plugin.store.todayKey(), (day) => {
+      day.aiWordsAdded += countWords(content);
+    });
     return { path: safe };
   }
 
@@ -197,6 +253,119 @@ export class AgentApi {
       tasksCompleted: day.tasksCompleted,
       memos: todayMemos.length,
       backlog: store.data.memos.filter((memo) => !memo.converted).length,
+    };
+  }
+
+  /** 当前打开的笔记、选中文本与光标所在段落。 */
+  getActiveContext(): {
+    file: string | null;
+    selection: string;
+    cursorLine: number;
+    cursorParagraph: string;
+  } {
+    const workspace = this.plugin.app.workspace;
+    const file = workspace.getActiveFile();
+    const editor = workspace.activeEditor?.editor;
+    if (!file || this.isDeniedPath(file.path)) {
+      return { file: null, selection: "", cursorLine: 0, cursorParagraph: "" };
+    }
+    const selection = editor?.getSelection() ?? "";
+    const cursor = editor?.getCursor() ?? { line: 0, ch: 0 };
+    let cursorParagraph = "";
+    if (editor) {
+      let start = cursor.line;
+      let end = cursor.line;
+      while (start > 0 && editor.getLine(start - 1).trim() !== "") start -= 1;
+      while (end < editor.lineCount() - 1 && editor.getLine(end + 1).trim() !== "") end += 1;
+      cursorParagraph = editor.getRange(
+        { line: start, ch: 0 },
+        { line: end, ch: editor.getLine(end).length }
+      );
+    }
+    return { file: file.path, selection, cursorLine: cursor.line + 1, cursorParagraph };
+  }
+
+  /** 只读元数据，不返回正文，节省 Agent 的 Token。 */
+  async getNoteMetadata(path: string): Promise<{
+    path: string;
+    frontmatter: Record<string, unknown>;
+    tags: string[];
+    headings: string[];
+    links: string[];
+  }> {
+    const safe = safePath(path);
+    this.assertAllowed(safe);
+    const file = this.vault.getAbstractFileByPath(safe);
+    if (!(file instanceof TFile)) throw new Error(`笔记不存在：${safe}`);
+    const cache = this.plugin.app.metadataCache.getFileCache(file);
+    return {
+      path: safe,
+      frontmatter: (cache?.frontmatter ?? {}) as Record<string, unknown>,
+      tags: this.cacheTags(file),
+      headings: (cache?.headings ?? []).map((heading) => `${"#".repeat(heading.level)} ${heading.heading}`),
+      links: (cache?.links ?? []).map((link) => link.link),
+    };
+  }
+
+  /** 1-hop 图谱：出链、反链与同标签笔记。 */
+  getGraphNeighbors(
+    path: string,
+    include: string[] = ["outgoing", "backlinks", "tags"]
+  ): { path: string; outgoing: string[]; backlinks: string[]; sameTag: string[] } {
+    const safe = safePath(path);
+    this.assertAllowed(safe);
+    const file = this.vault.getAbstractFileByPath(safe);
+    if (!(file instanceof TFile)) throw new Error(`笔记不存在：${safe}`);
+
+    const resolved = (this.plugin.app.metadataCache.resolvedLinks ?? {}) as Record<
+      string,
+      Record<string, number>
+    >;
+    const allowed = (target: string): boolean =>
+      !this.isDeniedPath(target) && target !== safe;
+
+    const outgoing = include.includes("outgoing")
+      ? Object.keys(resolved[safe] ?? {}).filter(allowed)
+      : [];
+    const backlinks = include.includes("backlinks")
+      ? Object.entries(resolved)
+          .filter(([source, links]) => allowed(source) && Object.prototype.hasOwnProperty.call(links, safe))
+          .map(([source]) => source)
+      : [];
+
+    let sameTag: string[] = [];
+    if (include.includes("tags")) {
+      const targetTags = new Set(this.cacheTags(file));
+      sameTag = this.vault
+        .getMarkdownFiles()
+        .filter((other) => allowed(other.path) && !this.hasDeniedTag(other))
+        .filter((other) => this.cacheTags(other).some((tag) => targetTags.has(tag)))
+        .map((other) => other.path);
+    }
+    return { path: safe, outgoing, backlinks, sameTag };
+  }
+
+  logToolCall(tool: string, agent: string, path: string): void {
+    this.plugin.store.logToolCall({ time: new Date().toISOString(), tool, agent, path });
+  }
+
+  getToolActivity(): {
+    total: number;
+    byTool: Record<string, number>;
+    byAgent: Record<string, number>;
+    recent: Array<{ time: string; tool: string; agent: string; path: string }>;
+  } {
+    const byTool: Record<string, number> = {};
+    const byAgent: Record<string, number> = {};
+    for (const call of this.plugin.store.data.toolCalls) {
+      byTool[call.tool] = (byTool[call.tool] ?? 0) + 1;
+      byAgent[call.agent || "unknown"] = (byAgent[call.agent || "unknown"] ?? 0) + 1;
+    }
+    return {
+      total: this.plugin.store.data.toolCalls.length,
+      byTool,
+      byAgent,
+      recent: this.plugin.store.data.toolCalls.slice(0, 20),
     };
   }
 
@@ -311,6 +480,9 @@ export class AgentApi {
     ].join("\n");
 
     await this.vault.modify(file, `${previous.trimEnd()}\n\n${block}`);
+    this.plugin.store.updateDay(log.date, (day) => {
+      day.aiWordsAdded += countWords(block);
+    });
     this.plugin.store.addWorkLog(log);
     return log;
   }
@@ -353,6 +525,7 @@ export class AgentApi {
       `date: ${today}`,
       "type: knowledge",
       "source: agent",
+      "sediment_status: draft",
       `category: ${category}`,
       `agent: ${agent}`,
       ...(input.source ? [`origin: ${String(input.source).replace(/[:#]/g, "-")}`] : []),
@@ -392,6 +565,9 @@ export class AgentApi {
     ].join("\n");
 
     await this.vault.create(path, doc);
+    this.plugin.store.updateDay(today, (day) => {
+      day.aiWordsAdded += countWords(doc);
+    });
     return { path };
   }
 

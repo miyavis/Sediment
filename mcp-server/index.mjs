@@ -168,6 +168,37 @@ const TOOLS = [
     inputSchema: { type: "object", properties: {} },
   },
   {
+    name: "get_active_context",
+    description: "获取当前打开的笔记、选中文本、光标行与光标所在段落。",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "get_note_metadata",
+    description: "只读笔记元数据（frontmatter、标签、标题大纲、链接），不返回正文，节省 Token。",
+    inputSchema: {
+      type: "object",
+      properties: { path: { type: "string", description: "库内相对路径" } },
+      required: ["path"],
+    },
+  },
+  {
+    name: "get_graph_neighbors",
+    description: "1-hop 图谱：出链、反向链接和同标签笔记。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "库内相对路径" },
+        types: { type: "string", description: "逗号分隔：outgoing,backlinks,tags，默认全部" },
+      },
+      required: ["path"],
+    },
+  },
+  {
+    name: "get_tool_activity",
+    description: "查看 MCP/HTTP 工具调用统计（次数、客户端、最近调用）。",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
     name: "get_pomodoro",
     description: "查看内置番茄钟状态。",
     inputSchema: { type: "object", properties: {} },
@@ -220,6 +251,7 @@ function request(url, method, payload) {
 async function call(path, params = {}, method = "GET") {
   const url = new URL(path, BASE);
   url.searchParams.set("token", TOKEN);
+  url.searchParams.set("agent", process.env.AGENT_NAME || "");
   if (method === "POST") return request(url, method, params);
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
@@ -277,6 +309,14 @@ async function dispatch(name, args) {
       }, "POST");
     case "list_categories":
       return call("/categories");
+    case "get_active_context":
+      return call("/active-context");
+    case "get_note_metadata":
+      return call("/note-metadata", { path: args.path });
+    case "get_graph_neighbors":
+      return call("/graph", { path: args.path, types: args.types ?? "outgoing,backlinks,tags" });
+    case "get_tool_activity":
+      return call("/activity");
     case "get_pomodoro":
       return call("/pomodoro");
     case "control_pomodoro":

@@ -8,6 +8,7 @@ import {
   type MemoRecord,
   type PulseData,
   type PulseSettings,
+  type ToolCallRecord,
   type WorkLogRecord,
 } from "../types";
 import { dateKey } from "../utils/dates";
@@ -27,6 +28,7 @@ export class Store {
       days: loaded.days ?? {},
       memos: loaded.memos ?? [],
       workLogs: loaded.workLogs ?? [],
+      toolCalls: loaded.toolCalls ?? [],
       settings: { ...DEFAULT_SETTINGS, ...(loaded.settings ?? {}) },
     };
     for (const key of Object.keys(this.data.days)) {
@@ -35,6 +37,7 @@ export class Store {
       day.folderWords = day.folderWords ?? {};
       day.activeMinutes = Math.max(0, Math.round(day.activeMinutes));
       day.capturedWords = Math.max(0, Math.round(day.capturedWords));
+      day.aiWordsAdded = Math.max(0, Math.round(day.aiWordsAdded));
       day.contribution = computeContribution(day);
       this.data.days[key] = day;
     }
@@ -99,5 +102,11 @@ export class Store {
   addWorkLog(log: WorkLogRecord): void {
     this.data.workLogs.unshift(log);
     this.scheduleSave();
+  }
+
+  logToolCall(record: ToolCallRecord): void {
+    this.data.toolCalls.unshift(record);
+    if (this.data.toolCalls.length > 500) this.data.toolCalls.length = 500;
+    this.scheduleSave(2000);
   }
 }

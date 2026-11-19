@@ -2,6 +2,15 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [0.4.0] - 2026-11-19
+
+### 新增
+- P0 工具层：`get_active_context`（当前笔记/选中文本/光标段落）、`get_note_metadata`（只读元数据省 Token）、`get_graph_neighbors`（出链/反链/同标签）、`get_tool_activity`（调用统计）
+- 新增文件夹/标签黑名单，Agent 的读写与搜索全部受控
+- Agent 写入的内容单独计入 `aiWordsAdded`，为后续人机双色热力图打基础
+- MCP/HTTP 调用审计日志（限 500 条），并记录客户端名 `AGENT_NAME`
+- AI 沉淀笔记默认带 `sediment_status: draft`
+
 ## [0.3.4] - 2026-11-19
 
 ### 新增

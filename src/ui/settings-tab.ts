@@ -142,6 +142,32 @@ export class PulseSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("Agent 禁止访问的文件夹")
+      .setDesc("逗号分隔；这些目录对 Agent 的读写和搜索全部隐藏。")
+      .addText((text) =>
+        text
+          .setPlaceholder("例如：财务,私人日记")
+          .setValue(settings.deniedFolders)
+          .onChange((value) => {
+            settings.deniedFolders = value;
+            save();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Agent 禁止访问的标签")
+      .setDesc("逗号分隔；带这些标签的笔记对 Agent 不可读。")
+      .addText((text) =>
+        text
+          .setPlaceholder("例如：私密,密码")
+          .setValue(settings.deniedTags)
+          .onChange((value) => {
+            settings.deniedTags = value;
+            save();
+          })
+      );
+
+    new Setting(containerEl)
       .setName("看板画风")
       .setDesc("像素湖面 / 水墨山水 / 像素城市，也可在看板页脚点「换画风」。")
       .addDropdown((dropdown) =>

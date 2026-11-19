@@ -113,10 +113,14 @@ export class AgentServer {
         const parsed = Number(value);
         return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
       };
+      const agent = str(query.get("agent"), "") || String(request.headers["x-agent"] ?? "");
+      const loggedPath =
+        (typeof body.path === "string" ? body.path : "") || str(query.get("path"), "");
+      api.logToolCall(`${request.method} ${url.pathname}`, agent, loggedPath);
 
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
-          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.3.4" });
+          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.4.0" });
           return;
         case "GET /notes":
           this.json(response, 200, api.listNotes(str(query.get("folder")), num(query.get("limit"), 50)));
@@ -198,6 +202,23 @@ export class AgentServer {
           return;
         case "GET /categories":
           this.json(response, 200, api.getCategories());
+          return;
+        case "GET /active-context":
+          this.json(response, 200, api.getActiveContext());
+          return;
+        case "GET /note-metadata":
+          this.json(response, 200, await api.getNoteMetadata(str(query.get("path"))));
+          return;
+        case "GET /graph": {
+          const types = str(query.get("types"), "outgoing,backlinks,tags")
+            .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean);
+          this.json(response, 200, api.getGraphNeighbors(str(query.get("path")), types));
+          return;
+        }
+        case "GET /activity":
+          this.json(response, 200, api.getToolActivity());
           return;
         case "GET /pomodoro":
           this.json(response, 200, api.getPomodoro());

@@ -31,6 +31,16 @@ export interface DayRecord {
   folderWords: Record<string, number>;
   /** 交互活跃分钟（按 5 分钟桶估算） */
   activeMinutes: number;
+  /** 由 Agent API 写入的新增词数（用于人机双色热力图） */
+  aiWordsAdded: number;
+}
+
+/** 一次 MCP/HTTP 工具调用的审计记录 */
+export interface ToolCallRecord {
+  time: string;
+  tool: string;
+  agent: string;
+  path: string;
 }
 
 export interface MemoRecord {
@@ -80,6 +90,10 @@ export interface PulseSettings {
   knowledgeCategories: string;
   /** 上次提示过的版本号，用于升级时展示增量更新记录 */
   lastSeenVersion: string;
+  /** Agent 禁止访问的文件夹（逗号分隔） */
+  deniedFolders: string;
+  /** Agent 禁止访问的标签（逗号分隔） */
+  deniedTags: string;
   /** 看板画风：像素湖面 / 水墨山水 / 像素城市 */
   artStyle: "lake" | "ink" | "city";
   /** 每天写作目标字数，0 表示关闭 */
@@ -97,6 +111,7 @@ export interface PulseData {
   days: Record<string, DayRecord>;
   memos: MemoRecord[];
   workLogs: WorkLogRecord[];
+  toolCalls: ToolCallRecord[];
   settings: PulseSettings;
 }
 
@@ -127,6 +142,8 @@ export const DEFAULT_SETTINGS: PulseSettings = {
   knowledgeFolder: "knowledge",
   knowledgeCategories: "技术,项目,方法,灵感,复盘",
   lastSeenVersion: "",
+  deniedFolders: "",
+  deniedTags: "",
   artStyle: "lake",
   dailyWordGoal: 1000,
   agentServerEnabled: false,
@@ -147,6 +164,7 @@ export function createEmptyDay(): DayRecord {
     capturedWords: 0,
     folderWords: {},
     activeMinutes: 0,
+    aiWordsAdded: 0,
   };
 }
 
@@ -170,5 +188,6 @@ export const DEFAULT_DATA: PulseData = {
   days: {},
   memos: [],
   workLogs: [],
+  toolCalls: [],
   settings: DEFAULT_SETTINGS,
 };
