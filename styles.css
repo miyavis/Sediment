@@ -1829,3 +1829,117 @@ settings:
 .sd-task-open:hover {
   color: var(--interactive-accent) !important;
 }
+
+.sd-subnav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding: 8px 0;
+  background: var(--background-primary);
+}
+
+.sd-subnav button {
+  padding: 4px 11px;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.sd-trend-tabs {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.sd-trend-tabs button {
+  padding: 3px 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.sd-trend-tabs button.is-active {
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+}
+
+.sd-folder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.sd-folder-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1.4fr) minmax(80px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.sd-folder-rank {
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.sd-folder-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sd-folder-track {
+  height: 6px;
+  overflow: hidden;
+  background: var(--background-modifier-border);
+  border-radius: 6px;
+}
+
+.sd-folder-fill {
+  height: 100%;
+  background: var(--interactive-accent);
+  border-radius: 6px;
+}
+
+.sd-folder-row strong {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sd-goal-ring {
+  margin-left: auto;
+}
+
+.sd-goal-svg {
+  width: 46px;
+  height: 46px;
+}
+
+.sd-goal-svg.is-overflow circle:nth-child(2) {
+  filter: drop-shadow(0 0 4px var(--interactive-accent));
+}
+
+.sd-audit-badge {
+  padding: 2px 7px;
+  font-size: 10px;
+  color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+  border-radius: 6px;
+}
+
+.sd-rhythm-cell.is-empty {
+  height: 4px;
+  min-height: 4px;
+}

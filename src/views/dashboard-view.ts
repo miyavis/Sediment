@@ -34,6 +34,9 @@ export class DashboardView extends ItemView {
   private tab: TabKey = "today";
   private metric: MetricKey = "contribution";
   private range: RangeKey = "1y";
+  private trendTab: "writing" | "changes" | "time" = "writing";
+  private rhythmActiveOnly = true;
+  private foldersExpanded = false;
   private selected: string | null = null;
   private posterMonth = new Date().getMonth();
   private bannerEl: HTMLElement | null = null;
@@ -81,6 +84,16 @@ export class DashboardView extends ItemView {
 
   private value(key: string): number {
     return Number(this.plugin.store.getDay(key)[this.metric]) || 0;
+  }
+
+  private activeDaysCount(): number {
+    return Object.values(this.plugin.store.data.days).filter((day) => day.contribution > 0).length;
+  }
+
+  /** 数据不足 14 天时，折线/柱状图默认聚焦最近 14 天，避免最右侧一根细线。 */
+  private chartKeys(): string[] {
+    const keys = this.rangeKeys();
+    return this.activeDaysCount() < 14 ? keys.slice(-14) : keys;
   }
 
   private rangeKeys(): string[] {
@@ -140,10 +153,13 @@ export class DashboardView extends ItemView {
     const today = dateKey(new Date());
     const day = this.plugin.store.getDay(today);
     const streak = this.currentStreak();
+    const goal = this.plugin.store.settings.dailyWordGoal || 1000;
     const card = root.createDiv({ cls: "sd-card sd-today" });
     const head = card.createDiv({ cls: "sd-today-head" });
     head.createDiv({ cls: "sd-today-title", text: "今天" });
     head.createDiv({ cls: "sd-pill", text: day.contribution > 0 ? `${day.contribution} 分` : "还没开始" });
+    const goalRing = head.createDiv({ cls: "sd-goal-ring" });
+    goalRing.innerHTML = this.goalRing(day.wordsAdded, goal);
     head.createEl("button", { cls: "sd-share-today", text: "战报图片" }).onclick = () => {
       exportTodayReport({
         date: today,
@@ -156,7 +172,6 @@ export class DashboardView extends ItemView {
       });
     };
     const row = card.createDiv({ cls: "sd-today-row" });
-    const goal = this.plugin.store.settings.dailyWordGoal || 1000;
     row.createSpan({ text: `写作 ${day.wordsAdded} / ${goal.toLocaleString()} 字` });
     row.createSpan({ text: `连续 ${streak} 天 · 最长 ${this.longestStreak()} 天` });
     const pomoButton = row.createEl("button", { cls: "sd-pomodoro-button" });
@@ -199,7 +214,9 @@ export class DashboardView extends ItemView {
     for (const call of calls.slice(0, 8)) {
       const row = list.createDiv({ cls: "sd-feed-row" });
       row.createSpan({ text: `${call.time.slice(11, 16)} · ${call.agent || "unknown"}` });
-      row.createEl("strong", { text: call.tool.replace(/^(GET|POST) /, "") });
+      const tool = call.tool.replace(/^(GET|POST) /, "");
+      const target = call.path ? call.path.split("/").pop() : "";
+      row.createEl("strong", { text: target ? `${tool} · ${target}` : tool, attr: { title: call.path || tool } });
     }
     for (const log of logs) {
       const row = list.createDiv({ cls: "sd-feed-row" });
@@ -210,6 +227,19 @@ export class DashboardView extends ItemView {
 
   private renderInsights(root: HTMLElement): void {
     const body = root.createDiv({ cls: "sd-body" });
+    const subnav = body.createDiv({ cls: "sd-subnav" });
+    const anchors: Array<[string, string]> = [
+      ["sd-overview", "脉冲概览"],
+      ["sd-heatmap", "热力图"],
+      ["sd-trend", "写作趋势"],
+      ["sd-folders", "投入分布"],
+      ["sd-yearly", "年度画像"],
+      ["sd-review-card", "本周复盘"],
+    ];
+    for (const [id, label] of anchors) {
+      const button = subnav.createEl("button", { text: label });
+      button.onclick = () => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
     this.renderOverview(body);
     this.renderHeatmap(body, false);
     this.renderHorizon(body);
@@ -259,6 +289,16 @@ export class DashboardView extends ItemView {
       const row = list.createDiv({ cls: "sd-feed-row" });
       row.createSpan({ text: `${call.time.slice(5, 16)} · ${call.tool.replace(/^(GET|POST) /, "")}` });
       const actions = row.createDiv({ cls: "sd-audit-actions" });
+      const type = call.tool.includes("patch")
+        ? "局部修改"
+        : call.tool.includes("frontmatter")
+          ? "属性"
+          : call.tool.includes("knowledge")
+            ? "沉淀"
+            : call.tool.includes("memo")
+              ? "速记"
+              : "新建/覆盖";
+      actions.createSpan({ cls: "sd-audit-badge", text: type });
       const open = actions.createEl("button", { text: file.basename, cls: "sd-audit-open" });
       open.onclick = () => void this.plugin.app.workspace.openLinkText(call.path, "", false);
       if (backups.length > 0) {
@@ -539,7 +579,7 @@ export class DashboardView extends ItemView {
   }
 
   private renderOverview(root: HTMLElement): void {
-    const card = root.createDiv({ cls: "sd-card sd-overview" });
+    const card = root.createDiv({ cls: "sd-card sd-overview", attr: { id: "sd-overview" } });
     const head = card.createDiv({ cls: "sd-card-head" });
     head.createDiv({ cls: "sd-card-title", text: "知识脉冲概览" });
     head.createDiv({ cls: "sd-card-sub", text: `近 ${RANGE_OPTIONS.find((r) => r[0] === this.range)?.[1] ?? ""} · 可靠记录` });
@@ -556,7 +596,7 @@ export class DashboardView extends ItemView {
       };
     }
 
-    const keys = this.rangeKeys();
+    const keys = this.chartKeys();
     const total = keys.reduce((sum, key) => sum + this.value(key), 0);
     const active = keys.filter((key) => this.value(key) > 0).length;
     const best = keys.reduce(
@@ -587,18 +627,35 @@ export class DashboardView extends ItemView {
   private sparkline(values: number[]): string {
     const width = 620;
     const height = 96;
-    const pad = 6;
+    const pad = 10;
     const max = Math.max(1, ...values);
-    const points = values
-      .map((value, index) => {
-        const x = pad + (index / Math.max(1, values.length - 1)) * (width - pad * 2);
-        const y = height - pad - (value / max) * (height - pad * 2);
-        return `${x.toFixed(1)},${y.toFixed(1)}`;
-      })
-      .join(" ");
+    const coordinates = values.map((value, index) => ({
+      x: pad + (index / Math.max(1, values.length - 1)) * (width - pad * 2),
+      y: height - pad - (value / max) * (height - pad * 2),
+      value,
+    }));
+    const points = coordinates.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+    const dots = coordinates
+      .filter((point) => point.value > 0)
+      .map(
+        (point) =>
+          `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="3" fill="var(--interactive-accent)" stroke="var(--background-primary)" stroke-width="1.5"/>`
+      )
+      .join("");
+    const peakIndex = values.indexOf(max);
+    const peak = coordinates[peakIndex];
+    const peakLabel =
+      peak && max > 0
+        ? `<text x="${peak.x.toFixed(1)}" y="${Math.max(10, peak.y - 10).toFixed(1)}" text-anchor="middle" font-size="10" fill="var(--text-normal)">${max}</text>`
+        : "";
     return `<svg class="sd-spark" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+<defs><linearGradient id="sd-spark-fill" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0%" stop-color="var(--interactive-accent)" stop-opacity="0.28"/>
+<stop offset="100%" stop-color="var(--interactive-accent)" stop-opacity="0"/>
+</linearGradient></defs>
+<polygon points="${pad},${height - pad} ${points} ${width - pad},${height - pad}" fill="url(#sd-spark-fill)"/>
 <polyline points="${points}" fill="none" stroke="var(--interactive-accent)" stroke-width="2" vector-effect="non-scaling-stroke"/>
-<polygon points="${pad},${height - pad} ${points} ${width - pad},${height - pad}" fill="var(--interactive-accent)" opacity="0.1"/></svg>`;
+${dots}${peakLabel}</svg>`;
   }
 
   private ring(active: number, total: number): string {
@@ -612,8 +669,20 @@ export class DashboardView extends ItemView {
 <text x="34" y="40" text-anchor="middle" font-size="15" fill="var(--text-normal)">${active}</text></svg>`;
   }
 
+  private goalRing(value: number, goal: number): string {
+    const radius = 18;
+    const circumference = 2 * Math.PI * radius;
+    const ratio = Math.min(1, value / Math.max(1, goal));
+    const overflow = value > goal;
+    return `<svg viewBox="0 0 46 46" class="sd-goal-svg${overflow ? " is-overflow" : ""}">
+<circle cx="23" cy="23" r="${radius}" fill="none" stroke="var(--background-modifier-border)" stroke-width="4"/>
+<circle cx="23" cy="23" r="${radius}" fill="none" stroke="var(--interactive-accent)" stroke-width="4" stroke-linecap="round"
+  stroke-dasharray="${(ratio * circumference).toFixed(1)} ${circumference.toFixed(1)}" transform="rotate(-90 23 23)"/>
+<text x="23" y="27" text-anchor="middle" font-size="11" fill="var(--text-normal)">${Math.round(ratio * 100)}%</text></svg>`;
+  }
+
   private renderHeatmap(root: HTMLElement, dual: boolean): void {
-    const card = root.createDiv({ cls: "sd-card sd-heatmap" });
+    const card = root.createDiv({ cls: "sd-card sd-heatmap", attr: { id: "sd-heatmap" } });
     const head = card.createDiv({ cls: "sd-card-head" });
     head.createDiv({ cls: "sd-card-title", text: dual ? "人机双色热力图" : "年度知识活跃脉冲" });
     head.createDiv({ cls: "sd-card-sub", text: `近 53 周 · ${this.metricLabel()}` });
@@ -754,30 +823,53 @@ export class DashboardView extends ItemView {
 ${celestial}
 <polygon points="0,200 ${ridge} 1600,200" fill="var(--interactive-accent)" opacity="0.28"/>
 ${stones}
+<path d="M0 188 Q200 168 400 188 T800 188 T1200 188 T1600 188" fill="none" stroke="var(--interactive-accent)" stroke-width="1" opacity="0.16"/>
 <rect y="200" width="1600" height="100" fill="var(--background-secondary)" opacity="0.75"/>
 <polygon points="0,206 ${reflectionPoints} 1600,206" fill="var(--interactive-accent)" opacity="0.12"/>
+<path d="M0 228 Q160 222 320 228 T640 228 T960 228 T1280 228 T1600 228" fill="none" stroke="var(--interactive-accent)" stroke-width="1" opacity="0.12"/>
+<path d="M0 256 Q200 250 400 256 T800 256 T1200 256 T1600 256" fill="none" stroke="var(--interactive-accent)" stroke-width="1" opacity="0.08"/>
 ${sailing}
 </svg>`;
   }
 
   private renderAnalytics(root: HTMLElement): void {
-    const keys = this.rangeKeys();
+    const keys = this.chartKeys();
     const days = keys.map((key) => this.plugin.store.getDay(key));
     const label = RANGE_OPTIONS.find((range) => range[0] === this.range)?.[1] ?? "";
 
-    const writing = this.analyticsCard(root, "每日写作", label);
-    writing.innerHTML += this.barChart(days.map((day) => day.wordsAdded));
-    const changes = this.analyticsCard(root, "写作变化", "新增 / 删除 / 大段捕获");
-    changes.innerHTML += this.multiLine([
-      { values: days.map((day) => day.wordsAdded), color: "var(--interactive-accent)" },
-      { values: days.map((day) => day.wordsRemoved), color: "var(--text-faint)" },
-      { values: days.map((day) => day.capturedWords), color: "var(--text-muted)" },
-    ]);
-    const time = this.analyticsCard(root, "时间投入", "交互活跃 / 专注");
-    time.innerHTML += this.multiLine([
-      { values: days.map((day) => day.activeMinutes), color: "var(--interactive-accent)" },
-      { values: days.map((day) => day.focusMinutes), color: "var(--text-faint)" },
-    ]);
+    const trend = this.analyticsCard(root, "写作与时间趋势", label);
+    trend.setAttribute("id", "sd-trend");
+    const trendTabs = trend.querySelector(".sd-card-head")?.createDiv({ cls: "sd-trend-tabs" });
+    const trendOptions: Array<["writing" | "changes" | "time", string]> = [
+      ["writing", "每日写作"],
+      ["changes", "写作变化"],
+      ["time", "时间投入"],
+    ];
+    for (const [key, title] of trendOptions) {
+      const button = trendTabs?.createEl("button", {
+        cls: key === this.trendTab ? "is-active" : "",
+        text: title,
+      });
+      if (button) button.onclick = () => {
+        this.trendTab = key;
+        this.render();
+      };
+    }
+    const trendContent = trend.createDiv({ cls: "sd-trend-content" });
+    if (this.trendTab === "writing") {
+      trendContent.innerHTML += this.barChart(days.map((day) => day.wordsAdded));
+    } else if (this.trendTab === "changes") {
+      trendContent.innerHTML += this.multiLine([
+        { values: days.map((day) => day.wordsAdded), color: "var(--interactive-accent)" },
+        { values: days.map((day) => day.wordsRemoved), color: "var(--text-faint)" },
+        { values: days.map((day) => day.capturedWords), color: "var(--text-muted)" },
+      ]);
+    } else {
+      trendContent.innerHTML += this.multiLine([
+        { values: days.map((day) => day.activeMinutes), color: "var(--interactive-accent)" },
+        { values: days.map((day) => day.focusMinutes), color: "var(--text-faint)" },
+      ]);
+    }
 
     const totalWords = days.reduce((sum, day) => sum + day.wordsAdded, 0);
     const captured = days.reduce((sum, day) => sum + day.capturedWords, 0);
@@ -789,17 +881,31 @@ ${sailing}
     source.createDiv({ cls: "sd-card-sub", text: `逐步写入 ${typed} 字 · 大段捕获 ${captured} 字` });
 
     const folders = this.analyticsCard(root, "投入去向", "按目录统计（笔记 × 天）");
+    folders.setAttribute("id", "sd-folders");
     const folderTotals = new Map<string, number>();
     for (const day of days) {
       for (const [folder, words] of Object.entries(day.folderWords)) {
         folderTotals.set(folder, (folderTotals.get(folder) ?? 0) + words);
       }
     }
-    const folderList = folders.createDiv({ cls: "sd-analytics-list" });
-    for (const [folder, words] of [...folderTotals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10)) {
-      const row = folderList.createDiv({ cls: "sd-analytics-row" });
-      row.createSpan({ text: folder || "/" });
-      row.createEl("strong", { text: `${words} 字` });
+    const sortedFolders = [...folderTotals.entries()].sort((a, b) => b[1] - a[1]);
+    const folderWordsTotal = sortedFolders.reduce((sum, [, words]) => sum + words, 0);
+    const folderList = folders.createDiv({ cls: "sd-folder-list" });
+    for (const [index, [folder, words]] of
+      (this.foldersExpanded ? sortedFolders.slice(0, 20) : sortedFolders.slice(0, 6)).entries()) {
+      const row = folderList.createDiv({ cls: "sd-folder-row" });
+      row.createSpan({ cls: "sd-folder-rank", text: String(index + 1) });
+      row.createSpan({ cls: "sd-folder-name", text: folder || "/", attr: { title: folder || "/" } });
+      const track = row.createDiv({ cls: "sd-folder-track" });
+      const percent = folderWordsTotal > 0 ? (words / folderWordsTotal) * 100 : 0;
+      track.createDiv({ cls: "sd-folder-fill" }).style.width = `${percent}%`;
+      row.createEl("strong", { text: `${words} 字 · ${percent.toFixed(0)}%` });
+    }
+    if (sortedFolders.length > 6) {
+      folders.createEl("button", { text: this.foldersExpanded ? "收起" : `展开其余 ${sortedFolders.length - 6} 项` }).onclick = () => {
+        this.foldersExpanded = !this.foldersExpanded;
+        this.render();
+      };
     }
 
     const hourly = Array.from({ length: 24 }, (_, hour) =>
@@ -824,17 +930,31 @@ ${sailing}
     }
 
     const rhythm = this.analyticsCard(root, "投入节律矩阵", "六项指标按天对齐");
+    const rhythmHead = rhythm.querySelector(".sd-card-head");
+    if (rhythmHead) {
+      const toggle = rhythmHead.createEl("button", {
+        text: this.rhythmActiveOnly ? "仅活跃日期" : "全部日期",
+      });
+      toggle.onclick = () => {
+        this.rhythmActiveOnly = !this.rhythmActiveOnly;
+        this.render();
+      };
+    }
     const grid = rhythm.createDiv({ cls: "sd-rhythm" });
     const metricKeys = ["contribution", "wordsAdded", "activeMinutes", "focusMinutes", "notesCreated", "tasksCompleted"] as const;
     grid.createDiv({ cls: "sd-rhythm-label", text: "日期" });
     for (const key of metricKeys) grid.createDiv({ cls: "sd-rhythm-label", text: this.shortMetric(key) });
     const maxima = metricKeys.map((key) => Math.max(1, ...days.map((day) => Number(day[key]) || 0)));
-    for (const key of keys.slice(-30)) {
+    const rhythmKeys = (this.rhythmActiveOnly
+      ? keys.filter((key) => this.plugin.store.getDay(key).contribution > 0)
+      : keys
+    ).slice(-30);
+    for (const key of rhythmKeys) {
       const day = this.plugin.store.getDay(key);
       grid.createDiv({ cls: "sd-rhythm-label", text: key.slice(5) });
       metricKeys.forEach((metric, index) => {
         const value = Number(day[metric]) || 0;
-        const cell = grid.createDiv({ cls: "sd-rhythm-cell" });
+        const cell = grid.createDiv({ cls: `sd-rhythm-cell${value > 0 ? "" : " is-empty"}` });
         cell.setAttribute("style", `background:var(--interactive-accent);opacity:${value > 0 ? 0.1 + 0.9 * (value / maxima[index]) : 0.04}`);
       });
     }
@@ -870,11 +990,12 @@ ${sailing}
     const year = new Date().getFullYear();
     const entries = Object.entries(this.plugin.store.data.days).filter(([key]) => key.startsWith(`${year}-`));
     const wheel = this.analyticsCard(root, "年轮", `${year} 年 · 每天一片花瓣`);
+    wheel.setAttribute("id", "sd-yearly");
     const petals = entries
       .map(([key, day]) => {
         const dayOfYear = Math.floor((parseKey(key).getTime() - new Date(year, 0, 0).getTime()) / 86400000);
         const angle = (dayOfYear / 365) * Math.PI * 2 - Math.PI / 2;
-        const length = 10 + Math.min(64, day.contribution * 3);
+        const length = 14 + Math.min(54, day.contribution * 3);
         const x1 = 110 + Math.cos(angle) * 36;
         const y1 = 110 + Math.sin(angle) * 36;
         const x2 = 110 + Math.cos(angle) * (36 + length);
@@ -883,7 +1004,25 @@ ${sailing}
         return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${color}" stroke-width="2.6" stroke-linecap="round"/>`;
       })
       .join("");
-    wheel.innerHTML += `<svg viewBox="0 0 220 220" class="sd-wheel">${petals}</svg>`;
+    const tracks = [
+      `<circle cx="110" cy="110" r="36" fill="none" stroke="var(--background-modifier-border)" stroke-width="1"/>`,
+      `<circle cx="110" cy="110" r="72" fill="none" stroke="var(--background-modifier-border)" stroke-width="1" stroke-dasharray="3 5"/>`,
+      `<circle cx="110" cy="110" r="108" fill="none" stroke="var(--background-modifier-border)" stroke-width="1"/>`,
+    ].join("");
+    const monthTicks = Array.from({ length: 12 }, (_, month) => {
+      const angle = (month / 12) * Math.PI * 2 - Math.PI / 2;
+      const inner = 106;
+      const outer = 116;
+      const x1 = 110 + Math.cos(angle) * inner;
+      const y1 = 110 + Math.sin(angle) * inner;
+      const x2 = 110 + Math.cos(angle) * outer;
+      const y2 = 110 + Math.sin(angle) * outer;
+      const lx = 110 + Math.cos(angle) * 124;
+      const ly = 110 + Math.sin(angle) * 124;
+      return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="var(--background-modifier-border)" stroke-width="1"/><text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-size="9" text-anchor="middle" dominant-baseline="middle" fill="var(--text-faint)">${month + 1}月</text>`;
+    }).join("");
+    const watermark = `<text x="110" y="116" text-anchor="middle" font-size="26" font-weight="600" fill="var(--text-faint)" opacity="0.18">${year}</text>`;
+    wheel.innerHTML += `<svg viewBox="0 0 220 220" class="sd-wheel">${tracks}${monthTicks}${watermark}${petals}</svg>`;
 
     const fingerprint = this.analyticsCard(root, "知识指纹", "每天一根色条");
     const fingerprintSvg = Array.from({ length: 12 }, (_, month) => {
@@ -971,7 +1110,7 @@ ${sailing}
   }
 
   private renderReview(root: HTMLElement): void {
-    const card = root.createDiv({ cls: "sd-card sd-text-view" });
+    const card = root.createDiv({ cls: "sd-card sd-text-view", attr: { id: "sd-review-card" } });
     const head = card.createDiv({ cls: "sd-card-head" });
     head.createDiv({ cls: "sd-card-title", text: "知识复盘 · 本周" });
     const markdown = buildWeeklyReview(this.plugin.store, new Date());
