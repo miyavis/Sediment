@@ -1003,6 +1003,13 @@
   word-break: break-all;
 }
 
+.sd-setup-hint {
+  margin: 4px 0 12px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
 .sd-quick-memo textarea {
   width: 100%;
   margin: 8px 0;

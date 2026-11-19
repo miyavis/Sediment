@@ -2,6 +2,13 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [0.7.0] - 2026-11-19
+
+### 新增
+- 设置页「一键配置智能体客户端」：自动探测 OpenCode / Qoder / Claude Desktop / Cursor / Cline / Gemini CLI / Windsurf 等配置文件
+- 选择客户端后一键写入 MCP 配置（自动备份原文件、保留已有配置、复用已存在的桥接路径）
+- 「复制配置 JSON」按钮，便于手动粘贴
+
 ## [0.6.0] - 2026-11-19
 
 ### 新增

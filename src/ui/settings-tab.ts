@@ -1,4 +1,5 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { configureAgent, configSnippet, detectAgents, isAgentConfigured } from "../agent/setup";
 import type { SedimentPlugin } from "../main";
 import { generateToken } from "../agent/api";
 import { METRICS, type MetricKey } from "../types";
@@ -247,6 +248,41 @@ export class PulseSettingTab extends PluginSettingTab {
           settings.agentServerToken = generateToken();
           save();
           this.display();
+        })
+      );
+
+    containerEl.createEl("h3", { text: "一键配置智能体客户端" });
+    const hint = containerEl.createDiv({ cls: "sd-setup-hint" });
+    hint.setText(
+      "自动探测本机已安装的智能体，勾选后一键写入 MCP 配置。写入前会备份原文件，重启客户端即可生效。"
+    );
+    const agents = detectAgents();
+    if (agents.length === 0) {
+      containerEl.createDiv({ cls: "kp-empty", text: "没有探测到受支持的智能体客户端。" });
+    }
+    for (const agent of agents) {
+      const configured = isAgentConfigured(agent);
+      new Setting(containerEl)
+        .setName(`${agent.name}${configured ? " · 已配置" : ""}`)
+        .setDesc(agent.configPath)
+        .addButton((button) =>
+          button.setButtonText(configured ? "重新写入" : "一键配置").onClick(() => {
+            try {
+              configureAgent(this.plugin, agent);
+              new Notice(`${agent.name} 配置已写入，重启客户端后生效`);
+              this.display();
+            } catch (error) {
+              new Notice(`配置失败：${error instanceof Error ? error.message : String(error)}`);
+            }
+          })
+        );
+    }
+    new Setting(containerEl)
+      .setName("复制配置 JSON")
+      .setDesc("手动粘贴到客户端的 MCP 配置文件中。")
+      .addButton((button) =>
+        button.setButtonText("复制").onClick(() => {
+          void navigator.clipboard.writeText(configSnippet(this.plugin)).then(() => new Notice("配置已复制"));
         })
       );
   }
