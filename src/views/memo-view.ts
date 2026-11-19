@@ -1,5 +1,6 @@
 import { ItemView, Notice, type WorkspaceLeaf } from "obsidian";
 import type { SedimentPlugin } from "../main";
+import { exportMemoCard } from "../features/embed";
 import type { MemoRecord } from "../types";
 import { addDays, dateKey } from "../utils/dates";
 import { ensureFolder, normalizeFolder } from "../utils/vault";
@@ -238,6 +239,19 @@ export class MemoView extends ItemView {
         text: `原待办 · ${memo.sourcePath.split("/").pop()}:${memo.sourceLine ?? 1}`,
       });
       source.onclick = () => void this.openSource(memo.sourcePath, memo.sourceLine);
+    }
+    const actions = card.createDiv({ cls: "sd-memo-actions" });
+    actions.createEl("button", { text: "复制" }).onclick = () => {
+      void navigator.clipboard.writeText(memo.text).then(() => new Notice("已复制"));
+    };
+    actions.createEl("button", { text: "分享图" }).onclick = () => exportMemoCard(memo, "minimal");
+    if (!memo.tags.includes("to-agent")) {
+      actions.createEl("button", { text: "转 Agent" }).onclick = () => {
+        memo.tags.push("to-agent");
+        this.plugin.store.scheduleSave();
+        new Notice("已加入 Agent 待办");
+        this.render();
+      };
     }
     return card;
   }

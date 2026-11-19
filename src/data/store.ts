@@ -12,11 +12,13 @@ import {
   type WorkLogRecord,
 } from "../types";
 import { dateKey } from "../utils/dates";
+import { ensureFolder, normalizeFolder } from "../utils/vault";
 
 /** 包装 Obsidian 的 loadData/saveData，提供按天读写与防抖保存。 */
 export class Store {
   data: PulseData = DEFAULT_DATA;
   private saveTimer: number | null = null;
+  private lastBackupAt = 0;
 
   constructor(private plugin: Plugin) {}
 
@@ -49,6 +51,35 @@ export class Store {
       this.saveTimer = null;
     }
     await this.plugin.saveData(this.data);
+    void this.backupData();
+  }
+
+  /** 把 data.json 快照写入库内普通文件夹，按设置保留最近若干份。 */
+  async backupData(force = false): Promise<number> {
+    if (!this.data.settings.backupEnabled && !force) return 0;
+    const now = Date.now();
+    if (!force && now - this.lastBackupAt < 3_600_000) return 0;
+    this.lastBackupAt = now;
+
+    const folder = normalizeFolder(this.data.settings.backupFolder || "sediment-backup");
+    try {
+      await ensureFolder(this.plugin.app.vault, folder);
+      const date = new Date();
+      const stamp = `${dateKey(date)}-${String(date.getHours()).padStart(2, "0")}${String(date.getMinutes()).padStart(2, "0")}`;
+      const path = folder ? `${folder}/data-${stamp}.json` : `data-${stamp}.json`;
+      await this.plugin.app.vault.adapter.write(path, JSON.stringify(this.data, null, 2));
+
+      const keep = Math.max(1, this.data.settings.backupKeep);
+      const backups = this.plugin.app.vault
+        .getFiles()
+        .filter((file) => file.extension === "json" && file.basename.startsWith("data-") &&
+          (!folder || file.path.startsWith(`${folder}/`)))
+        .sort((a, b) => b.stat.mtime - a.stat.mtime);
+      for (const old of backups.slice(keep)) await this.plugin.app.vault.trash(old, false);
+      return 1;
+    } catch (error) {
+      return 0;
+    }
   }
 
   scheduleSave(delay = 800): void {

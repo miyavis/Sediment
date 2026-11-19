@@ -169,6 +169,42 @@ export class PulseSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("自动备份统计数据")
+      .setDesc("把 data.json 快照写入库内普通文件夹，避免 .obsidian 被同步工具忽略。")
+      .addToggle((toggle) =>
+        toggle.setValue(settings.backupEnabled).onChange((value) => {
+          settings.backupEnabled = value;
+          save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("备份目录")
+      .setDesc("库内相对路径，默认 sediment-backup/。")
+      .addText((text) =>
+        text
+          .setPlaceholder("sediment-backup")
+          .setValue(settings.backupFolder)
+          .onChange((value) => {
+            settings.backupFolder = value;
+            save();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("保留备份份数")
+      .addText((text) =>
+        text
+          .setPlaceholder("10")
+          .setValue(String(settings.backupKeep))
+          .onChange((value) => {
+            const count = Number(value);
+            settings.backupKeep = Number.isInteger(count) && count > 0 ? count : 10;
+            save();
+          })
+      );
+
+    new Setting(containerEl)
       .setName("看板画风")
       .setDesc("像素湖面 / 水墨山水 / 像素城市，也可在看板页脚点「换画风」。")
       .addDropdown((dropdown) =>

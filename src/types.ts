@@ -99,6 +99,12 @@ export interface PulseSettings {
   deniedFolders: string;
   /** Agent 禁止访问的标签（逗号分隔） */
   deniedTags: string;
+  /** 是否定期把 data.json 备份到库内普通文件夹 */
+  backupEnabled: boolean;
+  /** 备份目录（库内相对路径） */
+  backupFolder: string;
+  /** 保留的备份份数 */
+  backupKeep: number;
   /** 看板画风：像素湖面 / 水墨山水 / 像素城市 */
   artStyle: "lake" | "ink" | "city";
   /** 每天写作目标字数，0 表示关闭 */
@@ -149,6 +155,9 @@ export const DEFAULT_SETTINGS: PulseSettings = {
   lastSeenVersion: "",
   deniedFolders: "",
   deniedTags: "",
+  backupEnabled: true,
+  backupFolder: "sediment-backup",
+  backupKeep: 10,
   artStyle: "lake",
   dailyWordGoal: 1000,
   agentServerEnabled: false,

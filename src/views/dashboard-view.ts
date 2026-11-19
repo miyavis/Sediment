@@ -1,7 +1,10 @@
 import { ItemView, MarkdownRenderer, Notice, TFile, type WorkspaceLeaf } from "obsidian";
 import type { SedimentPlugin } from "../main";
 import { ChangelogModal } from "../ui/changelog-modal";
+import { DiffModal } from "../ui/diff-modal";
+import { listBackups, readBackup, restoreBackup } from "../features/audit";
 import { buildWeeklyReview } from "../features/review";
+import { exportTodayReport } from "../features/embed";
 import { METRICS, type MetricKey } from "../types";
 import { addDays, dateKey, lastNDays, parseKey } from "../utils/dates";
 
@@ -34,6 +37,7 @@ export class DashboardView extends ItemView {
   private selected: string | null = null;
   private posterMonth = new Date().getMonth();
   private bannerEl: HTMLElement | null = null;
+  private heatTooltip: HTMLElement | null = null;
   private unsubscribePomodoro: (() => void) | null = null;
 
   constructor(leaf: WorkspaceLeaf, private plugin: SedimentPlugin) {
@@ -61,6 +65,7 @@ export class DashboardView extends ItemView {
 
   async onClose(): Promise<void> {
     this.unsubscribePomodoro?.();
+    this.hideHeatTooltip();
   }
 
   render(): void {
@@ -134,21 +139,26 @@ export class DashboardView extends ItemView {
   private renderTodayCard(root: HTMLElement): void {
     const today = dateKey(new Date());
     const day = this.plugin.store.getDay(today);
-    let streak = 0;
-    let cursor = new Date();
-    if (this.plugin.store.getDay(dateKey(cursor)).contribution === 0) cursor = addDays(cursor, -1);
-    while (this.plugin.store.getDay(dateKey(cursor)).contribution > 0 && streak < 400) {
-      streak += 1;
-      cursor = addDays(cursor, -1);
-    }
+    const streak = this.currentStreak();
     const card = root.createDiv({ cls: "sd-card sd-today" });
     const head = card.createDiv({ cls: "sd-today-head" });
     head.createDiv({ cls: "sd-today-title", text: "今天" });
     head.createDiv({ cls: "sd-pill", text: day.contribution > 0 ? `${day.contribution} 分` : "还没开始" });
+    head.createEl("button", { cls: "sd-share-today", text: "战报图片" }).onclick = () => {
+      exportTodayReport({
+        date: today,
+        contribution: day.contribution,
+        words: day.wordsAdded,
+        streak,
+        longest: this.longestStreak(),
+        memos: this.plugin.store.data.memos.filter((memo) => memo.date === today).length,
+        agentCalls: this.plugin.store.data.toolCalls.filter((call) => call.time.startsWith(today)).length,
+      });
+    };
     const row = card.createDiv({ cls: "sd-today-row" });
     const goal = this.plugin.store.settings.dailyWordGoal || 1000;
     row.createSpan({ text: `写作 ${day.wordsAdded} / ${goal.toLocaleString()} 字` });
-    row.createSpan({ text: `连续 ${streak} 天` });
+    row.createSpan({ text: `连续 ${streak} 天 · 最长 ${this.longestStreak()} 天` });
     const pomoButton = row.createEl("button", { cls: "sd-pomodoro-button" });
     pomoButton.onclick = () => this.plugin.pomodoro.toggle();
     this.updatePomodoroButton();
@@ -216,11 +226,60 @@ export class DashboardView extends ItemView {
   private renderAgentHub(root: HTMLElement): void {
     const body = root.createDiv({ cls: "sd-body" });
     this.renderAgentStatus(body);
+    this.renderAgentChanges(body);
     this.renderTasksCard(body);
     this.renderHeatmap(body, true);
     this.renderDrafts(body);
     this.renderWorkLogs(body);
     this.renderFooter(body);
+  }
+
+  private renderAgentChanges(root: HTMLElement): void {
+    const card = root.createDiv({ cls: "sd-card" });
+    card.createDiv({ cls: "sd-card-title", text: "Agent 变更审查" });
+    const seen = new Set<string>();
+    const calls = this.plugin.store.data.toolCalls
+      .filter((call) => {
+        if (!call.path || seen.has(call.path)) return false;
+        seen.add(call.path);
+        return true;
+      })
+      .filter((call) => /\.(md|json)$/.test(call.path))
+      .slice(0, 8);
+
+    if (calls.length === 0) {
+      card.createDiv({ cls: "kp-empty", text: "暂无 Agent 变更记录。" });
+      return;
+    }
+    const list = card.createDiv({ cls: "sd-feed-list" });
+    for (const call of calls) {
+      const file = this.plugin.app.vault.getAbstractFileByPath(call.path);
+      if (!(file instanceof TFile)) continue;
+      const backups = listBackups(this.plugin, call.path);
+      const row = list.createDiv({ cls: "sd-feed-row" });
+      row.createSpan({ text: `${call.time.slice(5, 16)} · ${call.tool.replace(/^(GET|POST) /, "")}` });
+      const actions = row.createDiv({ cls: "sd-audit-actions" });
+      const open = actions.createEl("button", { text: file.basename, cls: "sd-audit-open" });
+      open.onclick = () => void this.plugin.app.workspace.openLinkText(call.path, "", false);
+      if (backups.length > 0) {
+        actions.createEl("button", { text: `差异(${backups.length})` }).onclick = () => {
+          void this.plugin.app.vault.read(file).then((current) => {
+            new DiffModal(
+              this.plugin.app,
+              `${file.basename} · 变更对比`,
+              readBackup(this.plugin, backups[0].name),
+              current
+            ).open();
+          });
+        };
+        actions.createEl("button", { text: "恢复" }).onclick = () => {
+          void restoreBackup(this.plugin, file, backups[0].name).then(() => {
+            new Notice("已恢复到最近备份");
+            this.render();
+          });
+        };
+      }
+    }
   }
 
   private renderTasksCard(root: HTMLElement): void {
@@ -419,6 +478,66 @@ export class DashboardView extends ItemView {
     return `<svg class="sd-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${lines}</svg>`;
   }
 
+  private currentStreak(): number {
+    let streak = 0;
+    let cursor = new Date();
+    if (this.plugin.store.getDay(dateKey(cursor)).contribution === 0) cursor = addDays(cursor, -1);
+    while (this.plugin.store.getDay(dateKey(cursor)).contribution > 0 && streak < 400) {
+      streak += 1;
+      cursor = addDays(cursor, -1);
+    }
+    return streak;
+  }
+
+  private longestStreak(): number {
+    const keys = Object.keys(this.plugin.store.data.days)
+      .filter((key) => this.plugin.store.getDay(key).contribution > 0)
+      .sort();
+    let longest = 0;
+    let run = 0;
+    let previous = "";
+    for (const key of keys) {
+      run = previous && dateKey(addDays(parseKey(previous), 1)) === key ? run + 1 : 1;
+      longest = Math.max(longest, run);
+      previous = key;
+    }
+    return longest;
+  }
+
+  private showHeatTooltip(event: MouseEvent, key: string): void {
+    this.hideHeatTooltip();
+    const day = this.plugin.store.getDay(key);
+    const tip = document.createElement("div");
+    tip.className = "sd-heat-tooltip";
+    tip.createDiv({ cls: "sd-tip-date", text: key });
+    tip.createDiv({
+      cls: "sd-tip-metric",
+      text: `贡献 ${day.contribution} 分 · 新增 ${day.wordsAdded} 字${day.aiWordsAdded > 0 ? `（AI ${day.aiWordsAdded}）` : ""}`,
+    });
+    const notes = this.plugin.app.vault
+      .getMarkdownFiles()
+      .filter((file) => file.path.includes(key))
+      .map((file) => file.basename)
+      .slice(0, 4);
+    if (notes.length > 0) tip.createDiv({ cls: "sd-tip-notes", text: `笔记：${notes.join("、")}` });
+    const memos = this.plugin.store.data.memos.filter((memo) => memo.date === key).slice(0, 2);
+    if (memos.length > 0) tip.createDiv({ cls: "sd-tip-notes", text: `速记：${memos.map((memo) => memo.text).join(" / ")}` });
+    document.body.appendChild(tip);
+    this.heatTooltip = tip;
+    this.moveHeatTooltip(event);
+  }
+
+  private moveHeatTooltip(event: MouseEvent): void {
+    if (!this.heatTooltip) return;
+    this.heatTooltip.style.left = `${event.clientX + 14}px`;
+    this.heatTooltip.style.top = `${event.clientY + 14}px`;
+  }
+
+  private hideHeatTooltip(): void {
+    this.heatTooltip?.remove();
+    this.heatTooltip = null;
+  }
+
   private renderOverview(root: HTMLElement): void {
     const card = root.createDiv({ cls: "sd-card sd-overview" });
     const head = card.createDiv({ cls: "sd-card-head" });
@@ -460,7 +579,7 @@ export class DashboardView extends ItemView {
       if (ring) item.createDiv({ cls: "sd-mini-ring" }).innerHTML = ring;
     };
     mini("活跃天数", `${active} / ${keys.length}`, "有记录的日子", this.ring(active, keys.length));
-    mini("当前连续", "0 天", "最长 0 天 · 按全部历史");
+    mini("当前连续", `${this.currentStreak()} 天`, `最长 ${this.longestStreak()} 天 · 按全部历史`);
     mini("投入时间", "0 小时", "交互 / 专注");
     mini("最高的一天", this.value(best) > 0 ? String(this.value(best)) : "—", best);
   }
@@ -540,12 +659,18 @@ export class DashboardView extends ItemView {
         const record = store.getDay(key);
         const cellValue = Number(record[this.metric]) || 0;
         const element = column.createDiv({ cls: "kp-cell", attr: { "data-date": key } });
-        if (date > today) element.addClass("kp-future");
-        else
+        if (date > today) {
+          element.addClass("kp-future");
+        } else {
           element.onclick = () => {
+            this.hideHeatTooltip();
             this.selected = key;
             this.render();
           };
+          element.onmouseenter = (event) => this.showHeatTooltip(event, key);
+          element.onmousemove = (event) => this.moveHeatTooltip(event);
+          element.onmouseleave = () => this.hideHeatTooltip();
+        }
         cells.push({ key, value: cellValue, date, el: element, ai: record.aiWordsAdded });
       }
     }

@@ -1,4 +1,47 @@
+/* @settings
+name: Sediment
+id: sediment
+settings:
+  - id: sediment-card-radius
+    type: slider
+    title: 卡片圆角
+    description: 主看板卡片的圆角大小
+    min: 4
+    max: 28
+    step: 1
+    default: 14
+  - id: sediment-card-padding
+    type: slider
+    title: 卡片内边距
+    description: 主看板卡片的内边距
+    min: 8
+    max: 36
+    step: 1
+    default: 22
+  - id: sediment-body-size
+    type: slider
+    title: 正文字号
+    description: 复盘等长文本的字号
+    min: 11
+    max: 18
+    step: 1
+    default: 13
+  - id: sediment-cell-size
+    type: slider
+    title: 热力图格子尺寸
+    min: 9
+    max: 20
+    step: 1
+    default: 15
+*/
+
 /* Sediment — 全部颜色跟随 Obsidian 主题变量。 */
+:root {
+  --sediment-card-radius: 14px;
+  --sediment-card-padding: 22px;
+  --sediment-body-size: 13px;
+  --sediment-cell-size: 15px;
+}
 
 .kp-dashboard {
   padding: 12px 16px 40px;
@@ -1618,4 +1661,147 @@
   text-align: left;
   font-size: 9px;
   opacity: 0.6;
+}
+
+.sd-dashboard .sd-card {
+  border-radius: var(--sediment-card-radius);
+  padding: var(--sediment-card-padding);
+}
+
+.sd-review-preview {
+  font-size: var(--sediment-body-size);
+}
+
+.kp-cell,
+.sd-heatmap .kp-cell {
+  width: var(--sediment-cell-size);
+  height: var(--sediment-cell-size);
+}
+
+.sd-heat-tooltip {
+  position: fixed;
+  z-index: 60;
+  max-width: 280px;
+  padding: 10px 12px;
+  pointer-events: none;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px var(--background-modifier-border-hover);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.sd-tip-date {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.sd-tip-metric {
+  color: var(--interactive-accent);
+}
+
+.sd-tip-notes {
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.sd-memo-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 7px;
+  opacity: 0;
+  transition: opacity 0.2s var(--sd-ease);
+}
+
+.kp-memo-card:hover .sd-memo-actions,
+.sd-draft-card:hover .sd-memo-actions {
+  opacity: 1;
+}
+
+.sd-memo-actions button {
+  padding: 2px 8px;
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.sd-share-today {
+  margin-left: auto;
+  padding: 3px 10px;
+  font-size: 11px;
+}
+
+.sd-embed {
+  overflow-x: auto;
+  padding: 6px 0;
+}
+
+.sd-embed-heatmap {
+  width: 100%;
+  min-width: 640px;
+  height: auto;
+}
+
+.sd-embed-today {
+  padding: 9px 12px;
+  font-size: 12px;
+  background: var(--background-secondary);
+  border-radius: 8px;
+}
+
+.sd-audit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.sd-audit-actions button {
+  padding: 2px 8px;
+  font-size: 10px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.sd-audit-open {
+  font-weight: 600;
+}
+
+.sd-diff-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.sd-diff-column {
+  min-width: 0;
+}
+
+.sd-diff-head {
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--interactive-accent);
+}
+
+.sd-diff-body {
+  max-height: 60vh;
+  overflow: auto;
+  padding: 10px;
+  font-size: 11px;
+  white-space: pre-wrap;
+  background: var(--background-secondary);
+  border-radius: 8px;
+}
+
+@media (max-width: 768px) {
+  .sd-diff-grid {
+    grid-template-columns: 1fr;
+  }
 }

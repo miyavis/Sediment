@@ -6,12 +6,13 @@ import { Store } from "./data/store";
 import { MemoManager } from "./features/memo";
 import { PomodoroManager } from "./features/pomodoro";
 import { TaskManager } from "./features/tasks";
+import { exportTodayReport, heatmapSvg, parseEmbedOptions, todayLine } from "./features/embed";
 import { buildWeeklyReview } from "./features/review";
 import { QuickMemoModal } from "./ui/quick-memo-modal";
 import { PulseSettingTab } from "./ui/settings-tab";
 import { ChangelogModal } from "./ui/changelog-modal";
 import { normalizeFolder, ensureFolder } from "./utils/vault";
-import { dateKey, startOfWeek } from "./utils/dates";
+import { addDays, dateKey, parseKey, startOfWeek } from "./utils/dates";
 import { DashboardView, DASHBOARD_VIEW_TYPE } from "./views/dashboard-view";
 import { MemoView, MEMO_VIEW_TYPE } from "./views/memo-view";
 import { Tracker } from "./tracking/tracker";
@@ -48,6 +49,14 @@ export class SedimentPlugin extends Plugin {
 
     this.registerView(DASHBOARD_VIEW_TYPE, (leaf) => new DashboardView(leaf, this));
     this.registerView(MEMO_VIEW_TYPE, (leaf) => new MemoView(leaf, this));
+
+    this.registerMarkdownCodeBlockProcessor("sediment-heatmap", (source, element) => {
+      const options = parseEmbedOptions(source);
+      element.createDiv({ cls: "sd-embed" }).innerHTML = heatmapSvg(this.store, options);
+    });
+    this.registerMarkdownCodeBlockProcessor("sediment-today", (_source, element) => {
+      element.createDiv({ cls: "sd-embed-today", text: todayLine(this.store) });
+    });
 
     await this.tracker.start();
 
@@ -129,6 +138,31 @@ export class SedimentPlugin extends Plugin {
         }),
     });
     this.addCommand({
+      id: "export-today-report",
+      name: "导出今日战报图片",
+      callback: () => {
+        const today = dateKey(new Date());
+        const day = this.store.getDay(today);
+        exportTodayReport({
+          date: today,
+          contribution: day.contribution,
+          words: day.wordsAdded,
+          streak: this.agentApi.getToday().streak,
+          longest: this.longestDayStreak(),
+          memos: this.store.data.memos.filter((memo) => memo.date === today).length,
+          agentCalls: this.store.data.toolCalls.filter((call) => call.time.startsWith(today)).length,
+        });
+      },
+    });
+    this.addCommand({
+      id: "backup-data",
+      name: "备份统计数据到库内",
+      callback: () =>
+        void this.store.backupData(true).then((count) => {
+          new Notice(count > 0 ? "数据已备份到库内" : "备份失败，请检查设置中的备份目录");
+        }),
+    });
+    this.addCommand({
       id: "show-changelog",
       name: "查看更新记录",
       callback: () => new ChangelogModal(this.app).open(),
@@ -191,6 +225,21 @@ export class SedimentPlugin extends Plugin {
       if (soft) view.refreshContent();
       else view.render();
     }
+  }
+
+  private longestDayStreak(): number {
+    const keys = Object.keys(this.store.data.days)
+      .filter((key) => this.store.getDay(key).contribution > 0)
+      .sort();
+    let longest = 0;
+    let run = 0;
+    let previous = "";
+    for (const key of keys) {
+      run = previous && dateKey(addDays(parseKey(previous), 1)) === key ? run + 1 : 1;
+      longest = Math.max(longest, run);
+      previous = key;
+    }
+    return longest;
   }
 
   /** Agent 写入知识库/速记后自动刷新面板，保留用户正在输入的内容。 */

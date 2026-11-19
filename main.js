@@ -28,7 +28,7 @@ __export(main_exports, {
   default: () => main_default
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian12 = require("obsidian");
+var import_obsidian13 = require("obsidian");
 
 // src/agent/api.ts
 var import_obsidian2 = require("obsidian");
@@ -1430,6 +1430,9 @@ var DEFAULT_SETTINGS = {
   lastSeenVersion: "",
   deniedFolders: "",
   deniedTags: "",
+  backupEnabled: true,
+  backupFolder: "sediment-backup",
+  backupKeep: 10,
   artStyle: "lake",
   dailyWordGoal: 1e3,
   agentServerEnabled: false,
@@ -1470,6 +1473,7 @@ var Store = class {
     this.plugin = plugin;
     this.data = DEFAULT_DATA;
     this.saveTimer = null;
+    this.lastBackupAt = 0;
   }
   async load() {
     var _a2, _b, _c, _d, _e, _f, _g;
@@ -1503,6 +1507,28 @@ var Store = class {
       this.saveTimer = null;
     }
     await this.plugin.saveData(this.data);
+    void this.backupData();
+  }
+  /** 把 data.json 快照写入库内普通文件夹，按设置保留最近若干份。 */
+  async backupData(force = false) {
+    if (!this.data.settings.backupEnabled && !force) return 0;
+    const now = Date.now();
+    if (!force && now - this.lastBackupAt < 36e5) return 0;
+    this.lastBackupAt = now;
+    const folder = normalizeFolder(this.data.settings.backupFolder || "sediment-backup");
+    try {
+      await ensureFolder(this.plugin.app.vault, folder);
+      const date = /* @__PURE__ */ new Date();
+      const stamp = `${dateKey(date)}-${String(date.getHours()).padStart(2, "0")}${String(date.getMinutes()).padStart(2, "0")}`;
+      const path = folder ? `${folder}/data-${stamp}.json` : `data-${stamp}.json`;
+      await this.plugin.app.vault.adapter.write(path, JSON.stringify(this.data, null, 2));
+      const keep = Math.max(1, this.data.settings.backupKeep);
+      const backups = this.plugin.app.vault.getFiles().filter((file) => file.extension === "json" && file.basename.startsWith("data-") && (!folder || file.path.startsWith(`${folder}/`))).sort((a, b) => b.stat.mtime - a.stat.mtime);
+      for (const old of backups.slice(keep)) await this.plugin.app.vault.trash(old, false);
+      return 1;
+    } catch (error) {
+      return 0;
+    }
   }
   scheduleSave(delay = 800) {
     if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
@@ -1812,6 +1838,154 @@ ${lines.join("\n")}`);
   }
 };
 
+// src/features/embed.ts
+function startOfWeek2(date, weekStart) {
+  const copy = new Date(date);
+  copy.setHours(0, 0, 0, 0);
+  const diff = (copy.getDay() - weekStart + 7) % 7;
+  copy.setDate(copy.getDate() - diff);
+  return copy;
+}
+function parseEmbedOptions(source) {
+  const options = {};
+  for (const line of source.split("\n")) {
+    const match = line.match(/^\s*([a-z]+)\s*:\s*(.+)$/i);
+    if (match) options[match[1].toLowerCase()] = match[2].trim();
+  }
+  const metrics = [
+    "contribution",
+    "wordsAdded",
+    "edits",
+    "notesCreated",
+    "tasksCompleted",
+    "focusMinutes"
+  ];
+  const metric = metrics.includes(options.metric) ? options.metric : "contribution";
+  const parsedWeeks = Number(options.weeks);
+  const weeks = Number.isFinite(parsedWeeks) && parsedWeeks >= 4 && parsedWeeks <= 53 ? Math.floor(parsedWeeks) : 53;
+  return { metric, weeks };
+}
+function heatmapSvg(store, options) {
+  const today = /* @__PURE__ */ new Date();
+  today.setHours(0, 0, 0, 0);
+  const start = addDays(startOfWeek2(today, store.settings.weekStart), -(options.weeks - 1) * 7);
+  const size = 13;
+  const gap = 3;
+  const left = 26;
+  const top = 18;
+  const width = left + options.weeks * (size + gap);
+  const height = top + 7 * (size + gap);
+  const cells = [];
+  let max = 1;
+  for (let week = 0; week < options.weeks; week += 1) {
+    for (let day = 0; day < 7; day += 1) {
+      const date = addDays(start, week * 7 + day);
+      const value = Number(store.getDay(dateKey(date))[options.metric]) || 0;
+      max = Math.max(max, value);
+      cells.push({
+        key: dateKey(date),
+        x: left + week * (size + gap),
+        y: top + day * (size + gap),
+        value
+      });
+    }
+  }
+  const rects = cells.map((cell) => {
+    const opacity = cell.value > 0 ? 0.3 + 0.7 * Math.min(1, cell.value / max) : 0.12;
+    const fill = cell.value > 0 ? "var(--interactive-accent)" : "var(--background-modifier-border-hover)";
+    return `<rect x="${cell.x}" y="${cell.y}" width="${size}" height="${size}" rx="2" fill="${fill}" opacity="${opacity.toFixed(2)}"><title>${cell.key} \xB7 ${cell.value}</title></rect>`;
+  }).join("\n");
+  return `<svg viewBox="0 0 ${width} ${height}" class="sd-embed-heatmap" preserveAspectRatio="xMinYMin meet">
+${rects}</svg>`;
+}
+function todayLine(store) {
+  const day = store.getDay(dateKey(/* @__PURE__ */ new Date()));
+  const memos = store.data.memos.filter((memo) => memo.date === dateKey(/* @__PURE__ */ new Date())).length;
+  return `\u8D21\u732E ${day.contribution} \u5206 \xB7 \u65B0\u589E ${day.wordsAdded} \u5B57 \xB7 \u65B0\u5EFA ${day.notesCreated} \u7BC7 \xB7 \u901F\u8BB0 ${memos} \u6761`;
+}
+function wrapText(ctx, text, maxWidth) {
+  const lines = [];
+  let current = "";
+  for (const char of text) {
+    if (ctx.measureText(current + char).width > maxWidth && current) {
+      lines.push(current);
+      current = char;
+    } else {
+      current += char;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+function download(canvas, name) {
+  const link = document.createElement("a");
+  link.download = name;
+  link.href = canvas.toDataURL("image/png");
+  link.click();
+}
+function exportMemoCard(memo, template = "minimal") {
+  const canvas = document.createElement("canvas");
+  canvas.width = 720;
+  canvas.height = 420;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const palette = {
+    minimal: { bg: "#fbfbf9", ink: "#1f2430", accent: "#6f7fa8" },
+    ticket: { bg: "#fff8e6", ink: "#4a3b22", accent: "#c08a3e" },
+    ink: { bg: "#e9e7e1", ink: "#2c2c2a", accent: "#8c5b52" }
+  }[template];
+  ctx.fillStyle = palette.bg;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = palette.accent;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(24, 24, canvas.width - 48, canvas.height - 48);
+  ctx.fillStyle = palette.accent;
+  ctx.font = "600 20px sans-serif";
+  ctx.fillText("SEDIMENT \xB7 \u901F\u8BB0", 56, 76);
+  ctx.fillStyle = palette.ink;
+  ctx.font = "14px sans-serif";
+  ctx.fillText(`${memo.date} ${memo.time}`, 56, 108);
+  ctx.font = "600 30px sans-serif";
+  wrapText(ctx, memo.text, canvas.width - 120).slice(0, 6).forEach((line, index) => {
+    ctx.fillText(line, 56, 170 + index * 46);
+  });
+  if (memo.tags.length > 0) {
+    ctx.fillStyle = palette.accent;
+    ctx.font = "16px sans-serif";
+    ctx.fillText(memo.tags.map((tag) => `#${tag}`).join("  "), 56, canvas.height - 64);
+  }
+  download(canvas, `sediment-memo-${memo.date}.png`);
+}
+function exportTodayReport(data) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 900;
+  canvas.height = 560;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.fillStyle = "#f4f7fb";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#2f6fb2";
+  ctx.fillRect(0, 0, canvas.width, 180);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "600 26px sans-serif";
+  ctx.fillText("SEDIMENT \xB7 \u4ECA\u65E5\u6218\u62A5", 60, 70);
+  ctx.font = "18px sans-serif";
+  ctx.fillText(data.date, 60, 110);
+  ctx.fillStyle = "#20344d";
+  ctx.font = "bold 96px sans-serif";
+  ctx.fillText(String(data.contribution), 60, 320);
+  ctx.font = "20px sans-serif";
+  ctx.fillText("\u8D21\u732E\u5206", 60, 356);
+  ctx.font = "24px sans-serif";
+  const lines = [
+    `\u65B0\u589E ${data.words} \u5B57`,
+    `\u8FDE\u7EED ${data.streak} \u5929 / \u6700\u957F ${data.longest} \u5929`,
+    `\u901F\u8BB0 ${data.memos} \u6761 \xB7 Agent \u8C03\u7528 ${data.agentCalls} \u6B21`
+  ];
+  lines.forEach((line, index) => ctx.fillText(line, 60, 420 + index * 40));
+  download(canvas, `sediment-today-${data.date}.png`);
+}
+
 // src/ui/quick-memo-modal.ts
 var import_obsidian7 = require("obsidian");
 var QuickMemoModal = class extends import_obsidian7.Modal {
@@ -2058,6 +2232,25 @@ var PulseSettingTab = class extends import_obsidian8.PluginSettingTab {
         save();
       })
     );
+    new import_obsidian8.Setting(containerEl).setName("\u81EA\u52A8\u5907\u4EFD\u7EDF\u8BA1\u6570\u636E").setDesc("\u628A data.json \u5FEB\u7167\u5199\u5165\u5E93\u5185\u666E\u901A\u6587\u4EF6\u5939\uFF0C\u907F\u514D .obsidian \u88AB\u540C\u6B65\u5DE5\u5177\u5FFD\u7565\u3002").addToggle(
+      (toggle) => toggle.setValue(settings.backupEnabled).onChange((value) => {
+        settings.backupEnabled = value;
+        save();
+      })
+    );
+    new import_obsidian8.Setting(containerEl).setName("\u5907\u4EFD\u76EE\u5F55").setDesc("\u5E93\u5185\u76F8\u5BF9\u8DEF\u5F84\uFF0C\u9ED8\u8BA4 sediment-backup/\u3002").addText(
+      (text) => text.setPlaceholder("sediment-backup").setValue(settings.backupFolder).onChange((value) => {
+        settings.backupFolder = value;
+        save();
+      })
+    );
+    new import_obsidian8.Setting(containerEl).setName("\u4FDD\u7559\u5907\u4EFD\u4EFD\u6570").addText(
+      (text) => text.setPlaceholder("10").setValue(String(settings.backupKeep)).onChange((value) => {
+        const count = Number(value);
+        settings.backupKeep = Number.isInteger(count) && count > 0 ? count : 10;
+        save();
+      })
+    );
     new import_obsidian8.Setting(containerEl).setName("\u770B\u677F\u753B\u98CE").setDesc("\u50CF\u7D20\u6E56\u9762 / \u6C34\u58A8\u5C71\u6C34 / \u50CF\u7D20\u57CE\u5E02\uFF0C\u4E5F\u53EF\u5728\u770B\u677F\u9875\u811A\u70B9\u300C\u6362\u753B\u98CE\u300D\u3002").addDropdown(
       (dropdown) => dropdown.addOption("lake", "\u50CF\u7D20\u6E56\u9762").addOption("ink", "\u6C34\u58A8\u5C71\u6C34").addOption("city", "\u50CF\u7D20\u57CE\u5E02").setValue(settings.artStyle).onChange((value) => {
         settings.artStyle = value;
@@ -2160,7 +2353,67 @@ var ChangelogModal = class extends import_obsidian9.Modal {
 };
 
 // src/views/dashboard-view.ts
+var import_obsidian11 = require("obsidian");
+
+// src/ui/diff-modal.ts
 var import_obsidian10 = require("obsidian");
+var DiffModal = class extends import_obsidian10.Modal {
+  constructor(app, titleText, before, after) {
+    super(app);
+    this.titleText = titleText;
+    this.before = before;
+    this.after = after;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.addClass("sd-diff-modal");
+    contentEl.createEl("h2", { text: this.titleText });
+    const grid = contentEl.createDiv({ cls: "sd-diff-grid" });
+    const column = (title, content) => {
+      const box = grid.createDiv({ cls: "sd-diff-column" });
+      box.createDiv({ cls: "sd-diff-head", text: title });
+      box.createEl("pre", { cls: "sd-diff-body", text: content });
+    };
+    column("\u5907\u4EFD\u7248\u672C", this.before);
+    column("\u5F53\u524D\u7248\u672C", this.after);
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
+
+// src/features/audit.ts
+function nodeFs() {
+  try {
+    return require("fs");
+  } catch (error) {
+    return null;
+  }
+}
+function backupDirectory(vault) {
+  var _a2, _b;
+  const adapter = vault.adapter;
+  return (_b = (_a2 = adapter.getFullPath) == null ? void 0 : _a2.call(adapter, ".obsidian/plugins/sediment/backups")) != null ? _b : null;
+}
+function listBackups(plugin, path) {
+  const fs = nodeFs();
+  const directory = backupDirectory(plugin.app.vault);
+  if (!fs || !directory || !fs.existsSync(directory)) return [];
+  const suffix = path.replace(/[\\/]/g, "_");
+  return fs.readdirSync(directory).filter((name) => name.endsWith(suffix)).map((name) => ({ name, mtimeMs: fs.statSync(`${directory}/${name}`).mtimeMs })).sort((a, b) => b.mtimeMs - a.mtimeMs);
+}
+function readBackup(plugin, name) {
+  const fs = nodeFs();
+  const directory = backupDirectory(plugin.app.vault);
+  if (!fs || !directory) return "";
+  return fs.readFileSync(`${directory}/${name}`, "utf8");
+}
+async function restoreBackup(plugin, file, name) {
+  const content = readBackup(plugin, name);
+  await plugin.app.vault.process(file, () => content);
+}
+
+// src/views/dashboard-view.ts
 var DASHBOARD_VIEW_TYPE = "sediment-dashboard";
 var TABS = [
   ["today", "\u4ECA\u65E5\u8109\u51B2"],
@@ -2175,7 +2428,7 @@ var RANGE_OPTIONS = [
   ["1y", "\u8FD1\u4E00\u5E74"]
 ];
 var WEEKDAYS = ["\u65E5", "\u4E00", "\u4E8C", "\u4E09", "\u56DB", "\u4E94", "\u516D"];
-var DashboardView = class extends import_obsidian10.ItemView {
+var DashboardView = class extends import_obsidian11.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
@@ -2185,6 +2438,7 @@ var DashboardView = class extends import_obsidian10.ItemView {
     this.selected = null;
     this.posterMonth = (/* @__PURE__ */ new Date()).getMonth();
     this.bannerEl = null;
+    this.heatTooltip = null;
     this.unsubscribePomodoro = null;
     this.metric = plugin.store.settings.heatmapMetric;
   }
@@ -2205,6 +2459,7 @@ var DashboardView = class extends import_obsidian10.ItemView {
   async onClose() {
     var _a2;
     (_a2 = this.unsubscribePomodoro) == null ? void 0 : _a2.call(this);
+    this.hideHeatTooltip();
   }
   render() {
     const root = this.contentEl;
@@ -2271,21 +2526,26 @@ var DashboardView = class extends import_obsidian10.ItemView {
   renderTodayCard(root) {
     const today = dateKey(/* @__PURE__ */ new Date());
     const day = this.plugin.store.getDay(today);
-    let streak = 0;
-    let cursor = /* @__PURE__ */ new Date();
-    if (this.plugin.store.getDay(dateKey(cursor)).contribution === 0) cursor = addDays(cursor, -1);
-    while (this.plugin.store.getDay(dateKey(cursor)).contribution > 0 && streak < 400) {
-      streak += 1;
-      cursor = addDays(cursor, -1);
-    }
+    const streak = this.currentStreak();
     const card = root.createDiv({ cls: "sd-card sd-today" });
     const head = card.createDiv({ cls: "sd-today-head" });
     head.createDiv({ cls: "sd-today-title", text: "\u4ECA\u5929" });
     head.createDiv({ cls: "sd-pill", text: day.contribution > 0 ? `${day.contribution} \u5206` : "\u8FD8\u6CA1\u5F00\u59CB" });
+    head.createEl("button", { cls: "sd-share-today", text: "\u6218\u62A5\u56FE\u7247" }).onclick = () => {
+      exportTodayReport({
+        date: today,
+        contribution: day.contribution,
+        words: day.wordsAdded,
+        streak,
+        longest: this.longestStreak(),
+        memos: this.plugin.store.data.memos.filter((memo) => memo.date === today).length,
+        agentCalls: this.plugin.store.data.toolCalls.filter((call) => call.time.startsWith(today)).length
+      });
+    };
     const row = card.createDiv({ cls: "sd-today-row" });
     const goal = this.plugin.store.settings.dailyWordGoal || 1e3;
     row.createSpan({ text: `\u5199\u4F5C ${day.wordsAdded} / ${goal.toLocaleString()} \u5B57` });
-    row.createSpan({ text: `\u8FDE\u7EED ${streak} \u5929` });
+    row.createSpan({ text: `\u8FDE\u7EED ${streak} \u5929 \xB7 \u6700\u957F ${this.longestStreak()} \u5929` });
     const pomoButton = row.createEl("button", { cls: "sd-pomodoro-button" });
     pomoButton.onclick = () => this.plugin.pomodoro.toggle();
     this.updatePomodoroButton();
@@ -2349,11 +2609,55 @@ var DashboardView = class extends import_obsidian10.ItemView {
   renderAgentHub(root) {
     const body = root.createDiv({ cls: "sd-body" });
     this.renderAgentStatus(body);
+    this.renderAgentChanges(body);
     this.renderTasksCard(body);
     this.renderHeatmap(body, true);
     this.renderDrafts(body);
     this.renderWorkLogs(body);
     this.renderFooter(body);
+  }
+  renderAgentChanges(root) {
+    const card = root.createDiv({ cls: "sd-card" });
+    card.createDiv({ cls: "sd-card-title", text: "Agent \u53D8\u66F4\u5BA1\u67E5" });
+    const seen = /* @__PURE__ */ new Set();
+    const calls = this.plugin.store.data.toolCalls.filter((call) => {
+      if (!call.path || seen.has(call.path)) return false;
+      seen.add(call.path);
+      return true;
+    }).filter((call) => /\.(md|json)$/.test(call.path)).slice(0, 8);
+    if (calls.length === 0) {
+      card.createDiv({ cls: "kp-empty", text: "\u6682\u65E0 Agent \u53D8\u66F4\u8BB0\u5F55\u3002" });
+      return;
+    }
+    const list = card.createDiv({ cls: "sd-feed-list" });
+    for (const call of calls) {
+      const file = this.plugin.app.vault.getAbstractFileByPath(call.path);
+      if (!(file instanceof import_obsidian11.TFile)) continue;
+      const backups = listBackups(this.plugin, call.path);
+      const row = list.createDiv({ cls: "sd-feed-row" });
+      row.createSpan({ text: `${call.time.slice(5, 16)} \xB7 ${call.tool.replace(/^(GET|POST) /, "")}` });
+      const actions = row.createDiv({ cls: "sd-audit-actions" });
+      const open = actions.createEl("button", { text: file.basename, cls: "sd-audit-open" });
+      open.onclick = () => void this.plugin.app.workspace.openLinkText(call.path, "", false);
+      if (backups.length > 0) {
+        actions.createEl("button", { text: `\u5DEE\u5F02(${backups.length})` }).onclick = () => {
+          void this.plugin.app.vault.read(file).then((current) => {
+            new DiffModal(
+              this.plugin.app,
+              `${file.basename} \xB7 \u53D8\u66F4\u5BF9\u6BD4`,
+              readBackup(this.plugin, backups[0].name),
+              current
+            ).open();
+          });
+        };
+        actions.createEl("button", { text: "\u6062\u590D" }).onclick = () => {
+          void restoreBackup(this.plugin, file, backups[0].name).then(() => {
+            new import_obsidian11.Notice("\u5DF2\u6062\u590D\u5230\u6700\u8FD1\u5907\u4EFD");
+            this.render();
+          });
+        };
+      }
+    }
   }
   renderTasksCard(root) {
     const card = root.createDiv({ cls: "sd-card sd-tasks" });
@@ -2442,14 +2746,14 @@ var DashboardView = class extends import_obsidian10.ItemView {
       const actions = item.createDiv({ cls: "sd-draft-actions" });
       actions.createEl("button", { text: "\u91C7\u7EB3\u5E76\u5F52\u6863" }).onclick = () => {
         void this.plugin.agentApi.updateFrontmatter(file.path, { sediment_status: "accepted" }).then(() => {
-          new import_obsidian10.Notice("\u5DF2\u91C7\u7EB3");
+          new import_obsidian11.Notice("\u5DF2\u91C7\u7EB3");
           this.render();
         });
       };
       actions.createEl("button", { text: "\u5408\u5E76\u5230\u5173\u8054\u7B14\u8BB0" }).onclick = () => void this.mergeDraft(file);
       actions.createEl("button", { text: "\u9A73\u56DE\u5220\u9664" }).onclick = () => {
         void this.plugin.app.vault.trash(file, false).then(() => {
-          new import_obsidian10.Notice("\u5DF2\u9A73\u56DE\u5E76\u79FB\u5165\u56DE\u6536\u7AD9");
+          new import_obsidian11.Notice("\u5DF2\u9A73\u56DE\u5E76\u79FB\u5165\u56DE\u6536\u7AD9");
           this.render();
         });
       };
@@ -2461,12 +2765,12 @@ var DashboardView = class extends import_obsidian10.ItemView {
     const links = (_a2 = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a2.links;
     const first = Array.isArray(links) && links.length > 0 ? String(links[0]) : "";
     if (!first) {
-      new import_obsidian10.Notice("\u8FD9\u5F20\u8349\u7A3F\u6CA1\u6709\u5173\u8054\u7B14\u8BB0\uFF0C\u65E0\u6CD5\u5408\u5E76");
+      new import_obsidian11.Notice("\u8FD9\u5F20\u8349\u7A3F\u6CA1\u6709\u5173\u8054\u7B14\u8BB0\uFF0C\u65E0\u6CD5\u5408\u5E76");
       return;
     }
     const target = this.plugin.app.vault.getMarkdownFiles().find((item) => item.basename === first || item.path === first);
     if (!target) {
-      new import_obsidian10.Notice(`\u627E\u4E0D\u5230\u5173\u8054\u7B14\u8BB0\uFF1A${first}`);
+      new import_obsidian11.Notice(`\u627E\u4E0D\u5230\u5173\u8054\u7B14\u8BB0\uFF1A${first}`);
       return;
     }
     const source = await this.plugin.app.vault.read(file);
@@ -2476,7 +2780,7 @@ var DashboardView = class extends import_obsidian10.ItemView {
 ${body.trim()}
 `);
     await this.plugin.app.vault.trash(file, false);
-    new import_obsidian10.Notice(`\u5DF2\u5408\u5E76\u5230 ${target.basename}`);
+    new import_obsidian11.Notice(`\u5DF2\u5408\u5E76\u5230 ${target.basename}`);
     this.render();
   }
   renderWorkLogs(root) {
@@ -2537,6 +2841,56 @@ ${body.trim()}
     }).join("");
     return `<svg class="sd-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${lines}</svg>`;
   }
+  currentStreak() {
+    let streak = 0;
+    let cursor = /* @__PURE__ */ new Date();
+    if (this.plugin.store.getDay(dateKey(cursor)).contribution === 0) cursor = addDays(cursor, -1);
+    while (this.plugin.store.getDay(dateKey(cursor)).contribution > 0 && streak < 400) {
+      streak += 1;
+      cursor = addDays(cursor, -1);
+    }
+    return streak;
+  }
+  longestStreak() {
+    const keys = Object.keys(this.plugin.store.data.days).filter((key) => this.plugin.store.getDay(key).contribution > 0).sort();
+    let longest = 0;
+    let run = 0;
+    let previous = "";
+    for (const key of keys) {
+      run = previous && dateKey(addDays(parseKey(previous), 1)) === key ? run + 1 : 1;
+      longest = Math.max(longest, run);
+      previous = key;
+    }
+    return longest;
+  }
+  showHeatTooltip(event, key) {
+    this.hideHeatTooltip();
+    const day = this.plugin.store.getDay(key);
+    const tip = document.createElement("div");
+    tip.className = "sd-heat-tooltip";
+    tip.createDiv({ cls: "sd-tip-date", text: key });
+    tip.createDiv({
+      cls: "sd-tip-metric",
+      text: `\u8D21\u732E ${day.contribution} \u5206 \xB7 \u65B0\u589E ${day.wordsAdded} \u5B57${day.aiWordsAdded > 0 ? `\uFF08AI ${day.aiWordsAdded}\uFF09` : ""}`
+    });
+    const notes = this.plugin.app.vault.getMarkdownFiles().filter((file) => file.path.includes(key)).map((file) => file.basename).slice(0, 4);
+    if (notes.length > 0) tip.createDiv({ cls: "sd-tip-notes", text: `\u7B14\u8BB0\uFF1A${notes.join("\u3001")}` });
+    const memos = this.plugin.store.data.memos.filter((memo) => memo.date === key).slice(0, 2);
+    if (memos.length > 0) tip.createDiv({ cls: "sd-tip-notes", text: `\u901F\u8BB0\uFF1A${memos.map((memo) => memo.text).join(" / ")}` });
+    document.body.appendChild(tip);
+    this.heatTooltip = tip;
+    this.moveHeatTooltip(event);
+  }
+  moveHeatTooltip(event) {
+    if (!this.heatTooltip) return;
+    this.heatTooltip.style.left = `${event.clientX + 14}px`;
+    this.heatTooltip.style.top = `${event.clientY + 14}px`;
+  }
+  hideHeatTooltip() {
+    var _a2;
+    (_a2 = this.heatTooltip) == null ? void 0 : _a2.remove();
+    this.heatTooltip = null;
+  }
   renderOverview(root) {
     var _a2, _b, _c;
     const card = root.createDiv({ cls: "sd-card sd-overview" });
@@ -2576,7 +2930,7 @@ ${body.trim()}
       if (ring) item.createDiv({ cls: "sd-mini-ring" }).innerHTML = ring;
     };
     mini("\u6D3B\u8DC3\u5929\u6570", `${active} / ${keys.length}`, "\u6709\u8BB0\u5F55\u7684\u65E5\u5B50", this.ring(active, keys.length));
-    mini("\u5F53\u524D\u8FDE\u7EED", "0 \u5929", "\u6700\u957F 0 \u5929 \xB7 \u6309\u5168\u90E8\u5386\u53F2");
+    mini("\u5F53\u524D\u8FDE\u7EED", `${this.currentStreak()} \u5929`, `\u6700\u957F ${this.longestStreak()} \u5929 \xB7 \u6309\u5168\u90E8\u5386\u53F2`);
     mini("\u6295\u5165\u65F6\u95F4", "0 \u5C0F\u65F6", "\u4EA4\u4E92 / \u4E13\u6CE8");
     mini("\u6700\u9AD8\u7684\u4E00\u5929", this.value(best) > 0 ? String(this.value(best)) : "\u2014", best);
   }
@@ -2648,12 +3002,18 @@ ${body.trim()}
         const record = store.getDay(key);
         const cellValue = Number(record[this.metric]) || 0;
         const element = column.createDiv({ cls: "kp-cell", attr: { "data-date": key } });
-        if (date > today) element.addClass("kp-future");
-        else
+        if (date > today) {
+          element.addClass("kp-future");
+        } else {
           element.onclick = () => {
+            this.hideHeatTooltip();
             this.selected = key;
             this.render();
           };
+          element.onmouseenter = (event) => this.showHeatTooltip(event, key);
+          element.onmousemove = (event) => this.moveHeatTooltip(event);
+          element.onmouseleave = () => this.hideHeatTooltip();
+        }
         cells.push({ key, value: cellValue, date, el: element, ai: record.aiWordsAdded });
       }
     }
@@ -2932,10 +3292,10 @@ ${sailing}
     head.createDiv({ cls: "sd-card-title", text: "\u77E5\u8BC6\u590D\u76D8 \xB7 \u672C\u5468" });
     const markdown = buildWeeklyReview(this.plugin.store, /* @__PURE__ */ new Date());
     head.createEl("button", { text: "\u590D\u5236 Markdown" }).onclick = () => {
-      void navigator.clipboard.writeText(markdown).then(() => new import_obsidian10.Notice("\u5468\u590D\u76D8\u5DF2\u590D\u5236"));
+      void navigator.clipboard.writeText(markdown).then(() => new import_obsidian11.Notice("\u5468\u590D\u76D8\u5DF2\u590D\u5236"));
     };
     const preview = card.createDiv({ cls: "sd-review-preview" });
-    void import_obsidian10.MarkdownRenderer.render(this.plugin.app, markdown, preview, "", this);
+    void import_obsidian11.MarkdownRenderer.render(this.plugin.app, markdown, preview, "", this);
   }
   bannerSvg() {
     const style = this.plugin.store.settings.artStyle;
@@ -3032,9 +3392,9 @@ function startOfWeekFor(date, weekStart) {
 }
 
 // src/views/memo-view.ts
-var import_obsidian11 = require("obsidian");
+var import_obsidian12 = require("obsidian");
 var MEMO_VIEW_TYPE = "sediment-memo";
-var MemoView = class extends import_obsidian11.ItemView {
+var MemoView = class extends import_obsidian12.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
@@ -3190,7 +3550,7 @@ var MemoView = class extends import_obsidian11.ItemView {
       area.value += ` ![[${name}]]`;
       area.focus();
     }
-    new import_obsidian11.Notice("\u56FE\u7247\u5DF2\u63D2\u5165\u901F\u8BB0");
+    new import_obsidian12.Notice("\u56FE\u7247\u5DF2\u63D2\u5165\u901F\u8BB0");
   }
   renderList(root) {
     var _a2;
@@ -3239,6 +3599,19 @@ var MemoView = class extends import_obsidian11.ItemView {
         text: `\u539F\u5F85\u529E \xB7 ${memo.sourcePath.split("/").pop()}:${(_a2 = memo.sourceLine) != null ? _a2 : 1}`
       });
       source.onclick = () => void this.openSource(memo.sourcePath, memo.sourceLine);
+    }
+    const actions = card.createDiv({ cls: "sd-memo-actions" });
+    actions.createEl("button", { text: "\u590D\u5236" }).onclick = () => {
+      void navigator.clipboard.writeText(memo.text).then(() => new import_obsidian12.Notice("\u5DF2\u590D\u5236"));
+    };
+    actions.createEl("button", { text: "\u5206\u4EAB\u56FE" }).onclick = () => exportMemoCard(memo, "minimal");
+    if (!memo.tags.includes("to-agent")) {
+      actions.createEl("button", { text: "\u8F6C Agent" }).onclick = () => {
+        memo.tags.push("to-agent");
+        this.plugin.store.scheduleSave();
+        new import_obsidian12.Notice("\u5DF2\u52A0\u5165 Agent \u5F85\u529E");
+        this.render();
+      };
     }
     return card;
   }
@@ -3415,7 +3788,7 @@ var MemoView = class extends import_obsidian11.ItemView {
 };
 
 // src/main.ts
-var SedimentPlugin = class extends import_obsidian12.Plugin {
+var SedimentPlugin = class extends import_obsidian13.Plugin {
   constructor() {
     super(...arguments);
     this.serverRestartTimer = null;
@@ -3427,7 +3800,7 @@ var SedimentPlugin = class extends import_obsidian12.Plugin {
     if (this.store.settings.lastSeenVersion !== this.manifest.version) {
       this.store.settings.lastSeenVersion = this.manifest.version;
       await this.store.save();
-      new import_obsidian12.Notice(`Sediment \u5DF2\u66F4\u65B0\u5230 v${this.manifest.version}\uFF0C\u53EF\u5728\u300C\u67E5\u770B\u66F4\u65B0\u8BB0\u5F55\u300D\u4E2D\u4E86\u89E3\u53D8\u5316`);
+      new import_obsidian13.Notice(`Sediment \u5DF2\u66F4\u65B0\u5230 v${this.manifest.version}\uFF0C\u53EF\u5728\u300C\u67E5\u770B\u66F4\u65B0\u8BB0\u5F55\u300D\u4E2D\u4E86\u89E3\u53D8\u5316`);
     }
     if (!this.store.settings.agentServerToken) {
       this.store.settings.agentServerToken = generateToken();
@@ -3442,6 +3815,13 @@ var SedimentPlugin = class extends import_obsidian12.Plugin {
     this.semantic = new SemanticIndex(this);
     this.registerView(DASHBOARD_VIEW_TYPE, (leaf) => new DashboardView(leaf, this));
     this.registerView(MEMO_VIEW_TYPE, (leaf) => new MemoView(leaf, this));
+    this.registerMarkdownCodeBlockProcessor("sediment-heatmap", (source, element) => {
+      const options = parseEmbedOptions(source);
+      element.createDiv({ cls: "sd-embed" }).innerHTML = heatmapSvg(this.store, options);
+    });
+    this.registerMarkdownCodeBlockProcessor("sediment-today", (_source, element) => {
+      element.createDiv({ cls: "sd-embed-today", text: todayLine(this.store) });
+    });
     await this.tracker.start();
     const vault = this.app.vault;
     const onVaultChange = (path) => {
@@ -3509,7 +3889,31 @@ var SedimentPlugin = class extends import_obsidian12.Plugin {
       id: "snapshot-open-tasks",
       name: "\u8BB0\u5F55\u4ECA\u65E5\u9057\u7559\u5F85\u529E\u5230\u65E5\u8BB0",
       callback: () => void this.tasks.snapshot().then((count) => {
-        new import_obsidian12.Notice(count > 0 ? `\u5DF2\u8BB0\u5F55 ${count} \u6761\u9057\u7559\u5F85\u529E` : "\u6CA1\u6709\u9057\u7559\u5F85\u529E");
+        new import_obsidian13.Notice(count > 0 ? `\u5DF2\u8BB0\u5F55 ${count} \u6761\u9057\u7559\u5F85\u529E` : "\u6CA1\u6709\u9057\u7559\u5F85\u529E");
+      })
+    });
+    this.addCommand({
+      id: "export-today-report",
+      name: "\u5BFC\u51FA\u4ECA\u65E5\u6218\u62A5\u56FE\u7247",
+      callback: () => {
+        const today = dateKey(/* @__PURE__ */ new Date());
+        const day = this.store.getDay(today);
+        exportTodayReport({
+          date: today,
+          contribution: day.contribution,
+          words: day.wordsAdded,
+          streak: this.agentApi.getToday().streak,
+          longest: this.longestDayStreak(),
+          memos: this.store.data.memos.filter((memo) => memo.date === today).length,
+          agentCalls: this.store.data.toolCalls.filter((call) => call.time.startsWith(today)).length
+        });
+      }
+    });
+    this.addCommand({
+      id: "backup-data",
+      name: "\u5907\u4EFD\u7EDF\u8BA1\u6570\u636E\u5230\u5E93\u5185",
+      callback: () => void this.store.backupData(true).then((count) => {
+        new import_obsidian13.Notice(count > 0 ? "\u6570\u636E\u5DF2\u5907\u4EFD\u5230\u5E93\u5185" : "\u5907\u4EFD\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u8BBE\u7F6E\u4E2D\u7684\u5907\u4EFD\u76EE\u5F55");
       })
     });
     this.addCommand({
@@ -3567,6 +3971,18 @@ var SedimentPlugin = class extends import_obsidian12.Plugin {
       else view.render();
     }
   }
+  longestDayStreak() {
+    const keys = Object.keys(this.store.data.days).filter((key) => this.store.getDay(key).contribution > 0).sort();
+    let longest = 0;
+    let run = 0;
+    let previous = "";
+    for (const key of keys) {
+      run = previous && dateKey(addDays(parseKey(previous), 1)) === key ? run + 1 : 1;
+      longest = Math.max(longest, run);
+      previous = key;
+    }
+    return longest;
+  }
   /** Agent 写入知识库/速记后自动刷新面板，保留用户正在输入的内容。 */
   scheduleRefresh(path) {
     const folders = [
@@ -3607,7 +4023,7 @@ var SedimentPlugin = class extends import_obsidian12.Plugin {
     var _a2;
     let parent = leaf.parent;
     while (parent) {
-      if (parent instanceof import_obsidian12.WorkspaceSidedock) return true;
+      if (parent instanceof import_obsidian13.WorkspaceSidedock) return true;
       parent = (_a2 = parent.parent) != null ? _a2 : null;
     }
     return false;
@@ -3621,7 +4037,7 @@ var SedimentPlugin = class extends import_obsidian12.Plugin {
     const path = folder ? `${folder}/${name}` : name;
     const existing = this.app.vault.getAbstractFileByPath(path);
     let file;
-    if (existing instanceof import_obsidian12.TFile) {
+    if (existing instanceof import_obsidian13.TFile) {
       const previous = await this.app.vault.read(existing);
       await this.app.vault.modify(existing, `${previous.trimEnd()}
 
@@ -3633,7 +4049,7 @@ ${markdown}`);
       file = await this.app.vault.create(path, markdown);
     }
     await this.app.workspace.getLeaf(true).openFile(file);
-    new import_obsidian12.Notice("\u5468\u590D\u76D8\u5DF2\u751F\u6210\u5E76\u6253\u5F00");
+    new import_obsidian13.Notice("\u5468\u590D\u76D8\u5DF2\u751F\u6210\u5E76\u6253\u5F00");
   }
 };
 var main_default = SedimentPlugin;
