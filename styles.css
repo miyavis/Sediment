@@ -941,6 +941,41 @@
   padding: 12px;
 }
 
+.sd-knowledge-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.sd-knowledge-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--background-secondary);
+  border-radius: 8px;
+}
+
+.sd-knowledge-open {
+  padding: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-normal);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.sd-knowledge-open:hover {
+  color: var(--interactive-accent);
+}
+
+.sd-knowledge-path {
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
 .sd-review-preview {
   font-size: 13px;
   line-height: 1.7;
