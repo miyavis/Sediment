@@ -1805,3 +1805,27 @@ settings:
     grid-template-columns: 1fr;
   }
 }
+
+.sd-task-item {
+  overflow: hidden;
+}
+
+.sd-task-open,
+.kp-memo-view .sd-task-open {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  text-align: left !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.sd-task-open:hover {
+  color: var(--interactive-accent) !important;
+}
