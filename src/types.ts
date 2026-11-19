@@ -23,6 +23,14 @@ export interface DayRecord {
   focusMinutes: number;
   /** 由上面各项加权算出的综合得分 */
   contribution: number;
+  /** 按小时统计的新增词数（0-23） */
+  hourlyWords: number[];
+  /** 大段捕获（粘贴）词数 */
+  capturedWords: number;
+  /** 按目录统计的新增词数 */
+  folderWords: Record<string, number>;
+  /** 交互活跃分钟（按 5 分钟桶估算） */
+  activeMinutes: number;
 }
 
 export interface MemoRecord {
@@ -68,6 +76,10 @@ export interface PulseSettings {
   workLogFolder: string;
   /** Agent 沉淀的知识笔记目录 */
   knowledgeFolder: string;
+  /** 看板画风：像素湖面 / 水墨山水 / 像素城市 */
+  artStyle: "lake" | "ink" | "city";
+  /** 每天写作目标字数，0 表示关闭 */
+  dailyWordGoal: number;
   /** 是否开启 127.0.0.1 上的 Agent HTTP API */
   agentServerEnabled: boolean;
   /** Agent HTTP API 端口 */
@@ -109,6 +121,8 @@ export const DEFAULT_SETTINGS: PulseSettings = {
   reviewFolder: "reviews",
   workLogFolder: "agent-logs",
   knowledgeFolder: "knowledge",
+  artStyle: "lake",
+  dailyWordGoal: 1000,
   agentServerEnabled: false,
   agentServerPort: 27123,
   agentServerToken: "",
@@ -123,6 +137,10 @@ export function createEmptyDay(): DayRecord {
     tasksCompleted: 0,
     focusMinutes: 0,
     contribution: 0,
+    hourlyWords: Array.from({ length: 24 }, () => 0),
+    capturedWords: 0,
+    folderWords: {},
+    activeMinutes: 0,
   };
 }
 

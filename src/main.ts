@@ -1,4 +1,4 @@
-import { Notice, Plugin, TFile, type WorkspaceLeaf } from "obsidian";
+import { Notice, Plugin, TFile, WorkspaceSidedock, type WorkspaceLeaf, type WorkspaceParent } from "obsidian";
 import { AgentApi, generateToken } from "./agent/api";
 import { AgentServer } from "./agent/server";
 import { Store } from "./data/store";
@@ -124,9 +124,22 @@ export class SedimentPlugin extends Plugin {
 
   private async activateView(type: string): Promise<void> {
     const workspace = this.app.workspace;
-    let leaf: WorkspaceLeaf | null = workspace.getLeavesOfType(type)[0] ?? null;
+    let leaf: WorkspaceLeaf | null = null;
+    for (const candidate of workspace.getLeavesOfType(type)) {
+      const side = this.isSideLeaf(candidate);
+      if (type === DASHBOARD_VIEW_TYPE && side) {
+        // 旧版把看板开在了右侧栏，关掉它，改到主区重新开一个。
+        candidate.detach();
+        continue;
+      }
+      if (type === DASHBOARD_VIEW_TYPE && leaf) {
+        candidate.detach();
+        continue;
+      }
+      if (!leaf) leaf = candidate;
+    }
     if (!leaf) {
-      // 看板放主编辑区（宽屏才有完整热力图），速记放右侧栏。
+      // 看板始终用 root split 的新标签页；速记才放右侧栏。
       leaf =
         type === MEMO_VIEW_TYPE
           ? workspace.getRightLeaf(false) ?? (await workspace.getLeaf(true))
@@ -134,6 +147,15 @@ export class SedimentPlugin extends Plugin {
     }
     await leaf.setViewState({ type, active: true });
     void workspace.revealLeaf(leaf);
+  }
+
+  private isSideLeaf(leaf: WorkspaceLeaf): boolean {
+    let parent = leaf.parent as unknown as WorkspaceParent | null;
+    while (parent) {
+      if (parent instanceof WorkspaceSidedock) return true;
+      parent = (parent as { parent?: WorkspaceParent | null }).parent ?? null;
+    }
+    return false;
   }
 
   private async generateReview(): Promise<void> {

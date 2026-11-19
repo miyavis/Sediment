@@ -29,6 +29,7 @@ export function countCheckedTasks(text: string): number {
 export class Tracker {
   private baseline = new Map<string, FileBaseline>();
   private countedSessions = new Set<string>();
+  private activeBuckets = new Set<string>();
   private ready = false;
 
   constructor(private plugin: Plugin, private store: Store) {}
@@ -86,11 +87,17 @@ export class Tracker {
     const snap = await this.snapshot(file);
     this.baseline.set(file.path, snap);
     if (snap.words > 0) {
+      const hour = new Date().getHours();
+      const folder = file.parent?.path ?? "/";
       this.store.updateDay(this.store.todayKey(), (day) => {
         day.notesCreated += 1;
         day.wordsAdded += snap.words;
+        day.capturedWords += snap.words;
+        day.hourlyWords[hour] = (day.hourlyWords[hour] ?? 0) + snap.words;
+        day.folderWords[folder] = (day.folderWords[folder] ?? 0) + snap.words;
       });
       this.markSession(file.path);
+      this.markActive();
     }
   }
 
@@ -105,12 +112,30 @@ export class Tracker {
     const tasks = Math.max(0, snap.tasks - prev.tasks);
     if (added === 0 && removed === 0 && tasks === 0) return;
 
+    const hour = new Date().getHours();
+    const folder = file.parent?.path ?? "/";
+    const captured = added >= 200 ? added : 0;
     this.store.updateDay(this.store.todayKey(), (day) => {
       day.wordsAdded += added;
       day.wordsRemoved += removed;
       day.tasksCompleted += tasks;
+      day.capturedWords += captured;
+      day.hourlyWords[hour] = (day.hourlyWords[hour] ?? 0) + added;
+      day.folderWords[folder] = (day.folderWords[folder] ?? 0) + added;
     });
     if (added > 0) this.markSession(file.path);
+    this.markActive();
+  }
+
+  /** 按 5 分钟桶估算交互活跃时间。 */
+  private markActive(): void {
+    const now = new Date();
+    const bucket = `${dateKey(now)}|${now.getHours()}:${Math.floor(now.getMinutes() / 5)}`;
+    if (this.activeBuckets.has(bucket)) return;
+    this.activeBuckets.add(bucket);
+    this.store.updateDay(this.store.todayKey(), (day) => {
+      day.activeMinutes += 5;
+    });
   }
 
   /** 同一文件同一天最多记一次有效编辑会话，避免连续键入刷分。 */

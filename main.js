@@ -516,7 +516,7 @@ var AgentServer = class {
       };
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
-          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.1.2" });
+          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.1.3" });
           return;
         case "GET /notes":
           this.json(response, 200, api.listNotes(str(query.get("folder")), num(query.get("limit"), 50)));
@@ -623,6 +623,8 @@ var DEFAULT_SETTINGS = {
   reviewFolder: "reviews",
   workLogFolder: "agent-logs",
   knowledgeFolder: "knowledge",
+  artStyle: "lake",
+  dailyWordGoal: 1e3,
   agentServerEnabled: false,
   agentServerPort: 27123,
   agentServerToken: ""
@@ -635,7 +637,11 @@ function createEmptyDay() {
     notesCreated: 0,
     tasksCompleted: 0,
     focusMinutes: 0,
-    contribution: 0
+    contribution: 0,
+    hourlyWords: Array.from({ length: 24 }, () => 0),
+    capturedWords: 0,
+    folderWords: {},
+    activeMinutes: 0
   };
 }
 function computeContribution(d) {
@@ -657,7 +663,7 @@ var Store = class {
     this.saveTimer = null;
   }
   async load() {
-    var _a, _b, _c, _d, _e;
+    var _a, _b, _c, _d, _e, _f;
     const raw = await this.plugin.loadData();
     const loaded = raw && typeof raw === "object" ? raw : {};
     this.data = {
@@ -669,6 +675,13 @@ var Store = class {
     };
     for (const key of Object.keys(this.data.days)) {
       const day = { ...createEmptyDay(), ...this.data.days[key] };
+      day.hourlyWords = Array.from({ length: 24 }, (_, hour) => {
+        var _a2;
+        return Number((_a2 = day.hourlyWords) == null ? void 0 : _a2[hour]) || 0;
+      });
+      day.folderWords = (_f = day.folderWords) != null ? _f : {};
+      day.activeMinutes = Math.max(0, Math.round(day.activeMinutes));
+      day.capturedWords = Math.max(0, Math.round(day.capturedWords));
       day.contribution = computeContribution(day);
       this.data.days[key] = day;
     }
@@ -1426,6 +1439,7 @@ var Tracker = class {
     this.store = store;
     this.baseline = /* @__PURE__ */ new Map();
     this.countedSessions = /* @__PURE__ */ new Set();
+    this.activeBuckets = /* @__PURE__ */ new Set();
     this.ready = false;
   }
   async start() {
@@ -1472,19 +1486,27 @@ var Tracker = class {
     return folder.length > 0 && path.startsWith(`${folder}/`);
   }
   async onCreate(file) {
+    var _a, _b;
     if (!this.ready || !file.path.endsWith(".md") || this.isExcluded(file.path)) return;
     const snap = await this.snapshot(file);
     this.baseline.set(file.path, snap);
     if (snap.words > 0) {
+      const hour = (/* @__PURE__ */ new Date()).getHours();
+      const folder = (_b = (_a = file.parent) == null ? void 0 : _a.path) != null ? _b : "/";
       this.store.updateDay(this.store.todayKey(), (day) => {
+        var _a2, _b2;
         day.notesCreated += 1;
         day.wordsAdded += snap.words;
+        day.capturedWords += snap.words;
+        day.hourlyWords[hour] = ((_a2 = day.hourlyWords[hour]) != null ? _a2 : 0) + snap.words;
+        day.folderWords[folder] = ((_b2 = day.folderWords[folder]) != null ? _b2 : 0) + snap.words;
       });
       this.markSession(file.path);
+      this.markActive();
     }
   }
   async onModify(file) {
-    var _a;
+    var _a, _b, _c;
     if (!this.ready || !file.path.endsWith(".md") || this.isExcluded(file.path)) return;
     const snap = await this.snapshot(file);
     const prev = (_a = this.baseline.get(file.path)) != null ? _a : { words: 0, tasks: 0 };
@@ -1493,12 +1515,30 @@ var Tracker = class {
     const removed = Math.max(0, prev.words - snap.words);
     const tasks = Math.max(0, snap.tasks - prev.tasks);
     if (added === 0 && removed === 0 && tasks === 0) return;
+    const hour = (/* @__PURE__ */ new Date()).getHours();
+    const folder = (_c = (_b = file.parent) == null ? void 0 : _b.path) != null ? _c : "/";
+    const captured = added >= 200 ? added : 0;
     this.store.updateDay(this.store.todayKey(), (day) => {
+      var _a2, _b2;
       day.wordsAdded += added;
       day.wordsRemoved += removed;
       day.tasksCompleted += tasks;
+      day.capturedWords += captured;
+      day.hourlyWords[hour] = ((_a2 = day.hourlyWords[hour]) != null ? _a2 : 0) + added;
+      day.folderWords[folder] = ((_b2 = day.folderWords[folder]) != null ? _b2 : 0) + added;
     });
     if (added > 0) this.markSession(file.path);
+    this.markActive();
+  }
+  /** 按 5 分钟桶估算交互活跃时间。 */
+  markActive() {
+    const now = /* @__PURE__ */ new Date();
+    const bucket = `${dateKey(now)}|${now.getHours()}:${Math.floor(now.getMinutes() / 5)}`;
+    if (this.activeBuckets.has(bucket)) return;
+    this.activeBuckets.add(bucket);
+    this.store.updateDay(this.store.todayKey(), (day) => {
+      day.activeMinutes += 5;
+    });
   }
   /** 同一文件同一天最多记一次有效编辑会话，避免连续键入刷分。 */
   markSession(path) {
@@ -1606,14 +1646,35 @@ var SedimentPlugin = class extends import_obsidian9.Plugin {
     }
   }
   async activateView(type) {
-    var _a, _b;
+    var _a;
     const workspace = this.app.workspace;
-    let leaf = (_a = workspace.getLeavesOfType(type)[0]) != null ? _a : null;
+    let leaf = null;
+    for (const candidate of workspace.getLeavesOfType(type)) {
+      const side = this.isSideLeaf(candidate);
+      if (type === DASHBOARD_VIEW_TYPE && side) {
+        candidate.detach();
+        continue;
+      }
+      if (type === DASHBOARD_VIEW_TYPE && leaf) {
+        candidate.detach();
+        continue;
+      }
+      if (!leaf) leaf = candidate;
+    }
     if (!leaf) {
-      leaf = type === MEMO_VIEW_TYPE ? (_b = workspace.getRightLeaf(false)) != null ? _b : await workspace.getLeaf(true) : await workspace.getLeaf(true);
+      leaf = type === MEMO_VIEW_TYPE ? (_a = workspace.getRightLeaf(false)) != null ? _a : await workspace.getLeaf(true) : await workspace.getLeaf(true);
     }
     await leaf.setViewState({ type, active: true });
     void workspace.revealLeaf(leaf);
+  }
+  isSideLeaf(leaf) {
+    var _a;
+    let parent = leaf.parent;
+    while (parent) {
+      if (parent instanceof import_obsidian9.WorkspaceSidedock) return true;
+      parent = (_a = parent.parent) != null ? _a : null;
+    }
+    return false;
   }
   async generateReview() {
     const markdown = buildWeeklyReview(this.store, /* @__PURE__ */ new Date());

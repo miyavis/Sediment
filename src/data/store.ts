@@ -31,6 +31,10 @@ export class Store {
     };
     for (const key of Object.keys(this.data.days)) {
       const day = { ...createEmptyDay(), ...this.data.days[key] };
+      day.hourlyWords = Array.from({ length: 24 }, (_, hour) => Number(day.hourlyWords?.[hour]) || 0);
+      day.folderWords = day.folderWords ?? {};
+      day.activeMinutes = Math.max(0, Math.round(day.activeMinutes));
+      day.capturedWords = Math.max(0, Math.round(day.capturedWords));
       day.contribution = computeContribution(day);
       this.data.days[key] = day;
     }
