@@ -1,6 +1,6 @@
 import fs from "node:fs";
 
-const version = process.argv[2];
+const version = (process.argv[2] ?? "").replace(/^v/, "");
 const markdown = fs.readFileSync("CHANGELOG.md", "utf8");
 const sections = markdown.split(/^## /m).slice(1);
 const target = version ? sections.find((s) => s.startsWith(`[${version}]`)) : sections[0];
