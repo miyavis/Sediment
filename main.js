@@ -591,7 +591,7 @@ var AgentServer = class {
       };
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
-          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.3.0" });
+          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.3.1" });
           return;
         case "GET /notes":
           this.json(response, 200, api.listNotes(str(query.get("folder")), num(query.get("limit"), 50)));
@@ -1974,6 +1974,7 @@ var MemoView = class extends import_obsidian8.ItemView {
       this.renderList(root);
     });
     this.renderList(root);
+    this.renderKnowledge(root, 5, true);
   }
   async attachImage(file) {
     var _a, _b;
@@ -2108,16 +2109,18 @@ var MemoView = class extends import_obsidian8.ItemView {
     }
     this.walkId = current.id;
   }
-  renderKnowledge(root) {
+  renderKnowledge(root, limit = 30, compact = false) {
     var _a;
     const settings = this.plugin.store.settings;
     const folders = [normalizeFolder(settings.knowledgeFolder), normalizeFolder(settings.workLogFolder)].filter((folder) => folder.length > 0);
-    const files = this.plugin.app.vault.getMarkdownFiles().filter((file) => folders.some((folder) => file.path.startsWith(`${folder}/`))).sort((a, b) => b.stat.mtime - a.stat.mtime).slice(0, 30);
+    const files = this.plugin.app.vault.getMarkdownFiles().filter((file) => folders.some((folder) => file.path.startsWith(`${folder}/`))).sort((a, b) => b.stat.mtime - a.stat.mtime).slice(0, limit);
     if (files.length === 0) {
-      root.createDiv({
-        cls: "kp-empty",
-        text: "\u8FD8\u6CA1\u6709\u6C89\u6DC0\u3002\u8BA9\u667A\u80FD\u4F53\u8C03\u7528 add_knowledge \u6216 record_work_log \u540E\uFF0C\u7B14\u8BB0\u4F1A\u51FA\u73B0\u5728\u8FD9\u91CC\u3002"
-      });
+      if (!compact) {
+        root.createDiv({
+          cls: "kp-empty",
+          text: "\u8FD8\u6CA1\u6709\u6C89\u6DC0\u3002\u8BA9\u667A\u80FD\u4F53\u8C03\u7528 add_knowledge \u6216 record_work_log \u540E\uFF0C\u7B14\u8BB0\u4F1A\u51FA\u73B0\u5728\u8FD9\u91CC\u3002"
+        });
+      }
       return;
     }
     const knowledgeFolder = normalizeFolder(settings.knowledgeFolder);
@@ -2133,7 +2136,18 @@ var MemoView = class extends import_obsidian8.ItemView {
       groups.set(category, group);
     }
     const card = root.createDiv({ cls: "sd-card sd-knowledge" });
-    card.createDiv({ cls: "sd-card-title", text: `\u77E5\u8BC6\u6C89\u6DC0 \xB7 ${files.length}` });
+    const head = card.createDiv({ cls: "sd-card-head" });
+    head.createDiv({
+      cls: "sd-card-title",
+      text: compact ? `\u6700\u8FD1\u6C89\u6DC0 \xB7 ${files.length}` : `\u77E5\u8BC6\u6C89\u6DC0 \xB7 ${files.length}`
+    });
+    if (compact) {
+      const more = head.createEl("button", { text: "\u5168\u90E8" });
+      more.onclick = () => {
+        this.tab = "knowledge";
+        this.render();
+      };
+    }
     for (const [category, items] of groups) {
       const section = card.createDiv({ cls: "sd-knowledge-group" });
       section.createDiv({ cls: "sd-knowledge-category", text: `${category} \xB7 ${items.length}` });

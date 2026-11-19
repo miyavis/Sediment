@@ -941,6 +941,10 @@
   padding: 12px;
 }
 
+.sd-card-head button {
+  margin-left: auto;
+}
+
 .sd-knowledge-group {
   margin-top: 10px;
 }

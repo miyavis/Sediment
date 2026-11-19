@@ -120,6 +120,7 @@ export class MemoView extends ItemView {
     });
 
     this.renderList(root);
+    this.renderKnowledge(root, 5, true);
   }
 
   private async attachImage(file: File | null): Promise<void> {
@@ -269,7 +270,7 @@ export class MemoView extends ItemView {
     this.walkId = current.id;
   }
 
-  private renderKnowledge(root: HTMLElement): void {
+  private renderKnowledge(root: HTMLElement, limit = 30, compact = false): void {
     const settings = this.plugin.store.settings;
     const folders = [normalizeFolder(settings.knowledgeFolder), normalizeFolder(settings.workLogFolder)]
       .filter((folder) => folder.length > 0);
@@ -277,13 +278,15 @@ export class MemoView extends ItemView {
       .getMarkdownFiles()
       .filter((file) => folders.some((folder) => file.path.startsWith(`${folder}/`)))
       .sort((a, b) => b.stat.mtime - a.stat.mtime)
-      .slice(0, 30);
+      .slice(0, limit);
 
     if (files.length === 0) {
-      root.createDiv({
-        cls: "kp-empty",
-        text: "还没有沉淀。让智能体调用 add_knowledge 或 record_work_log 后，笔记会出现在这里。",
-      });
+      if (!compact) {
+        root.createDiv({
+          cls: "kp-empty",
+          text: "还没有沉淀。让智能体调用 add_knowledge 或 record_work_log 后，笔记会出现在这里。",
+        });
+      }
       return;
     }
 
@@ -301,7 +304,18 @@ export class MemoView extends ItemView {
     }
 
     const card = root.createDiv({ cls: "sd-card sd-knowledge" });
-    card.createDiv({ cls: "sd-card-title", text: `知识沉淀 · ${files.length}` });
+    const head = card.createDiv({ cls: "sd-card-head" });
+    head.createDiv({
+      cls: "sd-card-title",
+      text: compact ? `最近沉淀 · ${files.length}` : `知识沉淀 · ${files.length}`,
+    });
+    if (compact) {
+      const more = head.createEl("button", { text: "全部" });
+      more.onclick = () => {
+        this.tab = "knowledge";
+        this.render();
+      };
+    }
     for (const [category, items] of groups) {
       const section = card.createDiv({ cls: "sd-knowledge-group" });
       section.createDiv({ cls: "sd-knowledge-category", text: `${category} · ${items.length}` });
