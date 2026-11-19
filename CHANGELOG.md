@@ -2,7 +2,7 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
-## [Unreleased]
+## [0.8.3] - 2026-11-19
 
 ### 新增
 - data.json 自动备份到库内普通文件夹（默认 `sediment-backup/`），按份数保留；新增「备份统计数据到库内」命令
