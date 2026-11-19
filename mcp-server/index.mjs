@@ -214,7 +214,11 @@ function request(url, method, payload) {
 async function call(path, params = {}, method = "GET") {
   const url = new URL(path, BASE);
   url.searchParams.set("token", TOKEN);
-  return request(url, method, method === "POST" ? params : undefined);
+  if (method === "POST") return request(url, method, params);
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
+  }
+  return request(url, method, undefined);
 }
 
 async function dispatch(name, args) {
