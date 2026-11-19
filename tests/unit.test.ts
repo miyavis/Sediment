@@ -1,5 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { resolveBridgePath } from "../src/agent/setup";
+import { BRIDGE_SOURCE } from "../src/agent/bridge-source";
 import {
   computeContribution,
   createEmptyDay,
@@ -218,4 +224,45 @@ test("export：CSV 含表头与按日聚合行", () => {
   assert.ok(lines[0].startsWith("date,contribution,wordsAdded"));
   assert.equal(lines.length, 2);
   assert.ok(lines[1].startsWith("2026-11-19,6,100"));
+});
+
+test("桥接版本与 manifest 一致（不再硬编码旧版本）", () => {
+  const manifest = JSON.parse(fs.readFileSync("manifest.json", "utf8")) as { version: string };
+  assert.ok(
+    BRIDGE_SOURCE.includes(`version: "${manifest.version}"`),
+    `桥接源码应含版本 ${manifest.version}`
+  );
+});
+
+test("resolveBridgePath：库内缺失时自动落盘嵌入式桥接并可握手", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sediment-bridge-"));
+  try {
+    const fakePlugin = {
+      app: {
+        vault: {
+          configDir: ".obsidian",
+          adapter: { getFullPath: (p: string) => path.join(tmp, p) },
+        },
+      },
+    };
+    const bridge = resolveBridgePath(fakePlugin as unknown as Parameters<typeof resolveBridgePath>[0]);
+    assert.ok(bridge.length > 0, "应返回桥接路径");
+    assert.ok(fs.existsSync(bridge), "返回的路径必须真实存在");
+    const init = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "smoke", version: "0" } },
+    });
+    const res = spawnSync(process.execPath, [bridge], {
+      input: init + "\n",
+      encoding: "utf8",
+      timeout: 15000,
+    });
+    assert.equal(res.status, 0, `桥接进程应正常退出：${res.stderr}`);
+    const reply = JSON.parse(res.stdout.trim().split("\n")[0]);
+    assert.equal(reply.result.serverInfo.name, "sediment");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 });

@@ -2,6 +2,16 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [0.8.7] - 2026-11-20
+
+### 修复
+- 一键配置 Agent 不再写出不存在的桥接路径：库内缺 `mcp-server/index.mjs` 时用构建时嵌入的源码自动落盘（Obsidian 只安装三件套，此前新装用户必踩 MCP 进程退出码 1）
+- MCP 桥接 `serverInfo` 版本随插件版本同步（version-bump 联动），不再硬编码旧版本
+
+### 改进
+- 发布包新增 `mcp-server/index.mjs`，手动安装可直接取用桥接脚本
+- 单测新增 2 例：桥接版本一致性、缺失自动落盘＋initialize 握手（共 29 例）
+
 ## [0.8.6] - 2026-11-20
 
 ### 改进

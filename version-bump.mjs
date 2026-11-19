@@ -14,3 +14,12 @@ writeFileSync("manifest.json", JSON.stringify(manifest, null, "\t") + "\n");
 const versions = JSON.parse(readFileSync("versions.json", "utf8"));
 versions[targetVersion] = minAppVersion;
 writeFileSync("versions.json", JSON.stringify(versions, null, "\t") + "\n");
+
+// MCP 桥接的 serverInfo 版本与插件保持同步。
+const bridgePath = "mcp-server/index.mjs";
+const bridge = readFileSync(bridgePath, "utf8");
+const updated = bridge.replace(
+  /serverInfo: \{ name: "sediment", version: "[^"]+" \}/,
+  `serverInfo: { name: "sediment", version: "${targetVersion}" }`
+);
+if (updated !== bridge) writeFileSync(bridgePath, updated, "utf8");

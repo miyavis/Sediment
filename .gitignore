@@ -5,3 +5,4 @@ data.json
 *.log
 .obsidian/
 tests/.unit.bundle.cjs
+src/agent/bridge-source.ts

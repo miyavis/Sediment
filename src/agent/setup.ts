@@ -1,4 +1,5 @@
 import type { SedimentPlugin } from "../main";
+import { BRIDGE_SOURCE } from "./bridge-source";
 
 export interface AgentTarget {
   id: string;
@@ -21,6 +22,7 @@ interface FsModule {
   existsSync(path: string): boolean;
   readFileSync(path: string, encoding: string): string;
   writeFileSync(path: string, data: string, encoding: string): void;
+  mkdirSync(path: string, options: { recursive: boolean }): unknown;
 }
 
 interface OsModule {
@@ -73,7 +75,7 @@ export function isAgentConfigured(target: AgentTarget): boolean {
   }
 }
 
-/** 优先复用配置里已有的桥接路径，否则找插件目录或源码目录。 */
+/** 优先复用配置里已有的桥接路径，否则找插件目录；缺失时用嵌入源码落盘。 */
 export function resolveBridgePath(plugin: SedimentPlugin, target?: AgentTarget): string {
   const fs = nodeModule<FsModule>("fs");
   if (!fs) return "";
@@ -88,14 +90,22 @@ export function resolveBridgePath(plugin: SedimentPlugin, target?: AgentTarget):
       // 沿用默认探测
     }
   }
-  const candidates: string[] = [];
   const adapter = plugin.app.vault.adapter as unknown as { getFullPath?: (path: string) => string };
-  if (adapter.getFullPath) {
-    candidates.push(
-      adapter.getFullPath(`${plugin.app.vault.configDir}/plugins/sediment/mcp-server/index.mjs`)
-    );
+  if (!adapter.getFullPath) return "";
+  const vaultBridge = adapter.getFullPath(
+    `${plugin.app.vault.configDir}/plugins/sediment/mcp-server/index.mjs`
+  );
+  if (fs.existsSync(vaultBridge)) return vaultBridge;
+  // Obsidian 只安装 main.js/manifest.json/styles.css 三件套，桥接脚本不会随插件落盘。
+  // 这里用构建时嵌入的源码补写，保证一键配置产出的路径真实可用；写失败则返回空串让调用方报错。
+  try {
+    const sep = Math.max(vaultBridge.lastIndexOf("/"), vaultBridge.lastIndexOf("\\"));
+    if (sep > 0) fs.mkdirSync(vaultBridge.slice(0, sep), { recursive: true });
+    fs.writeFileSync(vaultBridge, BRIDGE_SOURCE, "utf8");
+    return fs.existsSync(vaultBridge) ? vaultBridge : "";
+  } catch (error) {
+    return "";
   }
-  return candidates.find((path) => fs.existsSync(path)) ?? candidates[0] ?? "";
 }
 
 function buildEntry(plugin: SedimentPlugin, target: AgentTarget, bridge: string): Record<string, unknown> {
