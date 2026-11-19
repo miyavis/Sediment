@@ -189,14 +189,14 @@ async function ensureFolder(vault, path) {
 
 // src/tracking/tracker.ts
 function countWords(text) {
-  var _a, _b;
-  const cjk = ((_a = text.match(/[\u3400-\u9fff]/g)) != null ? _a : []).length;
+  var _a2, _b;
+  const cjk = ((_a2 = text.match(/[\u3400-\u9fff]/g)) != null ? _a2 : []).length;
   const latin = ((_b = text.replace(/[\u3400-\u9fff]/g, " ").match(/[A-Za-z0-9_'-]+/g)) != null ? _b : []).length;
   return cjk + latin;
 }
 function countCheckedTasks(text) {
-  var _a;
-  return ((_a = text.match(/^\s*[-*+]\s+\[(x|X)\]/gm)) != null ? _a : []).length;
+  var _a2;
+  return ((_a2 = text.match(/^\s*[-*+]\s+\[(x|X)\]/gm)) != null ? _a2 : []).length;
 }
 var Tracker = class {
   constructor(plugin, store) {
@@ -252,20 +252,20 @@ var Tracker = class {
     return folder.length > 0 && path.startsWith(`${folder}/`);
   }
   async onCreate(file) {
-    var _a, _b;
+    var _a2, _b;
     if (!this.ready || !file.path.endsWith(".md") || this.isExcluded(file.path)) return;
     if (file.stat.ctime < this.startedAt - 6e4) return;
     const snap = await this.snapshot(file);
     this.baseline.set(file.path, snap);
     if (snap.words > 0) {
       const hour = (/* @__PURE__ */ new Date()).getHours();
-      const folder = (_b = (_a = file.parent) == null ? void 0 : _a.path) != null ? _b : "/";
+      const folder = (_b = (_a2 = file.parent) == null ? void 0 : _a2.path) != null ? _b : "/";
       this.store.updateDay(this.store.todayKey(), (day) => {
-        var _a2, _b2;
+        var _a3, _b2;
         day.notesCreated += 1;
         day.wordsAdded += snap.words;
         day.capturedWords += snap.words;
-        day.hourlyWords[hour] = ((_a2 = day.hourlyWords[hour]) != null ? _a2 : 0) + snap.words;
+        day.hourlyWords[hour] = ((_a3 = day.hourlyWords[hour]) != null ? _a3 : 0) + snap.words;
         day.folderWords[folder] = ((_b2 = day.folderWords[folder]) != null ? _b2 : 0) + snap.words;
       });
       this.markSession(file.path);
@@ -273,10 +273,10 @@ var Tracker = class {
     }
   }
   async onModify(file) {
-    var _a, _b, _c;
+    var _a2, _b, _c;
     if (!this.ready || !file.path.endsWith(".md") || this.isExcluded(file.path)) return;
     const snap = await this.snapshot(file);
-    const prev = (_a = this.baseline.get(file.path)) != null ? _a : { words: 0, tasks: 0 };
+    const prev = (_a2 = this.baseline.get(file.path)) != null ? _a2 : { words: 0, tasks: 0 };
     this.baseline.set(file.path, snap);
     const added = Math.max(0, snap.words - prev.words);
     const removed = Math.max(0, prev.words - snap.words);
@@ -286,12 +286,12 @@ var Tracker = class {
     const folder = (_c = (_b = file.parent) == null ? void 0 : _b.path) != null ? _c : "/";
     const captured = added >= 200 ? added : 0;
     this.store.updateDay(this.store.todayKey(), (day) => {
-      var _a2, _b2;
+      var _a3, _b2;
       day.wordsAdded += added;
       day.wordsRemoved += removed;
       day.tasksCompleted += tasks;
       day.capturedWords += captured;
-      day.hourlyWords[hour] = ((_a2 = day.hourlyWords[hour]) != null ? _a2 : 0) + added;
+      day.hourlyWords[hour] = ((_a3 = day.hourlyWords[hour]) != null ? _a3 : 0) + added;
       day.folderWords[folder] = ((_b2 = day.folderWords[folder]) != null ? _b2 : 0) + added;
     });
     if (added > 0) this.markSession(file.path);
@@ -412,10 +412,10 @@ var AgentApi = class {
     if (this.isDeniedPath(path)) throw new Error(`\u8BBF\u95EE\u88AB\u62D2\u7EDD\uFF1A${path} \u4F4D\u4E8E\u9ED1\u540D\u5355\u76EE\u5F55`);
   }
   cacheTags(file) {
-    var _a, _b, _c, _d;
+    var _a2, _b, _c, _d;
     const cache = this.plugin.app.metadataCache.getFileCache(file);
     const tags = /* @__PURE__ */ new Set();
-    for (const tag of (_a = cache == null ? void 0 : cache.tags) != null ? _a : []) tags.add(tag.tag.replace(/^#/, ""));
+    for (const tag of (_a2 = cache == null ? void 0 : cache.tags) != null ? _a2 : []) tags.add(tag.tag.replace(/^#/, ""));
     const frontmatterTags = (_d = (_b = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _b.tags) != null ? _d : (_c = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _c.tag;
     if (Array.isArray(frontmatterTags)) {
       for (const tag of frontmatterTags) tags.add(String(tag).replace(/^#/, ""));
@@ -436,11 +436,11 @@ var AgentApi = class {
     return this.vault.getMarkdownFiles().filter(
       (file) => (!prefix || file.path.toLowerCase().startsWith(`${prefix}/`)) && !this.isDeniedPath(file.path) && !this.hasDeniedTag(file)
     ).slice(0, Math.max(1, Math.min(limit, 500))).map((file) => {
-      var _a, _b;
+      var _a2, _b;
       return {
         path: file.path,
         title: file.basename,
-        folder: (_b = (_a = file.parent) == null ? void 0 : _a.path) != null ? _b : "/"
+        folder: (_b = (_a2 = file.parent) == null ? void 0 : _a2.path) != null ? _b : "/"
       };
     });
   }
@@ -533,12 +533,12 @@ ${content}`);
   }
   /** 当前打开的笔记、选中文本与光标所在段落。 */
   getActiveContext() {
-    var _a, _b, _c, _d, _e;
+    var _a2, _b, _c, _d, _e;
     const workspace = this.plugin.app.workspace;
     let file = workspace.getActiveFile();
     if (!file) {
       const leaf = workspace.getLeavesOfType("markdown").find((item) => Boolean(item.view.file));
-      file = (_b = (_a = leaf == null ? void 0 : leaf.view) == null ? void 0 : _a.file) != null ? _b : null;
+      file = (_b = (_a2 = leaf == null ? void 0 : leaf.view) == null ? void 0 : _a2.file) != null ? _b : null;
     }
     const editor = (_c = workspace.activeEditor) == null ? void 0 : _c.editor;
     if (!file || this.isDeniedPath(file.path)) {
@@ -559,9 +559,13 @@ ${content}`);
     }
     return { file: file.path, selection, cursorLine: cursor.line + 1, cursorParagraph };
   }
+  /** 本地语义检索（TF-IDF + 同义词），不联网。 */
+  async semanticSearch(query, limit = 10) {
+    return this.plugin.semantic.search(String(query != null ? query : ""), limit);
+  }
   /** 只读元数据，不返回正文，节省 Agent 的 Token。 */
   async getNoteMetadata(path) {
-    var _a, _b, _c;
+    var _a2, _b, _c;
     const safe = safePath(path);
     this.assertAllowed(safe);
     const file = this.vault.getAbstractFileByPath(safe);
@@ -569,7 +573,7 @@ ${content}`);
     const cache = this.plugin.app.metadataCache.getFileCache(file);
     return {
       path: safe,
-      frontmatter: (_a = cache == null ? void 0 : cache.frontmatter) != null ? _a : {},
+      frontmatter: (_a2 = cache == null ? void 0 : cache.frontmatter) != null ? _a2 : {},
       tags: this.cacheTags(file),
       headings: ((_b = cache == null ? void 0 : cache.headings) != null ? _b : []).map((heading) => `${"#".repeat(heading.level)} ${heading.heading}`),
       links: ((_c = cache == null ? void 0 : cache.links) != null ? _c : []).map((link) => link.link)
@@ -577,12 +581,12 @@ ${content}`);
   }
   /** 1-hop 图谱：出链、反链与同标签笔记。 */
   getGraphNeighbors(path, include = ["outgoing", "backlinks", "tags"]) {
-    var _a, _b;
+    var _a2, _b;
     const safe = safePath(path);
     this.assertAllowed(safe);
     const file = this.vault.getAbstractFileByPath(safe);
     if (!(file instanceof import_obsidian2.TFile)) throw new Error(`\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`);
-    const resolved = (_a = this.plugin.app.metadataCache.resolvedLinks) != null ? _a : {};
+    const resolved = (_a2 = this.plugin.app.metadataCache.resolvedLinks) != null ? _a2 : {};
     const allowed = (target) => !this.isDeniedPath(target) && target !== safe;
     const outgoing = include.includes("outgoing") ? Object.keys((_b = resolved[safe]) != null ? _b : {}).filter(allowed) : [];
     const backlinks = include.includes("backlinks") ? Object.entries(resolved).filter(([source, links]) => allowed(source) && Object.prototype.hasOwnProperty.call(links, safe)).map(([source]) => source) : [];
@@ -595,7 +599,7 @@ ${content}`);
   }
   /** 按标题或文本片段局部修改笔记，写入前自动备份，可用 ifMatch 防并发覆盖。 */
   async patchNote(input) {
-    var _a;
+    var _a2;
     const safe = safePath(input.path);
     this.assertAllowed(safe);
     const file = this.vault.getAbstractFileByPath(safe);
@@ -605,10 +609,10 @@ ${content}`);
       throw new Error(`\u7248\u672C\u51B2\u7A81\uFF1A${safe} \u5DF2\u88AB\u4FEE\u6539\uFF0C\u8BF7\u91CD\u65B0\u8BFB\u53D6\u540E\u518D\u5199\u5165`);
     }
     this.backupNote(safe, before);
-    const mode = (_a = input.mode) != null ? _a : "replace";
+    const mode = (_a2 = input.mode) != null ? _a2 : "replace";
     let result = "";
     await this.vault.process(file, (data) => {
-      var _a2, _b, _c, _d;
+      var _a3, _b, _c, _d;
       if (input.find) {
         const positions = [];
         let from = 0;
@@ -618,7 +622,7 @@ ${content}`);
           positions.push(at);
           from = at + input.find.length;
         }
-        const position = positions[(_a2 = input.index) != null ? _a2 : 0];
+        const position = positions[(_a3 = input.index) != null ? _a3 : 0];
         if (position === void 0) throw new Error(`\u672A\u627E\u5230\u6587\u672C\u7247\u6BB5\uFF1A${input.find}`);
         result = data.slice(0, position) + String((_b = input.content) != null ? _b : "") + data.slice(position + input.find.length);
         return result;
@@ -639,8 +643,8 @@ ${content}`);
       throw new Error("patch_note \u9700\u8981 heading \u6216 find \u53C2\u6570");
     });
     this.plugin.store.updateDay(this.plugin.store.todayKey(), (day) => {
-      var _a2;
-      day.aiWordsAdded += countWords(String((_a2 = input.content) != null ? _a2 : ""));
+      var _a3;
+      day.aiWordsAdded += countWords(String((_a3 = input.content) != null ? _a3 : ""));
     });
     return { path: safe, version: versionOf(result) };
   }
@@ -657,11 +661,11 @@ ${content}`);
     this.backupNote(safe, before);
     let result = "";
     await this.vault.process(file, (data) => {
-      var _a;
+      var _a2;
       const lines = data.split("\n");
       let start = -1;
       let end = -1;
-      if (((_a = lines[0]) == null ? void 0 : _a.trim()) === "---") {
+      if (((_a2 = lines[0]) == null ? void 0 : _a2.trim()) === "---") {
         for (let i = 1; i < lines.length; i += 1) {
           if (lines[i].trim() === "---") {
             end = i;
@@ -690,11 +694,11 @@ ${content}`);
     this.plugin.store.logToolCall({ time: (/* @__PURE__ */ new Date()).toISOString(), tool, agent, path });
   }
   getToolActivity() {
-    var _a, _b;
+    var _a2, _b;
     const byTool = {};
     const byAgent = {};
     for (const call of this.plugin.store.data.toolCalls) {
-      byTool[call.tool] = ((_a = byTool[call.tool]) != null ? _a : 0) + 1;
+      byTool[call.tool] = ((_a2 = byTool[call.tool]) != null ? _a2 : 0) + 1;
       byAgent[call.agent || "unknown"] = ((_b = byAgent[call.agent || "unknown"]) != null ? _b : 0) + 1;
     }
     return {
@@ -709,21 +713,21 @@ ${content}`);
   }
   /** 知识库分类及各分类下的笔记数。 */
   getCategories() {
-    var _a;
+    var _a2;
     const counts = {};
     const base = normalizeFolder(this.plugin.store.settings.knowledgeFolder);
     for (const file of this.vault.getMarkdownFiles()) {
       if (!base || !file.path.startsWith(`${base}/`)) continue;
       const parts = file.path.split("/");
       const category = parts.length > 1 ? parts[1] : "\u672A\u5206\u7C7B";
-      counts[category] = ((_a = counts[category]) != null ? _a : 0) + 1;
+      counts[category] = ((_a2 = counts[category]) != null ? _a2 : 0) + 1;
     }
     const all = [.../* @__PURE__ */ new Set([...this.categories(), ...Object.keys(counts)])];
     return { categories: all, counts };
   }
   /** 根据标题、标签和正文关键词推断分类；Agent 也可自行指定任意分类名。 */
   inferCategory(title, content, tags) {
-    var _a;
+    var _a2;
     const text = `${title} ${tags.join(" ")} ${content.slice(0, 600)}`.toLowerCase();
     const rules = [
       ["\u590D\u76D8", /复盘|总结|周报|回顾|小结|review|retro/],
@@ -735,7 +739,7 @@ ${content}`);
     for (const [category, pattern] of rules) {
       if (pattern.test(text)) return category;
     }
-    return (_a = this.categories()[0]) != null ? _a : "\u672A\u5206\u7C7B";
+    return (_a2 = this.categories()[0]) != null ? _a2 : "\u672A\u5206\u7C7B";
   }
   getPomodoro() {
     return this.plugin.pomodoro.state();
@@ -809,7 +813,7 @@ ${block}`);
   }
   /** 把一段知识沉淀成带 frontmatter 的独立笔记。 */
   async addKnowledge(input) {
-    var _a, _b, _c, _d, _e;
+    var _a2, _b, _c, _d, _e;
     const title = String(input.title || "\u672A\u547D\u540D\u7B14\u8BB0").trim();
     const safeTitle = title.replace(/[\\/:*?"<>|#\[\]]/g, "-").slice(0, 80) || "\u672A\u547D\u540D\u7B14\u8BB0";
     const base = normalizeFolder(this.plugin.store.settings.knowledgeFolder);
@@ -817,7 +821,7 @@ ${block}`);
     const tags = Array.isArray(input.tags) ? input.tags.map((tag) => String(tag).replace(/^#/, "")) : [];
     const links = Array.isArray(input.links) ? input.links.map(String) : [];
     const agent = String(input.agent || "agent").replace(/[:#]/g, "-");
-    const requestedCategory = String((_a = input.category) != null ? _a : "").trim();
+    const requestedCategory = String((_a2 = input.category) != null ? _a2 : "").trim();
     const category = requestedCategory || (tags.length || String((_b = input.content) != null ? _b : "").length > 0 ? this.inferCategory(title, String((_c = input.content) != null ? _c : ""), tags) : categories[0]) || "\u672A\u5206\u7C7B";
     const sub = normalizeFolder((_d = input.folder) != null ? _d : "");
     const folder = [base, category, sub].filter(Boolean).join("/");
@@ -1008,8 +1012,8 @@ var AgentServer = class {
     return parsed;
   }
   async handle(request, response) {
-    var _a, _b, _c, _d, _e;
-    const url = new URL((_a = request.url) != null ? _a : "/", "http://127.0.0.1");
+    var _a2, _b, _c, _d, _e;
+    const url = new URL((_a2 = request.url) != null ? _a2 : "/", "http://127.0.0.1");
     const headerToken = String((_b = request.headers.authorization) != null ? _b : "").replace(/^Bearer\s+/i, "");
     const supplied = (_c = url.searchParams.get("token")) != null ? _c : headerToken;
     const expected = this.plugin.store.settings.agentServerToken;
@@ -1038,6 +1042,9 @@ var AgentServer = class {
           return;
         case "GET /search":
           this.json(response, 200, await api.searchNotes(str(query.get("q")), num(query.get("limit"), 10)));
+          return;
+        case "GET /semantic-search":
+          this.json(response, 200, await api.semanticSearch(str(query.get("q")), num(query.get("limit"), 10)));
           return;
         case "GET /note":
           this.json(response, 200, await api.readNote(str(query.get("path"))));
@@ -1179,6 +1186,189 @@ var AgentServer = class {
   }
 };
 
+// src/agent/semantic.ts
+var STOP_WORDS = /* @__PURE__ */ new Set([
+  "\u6211\u4EEC",
+  "\u4F60\u4EEC",
+  "\u4ED6\u4EEC",
+  "\u8FD9\u4E2A",
+  "\u90A3\u4E2A",
+  "\u56E0\u4E3A",
+  "\u6240\u4EE5",
+  "\u4F46\u662F",
+  "\u5982\u679C",
+  "\u53EF\u4EE5",
+  "\u5DF2\u7ECF",
+  "\u8FD8\u662F",
+  "\u4E00\u4E2A",
+  "\u4E00\u4E9B",
+  "\u4E0D\u662F",
+  "\u6CA1\u6709",
+  "\u5C31\u662F",
+  "\u800C\u4E14",
+  "\u7136\u540E",
+  "\u4EE5\u53CA",
+  "the",
+  "and",
+  "for",
+  "with",
+  "that",
+  "this",
+  "from",
+  "are",
+  "was",
+  "were",
+  "you",
+  "your",
+  "our",
+  "has",
+  "have",
+  "had",
+  "but",
+  "not",
+  "into",
+  "about"
+]);
+var SYNONYM_GROUPS = [
+  ["\u914D\u7F6E", "\u8BBE\u7F6E", "\u8BBE\u5B9A", "config", "option", "setup"],
+  ["\u62A5\u9519", "\u9519\u8BEF", "\u5F02\u5E38", "\u5931\u8D25", "error", "exception"],
+  ["\u590D\u76D8", "\u603B\u7ED3", "\u56DE\u987E", "review", "retro"],
+  ["\u77E5\u8BC6\u5E93", "\u7B14\u8BB0\u5E93", "vault", "\u77E5\u8BC6\u7BA1\u7406"],
+  ["\u641C\u7D22", "\u68C0\u7D22", "\u67E5\u627E", "search", "query"],
+  ["\u6C89\u6DC0", "\u79EF\u7D2F", "\u5F52\u6863", "deposit", "archive"],
+  ["\u4EFB\u52A1", "\u5F85\u529E", "todo", "task"],
+  ["\u4E13\u6CE8", "\u756A\u8304", "focus", "pomodoro"],
+  ["\u6587\u6863", "\u8BF4\u660E", "\u624B\u518C", "doc", "documentation"],
+  ["\u5F00\u53D1", "\u7F16\u7A0B", "coding", "development"]
+];
+var SYNONYMS = /* @__PURE__ */ new Map();
+var _a;
+for (const group of SYNONYM_GROUPS) {
+  for (const word of group) {
+    const expanded = (_a = SYNONYMS.get(word)) != null ? _a : [];
+    for (const other of group) if (other !== word && !expanded.includes(other)) expanded.push(other);
+    SYNONYMS.set(word, expanded);
+  }
+}
+function tokenize(text) {
+  var _a2, _b;
+  const lower = text.toLowerCase();
+  const tokens = [];
+  for (const run of (_a2 = lower.match(/[\u3400-\u9fff]+/g)) != null ? _a2 : []) {
+    if (run.length === 1) tokens.push(run);
+    for (let index = 0; index < run.length - 1; index += 1) {
+      tokens.push(run.slice(index, index + 2));
+    }
+  }
+  for (const word of (_b = lower.match(/[a-z0-9_]+/g)) != null ? _b : []) {
+    if (word.length > 1) tokens.push(word);
+  }
+  return tokens.filter((token) => !STOP_WORDS.has(token));
+}
+function expand(tokens) {
+  var _a2;
+  const expanded = new Set(tokens);
+  for (const token of tokens) {
+    for (const synonym of (_a2 = SYNONYMS.get(token)) != null ? _a2 : []) expanded.add(synonym);
+  }
+  return [...expanded];
+}
+var SemanticIndex = class {
+  constructor(plugin) {
+    this.plugin = plugin;
+    this.vectors = /* @__PURE__ */ new Map();
+    this.documentFrequency = /* @__PURE__ */ new Map();
+    this.documents = 0;
+    this.dirty = true;
+  }
+  invalidate() {
+    this.dirty = true;
+  }
+  deniedFolders() {
+    return this.plugin.store.settings.deniedFolders.split(/[,，]/).map((item) => item.trim()).filter(Boolean);
+  }
+  deniedTags() {
+    return this.plugin.store.settings.deniedTags.split(/[,，]/).map((item) => item.trim()).filter(Boolean);
+  }
+  async build() {
+    var _a2, _b;
+    if (!this.dirty) return;
+    const vault = this.plugin.app.vault;
+    const folders = this.deniedFolders();
+    const deniedTags = this.deniedTags();
+    const files = vault.getMarkdownFiles().filter((file) => {
+      var _a3, _b2;
+      if (folders.some((folder) => file.path === folder || file.path.startsWith(`${folder}/`))) return false;
+      const cache = this.plugin.app.metadataCache.getFileCache(file);
+      const tags = [...((_a3 = cache == null ? void 0 : cache.tags) != null ? _a3 : []).map((tag) => tag.tag.replace(/^#/, ""))];
+      const frontmatterTags = (_b2 = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _b2.tags;
+      if (Array.isArray(frontmatterTags)) tags.push(...frontmatterTags.map(String));
+      return !tags.some((tag) => deniedTags.includes(tag.replace(/^#/, "")));
+    });
+    this.vectors.clear();
+    this.documentFrequency.clear();
+    this.documents = files.length;
+    for (const file of files) {
+      const text = await vault.cachedRead(file);
+      const tokens = tokenize(text);
+      const counts = /* @__PURE__ */ new Map();
+      for (const token of tokens) counts.set(token, ((_a2 = counts.get(token)) != null ? _a2 : 0) + 1);
+      this.vectors.set(file.path, counts);
+      for (const token of counts.keys()) {
+        this.documentFrequency.set(token, ((_b = this.documentFrequency.get(token)) != null ? _b : 0) + 1);
+      }
+    }
+    this.dirty = false;
+  }
+  vectorFor(tokens) {
+    var _a2, _b;
+    const counts = /* @__PURE__ */ new Map();
+    for (const token of expand(tokens)) counts.set(token, ((_a2 = counts.get(token)) != null ? _a2 : 0) + 1);
+    const vector = /* @__PURE__ */ new Map();
+    const total = [...counts.values()].reduce((sum, count) => sum + count, 0) || 1;
+    for (const [token, count] of counts) {
+      const idf = Math.log(1 + this.documents / (1 + ((_b = this.documentFrequency.get(token)) != null ? _b : 0)));
+      vector.set(token, count / total * idf);
+    }
+    return vector;
+  }
+  cosine(a, b) {
+    var _a2;
+    let dot = 0;
+    let normA = 0;
+    let normB = 0;
+    for (const value of a.values()) normA += value * value;
+    for (const [key, value] of b) {
+      normB += value * value;
+      dot += ((_a2 = a.get(key)) != null ? _a2 : 0) * value;
+    }
+    if (normA === 0 || normB === 0) return 0;
+    return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+  }
+  async search(query, limit = 10) {
+    var _a2;
+    await this.build();
+    const queryVector = this.vectorFor(tokenize(query));
+    if (queryVector.size === 0) return [];
+    const results = [];
+    for (const [path, documentVector] of this.vectors) {
+      const score = this.cosine(documentVector, queryVector);
+      if (score <= 0) continue;
+      const file = this.plugin.app.vault.getAbstractFileByPath(path);
+      let snippet = "";
+      if (file && "extension" in file) {
+        const text = await this.plugin.app.vault.cachedRead(file);
+        const needle = (_a2 = tokenize(query)[0]) != null ? _a2 : "";
+        const position = needle ? text.toLowerCase().indexOf(needle) : -1;
+        const start = Math.max(0, position - 60);
+        snippet = text.slice(start, start + 220).replace(/\s+/g, " ").trim();
+      }
+      results.push({ path, score, snippet });
+    }
+    return results.sort((a, b) => b.score - a.score).slice(0, Math.max(1, Math.min(limit, 50)));
+  }
+};
+
 // src/types.ts
 var METRICS = [
   { key: "contribution", label: "\u8D21\u732E\u5206", hint: "\u7EFC\u5408\u52A0\u6743\u5F97\u5206" },
@@ -1244,11 +1434,11 @@ var Store = class {
     this.saveTimer = null;
   }
   async load() {
-    var _a, _b, _c, _d, _e, _f, _g;
+    var _a2, _b, _c, _d, _e, _f, _g;
     const raw = await this.plugin.loadData();
     const loaded = raw && typeof raw === "object" ? raw : {};
     this.data = {
-      version: (_a = loaded.version) != null ? _a : 1,
+      version: (_a2 = loaded.version) != null ? _a2 : 1,
       days: (_b = loaded.days) != null ? _b : {},
       memos: (_c = loaded.memos) != null ? _c : [],
       workLogs: (_d = loaded.workLogs) != null ? _d : [],
@@ -1258,8 +1448,8 @@ var Store = class {
     for (const key of Object.keys(this.data.days)) {
       const day = { ...createEmptyDay(), ...this.data.days[key] };
       day.hourlyWords = Array.from({ length: 24 }, (_, hour) => {
-        var _a2;
-        return Number((_a2 = day.hourlyWords) == null ? void 0 : _a2[hour]) || 0;
+        var _a3;
+        return Number((_a3 = day.hourlyWords) == null ? void 0 : _a3[hour]) || 0;
       });
       day.folderWords = (_g = day.folderWords) != null ? _g : {};
       day.activeMinutes = Math.max(0, Math.round(day.activeMinutes));
@@ -1290,8 +1480,8 @@ var Store = class {
     return dateKey(/* @__PURE__ */ new Date());
   }
   getDay(key) {
-    var _a;
-    return { ...createEmptyDay(), ...(_a = this.data.days[key]) != null ? _a : {} };
+    var _a2;
+    return { ...createEmptyDay(), ...(_a2 = this.data.days[key]) != null ? _a2 : {} };
   }
   ensureDay(key) {
     let day = this.data.days[key];
@@ -1532,12 +1722,12 @@ function nodeModule(name) {
   }
 }
 function detectAgents() {
-  var _a;
+  var _a2;
   const fs = nodeModule("fs");
   const os = nodeModule("os");
   if (!fs || !os) return [];
   const home = os.homedir();
-  const appdata = String((_a = process.env.APPDATA) != null ? _a : "");
+  const appdata = String((_a2 = process.env.APPDATA) != null ? _a2 : "");
   const candidates = [
     { id: "opencode", name: "OpenCode", configPath: `${home}/.config/opencode/opencode.jsonc`, rootKey: "mcp", envKey: "environment" },
     { id: "opencode-home", name: "OpenCode (\u7528\u6237\u76EE\u5F55)", configPath: `${home}/.opencode.json`, rootKey: "mcp", envKey: "environment" },
@@ -1562,25 +1752,25 @@ function readJson(raw) {
   }
 }
 function isAgentConfigured(target) {
-  var _a;
+  var _a2;
   const fs = nodeModule("fs");
   if (!fs || !fs.existsSync(target.configPath)) return false;
   try {
     const data = readJson(fs.readFileSync(target.configPath, "utf8"));
-    const root = (_a = data[target.rootKey]) != null ? _a : {};
+    const root = (_a2 = data[target.rootKey]) != null ? _a2 : {};
     return Boolean(root.sediment);
   } catch (error) {
     return false;
   }
 }
 function resolveBridgePath(plugin, target) {
-  var _a, _b, _c, _d, _e;
+  var _a2, _b, _c, _d, _e;
   const fs = nodeModule("fs");
   if (!fs) return "";
   if (target) {
     try {
       const data = readJson(fs.readFileSync(target.configPath, "utf8"));
-      const root = (_a = data[target.rootKey]) != null ? _a : {};
+      const root = (_a2 = data[target.rootKey]) != null ? _a2 : {};
       const args = (_c = (_b = root.sediment) == null ? void 0 : _b.args) != null ? _c : [];
       const existing = args.find((arg) => arg.endsWith("index.mjs") && fs.existsSync(arg));
       if (existing) return existing;
@@ -1622,14 +1812,14 @@ function configSnippet(plugin, id = "opencode") {
   return JSON.stringify({ [target.rootKey]: { sediment: buildEntry(plugin, target, bridge) } }, null, 2);
 }
 function configureAgent(plugin, target) {
-  var _a;
+  var _a2;
   const fs = nodeModule("fs");
   if (!fs) throw new Error("\u4E00\u952E\u914D\u7F6E\u9700\u8981\u684C\u9762\u7248 Obsidian");
   const bridge = resolveBridgePath(plugin, target);
   if (!bridge) throw new Error("\u627E\u4E0D\u5230 mcp-server/index.mjs\uFF0C\u65E0\u6CD5\u914D\u7F6E");
   const raw = fs.readFileSync(target.configPath, "utf8");
   const data = readJson(raw);
-  const root = (_a = data[target.rootKey]) != null ? _a : {};
+  const root = (_a2 = data[target.rootKey]) != null ? _a2 : {};
   root.sediment = buildEntry(plugin, target, bridge);
   data[target.rootKey] = root;
   fs.writeFileSync(`${target.configPath}.bak`, raw, "utf8");
@@ -1869,8 +2059,8 @@ var DashboardView = class extends import_obsidian9.ItemView {
     this.unsubscribePomodoro = this.plugin.pomodoro.subscribe(() => this.updatePomodoroButton());
   }
   async onClose() {
-    var _a;
-    (_a = this.unsubscribePomodoro) == null ? void 0 : _a.call(this);
+    var _a2;
+    (_a2 = this.unsubscribePomodoro) == null ? void 0 : _a2.call(this);
   }
   render() {
     const root = this.contentEl;
@@ -2014,13 +2204,13 @@ var DashboardView = class extends import_obsidian9.ItemView {
     this.renderFooter(body);
   }
   renderAgentStatus(root) {
-    var _a;
+    var _a2;
     const card = root.createDiv({ cls: "sd-card" });
     card.createDiv({ cls: "sd-card-title", text: "\u8FDE\u63A5\u4E0E\u8C03\u7528\u72B6\u6001" });
     const settings = this.plugin.store.settings;
     const calls = this.plugin.store.data.toolCalls;
     const byAgent = {};
-    for (const call of calls) byAgent[call.agent || "unknown"] = ((_a = byAgent[call.agent || "unknown"]) != null ? _a : 0) + 1;
+    for (const call of calls) byAgent[call.agent || "unknown"] = ((_a2 = byAgent[call.agent || "unknown"]) != null ? _a2 : 0) + 1;
     const grid = card.createDiv({ cls: "sd-status-grid" });
     const item = (label, value) => {
       const box = grid.createDiv({ cls: "sd-status-item" });
@@ -2034,13 +2224,13 @@ var DashboardView = class extends import_obsidian9.ItemView {
     if (last) card.createDiv({ cls: "sd-card-sub", text: `\u6700\u8FD1\u8C03\u7528\uFF1A${last.time.slice(0, 16)} \xB7 ${last.tool}` });
   }
   renderDrafts(root) {
-    var _a, _b, _c;
+    var _a2, _b, _c;
     const card = root.createDiv({ cls: "sd-card" });
     card.createDiv({ cls: "sd-card-title", text: "AI \u6C89\u6DC0\u5BA1\u6838" });
     const drafts = [];
     for (const file of this.plugin.app.vault.getMarkdownFiles()) {
       const cache = this.plugin.app.metadataCache.getFileCache(file);
-      if (((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.sediment_status) === "draft") drafts.push(file);
+      if (((_a2 = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a2.sediment_status) === "draft") drafts.push(file);
     }
     if (drafts.length === 0) {
       card.createDiv({ cls: "kp-empty", text: "\u6CA1\u6709\u5F85\u5BA1\u6838\u7684 AI \u8349\u7A3F\u3002" });
@@ -2071,9 +2261,9 @@ var DashboardView = class extends import_obsidian9.ItemView {
     }
   }
   async mergeDraft(file) {
-    var _a;
+    var _a2;
     const cache = this.plugin.app.metadataCache.getFileCache(file);
-    const links = (_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.links;
+    const links = (_a2 = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a2.links;
     const first = Array.isArray(links) && links.length > 0 ? String(links[0]) : "";
     if (!first) {
       new import_obsidian9.Notice("\u8FD9\u5F20\u8349\u7A3F\u6CA1\u6709\u5173\u8054\u7B14\u8BB0\uFF0C\u65E0\u6CD5\u5408\u5E76");
@@ -2153,11 +2343,11 @@ ${body.trim()}
     return `<svg class="sd-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${lines}</svg>`;
   }
   renderOverview(root) {
-    var _a, _b, _c;
+    var _a2, _b, _c;
     const card = root.createDiv({ cls: "sd-card sd-overview" });
     const head = card.createDiv({ cls: "sd-card-head" });
     head.createDiv({ cls: "sd-card-title", text: "\u77E5\u8BC6\u8109\u51B2\u6982\u89C8" });
-    head.createDiv({ cls: "sd-card-sub", text: `\u8FD1 ${(_b = (_a = RANGE_OPTIONS.find((r) => r[0] === this.range)) == null ? void 0 : _a[1]) != null ? _b : ""} \xB7 \u53EF\u9760\u8BB0\u5F55` });
+    head.createDiv({ cls: "sd-card-sub", text: `\u8FD1 ${(_b = (_a2 = RANGE_OPTIONS.find((r) => r[0] === this.range)) == null ? void 0 : _a2[1]) != null ? _b : ""} \xB7 \u53EF\u9760\u8BB0\u5F55` });
     const ranges = card.createDiv({ cls: "sd-ranges" });
     for (const [key, label] of RANGE_OPTIONS) {
       const button = ranges.createEl("button", {
@@ -2342,10 +2532,10 @@ ${sailing}
 </svg>`;
   }
   renderAnalytics(root) {
-    var _a, _b, _c, _d;
+    var _a2, _b, _c, _d;
     const keys = this.rangeKeys();
     const days = keys.map((key) => this.plugin.store.getDay(key));
-    const label = (_b = (_a = RANGE_OPTIONS.find((range) => range[0] === this.range)) == null ? void 0 : _a[1]) != null ? _b : "";
+    const label = (_b = (_a2 = RANGE_OPTIONS.find((range) => range[0] === this.range)) == null ? void 0 : _a2[1]) != null ? _b : "";
     const writing = this.analyticsCard(root, "\u6BCF\u65E5\u5199\u4F5C", label);
     writing.innerHTML += this.barChart(days.map((day) => day.wordsAdded));
     const changes = this.analyticsCard(root, "\u5199\u4F5C\u53D8\u5316", "\u65B0\u589E / \u5220\u9664 / \u5927\u6BB5\u6355\u83B7");
@@ -2383,8 +2573,8 @@ ${sailing}
     const hourly = Array.from(
       { length: 24 },
       (_, hour) => days.reduce((sum, day) => {
-        var _a2;
-        return sum + ((_a2 = day.hourlyWords[hour]) != null ? _a2 : 0);
+        var _a3;
+        return sum + ((_a3 = day.hourlyWords[hour]) != null ? _a3 : 0);
       }, 0)
     );
     const hours = this.analyticsCard(root, "\u6D3B\u8DC3\u65F6\u6BB5", "\u6309\u5C0F\u65F6\u7684\u65B0\u589E\u8BCD\u6570");
@@ -2421,7 +2611,7 @@ ${sailing}
     }
   }
   shortMetric(key) {
-    var _a;
+    var _a2;
     const names = {
       contribution: "\u8D21\u732E",
       wordsAdded: "\u65B0\u589E\u8BCD",
@@ -2430,7 +2620,7 @@ ${sailing}
       notesCreated: "\u65B0\u7B14\u8BB0",
       tasksCompleted: "\u4EFB\u52A1"
     };
-    return (_a = names[key]) != null ? _a : key;
+    return (_a2 = names[key]) != null ? _a2 : key;
   }
   moonGlyph(date) {
     const synodic = 29.530588853 * 864e5;
@@ -2614,8 +2804,8 @@ ${celestial}
     this.render();
   }
   metricLabel() {
-    var _a, _b;
-    return (_b = (_a = METRICS.find((metric) => metric.key === this.metric)) == null ? void 0 : _a.label) != null ? _b : this.metric;
+    var _a2, _b;
+    return (_b = (_a2 = METRICS.find((metric) => metric.key === this.metric)) == null ? void 0 : _a2.label) != null ? _b : this.metric;
   }
 };
 function startOfWeekFor(date, weekStart) {
@@ -2652,13 +2842,13 @@ var MemoView = class extends import_obsidian10.ItemView {
   }
   /** 只刷新列表和沉淀区，不碰用户正在输入的速记框。 */
   refreshContent() {
-    var _a, _b, _c;
+    var _a2, _b, _c;
     if (this.tab !== "all") {
       this.render();
       return;
     }
     const root = this.contentEl;
-    (_a = root.querySelector(".kp-memo-list")) == null ? void 0 : _a.remove();
+    (_a2 = root.querySelector(".kp-memo-list")) == null ? void 0 : _a2.remove();
     (_b = root.querySelector(".sd-knowledge-inline")) == null ? void 0 : _b.remove();
     (_c = root.querySelector(".sd-context-card")) == null ? void 0 : _c.remove();
     this.renderList(root);
@@ -2702,8 +2892,8 @@ var MemoView = class extends import_obsidian10.ItemView {
     const tagInput = row.createEl("input", { type: "text", placeholder: "\u6807\u7B7E\uFF0C\u7A7A\u683C\u5206\u9694" });
     const submit = row.createEl("button", { cls: "mod-cta", text: "\u8BB0\u4E00\u6761" });
     area.addEventListener("paste", (event) => {
-      var _a;
-      const items = (_a = event.clipboardData) == null ? void 0 : _a.items;
+      var _a2;
+      const items = (_a2 = event.clipboardData) == null ? void 0 : _a2.items;
       if (!items) return;
       for (const item of Array.from(items)) {
         if (item.type.startsWith("image/")) {
@@ -2770,13 +2960,13 @@ var MemoView = class extends import_obsidian10.ItemView {
     }
   }
   async attachImage(file) {
-    var _a, _b;
+    var _a2, _b;
     if (!file) return;
     const buffer = await file.arrayBuffer();
     const extension = file.type.split("/")[1] || "png";
     const name = `${Date.now()}.${extension}`;
     const config = this.plugin.app.vault;
-    const folder = normalizeFolder((_b = (_a = config.getConfig) == null ? void 0 : _a.call(config, "attachmentFolderPath")) != null ? _b : "attachments");
+    const folder = normalizeFolder((_b = (_a2 = config.getConfig) == null ? void 0 : _a2.call(config, "attachmentFolderPath")) != null ? _b : "attachments");
     await ensureFolder(this.plugin.app.vault, folder);
     const path = folder ? `${folder}/${name}` : name;
     await this.plugin.app.vault.createBinary(path, buffer);
@@ -2788,8 +2978,8 @@ var MemoView = class extends import_obsidian10.ItemView {
     new import_obsidian10.Notice("\u56FE\u7247\u5DF2\u63D2\u5165\u901F\u8BB0");
   }
   renderList(root) {
-    var _a;
-    (_a = root.querySelector(".kp-memo-list")) == null ? void 0 : _a.remove();
+    var _a2;
+    (_a2 = root.querySelector(".kp-memo-list")) == null ? void 0 : _a2.remove();
     const list = root.createDiv({ cls: "kp-memo-list" });
     let memos = this.plugin.store.data.memos.slice();
     if (this.filter) {
@@ -2864,7 +3054,7 @@ var MemoView = class extends import_obsidian10.ItemView {
     return copy.slice(0, 3);
   }
   tokens(text) {
-    var _a;
+    var _a2;
     const clean = text.toLowerCase().replace(/[#\[\]()]/g, " ");
     const chinese = clean.replace(/[^\u3400-\u9fff]/g, " ");
     const bigrams = [];
@@ -2872,16 +3062,16 @@ var MemoView = class extends import_obsidian10.ItemView {
       const pair = chinese.slice(index, index + 2).trim();
       if (pair.length === 2) bigrams.push(pair);
     }
-    return [...bigrams, ...(_a = clean.match(/[a-z0-9]+/g)) != null ? _a : []];
+    return [...bigrams, ...(_a2 = clean.match(/[a-z0-9]+/g)) != null ? _a2 : []];
   }
   renderWalk(root) {
-    var _a, _b;
+    var _a2, _b;
     const memos = this.plugin.store.data.memos;
     if (memos.length === 0) {
       root.createDiv({ cls: "kp-empty", text: "\u8FD8\u6CA1\u6709\u901F\u8BB0\u53EF\u4EE5\u6F2B\u6B65\u3002" });
       return;
     }
-    let current = (_a = memos.find((memo) => memo.id === this.walkId)) != null ? _a : memos[0];
+    let current = (_a2 = memos.find((memo) => memo.id === this.walkId)) != null ? _a2 : memos[0];
     const card = root.createDiv({ cls: "sd-card sd-walk" });
     card.createDiv({ cls: "sd-card-sub", text: `\u6F2B\u6B65 \xB7 ${current.date} ${current.time}` });
     card.appendChild(this.memoCard(current));
@@ -2903,7 +3093,7 @@ var MemoView = class extends import_obsidian10.ItemView {
     this.walkId = current.id;
   }
   renderKnowledge(root, limit = 30, compact = false) {
-    var _a;
+    var _a2;
     const settings = this.plugin.store.settings;
     const folders = [normalizeFolder(settings.knowledgeFolder), normalizeFolder(settings.workLogFolder)].filter((folder) => folder.length > 0);
     const files = this.plugin.app.vault.getMarkdownFiles().filter((file) => folders.some((folder) => file.path.startsWith(`${folder}/`))).sort((a, b) => b.stat.mtime - a.stat.mtime).slice(0, limit);
@@ -2924,7 +3114,7 @@ var MemoView = class extends import_obsidian10.ItemView {
         const parts = file.path.split("/");
         category = parts.length > 1 ? parts[1] : "\u672A\u5206\u7C7B";
       }
-      const group = (_a = groups.get(category)) != null ? _a : [];
+      const group = (_a2 = groups.get(category)) != null ? _a2 : [];
       group.push(file);
       groups.set(category, group);
     }
@@ -2955,10 +3145,10 @@ var MemoView = class extends import_obsidian10.ItemView {
     }
   }
   renderTags(root) {
-    var _a;
+    var _a2;
     const counts = /* @__PURE__ */ new Map();
     for (const memo of this.plugin.store.data.memos) {
-      for (const tag of memo.tags) counts.set(tag, ((_a = counts.get(tag)) != null ? _a : 0) + 1);
+      for (const tag of memo.tags) counts.set(tag, ((_a2 = counts.get(tag)) != null ? _a2 : 0) + 1);
     }
     const card = root.createDiv({ cls: "sd-card sd-tag-tree" });
     card.createDiv({ cls: "sd-card-title", text: `\u6807\u7B7E \xB7 ${counts.size} \u4E2A` });
@@ -3001,17 +3191,22 @@ var SedimentPlugin = class extends import_obsidian11.Plugin {
     this.pomodoro = new PomodoroManager(this);
     this.agentApi = new AgentApi(this);
     this.agentServer = new AgentServer(this);
+    this.semantic = new SemanticIndex(this);
     this.registerView(DASHBOARD_VIEW_TYPE, (leaf) => new DashboardView(leaf, this));
     this.registerView(MEMO_VIEW_TYPE, (leaf) => new MemoView(leaf, this));
     await this.tracker.start();
     const vault = this.app.vault;
-    this.registerEvent(vault.on("create", (file) => this.scheduleRefresh(file.path)));
-    this.registerEvent(vault.on("modify", (file) => this.scheduleRefresh(file.path)));
-    this.registerEvent(vault.on("delete", (file) => this.scheduleRefresh(file.path)));
+    const onVaultChange = (path) => {
+      this.semantic.invalidate();
+      this.scheduleRefresh(path);
+    };
+    this.registerEvent(vault.on("create", (file) => onVaultChange(file.path)));
+    this.registerEvent(vault.on("modify", (file) => onVaultChange(file.path)));
+    this.registerEvent(vault.on("delete", (file) => onVaultChange(file.path)));
     this.registerEvent(
       vault.on("rename", (file, oldPath) => {
-        this.scheduleRefresh(file.path);
-        this.scheduleRefresh(oldPath);
+        onVaultChange(file.path);
+        onVaultChange(oldPath);
       })
     );
     await this.agentServer.applySettings();
@@ -3080,9 +3275,9 @@ var SedimentPlugin = class extends import_obsidian11.Plugin {
     this.addSettingTab(new PulseSettingTab(this.app, this));
   }
   async onunload() {
-    var _a;
+    var _a2;
     if (this.serverRestartTimer !== null) window.clearTimeout(this.serverRestartTimer);
-    await ((_a = this.agentServer) == null ? void 0 : _a.stop());
+    await ((_a2 = this.agentServer) == null ? void 0 : _a2.stop());
     delete window.Sediment;
     await this.store.save();
   }
@@ -3096,8 +3291,8 @@ var SedimentPlugin = class extends import_obsidian11.Plugin {
   }
   /** obsidian://sediment?action=memo&text=...&tags=... */
   async handleProtocol(params) {
-    var _a, _b;
-    const action = ((_a = params.action) != null ? _a : "").toLowerCase();
+    var _a2, _b;
+    const action = ((_a2 = params.action) != null ? _a2 : "").toLowerCase();
     if (action === "memo" && params.text) {
       const tags = ((_b = params.tags) != null ? _b : "").split(/[,\s]+/).map((tag) => tag.replace(/^#/, "")).filter(Boolean);
       await this.memos.add(params.text, tags);
@@ -3131,7 +3326,7 @@ var SedimentPlugin = class extends import_obsidian11.Plugin {
     }, 400);
   }
   async activateView(type) {
-    var _a;
+    var _a2;
     const workspace = this.app.workspace;
     let leaf = null;
     for (const candidate of workspace.getLeavesOfType(type)) {
@@ -3147,17 +3342,17 @@ var SedimentPlugin = class extends import_obsidian11.Plugin {
       if (!leaf) leaf = candidate;
     }
     if (!leaf) {
-      leaf = type === MEMO_VIEW_TYPE ? (_a = workspace.getRightLeaf(false)) != null ? _a : await workspace.getLeaf(true) : await workspace.getLeaf(true);
+      leaf = type === MEMO_VIEW_TYPE ? (_a2 = workspace.getRightLeaf(false)) != null ? _a2 : await workspace.getLeaf(true) : await workspace.getLeaf(true);
     }
     await leaf.setViewState({ type, active: true });
     void workspace.revealLeaf(leaf);
   }
   isSideLeaf(leaf) {
-    var _a;
+    var _a2;
     let parent = leaf.parent;
     while (parent) {
       if (parent instanceof import_obsidian11.WorkspaceSidedock) return true;
-      parent = (_a = parent.parent) != null ? _a : null;
+      parent = (_a2 = parent.parent) != null ? _a2 : null;
     }
     return false;
   }

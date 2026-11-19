@@ -219,6 +219,18 @@ const TOOLS = [
     },
   },
   {
+    name: "semantic_search",
+    description: "本地语义检索：按意义而非关键词查找笔记，返回相关度、路径和片段。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "自然语言查询" },
+        limit: { type: "number", description: "最多返回条数，默认 10" },
+      },
+      required: ["query"],
+    },
+  },
+  {
     name: "get_active_context",
     description: "获取当前打开的笔记、选中文本、光标行与光标所在段落。",
     inputSchema: { type: "object", properties: {} },
@@ -380,6 +392,8 @@ async function dispatch(name, args) {
       return call("/agent-task/claim", { id: args.id }, "POST");
     case "complete_agent_task":
       return call("/agent-task/complete", { id: args.id, resultPath: args.resultPath ?? "" }, "POST");
+    case "semantic_search":
+      return call("/semantic-search", { q: args.query ?? "", limit: args.limit ?? 10 });
     case "get_active_context":
       return call("/active-context");
     case "get_note_metadata":

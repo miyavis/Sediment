@@ -1,6 +1,7 @@
 import { Notice, Plugin, TFile, WorkspaceSidedock, type WorkspaceLeaf, type WorkspaceParent } from "obsidian";
 import { AgentApi, generateToken } from "./agent/api";
 import { AgentServer } from "./agent/server";
+import { SemanticIndex } from "./agent/semantic";
 import { Store } from "./data/store";
 import { MemoManager } from "./features/memo";
 import { PomodoroManager } from "./features/pomodoro";
@@ -21,6 +22,7 @@ export class SedimentPlugin extends Plugin {
   pomodoro!: PomodoroManager;
   agentApi!: AgentApi;
   agentServer!: AgentServer;
+  semantic!: SemanticIndex;
 
   async onload(): Promise<void> {
     this.store = new Store(this);
@@ -39,6 +41,7 @@ export class SedimentPlugin extends Plugin {
     this.pomodoro = new PomodoroManager(this);
     this.agentApi = new AgentApi(this);
     this.agentServer = new AgentServer(this);
+    this.semantic = new SemanticIndex(this);
 
     this.registerView(DASHBOARD_VIEW_TYPE, (leaf) => new DashboardView(leaf, this));
     this.registerView(MEMO_VIEW_TYPE, (leaf) => new MemoView(leaf, this));
@@ -47,13 +50,17 @@ export class SedimentPlugin extends Plugin {
 
     // Agent 通过 MCP 写入笔记后，自动刷新看板与速记面板。
     const vault = this.app.vault;
-    this.registerEvent(vault.on("create", (file) => this.scheduleRefresh(file.path)));
-    this.registerEvent(vault.on("modify", (file) => this.scheduleRefresh(file.path)));
-    this.registerEvent(vault.on("delete", (file) => this.scheduleRefresh(file.path)));
+    const onVaultChange = (path: string): void => {
+      this.semantic.invalidate();
+      this.scheduleRefresh(path);
+    };
+    this.registerEvent(vault.on("create", (file) => onVaultChange(file.path)));
+    this.registerEvent(vault.on("modify", (file) => onVaultChange(file.path)));
+    this.registerEvent(vault.on("delete", (file) => onVaultChange(file.path)));
     this.registerEvent(
       vault.on("rename", (file, oldPath) => {
-        this.scheduleRefresh(file.path);
-        this.scheduleRefresh(oldPath);
+        onVaultChange(file.path);
+        onVaultChange(oldPath);
       })
     );
 

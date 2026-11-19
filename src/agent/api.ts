@@ -365,6 +365,11 @@ export class AgentApi {
     return { file: file.path, selection, cursorLine: cursor.line + 1, cursorParagraph };
   }
 
+  /** 本地语义检索（TF-IDF + 同义词），不联网。 */
+  async semanticSearch(query: string, limit = 10): Promise<Array<{ path: string; score: number; snippet: string }>> {
+    return this.plugin.semantic.search(String(query ?? ""), limit);
+  }
+
   /** 只读元数据，不返回正文，节省 Agent 的 Token。 */
   async getNoteMetadata(path: string): Promise<{
     path: string;

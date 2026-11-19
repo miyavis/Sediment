@@ -128,6 +128,9 @@ export class AgentServer {
         case "GET /search":
           this.json(response, 200, await api.searchNotes(str(query.get("q")), num(query.get("limit"), 10)));
           return;
+        case "GET /semantic-search":
+          this.json(response, 200, await api.semanticSearch(str(query.get("q")), num(query.get("limit"), 10)));
+          return;
         case "GET /note":
           this.json(response, 200, await api.readNote(str(query.get("path"))));
           return;
