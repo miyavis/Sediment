@@ -168,6 +168,92 @@ export class PulseSettingTab extends PluginSettingTab {
           })
       );
 
+    containerEl.createEl("h3", { text: "Agent 权限（可选）" });
+
+    new Setting(containerEl)
+      .setName("访问模式")
+      .setDesc("allowlist 模式下 Agent 只能访问下方白名单目录。默认全库，但系统目录始终禁止。")
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("allow-all", "全库可访问（默认）")
+          .addOption("allowlist", "仅白名单目录")
+          .setValue(settings.agentAccessMode)
+          .onChange((value) => {
+            settings.agentAccessMode = value as "allow-all" | "allowlist";
+            save();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("白名单目录")
+      .setDesc("逗号分隔，例如 knowledge,projects,agent-logs。")
+      .addText((text) =>
+        text
+          .setPlaceholder("knowledge,projects")
+          .setValue(settings.agentAllowedFolders)
+          .onChange((value) => {
+            settings.agentAllowedFolders = value;
+            save();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("允许读取")
+      .addToggle((toggle) =>
+        toggle.setValue(settings.agentAllowRead).onChange((value) => {
+          settings.agentAllowRead = value;
+          save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("允许新建")
+      .addToggle((toggle) =>
+        toggle.setValue(settings.agentAllowCreate).onChange((value) => {
+          settings.agentAllowCreate = value;
+          save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("允许局部修改")
+      .addToggle((toggle) =>
+        toggle.setValue(settings.agentAllowPatch).onChange((value) => {
+          settings.agentAllowPatch = value;
+          save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("允许全量覆盖")
+      .setDesc("默认开启以兼容旧工作流；关闭后 Agent 必须用 patch_note。")
+      .addToggle((toggle) =>
+        toggle.setValue(settings.agentAllowOverwrite).onChange((value) => {
+          settings.agentAllowOverwrite = value;
+          save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("允许删除")
+      .setDesc("当前插件未开放删除工具，默认关闭。")
+      .addToggle((toggle) =>
+        toggle.setValue(settings.agentAllowDelete).onChange((value) => {
+          settings.agentAllowDelete = value;
+          save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("修改前存快照")
+      .setDesc("覆盖或 Patch 前保存原文，支持 Agent 变更审查与一键恢复。")
+      .addToggle((toggle) =>
+        toggle.setValue(settings.enableAuditSnapshot).onChange((value) => {
+          settings.enableAuditSnapshot = value;
+          save();
+        })
+      );
+
     new Setting(containerEl)
       .setName("自动备份统计数据")
       .setDesc("把 data.json 快照写入库内普通文件夹，避免 .obsidian 被同步工具忽略。")

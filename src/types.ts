@@ -43,6 +43,15 @@ export interface ToolCallRecord {
   path: string;
 }
 
+/** 修改前的全文快照记录 */
+export interface SnapshotRecord {
+  id: string;
+  path: string;
+  time: string;
+  tool: string;
+  agent: string;
+}
+
 export interface MemoRecord {
   id: string;
   date: string; // YYYY-MM-DD
@@ -99,6 +108,18 @@ export interface PulseSettings {
   deniedFolders: string;
   /** Agent 禁止访问的标签（逗号分隔） */
   deniedTags: string;
+  /** 访问模式：全库 / 仅白名单目录 */
+  agentAccessMode: "allow-all" | "allowlist";
+  /** 白名单目录（逗号分隔，allowlist 模式生效） */
+  agentAllowedFolders: string;
+  /** 允许的操作 */
+  agentAllowRead: boolean;
+  agentAllowCreate: boolean;
+  agentAllowPatch: boolean;
+  agentAllowOverwrite: boolean;
+  agentAllowDelete: boolean;
+  /** 修改前是否自动存快照 */
+  enableAuditSnapshot: boolean;
   /** 是否定期把 data.json 备份到库内普通文件夹 */
   backupEnabled: boolean;
   /** 备份目录（库内相对路径） */
@@ -123,6 +144,7 @@ export interface PulseData {
   memos: MemoRecord[];
   workLogs: WorkLogRecord[];
   toolCalls: ToolCallRecord[];
+  snapshots: SnapshotRecord[];
   settings: PulseSettings;
 }
 
@@ -155,6 +177,14 @@ export const DEFAULT_SETTINGS: PulseSettings = {
   lastSeenVersion: "",
   deniedFolders: "",
   deniedTags: "",
+  agentAccessMode: "allow-all",
+  agentAllowedFolders: "",
+  agentAllowRead: true,
+  agentAllowCreate: true,
+  agentAllowPatch: true,
+  agentAllowOverwrite: true,
+  agentAllowDelete: false,
+  enableAuditSnapshot: true,
   backupEnabled: true,
   backupFolder: "sediment-backup",
   backupKeep: 10,
@@ -203,5 +233,6 @@ export const DEFAULT_DATA: PulseData = {
   memos: [],
   workLogs: [],
   toolCalls: [],
+  snapshots: [],
   settings: DEFAULT_SETTINGS,
 };

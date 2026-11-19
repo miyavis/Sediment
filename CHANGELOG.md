@@ -2,6 +2,14 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [Unreleased]
+
+### 新增
+- Agent 权限：系统目录 `.obsidian/` / `.git/` 硬编码拦截；可选白名单模式、按操作（读/建/Patch/覆盖/删除）开关；修改前快照开关
+- `patch_note` 新增 `operation`（append/prepend/replace/update_frontmatter）、`dryRun` Diff 预览、`expectedMtime` 乐观锁、`diffSummary`、`createdHeading`
+- `replace_block` 多处匹配返回 `AMBIGUOUS_MATCH`；标题不存在时自动创建
+- 新增 MCP 工具 `list_agent_changes` / `revert_agent_change` 与对应 HTTP 接口，Agent 可自查变更并回滚
+
 ## [0.8.3] - 2026-11-19
 
 ### 新增

@@ -180,8 +180,15 @@ const TOOLS = [
         find: { type: "string", description: "精确文本片段，与 heading 二选一" },
         content: { type: "string", description: "新内容" },
         mode: { type: "string", description: "replace / append / prepend，默认 replace" },
+        operation: {
+          type: "string",
+          enum: ["append_under_heading", "prepend_under_heading", "replace_block", "update_frontmatter"],
+          description: "结构化操作类型，优先于 mode",
+        },
         index: { type: "number", description: "匹配到第几个，默认 0" },
-        ifMatch: { type: "string", description: "版本号，来自写入返回或 read_note" },
+        ifMatch: { type: "string", description: "内容版本号，来自写入返回" },
+        expectedMtime: { type: "number", description: "可选：读取时的 mtime，冲突返回 409" },
+        dryRun: { type: "boolean", description: "只返回 Diff 预览，不写入" },
       },
       required: ["path", "content"],
     },
@@ -218,6 +225,23 @@ const TOOLS = [
         resultPath: { type: "string", description: "产出笔记的库内路径，可选" },
       },
       required: ["id"],
+    },
+  },
+  {
+    name: "list_agent_changes",
+    description: "列出最近 Agent 修改过的笔记、快照 id 与操作信息。",
+    inputSchema: {
+      type: "object",
+      properties: { limit: { type: "number", description: "条数，默认 20" } },
+    },
+  },
+  {
+    name: "revert_agent_change",
+    description: "按 snapshotId 一键恢复 Agent 修改前的版本。",
+    inputSchema: {
+      type: "object",
+      properties: { snapshotId: { type: "string" } },
+      required: ["snapshotId"],
     },
   },
   {
@@ -423,8 +447,11 @@ async function dispatch(name, args) {
         find: args.find ?? "",
         content: args.content ?? "",
         mode: args.mode ?? "replace",
+        operation: args.operation ?? "",
         index: args.index ?? 0,
         ifMatch: args.ifMatch ?? "",
+        expectedMtime: args.expectedMtime ?? 0,
+        dryRun: args.dryRun === true,
       }, "POST");
     case "update_frontmatter":
       return call("/frontmatter", {
@@ -436,6 +463,10 @@ async function dispatch(name, args) {
       return call("/agent-task/claim", { id: args.id }, "POST");
     case "complete_agent_task":
       return call("/agent-task/complete", { id: args.id, resultPath: args.resultPath ?? "" }, "POST");
+    case "list_agent_changes":
+      return call("/agent/audit", { limit: args.limit ?? 20 });
+    case "revert_agent_change":
+      return call("/agent/revert", { snapshotId: args.snapshotId }, "POST");
     case "list_tasks":
       return call("/tasks", { scope: args.scope ?? "all" });
     case "complete_task":

@@ -146,6 +146,9 @@ npm run test:mcp   # 检查 MCP 工具列表
 | Agent 工作日志目录 / 知识沉淀目录 | 默认 `agent-logs/`、`knowledge/` |
 | 知识库分类 | 逗号分隔，默认 `技术,项目,方法,灵感,复盘`；Agent 可传任意自定义分类 |
 | Agent 禁止访问的文件夹 / 标签 | 逗号分隔，对 Agent 的读写搜全部生效 |
+| Agent 访问模式 / 白名单目录 | 可选 `allowlist` 模式，仅允许访问指定目录；`.obsidian/` 与 `.git/` 始终禁止 |
+| Agent 操作开关 | 读 / 新建 / Patch / 覆盖 / 删除分别开关，默认允许覆盖以兼容旧工作流 |
+| 修改前存快照 | 覆盖或 Patch 前保存原文，支持变更审查与一键恢复 |
 | 看板画风 | 湖面 / 水墨 / 城市 |
 | 每日写作目标 | 默认 1000，0 关闭 |
 | 自动备份统计数据 / 备份目录 / 保留份数 | 默认开启，写入 `sediment-backup/`，保留 10 份 |
@@ -223,6 +226,7 @@ OpenCode 配置示例：
 | `get_pomodoro` / `get_tool_activity` | 番茄钟 / 调用统计 |
 | `list_work_logs` / `list_categories` / `list_tasks` | 日志 / 分类 / 待办 |
 | `generate_weekly_review` | 生成周复盘 Markdown |
+| `list_agent_changes` / `revert_agent_change` | 列出 Agent 变更快照 / 按 snapshotId 一键回滚 |
 
 **写入与沉淀**
 

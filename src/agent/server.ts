@@ -1,6 +1,7 @@
 import { Notice } from "obsidian";
 import type { IncomingMessage, ServerResponse } from "http";
 import type { SedimentPlugin } from "../main";
+import { ApiError } from "./api";
 
 type HttpServer = import("http").Server;
 
@@ -117,6 +118,7 @@ export class AgentServer {
       const loggedPath =
         (typeof body.path === "string" ? body.path : "") || str(query.get("path"), "");
       api.logToolCall(`${request.method} ${url.pathname}`, agent, loggedPath);
+      api.setCallContext(`${request.method} ${url.pathname}`, agent);
 
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
@@ -254,8 +256,16 @@ export class AgentServer {
               find: str(body.find as string) || undefined,
               content: str(body.content as string),
               mode: str(body.mode as string, "replace") as "replace" | "append" | "prepend",
+              operation: str(body.operation as string) as
+                | "append_under_heading"
+                | "prepend_under_heading"
+                | "replace_block"
+                | "update_frontmatter"
+                | undefined,
               index: typeof body.index === "number" ? body.index : undefined,
               ifMatch: str(body.ifMatch as string) || undefined,
+              expectedMtime: typeof body.expectedMtime === "number" ? body.expectedMtime : undefined,
+              dryRun: body.dryRun === true,
             })
           );
           return;
@@ -286,10 +296,20 @@ export class AgentServer {
         case "POST /pomodoro":
           this.json(response, 200, api.controlPomodoro(str(body.action as string, "toggle")));
           return;
+        case "GET /agent/audit":
+          this.json(response, 200, api.getAgentChanges(num(query.get("limit"), 20)));
+          return;
+        case "POST /agent/revert":
+          this.json(response, 200, await api.revertAgentChange(str(body.snapshotId as string)));
+          return;
         default:
           this.json(response, 404, { error: `未知接口：${request.method} ${url.pathname}` });
       }
     } catch (error) {
+      if (error instanceof ApiError) {
+        this.json(response, error.status, { error: error.message, code: error.code });
+        return;
+      }
       this.json(response, 500, { error: error instanceof Error ? error.message : String(error) });
     }
   }

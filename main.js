@@ -319,6 +319,37 @@ var Tracker = class {
   }
 };
 
+// src/features/audit.ts
+function nodeFs() {
+  try {
+    return require("fs");
+  } catch (error) {
+    return null;
+  }
+}
+function backupDirectory(vault) {
+  var _a2, _b;
+  const adapter = vault.adapter;
+  return (_b = (_a2 = adapter.getFullPath) == null ? void 0 : _a2.call(adapter, ".obsidian/plugins/sediment/backups")) != null ? _b : null;
+}
+function listBackups(plugin, path) {
+  const fs = nodeFs();
+  const directory = backupDirectory(plugin.app.vault);
+  if (!fs || !directory || !fs.existsSync(directory)) return [];
+  const suffix = path.replace(/[\\/]/g, "_");
+  return fs.readdirSync(directory).filter((name) => name.endsWith(suffix)).map((name) => ({ name, mtimeMs: fs.statSync(`${directory}/${name}`).mtimeMs })).sort((a, b) => b.mtimeMs - a.mtimeMs);
+}
+function readBackup(plugin, name) {
+  const fs = nodeFs();
+  const directory = backupDirectory(plugin.app.vault);
+  if (!fs || !directory) return "";
+  return fs.readFileSync(`${directory}/${name}`, "utf8");
+}
+async function restoreBackup(plugin, file, name) {
+  const content = readBackup(plugin, name);
+  await plugin.app.vault.process(file, () => content);
+}
+
 // src/agent/api.ts
 function generateToken() {
   try {
@@ -334,6 +365,32 @@ function versionOf(text) {
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0).toString(16);
+}
+function simpleDiff(before, after) {
+  const oldLines = before.split("\n");
+  const newLines = after.split("\n");
+  let start = 0;
+  while (start < oldLines.length && start < newLines.length && oldLines[start] === newLines[start]) {
+    start += 1;
+  }
+  let endOld = oldLines.length;
+  let endNew = newLines.length;
+  while (endOld > start && endNew > start && oldLines[endOld - 1] === newLines[endNew - 1]) {
+    endOld -= 1;
+    endNew -= 1;
+  }
+  const lines = ["--- before", "+++ after"];
+  for (let index = start; index < endOld; index += 1) lines.push(`-${oldLines[index]}`);
+  for (let index = start; index < endNew; index += 1) lines.push(`+${newLines[index]}`);
+  return lines.join("\n");
+}
+function lineChanges(before, after) {
+  const oldLines = before.split("\n");
+  const newLines = after.split("\n");
+  return {
+    addedLines: newLines.filter((line) => !oldLines.includes(line)).length,
+    removedLines: oldLines.filter((line) => !newLines.includes(line)).length
+  };
 }
 function findSection(text, heading, index) {
   const lines = text.split("\n");
@@ -360,43 +417,70 @@ function findSection(text, heading, index) {
   }
   return { start: chosen.line + 1, end, lines };
 }
+var ApiError = class extends Error {
+  constructor(code, message, status = 400) {
+    super(message);
+    this.code = code;
+    this.status = status;
+  }
+};
 function splitList(value) {
   return value.split(/[,，]/).map((item) => item.trim()).filter(Boolean);
 }
 function safePath(input) {
-  const path = String(input != null ? input : "").replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+/g, "/");
-  if (!path) throw new Error("\u8DEF\u5F84\u4E0D\u80FD\u4E3A\u7A7A");
+  const path = (0, import_obsidian2.normalizePath)(String(input != null ? input : "")).replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+/g, "/");
+  if (!path) throw new ApiError("EMPTY_PATH", "\u8DEF\u5F84\u4E0D\u80FD\u4E3A\u7A7A");
   if (path.split("/").some((part) => part === ".." || part === ".")) {
-    throw new Error("\u975E\u6CD5\u8DEF\u5F84\uFF1A\u4E0D\u5141\u8BB8 . \u6216 ..");
+    throw new ApiError("FORBIDDEN", "\u975E\u6CD5\u8DEF\u5F84\uFF1A\u4E0D\u5141\u8BB8 . \u6216 ..");
   }
-  if (!path.toLowerCase().endsWith(".md")) throw new Error("\u53EA\u652F\u6301 .md \u7B14\u8BB0");
+  const lower = path.toLowerCase();
+  if (lower === ".obsidian" || lower.startsWith(".obsidian/") || lower === ".git" || lower.startsWith(".git/")) {
+    throw new ApiError("FORBIDDEN", "\u7CFB\u7EDF\u76EE\u5F55\u7981\u6B62\u8BBF\u95EE");
+  }
+  if (!lower.endsWith(".md")) throw new ApiError("INVALID_EXTENSION", "\u53EA\u652F\u6301 .md \u7B14\u8BB0");
   return path;
 }
 var AgentApi = class {
   constructor(plugin) {
     this.plugin = plugin;
+    this.currentTool = "";
+    this.currentAgent = "";
   }
   get vault() {
     return this.plugin.app.vault;
   }
-  /** 写入前把原文快照存到插件 backups 目录，最多保留 20 份。 */
+  setCallContext(tool, agent) {
+    this.currentTool = tool;
+    this.currentAgent = agent;
+  }
+  /** 写入前把原文快照存到插件 backups 目录，返回快照 id。 */
   backupNote(path, content) {
+    if (!this.plugin.store.settings.enableAuditSnapshot) return "";
     try {
       const adapter = this.plugin.app.vault.adapter;
-      if (!adapter.getFullPath) return;
+      if (!adapter.getFullPath) return "";
       const fs = require("fs");
       const directory = adapter.getFullPath(
         `${this.plugin.app.vault.configDir}/plugins/sediment/backups`
       );
       fs.mkdirSync(directory, { recursive: true });
-      const name = path.replace(/[\\/]/g, "_");
-      fs.writeFileSync(`${directory}/${Date.now()}-${name}`, content, "utf8");
+      const id = `${Date.now()}-${path.replace(/[\\/]/g, "_")}`;
+      fs.writeFileSync(`${directory}/${id}`, content, "utf8");
       const files = fs.readdirSync(directory).sort();
       while (files.length > 20) {
         const old = files.shift();
         if (old) fs.unlinkSync(`${directory}/${old}`);
       }
+      this.plugin.store.addSnapshot({
+        id,
+        path,
+        time: (/* @__PURE__ */ new Date()).toISOString(),
+        tool: this.currentTool,
+        agent: this.currentAgent
+      });
+      return id;
     } catch (error) {
+      return "";
     }
   }
   deniedFolders() {
@@ -409,7 +493,35 @@ var AgentApi = class {
     return this.deniedFolders().some((folder) => path === folder || path.startsWith(`${folder}/`));
   }
   assertAllowed(path) {
-    if (this.isDeniedPath(path)) throw new Error(`\u8BBF\u95EE\u88AB\u62D2\u7EDD\uFF1A${path} \u4F4D\u4E8E\u9ED1\u540D\u5355\u76EE\u5F55`);
+    if (this.isDeniedPath(path)) {
+      throw new ApiError("FORBIDDEN", `\u8BBF\u95EE\u88AB\u62D2\u7EDD\uFF1A${path} \u4F4D\u4E8E\u9ED1\u540D\u5355\u76EE\u5F55`, 403);
+    }
+  }
+  assertOperation(operation) {
+    const settings = this.plugin.store.settings;
+    const allowed = operation === "read" ? settings.agentAllowRead : operation === "create" ? settings.agentAllowCreate : operation === "patch" ? settings.agentAllowPatch : operation === "overwrite" ? settings.agentAllowOverwrite : settings.agentAllowDelete;
+    if (!allowed) {
+      throw new ApiError("OPERATION_DENIED", `\u64CD\u4F5C ${operation} \u672A\u88AB\u5141\u8BB8`, 403);
+    }
+  }
+  assertPathAllowed(path, operation) {
+    this.assertOperation(operation);
+    this.assertAllowed(path);
+    const settings = this.plugin.store.settings;
+    if (settings.agentAccessMode === "allowlist") {
+      const folders = splitList(settings.agentAllowedFolders);
+      if (!folders.some((folder) => path === folder || path.startsWith(`${folder}/`))) {
+        throw new ApiError("FORBIDDEN", `\u8BBF\u95EE\u88AB\u62D2\u7EDD\uFF1A${path} \u4E0D\u5728\u767D\u540D\u5355\u76EE\u5F55\u5185`, 403);
+      }
+    }
+  }
+  isAllowedByMode(path) {
+    if (this.isDeniedPath(path)) return false;
+    const settings = this.plugin.store.settings;
+    if (settings.agentAccessMode !== "allowlist") return true;
+    return splitList(settings.agentAllowedFolders).some(
+      (folder) => path === folder || path.startsWith(`${folder}/`)
+    );
   }
   cacheTags(file) {
     var _a2, _b, _c, _d;
@@ -434,7 +546,7 @@ var AgentApi = class {
   listNotes(folder = "", limit = 50) {
     const prefix = normalizeFolder(folder).toLowerCase();
     return this.vault.getMarkdownFiles().filter(
-      (file) => (!prefix || file.path.toLowerCase().startsWith(`${prefix}/`)) && !this.isDeniedPath(file.path) && !this.hasDeniedTag(file)
+      (file) => (!prefix || file.path.toLowerCase().startsWith(`${prefix}/`)) && this.isAllowedByMode(file.path) && !this.hasDeniedTag(file)
     ).slice(0, Math.max(1, Math.min(limit, 500))).map((file) => {
       var _a2, _b;
       return {
@@ -451,7 +563,7 @@ var AgentApi = class {
     const results = [];
     for (const file of this.vault.getMarkdownFiles()) {
       if (results.length >= Math.max(1, Math.min(limit, 100))) break;
-      if (this.isDeniedPath(file.path) || this.hasDeniedTag(file)) continue;
+      if (!this.isAllowedByMode(file.path) || this.hasDeniedTag(file)) continue;
       const text = await this.vault.cachedRead(file);
       const position = text.toLowerCase().indexOf(needle);
       if (position < 0) continue;
@@ -468,7 +580,7 @@ var AgentApi = class {
   /** 读取笔记全文。 */
   async readNote(path) {
     const safe = safePath(path);
-    this.assertAllowed(safe);
+    this.assertPathAllowed(safe, "read");
     const file = this.vault.getAbstractFileByPath(safe);
     if (!(file instanceof import_obsidian2.TFile)) throw new Error(`\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`);
     if (this.hasDeniedTag(file)) throw new Error(`\u8BBF\u95EE\u88AB\u62D2\u7EDD\uFF1A${safe} \u5E26\u6709\u7981\u6B62\u8BBF\u95EE\u7684\u6807\u7B7E`);
@@ -477,7 +589,10 @@ var AgentApi = class {
   /** 新建、覆盖或追加笔记。 */
   async writeNote(path, content, mode = "create") {
     const safe = safePath(path);
-    this.assertAllowed(safe);
+    this.assertPathAllowed(
+      safe,
+      mode === "overwrite" ? "overwrite" : mode === "append" ? "patch" : "create"
+    );
     const folder = safe.includes("/") ? safe.slice(0, safe.lastIndexOf("/")) : "";
     await ensureFolder(this.vault, folder);
     const existing = this.vault.getAbstractFileByPath(safe);
@@ -571,7 +686,7 @@ ${content}`);
   async getNoteMetadata(path) {
     var _a2, _b, _c;
     const safe = safePath(path);
-    this.assertAllowed(safe);
+    this.assertPathAllowed(safe, "read");
     const file = this.vault.getAbstractFileByPath(safe);
     if (!(file instanceof import_obsidian2.TFile)) throw new Error(`\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`);
     const cache = this.plugin.app.metadataCache.getFileCache(file);
@@ -587,7 +702,7 @@ ${content}`);
   getGraphNeighbors(path, include = ["outgoing", "backlinks", "tags"]) {
     var _a2, _b;
     const safe = safePath(path);
-    this.assertAllowed(safe);
+    this.assertPathAllowed(safe, "read");
     const file = this.vault.getAbstractFileByPath(safe);
     if (!(file instanceof import_obsidian2.TFile)) throw new Error(`\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`);
     const resolved = (_a2 = this.plugin.app.metadataCache.resolvedLinks) != null ? _a2 : {};
@@ -601,61 +716,103 @@ ${content}`);
     }
     return { path: safe, outgoing, backlinks, sameTag };
   }
-  /** 按标题或文本片段局部修改笔记，写入前自动备份，可用 ifMatch 防并发覆盖。 */
+  /** 按标题或文本片段局部修改笔记；支持 dryRun、乐观锁、快照与 diff 统计。 */
   async patchNote(input) {
-    var _a2;
+    var _a2, _b, _c, _d, _e;
     const safe = safePath(input.path);
-    this.assertAllowed(safe);
+    this.assertPathAllowed(safe, "patch");
     const file = this.vault.getAbstractFileByPath(safe);
-    if (!(file instanceof import_obsidian2.TFile)) throw new Error(`\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`);
+    if (!(file instanceof import_obsidian2.TFile)) throw new ApiError("NOT_FOUND", `\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`, 404);
     const before = await this.vault.read(file);
-    if (input.ifMatch && versionOf(before) !== input.ifMatch) {
-      throw new Error(`\u7248\u672C\u51B2\u7A81\uFF1A${safe} \u5DF2\u88AB\u4FEE\u6539\uFF0C\u8BF7\u91CD\u65B0\u8BFB\u53D6\u540E\u518D\u5199\u5165`);
+    if (typeof input.expectedMtime === "number" && input.expectedMtime !== file.stat.mtime) {
+      throw new ApiError("VERSION_CONFLICT", `\u6587\u4EF6\u5DF2\u88AB\u4FEE\u6539\uFF1A${safe}\uFF0C\u8BF7\u91CD\u65B0\u8BFB\u53D6\u540E\u518D\u5199\u5165`, 409);
     }
-    this.backupNote(safe, before);
-    const mode = (_a2 = input.mode) != null ? _a2 : "replace";
-    let result = "";
-    await this.vault.process(file, (data) => {
-      var _a3, _b, _c, _d;
-      if (input.find) {
-        const positions = [];
-        let from = 0;
-        for (; ; ) {
-          const at = data.indexOf(input.find, from);
-          if (at < 0) break;
-          positions.push(at);
-          from = at + input.find.length;
-        }
-        const position = positions[(_a3 = input.index) != null ? _a3 : 0];
-        if (position === void 0) throw new Error(`\u672A\u627E\u5230\u6587\u672C\u7247\u6BB5\uFF1A${input.find}`);
-        result = data.slice(0, position) + String((_b = input.content) != null ? _b : "") + data.slice(position + input.find.length);
-        return result;
+    if (input.ifMatch && versionOf(before) !== input.ifMatch) {
+      throw new ApiError("VERSION_CONFLICT", `\u7248\u672C\u51B2\u7A81\uFF1A${safe} \u5DF2\u88AB\u4FEE\u6539\uFF0C\u8BF7\u91CD\u65B0\u8BFB\u53D6\u540E\u518D\u5199\u5165`, 409);
+    }
+    if (input.operation === "update_frontmatter") {
+      let updates;
+      try {
+        updates = JSON.parse(String((_a2 = input.content) != null ? _a2 : "{}"));
+      } catch (error) {
+        throw new ApiError("INVALID_JSON", "update_frontmatter \u7684 content \u5FC5\u987B\u662F JSON \u5BF9\u8C61\u5B57\u7B26\u4E32");
       }
-      if (input.heading) {
-        const section = findSection(data, input.heading, (_c = input.index) != null ? _c : 0);
-        if (!section) throw new Error(`\u672A\u627E\u5230\u6807\u9898\uFF1A${input.heading}`);
+      const result2 = await this.updateFrontmatter(safe, updates, input.ifMatch);
+      return { ...result2, mtime: file.stat.mtime, diffSummary: { addedLines: 0, removedLines: 0 } };
+    }
+    const content = String((_b = input.content) != null ? _b : "");
+    const mode = input.operation === "append_under_heading" ? "append" : input.operation === "prepend_under_heading" ? "prepend" : (_c = input.mode) != null ? _c : "replace";
+    let createdHeading = false;
+    let result = "";
+    if (input.find) {
+      const positions = [];
+      let from = 0;
+      for (; ; ) {
+        const at = before.indexOf(input.find, from);
+        if (at < 0) break;
+        positions.push(at);
+        from = at + input.find.length;
+      }
+      if (positions.length > 1 && input.index === void 0) {
+        throw new ApiError(
+          "AMBIGUOUS_MATCH",
+          `\u6587\u672C\u7247\u6BB5\u5728\u6587\u4E2D\u51FA\u73B0 ${positions.length} \u6B21\uFF0C\u8BF7\u63D0\u4F9B\u66F4\u591A\u4E0A\u4E0B\u6587\u6216\u6307\u5B9A index`
+        );
+      }
+      const position = positions[(_d = input.index) != null ? _d : 0];
+      if (position === void 0) throw new ApiError("NOT_FOUND", `\u672A\u627E\u5230\u6587\u672C\u7247\u6BB5\uFF1A${input.find}`, 404);
+      result = before.slice(0, position) + content + before.slice(position + input.find.length);
+    } else if (input.heading) {
+      const section = findSection(before, input.heading, (_e = input.index) != null ? _e : 0);
+      if (!section) {
+        createdHeading = true;
+        result = `${before.trimEnd()}
+
+${input.heading}
+${content}
+`;
+      } else {
         const body = section.lines.slice(section.start, section.end);
-        const incoming = String((_d = input.content) != null ? _d : "").split("\n");
+        const incoming = content.split("\n");
         const nextBody = mode === "replace" ? incoming : mode === "append" ? [...body, "", ...incoming] : [...incoming, "", ...body];
         result = [
           ...section.lines.slice(0, section.start),
           ...nextBody,
           ...section.lines.slice(section.end)
         ].join("\n");
-        return result;
       }
-      throw new Error("patch_note \u9700\u8981 heading \u6216 find \u53C2\u6570");
-    });
+    } else {
+      throw new ApiError("MISSING_ANCHOR", "patch_note \u9700\u8981 heading \u6216 find \u53C2\u6570");
+    }
+    const diffSummary = lineChanges(before, result);
+    if (input.dryRun) {
+      return {
+        path: safe,
+        version: versionOf(result),
+        mtime: file.stat.mtime,
+        diffSummary,
+        previewDiff: simpleDiff(before, result),
+        createdHeading
+      };
+    }
+    const snapshotId = this.backupNote(safe, before);
+    await this.vault.process(file, () => result);
     this.plugin.store.updateDay(this.plugin.store.todayKey(), (day) => {
-      var _a3;
-      day.aiWordsAdded += countWords(String((_a3 = input.content) != null ? _a3 : ""));
+      day.aiWordsAdded += countWords(content);
     });
-    return { path: safe, version: versionOf(result) };
+    return {
+      path: safe,
+      version: versionOf(result),
+      mtime: file.stat.mtime,
+      snapshotId: snapshotId || void 0,
+      diffSummary,
+      createdHeading
+    };
   }
   /** 单独更新 frontmatter 字段，不动正文。 */
   async updateFrontmatter(path, updates, ifMatch) {
     const safe = safePath(path);
-    this.assertAllowed(safe);
+    this.assertPathAllowed(safe, "patch");
     const file = this.vault.getAbstractFileByPath(safe);
     if (!(file instanceof import_obsidian2.TFile)) throw new Error(`\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`);
     const before = await this.vault.read(file);
@@ -757,6 +914,18 @@ ${content}`);
   }
   async snapshotTasks() {
     return { count: await this.plugin.tasks.snapshot() };
+  }
+  /** 最近 Agent 变更及其快照 id。 */
+  getAgentChanges(limit = 20) {
+    return this.plugin.store.data.snapshots.slice(0, Math.max(1, Math.min(limit, 100)));
+  }
+  async revertAgentChange(snapshotId) {
+    const snapshot = this.plugin.store.data.snapshots.find((item) => item.id === snapshotId);
+    if (!snapshot) throw new ApiError("NOT_FOUND", `\u5FEB\u7167\u4E0D\u5B58\u5728\uFF1A${snapshotId}`, 404);
+    const file = this.vault.getAbstractFileByPath(snapshot.path);
+    if (!(file instanceof import_obsidian2.TFile)) throw new ApiError("NOT_FOUND", `\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${snapshot.path}`, 404);
+    await restoreBackup(this.plugin, file, snapshotId);
+    return { path: snapshot.path, reverted: true };
   }
   getPomodoro() {
     return this.plugin.pomodoro.state();
@@ -894,6 +1063,7 @@ ${block}`);
       `> \u7531 **${agent}** \u4E8E ${today} \u5199\u5165 \xB7 Sediment`,
       ""
     ].join("\n");
+    this.assertPathAllowed(path, "create");
     await this.vault.create(path, doc);
     this.plugin.store.updateDay(today, (day) => {
       day.aiWordsAdded += countWords(doc);
@@ -1050,6 +1220,7 @@ var AgentServer = class {
       const agent = str(query.get("agent"), "") || String((_d = request.headers["x-agent"]) != null ? _d : "");
       const loggedPath = (typeof body.path === "string" ? body.path : "") || str(query.get("path"), "");
       api.logToolCall(`${request.method} ${url.pathname}`, agent, loggedPath);
+      api.setCallContext(`${request.method} ${url.pathname}`, agent);
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
           this.json(response, 200, { ok: true, plugin: "sediment", version: "0.8.3" });
@@ -1183,8 +1354,11 @@ var AgentServer = class {
               find: str(body.find) || void 0,
               content: str(body.content),
               mode: str(body.mode, "replace"),
+              operation: str(body.operation),
               index: typeof body.index === "number" ? body.index : void 0,
-              ifMatch: str(body.ifMatch) || void 0
+              ifMatch: str(body.ifMatch) || void 0,
+              expectedMtime: typeof body.expectedMtime === "number" ? body.expectedMtime : void 0,
+              dryRun: body.dryRun === true
             })
           );
           return;
@@ -1215,10 +1389,20 @@ var AgentServer = class {
         case "POST /pomodoro":
           this.json(response, 200, api.controlPomodoro(str(body.action, "toggle")));
           return;
+        case "GET /agent/audit":
+          this.json(response, 200, api.getAgentChanges(num(query.get("limit"), 20)));
+          return;
+        case "POST /agent/revert":
+          this.json(response, 200, await api.revertAgentChange(str(body.snapshotId)));
+          return;
         default:
           this.json(response, 404, { error: `\u672A\u77E5\u63A5\u53E3\uFF1A${request.method} ${url.pathname}` });
       }
     } catch (error) {
+      if (error instanceof ApiError) {
+        this.json(response, error.status, { error: error.message, code: error.code });
+        return;
+      }
       this.json(response, 500, { error: error instanceof Error ? error.message : String(error) });
     }
   }
@@ -1430,6 +1614,14 @@ var DEFAULT_SETTINGS = {
   lastSeenVersion: "",
   deniedFolders: "",
   deniedTags: "",
+  agentAccessMode: "allow-all",
+  agentAllowedFolders: "",
+  agentAllowRead: true,
+  agentAllowCreate: true,
+  agentAllowPatch: true,
+  agentAllowOverwrite: true,
+  agentAllowDelete: false,
+  enableAuditSnapshot: true,
   backupEnabled: true,
   backupFolder: "sediment-backup",
   backupKeep: 10,
@@ -1464,6 +1656,7 @@ var DEFAULT_DATA = {
   memos: [],
   workLogs: [],
   toolCalls: [],
+  snapshots: [],
   settings: DEFAULT_SETTINGS
 };
 
@@ -1476,7 +1669,7 @@ var Store = class {
     this.lastBackupAt = 0;
   }
   async load() {
-    var _a2, _b, _c, _d, _e, _f, _g;
+    var _a2, _b, _c, _d, _e, _f, _g, _h;
     const raw = await this.plugin.loadData();
     const loaded = raw && typeof raw === "object" ? raw : {};
     this.data = {
@@ -1485,7 +1678,8 @@ var Store = class {
       memos: (_c = loaded.memos) != null ? _c : [],
       workLogs: (_d = loaded.workLogs) != null ? _d : [],
       toolCalls: (_e = loaded.toolCalls) != null ? _e : [],
-      settings: { ...DEFAULT_SETTINGS, ...(_f = loaded.settings) != null ? _f : {} }
+      snapshots: (_f = loaded.snapshots) != null ? _f : [],
+      settings: { ...DEFAULT_SETTINGS, ...(_g = loaded.settings) != null ? _g : {} }
     };
     for (const key of Object.keys(this.data.days)) {
       const day = { ...createEmptyDay(), ...this.data.days[key] };
@@ -1493,7 +1687,7 @@ var Store = class {
         var _a3;
         return Number((_a3 = day.hourlyWords) == null ? void 0 : _a3[hour]) || 0;
       });
-      day.folderWords = (_g = day.folderWords) != null ? _g : {};
+      day.folderWords = (_h = day.folderWords) != null ? _h : {};
       day.activeMinutes = Math.max(0, Math.round(day.activeMinutes));
       day.capturedWords = Math.max(0, Math.round(day.capturedWords));
       day.aiWordsAdded = Math.max(0, Math.round(day.aiWordsAdded));
@@ -1579,6 +1773,11 @@ var Store = class {
   logToolCall(record) {
     this.data.toolCalls.unshift(record);
     if (this.data.toolCalls.length > 500) this.data.toolCalls.length = 500;
+    this.scheduleSave(2e3);
+  }
+  addSnapshot(record) {
+    this.data.snapshots.unshift(record);
+    if (this.data.snapshots.length > 200) this.data.snapshots.length = 200;
     this.scheduleSave(2e3);
   }
 };
@@ -2232,6 +2431,55 @@ var PulseSettingTab = class extends import_obsidian8.PluginSettingTab {
         save();
       })
     );
+    containerEl.createEl("h3", { text: "Agent \u6743\u9650\uFF08\u53EF\u9009\uFF09" });
+    new import_obsidian8.Setting(containerEl).setName("\u8BBF\u95EE\u6A21\u5F0F").setDesc("allowlist \u6A21\u5F0F\u4E0B Agent \u53EA\u80FD\u8BBF\u95EE\u4E0B\u65B9\u767D\u540D\u5355\u76EE\u5F55\u3002\u9ED8\u8BA4\u5168\u5E93\uFF0C\u4F46\u7CFB\u7EDF\u76EE\u5F55\u59CB\u7EC8\u7981\u6B62\u3002").addDropdown(
+      (dropdown) => dropdown.addOption("allow-all", "\u5168\u5E93\u53EF\u8BBF\u95EE\uFF08\u9ED8\u8BA4\uFF09").addOption("allowlist", "\u4EC5\u767D\u540D\u5355\u76EE\u5F55").setValue(settings.agentAccessMode).onChange((value) => {
+        settings.agentAccessMode = value;
+        save();
+      })
+    );
+    new import_obsidian8.Setting(containerEl).setName("\u767D\u540D\u5355\u76EE\u5F55").setDesc("\u9017\u53F7\u5206\u9694\uFF0C\u4F8B\u5982 knowledge,projects,agent-logs\u3002").addText(
+      (text) => text.setPlaceholder("knowledge,projects").setValue(settings.agentAllowedFolders).onChange((value) => {
+        settings.agentAllowedFolders = value;
+        save();
+      })
+    );
+    new import_obsidian8.Setting(containerEl).setName("\u5141\u8BB8\u8BFB\u53D6").addToggle(
+      (toggle) => toggle.setValue(settings.agentAllowRead).onChange((value) => {
+        settings.agentAllowRead = value;
+        save();
+      })
+    );
+    new import_obsidian8.Setting(containerEl).setName("\u5141\u8BB8\u65B0\u5EFA").addToggle(
+      (toggle) => toggle.setValue(settings.agentAllowCreate).onChange((value) => {
+        settings.agentAllowCreate = value;
+        save();
+      })
+    );
+    new import_obsidian8.Setting(containerEl).setName("\u5141\u8BB8\u5C40\u90E8\u4FEE\u6539").addToggle(
+      (toggle) => toggle.setValue(settings.agentAllowPatch).onChange((value) => {
+        settings.agentAllowPatch = value;
+        save();
+      })
+    );
+    new import_obsidian8.Setting(containerEl).setName("\u5141\u8BB8\u5168\u91CF\u8986\u76D6").setDesc("\u9ED8\u8BA4\u5F00\u542F\u4EE5\u517C\u5BB9\u65E7\u5DE5\u4F5C\u6D41\uFF1B\u5173\u95ED\u540E Agent \u5FC5\u987B\u7528 patch_note\u3002").addToggle(
+      (toggle) => toggle.setValue(settings.agentAllowOverwrite).onChange((value) => {
+        settings.agentAllowOverwrite = value;
+        save();
+      })
+    );
+    new import_obsidian8.Setting(containerEl).setName("\u5141\u8BB8\u5220\u9664").setDesc("\u5F53\u524D\u63D2\u4EF6\u672A\u5F00\u653E\u5220\u9664\u5DE5\u5177\uFF0C\u9ED8\u8BA4\u5173\u95ED\u3002").addToggle(
+      (toggle) => toggle.setValue(settings.agentAllowDelete).onChange((value) => {
+        settings.agentAllowDelete = value;
+        save();
+      })
+    );
+    new import_obsidian8.Setting(containerEl).setName("\u4FEE\u6539\u524D\u5B58\u5FEB\u7167").setDesc("\u8986\u76D6\u6216 Patch \u524D\u4FDD\u5B58\u539F\u6587\uFF0C\u652F\u6301 Agent \u53D8\u66F4\u5BA1\u67E5\u4E0E\u4E00\u952E\u6062\u590D\u3002").addToggle(
+      (toggle) => toggle.setValue(settings.enableAuditSnapshot).onChange((value) => {
+        settings.enableAuditSnapshot = value;
+        save();
+      })
+    );
     new import_obsidian8.Setting(containerEl).setName("\u81EA\u52A8\u5907\u4EFD\u7EDF\u8BA1\u6570\u636E").setDesc("\u628A data.json \u5FEB\u7167\u5199\u5165\u5E93\u5185\u666E\u901A\u6587\u4EF6\u5939\uFF0C\u907F\u514D .obsidian \u88AB\u540C\u6B65\u5DE5\u5177\u5FFD\u7565\u3002").addToggle(
       (toggle) => toggle.setValue(settings.backupEnabled).onChange((value) => {
         settings.backupEnabled = value;
@@ -2381,37 +2629,6 @@ var DiffModal = class extends import_obsidian10.Modal {
     this.contentEl.empty();
   }
 };
-
-// src/features/audit.ts
-function nodeFs() {
-  try {
-    return require("fs");
-  } catch (error) {
-    return null;
-  }
-}
-function backupDirectory(vault) {
-  var _a2, _b;
-  const adapter = vault.adapter;
-  return (_b = (_a2 = adapter.getFullPath) == null ? void 0 : _a2.call(adapter, ".obsidian/plugins/sediment/backups")) != null ? _b : null;
-}
-function listBackups(plugin, path) {
-  const fs = nodeFs();
-  const directory = backupDirectory(plugin.app.vault);
-  if (!fs || !directory || !fs.existsSync(directory)) return [];
-  const suffix = path.replace(/[\\/]/g, "_");
-  return fs.readdirSync(directory).filter((name) => name.endsWith(suffix)).map((name) => ({ name, mtimeMs: fs.statSync(`${directory}/${name}`).mtimeMs })).sort((a, b) => b.mtimeMs - a.mtimeMs);
-}
-function readBackup(plugin, name) {
-  const fs = nodeFs();
-  const directory = backupDirectory(plugin.app.vault);
-  if (!fs || !directory) return "";
-  return fs.readFileSync(`${directory}/${name}`, "utf8");
-}
-async function restoreBackup(plugin, file, name) {
-  const content = readBackup(plugin, name);
-  await plugin.app.vault.process(file, () => content);
-}
 
 // src/views/dashboard-view.ts
 var DASHBOARD_VIEW_TYPE = "sediment-dashboard";

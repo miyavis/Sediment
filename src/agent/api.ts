@@ -1,8 +1,9 @@
-import { TFile } from "obsidian";
+import { normalizePath, TFile } from "obsidian";
 import type { SedimentPlugin } from "../main";
 import { buildWeeklyReview } from "../features/review";
 import type { PomodoroState } from "../features/pomodoro";
 import { countWords } from "../tracking/tracker";
+import { restoreBackup } from "../features/audit";
 import type { DayRecord, MemoRecord, WorkLogRecord } from "../types";
 import { addDays, dateKey, hhmm, lastNDays, parseKey } from "../utils/dates";
 import { ensureFolder, normalizeFolder } from "../utils/vault";
@@ -86,6 +87,35 @@ function versionOf(text: string): string {
   return (hash >>> 0).toString(16);
 }
 
+/** 极简 unified diff：显示首个差异到末个差异之间的增删行。 */
+function simpleDiff(before: string, after: string): string {
+  const oldLines = before.split("\n");
+  const newLines = after.split("\n");
+  let start = 0;
+  while (start < oldLines.length && start < newLines.length && oldLines[start] === newLines[start]) {
+    start += 1;
+  }
+  let endOld = oldLines.length;
+  let endNew = newLines.length;
+  while (endOld > start && endNew > start && oldLines[endOld - 1] === newLines[endNew - 1]) {
+    endOld -= 1;
+    endNew -= 1;
+  }
+  const lines = ["--- before", "+++ after"];
+  for (let index = start; index < endOld; index += 1) lines.push(`-${oldLines[index]}`);
+  for (let index = start; index < endNew; index += 1) lines.push(`+${newLines[index]}`);
+  return lines.join("\n");
+}
+
+function lineChanges(before: string, after: string): { addedLines: number; removedLines: number } {
+  const oldLines = before.split("\n");
+  const newLines = after.split("\n");
+  return {
+    addedLines: newLines.filter((line) => !oldLines.includes(line)).length,
+    removedLines: oldLines.filter((line) => !newLines.includes(line)).length,
+  };
+}
+
 function yamlLines(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value.length ? value.map((item) => `  - ${JSON.stringify(String(item))}`) : ["[]"];
@@ -124,6 +154,17 @@ function findSection(
   return { start: chosen.line + 1, end, lines };
 }
 
+/** 带机器可读错误码的 API 异常，HTTP 层据此返回 4xx。 */
+export class ApiError extends Error {
+  constructor(
+    public code: string,
+    message: string,
+    public status = 400
+  ) {
+    super(message);
+  }
+}
+
 function splitList(value: string): string[] {
   return value
     .split(/[,，]/)
@@ -133,15 +174,19 @@ function splitList(value: string): string[] {
 
 /** 阻止路径逃逸出库外。 */
 function safePath(input: string): string {
-  const path = String(input ?? "")
+  const path = normalizePath(String(input ?? ""))
     .replace(/\\/g, "/")
     .replace(/^\/+/, "")
     .replace(/\/+/g, "/");
-  if (!path) throw new Error("路径不能为空");
+  if (!path) throw new ApiError("EMPTY_PATH", "路径不能为空");
   if (path.split("/").some((part) => part === ".." || part === ".")) {
-    throw new Error("非法路径：不允许 . 或 ..");
+    throw new ApiError("FORBIDDEN", "非法路径：不允许 . 或 ..");
   }
-  if (!path.toLowerCase().endsWith(".md")) throw new Error("只支持 .md 笔记");
+  const lower = path.toLowerCase();
+  if (lower === ".obsidian" || lower.startsWith(".obsidian/") || lower === ".git" || lower.startsWith(".git/")) {
+    throw new ApiError("FORBIDDEN", "系统目录禁止访问");
+  }
+  if (!lower.endsWith(".md")) throw new ApiError("INVALID_EXTENSION", "只支持 .md 笔记");
   return path;
 }
 
@@ -156,27 +201,44 @@ export class AgentApi {
     return this.plugin.app.vault;
   }
 
-  /** 写入前把原文快照存到插件 backups 目录，最多保留 20 份。 */
-  private backupNote(path: string, content: string): void {
+  private currentTool = "";
+  private currentAgent = "";
+
+  setCallContext(tool: string, agent: string): void {
+    this.currentTool = tool;
+    this.currentAgent = agent;
+  }
+
+  /** 写入前把原文快照存到插件 backups 目录，返回快照 id。 */
+  private backupNote(path: string, content: string): string {
+    if (!this.plugin.store.settings.enableAuditSnapshot) return "";
     try {
       const adapter = this.plugin.app.vault.adapter as unknown as {
         getFullPath?: (normalizedPath: string) => string;
       };
-      if (!adapter.getFullPath) return;
+      if (!adapter.getFullPath) return "";
       const fs = require("fs") as typeof import("fs");
       const directory = adapter.getFullPath(
         `${this.plugin.app.vault.configDir}/plugins/sediment/backups`
       );
       fs.mkdirSync(directory, { recursive: true });
-      const name = path.replace(/[\\/]/g, "_");
-      fs.writeFileSync(`${directory}/${Date.now()}-${name}`, content, "utf8");
+      const id = `${Date.now()}-${path.replace(/[\\/]/g, "_")}`;
+      fs.writeFileSync(`${directory}/${id}`, content, "utf8");
       const files = fs.readdirSync(directory).sort();
       while (files.length > 20) {
         const old = files.shift();
         if (old) fs.unlinkSync(`${directory}/${old}`);
       }
+      this.plugin.store.addSnapshot({
+        id,
+        path,
+        time: new Date().toISOString(),
+        tool: this.currentTool,
+        agent: this.currentAgent,
+      });
+      return id;
     } catch (error) {
-      // 移动端或无 fs 权限时跳过备份。
+      return "";
     }
   }
 
@@ -193,7 +255,47 @@ export class AgentApi {
   }
 
   private assertAllowed(path: string): void {
-    if (this.isDeniedPath(path)) throw new Error(`访问被拒绝：${path} 位于黑名单目录`);
+    if (this.isDeniedPath(path)) {
+      throw new ApiError("FORBIDDEN", `访问被拒绝：${path} 位于黑名单目录`, 403);
+    }
+  }
+
+  private assertOperation(operation: "read" | "create" | "patch" | "overwrite" | "delete"): void {
+    const settings = this.plugin.store.settings;
+    const allowed =
+      operation === "read"
+        ? settings.agentAllowRead
+        : operation === "create"
+          ? settings.agentAllowCreate
+          : operation === "patch"
+            ? settings.agentAllowPatch
+            : operation === "overwrite"
+              ? settings.agentAllowOverwrite
+              : settings.agentAllowDelete;
+    if (!allowed) {
+      throw new ApiError("OPERATION_DENIED", `操作 ${operation} 未被允许`, 403);
+    }
+  }
+
+  private assertPathAllowed(path: string, operation: "read" | "create" | "patch" | "overwrite" | "delete"): void {
+    this.assertOperation(operation);
+    this.assertAllowed(path);
+    const settings = this.plugin.store.settings;
+    if (settings.agentAccessMode === "allowlist") {
+      const folders = splitList(settings.agentAllowedFolders);
+      if (!folders.some((folder) => path === folder || path.startsWith(`${folder}/`))) {
+        throw new ApiError("FORBIDDEN", `访问被拒绝：${path} 不在白名单目录内`, 403);
+      }
+    }
+  }
+
+  private isAllowedByMode(path: string): boolean {
+    if (this.isDeniedPath(path)) return false;
+    const settings = this.plugin.store.settings;
+    if (settings.agentAccessMode !== "allowlist") return true;
+    return splitList(settings.agentAllowedFolders).some(
+      (folder) => path === folder || path.startsWith(`${folder}/`)
+    );
   }
 
   private cacheTags(file: TFile): string[] {
@@ -224,7 +326,7 @@ export class AgentApi {
       .filter(
         (file) =>
           (!prefix || file.path.toLowerCase().startsWith(`${prefix}/`)) &&
-          !this.isDeniedPath(file.path) &&
+          this.isAllowedByMode(file.path) &&
           !this.hasDeniedTag(file)
       )
       .slice(0, Math.max(1, Math.min(limit, 500)))
@@ -242,7 +344,7 @@ export class AgentApi {
     const results: SearchResult[] = [];
     for (const file of this.vault.getMarkdownFiles()) {
       if (results.length >= Math.max(1, Math.min(limit, 100))) break;
-      if (this.isDeniedPath(file.path) || this.hasDeniedTag(file)) continue;
+      if (!this.isAllowedByMode(file.path) || this.hasDeniedTag(file)) continue;
       const text = await this.vault.cachedRead(file);
       const position = text.toLowerCase().indexOf(needle);
       if (position < 0) continue;
@@ -260,7 +362,7 @@ export class AgentApi {
   /** 读取笔记全文。 */
   async readNote(path: string): Promise<{ path: string; content: string }> {
     const safe = safePath(path);
-    this.assertAllowed(safe);
+    this.assertPathAllowed(safe, "read");
     const file = this.vault.getAbstractFileByPath(safe);
     if (!(file instanceof TFile)) throw new Error(`笔记不存在：${safe}`);
     if (this.hasDeniedTag(file)) throw new Error(`访问被拒绝：${safe} 带有禁止访问的标签`);
@@ -270,7 +372,10 @@ export class AgentApi {
   /** 新建、覆盖或追加笔记。 */
   async writeNote(path: string, content: string, mode: "create" | "overwrite" | "append" = "create"): Promise<{ path: string }> {
     const safe = safePath(path);
-    this.assertAllowed(safe);
+    this.assertPathAllowed(
+      safe,
+      mode === "overwrite" ? "overwrite" : mode === "append" ? "patch" : "create"
+    );
     const folder = safe.includes("/") ? safe.slice(0, safe.lastIndexOf("/")) : "";
     await ensureFolder(this.vault, folder);
     const existing = this.vault.getAbstractFileByPath(safe);
@@ -388,7 +493,7 @@ export class AgentApi {
     links: string[];
   }> {
     const safe = safePath(path);
-    this.assertAllowed(safe);
+    this.assertPathAllowed(safe, "read");
     const file = this.vault.getAbstractFileByPath(safe);
     if (!(file instanceof TFile)) throw new Error(`笔记不存在：${safe}`);
     const cache = this.plugin.app.metadataCache.getFileCache(file);
@@ -407,7 +512,7 @@ export class AgentApi {
     include: string[] = ["outgoing", "backlinks", "tags"]
   ): { path: string; outgoing: string[]; backlinks: string[]; sameTag: string[] } {
     const safe = safePath(path);
-    this.assertAllowed(safe);
+    this.assertPathAllowed(safe, "read");
     const file = this.vault.getAbstractFileByPath(safe);
     if (!(file instanceof TFile)) throw new Error(`笔记不存在：${safe}`);
 
@@ -439,51 +544,87 @@ export class AgentApi {
     return { path: safe, outgoing, backlinks, sameTag };
   }
 
-  /** 按标题或文本片段局部修改笔记，写入前自动备份，可用 ifMatch 防并发覆盖。 */
+  /** 按标题或文本片段局部修改笔记；支持 dryRun、乐观锁、快照与 diff 统计。 */
   async patchNote(input: {
     path: string;
     heading?: string;
     find?: string;
     content: string;
     mode?: "replace" | "append" | "prepend";
+    operation?: "append_under_heading" | "prepend_under_heading" | "replace_block" | "update_frontmatter";
     index?: number;
     ifMatch?: string;
-  }): Promise<{ path: string; version: string }> {
+    expectedMtime?: number;
+    dryRun?: boolean;
+  }): Promise<{
+    path: string;
+    version: string;
+    mtime: number;
+    snapshotId?: string;
+    diffSummary: { addedLines: number; removedLines: number };
+    previewDiff?: string;
+    createdHeading?: boolean;
+  }> {
     const safe = safePath(input.path);
-    this.assertAllowed(safe);
+    this.assertPathAllowed(safe, "patch");
     const file = this.vault.getAbstractFileByPath(safe);
-    if (!(file instanceof TFile)) throw new Error(`笔记不存在：${safe}`);
+    if (!(file instanceof TFile)) throw new ApiError("NOT_FOUND", `笔记不存在：${safe}`, 404);
     const before = await this.vault.read(file);
-    if (input.ifMatch && versionOf(before) !== input.ifMatch) {
-      throw new Error(`版本冲突：${safe} 已被修改，请重新读取后再写入`);
-    }
-    this.backupNote(safe, before);
 
-    const mode = input.mode ?? "replace";
-    let result = "";
-    await this.vault.process(file, (data) => {
-      if (input.find) {
-        const positions: number[] = [];
-        let from = 0;
-        for (;;) {
-          const at = data.indexOf(input.find, from);
-          if (at < 0) break;
-          positions.push(at);
-          from = at + input.find.length;
-        }
-        const position = positions[input.index ?? 0];
-        if (position === undefined) throw new Error(`未找到文本片段：${input.find}`);
-        result =
-          data.slice(0, position) +
-          String(input.content ?? "") +
-          data.slice(position + input.find.length);
-        return result;
+    if (typeof input.expectedMtime === "number" && input.expectedMtime !== file.stat.mtime) {
+      throw new ApiError("VERSION_CONFLICT", `文件已被修改：${safe}，请重新读取后再写入`, 409);
+    }
+    if (input.ifMatch && versionOf(before) !== input.ifMatch) {
+      throw new ApiError("VERSION_CONFLICT", `版本冲突：${safe} 已被修改，请重新读取后再写入`, 409);
+    }
+
+    if (input.operation === "update_frontmatter") {
+      let updates: Record<string, unknown>;
+      try {
+        updates = JSON.parse(String(input.content ?? "{}")) as Record<string, unknown>;
+      } catch (error) {
+        throw new ApiError("INVALID_JSON", "update_frontmatter 的 content 必须是 JSON 对象字符串");
       }
-      if (input.heading) {
-        const section = findSection(data, input.heading, input.index ?? 0);
-        if (!section) throw new Error(`未找到标题：${input.heading}`);
+      const result = await this.updateFrontmatter(safe, updates, input.ifMatch);
+      return { ...result, mtime: file.stat.mtime, diffSummary: { addedLines: 0, removedLines: 0 } };
+    }
+
+    const content = String(input.content ?? "");
+    const mode =
+      input.operation === "append_under_heading"
+        ? "append"
+        : input.operation === "prepend_under_heading"
+          ? "prepend"
+          : input.mode ?? "replace";
+    let createdHeading = false;
+    let result = "";
+
+    if (input.find) {
+      const positions: number[] = [];
+      let from = 0;
+      for (;;) {
+        const at = before.indexOf(input.find, from);
+        if (at < 0) break;
+        positions.push(at);
+        from = at + input.find.length;
+      }
+      if (positions.length > 1 && input.index === undefined) {
+        throw new ApiError(
+          "AMBIGUOUS_MATCH",
+          `文本片段在文中出现 ${positions.length} 次，请提供更多上下文或指定 index`
+        );
+      }
+      const position = positions[input.index ?? 0];
+      if (position === undefined) throw new ApiError("NOT_FOUND", `未找到文本片段：${input.find}`, 404);
+      result = before.slice(0, position) + content + before.slice(position + input.find.length);
+    } else if (input.heading) {
+      const section = findSection(before, input.heading, input.index ?? 0);
+      if (!section) {
+        createdHeading = true;
+        result = `${before.trimEnd()}\n\n${input.heading}\n${content}\n`;
+      } else {
         const body = section.lines.slice(section.start, section.end);
-        const incoming = String(input.content ?? "").split("\n");
+        const incoming = content.split("\n");
         const nextBody =
           mode === "replace" ? incoming : mode === "append" ? [...body, "", ...incoming] : [...incoming, "", ...body];
         result = [
@@ -491,15 +632,36 @@ export class AgentApi {
           ...nextBody,
           ...section.lines.slice(section.end),
         ].join("\n");
-        return result;
       }
-      throw new Error("patch_note 需要 heading 或 find 参数");
-    });
+    } else {
+      throw new ApiError("MISSING_ANCHOR", "patch_note 需要 heading 或 find 参数");
+    }
 
+    const diffSummary = lineChanges(before, result);
+    if (input.dryRun) {
+      return {
+        path: safe,
+        version: versionOf(result),
+        mtime: file.stat.mtime,
+        diffSummary,
+        previewDiff: simpleDiff(before, result),
+        createdHeading,
+      };
+    }
+
+    const snapshotId = this.backupNote(safe, before);
+    await this.vault.process(file, () => result);
     this.plugin.store.updateDay(this.plugin.store.todayKey(), (day) => {
-      day.aiWordsAdded += countWords(String(input.content ?? ""));
+      day.aiWordsAdded += countWords(content);
     });
-    return { path: safe, version: versionOf(result) };
+    return {
+      path: safe,
+      version: versionOf(result),
+      mtime: file.stat.mtime,
+      snapshotId: snapshotId || undefined,
+      diffSummary,
+      createdHeading,
+    };
   }
 
   /** 单独更新 frontmatter 字段，不动正文。 */
@@ -509,7 +671,7 @@ export class AgentApi {
     ifMatch?: string
   ): Promise<{ path: string; version: string }> {
     const safe = safePath(path);
-    this.assertAllowed(safe);
+    this.assertPathAllowed(safe, "patch");
     const file = this.vault.getAbstractFileByPath(safe);
     if (!(file instanceof TFile)) throw new Error(`笔记不存在：${safe}`);
     const before = await this.vault.read(file);
@@ -632,6 +794,26 @@ export class AgentApi {
 
   async snapshotTasks(): Promise<{ count: number }> {
     return { count: await this.plugin.tasks.snapshot() };
+  }
+
+  /** 最近 Agent 变更及其快照 id。 */
+  getAgentChanges(limit = 20): Array<{
+    id: string;
+    path: string;
+    time: string;
+    tool: string;
+    agent: string;
+  }> {
+    return this.plugin.store.data.snapshots.slice(0, Math.max(1, Math.min(limit, 100)));
+  }
+
+  async revertAgentChange(snapshotId: string): Promise<{ path: string; reverted: true }> {
+    const snapshot = this.plugin.store.data.snapshots.find((item) => item.id === snapshotId);
+    if (!snapshot) throw new ApiError("NOT_FOUND", `快照不存在：${snapshotId}`, 404);
+    const file = this.vault.getAbstractFileByPath(snapshot.path);
+    if (!(file instanceof TFile)) throw new ApiError("NOT_FOUND", `笔记不存在：${snapshot.path}`, 404);
+    await restoreBackup(this.plugin, file, snapshotId);
+    return { path: snapshot.path, reverted: true };
   }
 
   getPomodoro(): PomodoroState {
@@ -792,6 +974,7 @@ export class AgentApi {
       "",
     ].join("\n");
 
+    this.assertPathAllowed(path, "create");
     await this.vault.create(path, doc);
     this.plugin.store.updateDay(today, (day) => {
       day.aiWordsAdded += countWords(doc);

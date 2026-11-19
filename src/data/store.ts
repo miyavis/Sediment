@@ -8,6 +8,7 @@ import {
   type MemoRecord,
   type PulseData,
   type PulseSettings,
+  type SnapshotRecord,
   type ToolCallRecord,
   type WorkLogRecord,
 } from "../types";
@@ -31,6 +32,7 @@ export class Store {
       memos: loaded.memos ?? [],
       workLogs: loaded.workLogs ?? [],
       toolCalls: loaded.toolCalls ?? [],
+      snapshots: loaded.snapshots ?? [],
       settings: { ...DEFAULT_SETTINGS, ...(loaded.settings ?? {}) },
     };
     for (const key of Object.keys(this.data.days)) {
@@ -138,6 +140,12 @@ export class Store {
   logToolCall(record: ToolCallRecord): void {
     this.data.toolCalls.unshift(record);
     if (this.data.toolCalls.length > 500) this.data.toolCalls.length = 500;
+    this.scheduleSave(2000);
+  }
+
+  addSnapshot(record: SnapshotRecord): void {
+    this.data.snapshots.unshift(record);
+    if (this.data.snapshots.length > 200) this.data.snapshots.length = 200;
     this.scheduleSave(2000);
   }
 }
