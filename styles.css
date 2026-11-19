@@ -1394,3 +1394,132 @@
   border-radius: 6px;
   cursor: pointer;
 }
+
+/* ── Structural redesign ── */
+.sd-banner {
+  position: relative;
+}
+
+.sd-banner::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    rgba(255, 255, 255, 0.16) 0.5px,
+    transparent 0.6px
+  );
+  background-size: 4px 4px;
+  opacity: 0.18;
+}
+
+.sd-banner::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(0, 0, 0, 0.12));
+}
+
+.sd-navbar {
+  z-index: 2;
+}
+
+.sd-dashboard .sd-card {
+  background-image: radial-gradient(
+    120% 90% at 0% 0%,
+    var(--background-secondary),
+    transparent 62%
+  );
+  box-shadow:
+    inset 0 1px 0 var(--background-modifier-border-hover),
+    inset 0 0 0 1px var(--background-modifier-border);
+}
+
+.sd-bento {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.sd-bento > .sd-card {
+  margin-bottom: 0;
+}
+
+.sd-bento-today {
+  grid-column: span 8;
+}
+
+.sd-bento-memo {
+  grid-column: span 4;
+}
+
+.sd-bento-tasks {
+  grid-column: span 5;
+}
+
+.sd-bento-agent {
+  grid-column: span 7;
+}
+
+.sd-memo-tabs,
+.kp-memo-form,
+.kp-memo-filter input {
+  background: var(--background-secondary);
+  box-shadow: inset 0 1px 0 var(--background-modifier-border-hover);
+}
+
+.sd-memo-tabs {
+  gap: 2px;
+  padding: 4px;
+  border-radius: 999px;
+}
+
+.sd-memo-tab {
+  flex: 1;
+  text-align: center;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.sd-memo-tab.is-active {
+  box-shadow: 0 1px 2px var(--background-modifier-border);
+}
+
+.kp-memo-form {
+  padding: 12px;
+  border-radius: 12px;
+}
+
+.kp-memo-input,
+.kp-memo-filter input {
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 9px;
+}
+
+.kp-memo-input:focus,
+.kp-memo-filter input:focus {
+  border-color: var(--interactive-accent);
+  outline: none;
+}
+
+.sd-mini,
+.sd-draft-card,
+.sd-knowledge-item,
+.sd-task-item {
+  box-shadow: inset 0 1px 0 var(--background-modifier-border-hover);
+}
+
+@media (max-width: 1100px) {
+  .sd-bento-today,
+  .sd-bento-memo,
+  .sd-bento-tasks,
+  .sd-bento-agent {
+    grid-column: span 12;
+  }
+}

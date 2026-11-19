@@ -120,10 +120,15 @@ export class DashboardView extends ItemView {
 
   private renderToday(root: HTMLElement): void {
     const body = root.createDiv({ cls: "sd-body" });
-    this.renderTodayCard(body);
-    this.renderQuickMemo(body);
-    this.renderTasksCard(body);
-    this.renderTodayAgent(body);
+    const bento = body.createDiv({ cls: "sd-bento" });
+    this.renderTodayCard(bento);
+    this.renderQuickMemo(bento);
+    this.renderTasksCard(bento);
+    this.renderTodayAgent(bento);
+    bento.querySelector(".sd-today")?.addClass("sd-bento-today");
+    bento.querySelector(".sd-quick-memo")?.addClass("sd-bento-memo");
+    bento.querySelector(".sd-tasks")?.addClass("sd-bento-tasks");
+    bento.querySelector(".sd-agent-feed")?.addClass("sd-bento-agent");
   }
 
   private renderTodayCard(root: HTMLElement): void {
@@ -171,7 +176,7 @@ export class DashboardView extends ItemView {
   }
 
   private renderTodayAgent(root: HTMLElement): void {
-    const card = root.createDiv({ cls: "sd-card" });
+    const card = root.createDiv({ cls: "sd-card sd-agent-feed" });
     card.createDiv({ cls: "sd-card-title", text: "今日 Agent 动态" });
     const today = dateKey(new Date());
     const calls = this.plugin.store.data.toolCalls.filter((call) => call.time.startsWith(today));
@@ -219,7 +224,7 @@ export class DashboardView extends ItemView {
   }
 
   private renderTasksCard(root: HTMLElement): void {
-    const card = root.createDiv({ cls: "sd-card" });
+    const card = root.createDiv({ cls: "sd-card sd-tasks" });
     card.createDiv({ cls: "sd-card-title", text: "待办 · 今日 / 遗留 / Agent" });
     const list = card.createDiv({ cls: "sd-task-list" });
     list.createDiv({ cls: "kp-empty", text: "加载中…" });
@@ -887,12 +892,32 @@ ${celestial}
 <rect width="1600" height="300" fill="${daylight ? "#d8b79b" : "#1b2740"}"/>${celestial}${buildings}</svg>`;
     }
     return `<svg viewBox="0 0 1600 300" preserveAspectRatio="xMidYMid slice" class="sd-banner-svg">
-<rect width="1600" height="300" fill="${daylight ? "#9fc8e8" : "#2b3f60"}"/>
+<defs>
+  <linearGradient id="sd-lake-sky" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="${daylight ? "#7fb0dc" : "#1c2b47"}"/>
+    <stop offset="65%" stop-color="${daylight ? "#b4d6ee" : "#365078"}"/>
+    <stop offset="100%" stop-color="${daylight ? "#e2f0f9" : "#6f8aa9"}"/>
+  </linearGradient>
+  <radialGradient id="sd-lake-glow"><stop offset="0%" stop-color="${daylight ? "#fff3c4" : "#eef2ff"}" stop-opacity="0.55"/><stop offset="100%" stop-color="${daylight ? "#fff3c4" : "#eef2ff"}" stop-opacity="0"/></radialGradient>
+  <linearGradient id="sd-lake-water" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="${daylight ? "#8dbadd" : "#2d4163"}"/>
+    <stop offset="100%" stop-color="${daylight ? "#cfe4f2" : "#4a6384"}"/>
+  </linearGradient>
+</defs>
+<rect width="1600" height="300" fill="url(#sd-lake-sky)"/>
+<circle cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" r="150" fill="url(#sd-lake-glow)"/>
 ${celestial}
-<path d="M0 232 L120 178 L210 210 L330 138 L450 208 L560 166 L690 224 L820 180 L960 228 L1090 176 L1220 220 L1360 168 L1500 214 L1600 186 L1600 260 L0 260 Z" fill="#5b8dbd" opacity="0.45"/>
-<rect x="138" y="150" width="20" height="86" fill="#f5f5f2"/>
-<path d="M138 166 h20 M138 196 h20" stroke="#d9544d" stroke-width="8"/>
-<rect y="258" width="1600" height="42" fill="${daylight ? "#a9cbe4" : "#2b3f5e"}" opacity="0.75"/></svg>`;
+<path d="M120 76 q70 -30 140 -2 q45 -20 96 4" stroke="#ffffff" stroke-width="14" fill="none" opacity="0.16" stroke-linecap="round"/>
+<path d="M720 120 q80 -26 160 0 q50 -18 100 4" stroke="#ffffff" stroke-width="10" fill="none" opacity="0.12" stroke-linecap="round"/>
+<path d="M0 218 L120 168 L210 200 L330 132 L450 200 L560 158 L690 214 L820 170 L960 218 L1090 166 L1220 210 L1360 158 L1500 204 L1600 176 L1600 250 L0 250 Z" fill="#6f9dc6" opacity="0.28"/>
+<path d="M0 238 L120 184 L210 214 L330 146 L450 214 L560 172 L690 228 L820 184 L960 232 L1090 180 L1220 224 L1360 172 L1500 218 L1600 190 L1600 264 L0 264 Z" fill="#3f6f9f" opacity="0.5"/>
+<rect y="244" width="1600" height="16" fill="${daylight ? "#e2f0f9" : "#8ba4bf"}" opacity="0.18"/>
+<rect x="138" y="152" width="20" height="86" fill="#f5f5f2"/>
+<path d="M138 168 h20 M138 198 h20" stroke="#d9544d" stroke-width="8"/>
+<path d="M136 152 h24 l-6 -14 h-12 Z" fill="#d9544d"/>
+<rect x="143" y="134" width="10" height="8" fill="#ffe9a8"/>
+<rect y="258" width="1600" height="42" fill="url(#sd-lake-water)" opacity="0.85"/>
+<ellipse cx="${x.toFixed(0)}" cy="276" rx="46" ry="8" fill="${daylight ? "#fff3c4" : "#eef2ff"}" opacity="0.2"/></svg>`;
   }
 
   private updateBanner(): void {
