@@ -591,7 +591,7 @@ var AgentServer = class {
       };
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
-          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.3.2" });
+          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.3.3" });
           return;
         case "GET /notes":
           this.json(response, 200, api.listNotes(str(query.get("folder")), num(query.get("limit"), 50)));
@@ -1897,6 +1897,19 @@ var MemoView = class extends import_obsidian8.ItemView {
   async onOpen() {
     this.render();
   }
+  /** 只刷新列表和沉淀区，不碰用户正在输入的速记框。 */
+  refreshContent() {
+    var _a, _b;
+    if (this.tab !== "all") {
+      this.render();
+      return;
+    }
+    const root = this.contentEl;
+    (_a = root.querySelector(".kp-memo-list")) == null ? void 0 : _a.remove();
+    (_b = root.querySelector(".sd-knowledge-inline")) == null ? void 0 : _b.remove();
+    this.renderList(root);
+    this.renderKnowledge(root, 30, true);
+  }
   render() {
     const root = this.contentEl;
     root.empty();
@@ -2136,6 +2149,7 @@ var MemoView = class extends import_obsidian8.ItemView {
       groups.set(category, group);
     }
     const card = root.createDiv({ cls: "sd-card sd-knowledge" });
+    if (compact) card.addClass("sd-knowledge-inline");
     const head = card.createDiv({ cls: "sd-card-head" });
     head.createDiv({
       cls: "sd-card-title",
@@ -2321,6 +2335,7 @@ var SedimentPlugin = class extends import_obsidian10.Plugin {
   constructor() {
     super(...arguments);
     this.serverRestartTimer = null;
+    this.refreshTimer = null;
   }
   async onload() {
     this.store = new Store(this);
@@ -2337,6 +2352,16 @@ var SedimentPlugin = class extends import_obsidian10.Plugin {
     this.registerView(DASHBOARD_VIEW_TYPE, (leaf) => new DashboardView(leaf, this));
     this.registerView(MEMO_VIEW_TYPE, (leaf) => new MemoView(leaf, this));
     await this.tracker.start();
+    const vault = this.app.vault;
+    this.registerEvent(vault.on("create", (file) => this.scheduleRefresh(file.path)));
+    this.registerEvent(vault.on("modify", (file) => this.scheduleRefresh(file.path)));
+    this.registerEvent(vault.on("delete", (file) => this.scheduleRefresh(file.path)));
+    this.registerEvent(
+      vault.on("rename", (file, oldPath) => {
+        this.scheduleRefresh(file.path);
+        this.scheduleRefresh(oldPath);
+      })
+    );
     await this.agentServer.applySettings();
     this.registerObsidianProtocolHandler("sediment", (params) => {
       void this.handleProtocol(params);
@@ -2424,13 +2449,29 @@ var SedimentPlugin = class extends import_obsidian10.Plugin {
       await this.activateView(DASHBOARD_VIEW_TYPE);
     }
   }
-  refreshViews() {
+  refreshViews(soft = false) {
     for (const leaf of this.app.workspace.getLeavesOfType(DASHBOARD_VIEW_TYPE)) {
       leaf.view.render();
     }
     for (const leaf of this.app.workspace.getLeavesOfType(MEMO_VIEW_TYPE)) {
-      leaf.view.render();
+      const view = leaf.view;
+      if (soft) view.refreshContent();
+      else view.render();
     }
+  }
+  /** Agent 写入知识库/速记后自动刷新面板，保留用户正在输入的内容。 */
+  scheduleRefresh(path) {
+    const folders = [
+      normalizeFolder(this.store.settings.knowledgeFolder),
+      normalizeFolder(this.store.settings.workLogFolder),
+      normalizeFolder(this.store.settings.dailyNoteFolder)
+    ].filter((folder) => folder.length > 0);
+    if (!folders.some((folder) => path.startsWith(`${folder}/`))) return;
+    if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
+    this.refreshTimer = window.setTimeout(() => {
+      this.refreshTimer = null;
+      this.refreshViews(true);
+    }, 400);
   }
   async activateView(type) {
     var _a;

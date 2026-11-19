@@ -34,6 +34,19 @@ export class MemoView extends ItemView {
     this.render();
   }
 
+  /** 只刷新列表和沉淀区，不碰用户正在输入的速记框。 */
+  refreshContent(): void {
+    if (this.tab !== "all") {
+      this.render();
+      return;
+    }
+    const root = this.contentEl;
+    root.querySelector(".kp-memo-list")?.remove();
+    root.querySelector(".sd-knowledge-inline")?.remove();
+    this.renderList(root);
+    this.renderKnowledge(root, 30, true);
+  }
+
   render(): void {
     const root = this.contentEl;
     root.empty();
@@ -304,6 +317,7 @@ export class MemoView extends ItemView {
     }
 
     const card = root.createDiv({ cls: "sd-card sd-knowledge" });
+    if (compact) card.addClass("sd-knowledge-inline");
     const head = card.createDiv({ cls: "sd-card-head" });
     head.createDiv({
       cls: "sd-card-title",

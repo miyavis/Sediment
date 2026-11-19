@@ -38,6 +38,19 @@ export class SedimentPlugin extends Plugin {
     this.registerView(MEMO_VIEW_TYPE, (leaf) => new MemoView(leaf, this));
 
     await this.tracker.start();
+
+    // Agent 通过 MCP 写入笔记后，自动刷新看板与速记面板。
+    const vault = this.app.vault;
+    this.registerEvent(vault.on("create", (file) => this.scheduleRefresh(file.path)));
+    this.registerEvent(vault.on("modify", (file) => this.scheduleRefresh(file.path)));
+    this.registerEvent(vault.on("delete", (file) => this.scheduleRefresh(file.path)));
+    this.registerEvent(
+      vault.on("rename", (file, oldPath) => {
+        this.scheduleRefresh(file.path);
+        this.scheduleRefresh(oldPath);
+      })
+    );
+
     await this.agentServer.applySettings();
 
     this.registerObsidianProtocolHandler("sediment", (params) => {
@@ -106,6 +119,7 @@ export class SedimentPlugin extends Plugin {
   }
 
   private serverRestartTimer: number | null = null;
+  private refreshTimer: number | null = null;
 
   async onunload(): Promise<void> {
     if (this.serverRestartTimer !== null) window.clearTimeout(this.serverRestartTimer);
@@ -138,13 +152,30 @@ export class SedimentPlugin extends Plugin {
     }
   }
 
-  refreshViews(): void {
+  refreshViews(soft = false): void {
     for (const leaf of this.app.workspace.getLeavesOfType(DASHBOARD_VIEW_TYPE)) {
       (leaf.view as DashboardView).render();
     }
     for (const leaf of this.app.workspace.getLeavesOfType(MEMO_VIEW_TYPE)) {
-      (leaf.view as MemoView).render();
+      const view = leaf.view as MemoView;
+      if (soft) view.refreshContent();
+      else view.render();
     }
+  }
+
+  /** Agent 写入知识库/速记后自动刷新面板，保留用户正在输入的内容。 */
+  private scheduleRefresh(path: string): void {
+    const folders = [
+      normalizeFolder(this.store.settings.knowledgeFolder),
+      normalizeFolder(this.store.settings.workLogFolder),
+      normalizeFolder(this.store.settings.dailyNoteFolder),
+    ].filter((folder) => folder.length > 0);
+    if (!folders.some((folder) => path.startsWith(`${folder}/`))) return;
+    if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
+    this.refreshTimer = window.setTimeout(() => {
+      this.refreshTimer = null;
+      this.refreshViews(true);
+    }, 400);
   }
 
   private async activateView(type: string): Promise<void> {
