@@ -50,6 +50,8 @@ export interface MemoRecord {
   text: string;
   tags: string[];
   converted: boolean;
+  /** 任务完成时关联的产出笔记路径 */
+  resultPath?: string;
 }
 
 /** Agent 一次工作会话的沉淀记录。 */

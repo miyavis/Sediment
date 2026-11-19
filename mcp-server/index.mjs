@@ -168,6 +168,57 @@ const TOOLS = [
     inputSchema: { type: "object", properties: {} },
   },
   {
+    name: "patch_note",
+    description: "按标题或文本片段局部修改笔记，写入前自动备份；支持 ifMatch 防并发覆盖。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "库内相对路径" },
+        heading: { type: "string", description: "标题文本，如 ## 决策" },
+        find: { type: "string", description: "精确文本片段，与 heading 二选一" },
+        content: { type: "string", description: "新内容" },
+        mode: { type: "string", description: "replace / append / prepend，默认 replace" },
+        index: { type: "number", description: "匹配到第几个，默认 0" },
+        ifMatch: { type: "string", description: "版本号，来自写入返回或 read_note" },
+      },
+      required: ["path", "content"],
+    },
+  },
+  {
+    name: "update_frontmatter",
+    description: "单独修改笔记 frontmatter 字段，不动正文。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        updates: { type: "object", description: "要设置的字段，如 { status: \"done\", tags: [\"x\"] }" },
+        ifMatch: { type: "string" },
+      },
+      required: ["path", "updates"],
+    },
+  },
+  {
+    name: "claim_agent_task",
+    description: "认领一条 #to-agent 速记任务，标记为 agent-in-progress。",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string", description: "速记 id，来自 get_daily_context 的 agentTasks" } },
+      required: ["id"],
+    },
+  },
+  {
+    name: "complete_agent_task",
+    description: "完成任务，标记为 #agent-done，可关联产出笔记路径。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        resultPath: { type: "string", description: "产出笔记的库内路径，可选" },
+      },
+      required: ["id"],
+    },
+  },
+  {
     name: "get_active_context",
     description: "获取当前打开的笔记、选中文本、光标行与光标所在段落。",
     inputSchema: { type: "object", properties: {} },
@@ -309,6 +360,26 @@ async function dispatch(name, args) {
       }, "POST");
     case "list_categories":
       return call("/categories");
+    case "patch_note":
+      return call("/patch-note", {
+        path: args.path ?? "",
+        heading: args.heading ?? "",
+        find: args.find ?? "",
+        content: args.content ?? "",
+        mode: args.mode ?? "replace",
+        index: args.index ?? 0,
+        ifMatch: args.ifMatch ?? "",
+      }, "POST");
+    case "update_frontmatter":
+      return call("/frontmatter", {
+        path: args.path ?? "",
+        updates: args.updates ?? {},
+        ifMatch: args.ifMatch ?? "",
+      }, "POST");
+    case "claim_agent_task":
+      return call("/agent-task/claim", { id: args.id }, "POST");
+    case "complete_agent_task":
+      return call("/agent-task/complete", { id: args.id, resultPath: args.resultPath ?? "" }, "POST");
     case "get_active_context":
       return call("/active-context");
     case "get_note_metadata":

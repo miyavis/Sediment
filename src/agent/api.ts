@@ -62,6 +62,8 @@ export interface DailyContext {
   workLogs: WorkLogRecord[];
   memos: MemoRecord[];
   notes: NoteSummary[];
+  /** 带 #to-agent 且未完成的任务 */
+  agentTasks: MemoRecord[];
 }
 
 /** 生成随机访问令牌，优先用 Web Crypto。 */
@@ -73,6 +75,53 @@ export function generateToken(): string {
   } catch (error) {
     return Math.random().toString(36).slice(2) + Date.now().toString(36);
   }
+}
+
+function versionOf(text: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+function yamlLines(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.length ? value.map((item) => `  - ${JSON.stringify(String(item))}`) : ["[]"];
+  }
+  if (value === null || value === undefined) return ["null"];
+  return [JSON.stringify(value)];
+}
+
+function findSection(
+  text: string,
+  heading: string,
+  index: number
+): { start: number; end: number; lines: string[] } | null {
+  const lines = text.split("\n");
+  const headingMatch = heading.match(/^(#{1,6})\s+(.*)$/);
+  const level = headingMatch ? headingMatch[1].length : 0;
+  const target = headingMatch ? headingMatch[2].trim() : heading.trim();
+  const matches: Array<{ line: number; level: number }> = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const match = lines[i].match(/^(#{1,6})\s+(.*)$/);
+    if (!match) continue;
+    if (match[2].trim() === target && (level === 0 || match[1].length === level)) {
+      matches.push({ line: i, level: match[1].length });
+    }
+  }
+  const chosen = matches[index];
+  if (!chosen) return null;
+  let end = lines.length;
+  for (let i = chosen.line + 1; i < lines.length; i += 1) {
+    const match = lines[i].match(/^(#{1,6})\s+/);
+    if (match && match[1].length <= chosen.level) {
+      end = i;
+      break;
+    }
+  }
+  return { start: chosen.line + 1, end, lines };
 }
 
 function splitList(value: string): string[] {
@@ -105,6 +154,30 @@ export class AgentApi {
 
   private get vault() {
     return this.plugin.app.vault;
+  }
+
+  /** 写入前把原文快照存到插件 backups 目录，最多保留 20 份。 */
+  private backupNote(path: string, content: string): void {
+    try {
+      const adapter = this.plugin.app.vault.adapter as unknown as {
+        getFullPath?: (normalizedPath: string) => string;
+      };
+      if (!adapter.getFullPath) return;
+      const fs = require("fs") as typeof import("fs");
+      const directory = adapter.getFullPath(
+        `${this.plugin.app.vault.configDir}/plugins/sediment/backups`
+      );
+      fs.mkdirSync(directory, { recursive: true });
+      const name = path.replace(/[\\/]/g, "_");
+      fs.writeFileSync(`${directory}/${Date.now()}-${name}`, content, "utf8");
+      const files = fs.readdirSync(directory).sort();
+      while (files.length > 20) {
+        const old = files.shift();
+        if (old) fs.unlinkSync(`${directory}/${old}`);
+      }
+    } catch (error) {
+      // 移动端或无 fs 权限时跳过备份。
+    }
   }
 
   private deniedFolders(): string[] {
@@ -343,6 +416,123 @@ export class AgentApi {
         .map((other) => other.path);
     }
     return { path: safe, outgoing, backlinks, sameTag };
+  }
+
+  /** 按标题或文本片段局部修改笔记，写入前自动备份，可用 ifMatch 防并发覆盖。 */
+  async patchNote(input: {
+    path: string;
+    heading?: string;
+    find?: string;
+    content: string;
+    mode?: "replace" | "append" | "prepend";
+    index?: number;
+    ifMatch?: string;
+  }): Promise<{ path: string; version: string }> {
+    const safe = safePath(input.path);
+    this.assertAllowed(safe);
+    const file = this.vault.getAbstractFileByPath(safe);
+    if (!(file instanceof TFile)) throw new Error(`笔记不存在：${safe}`);
+    const before = await this.vault.read(file);
+    if (input.ifMatch && versionOf(before) !== input.ifMatch) {
+      throw new Error(`版本冲突：${safe} 已被修改，请重新读取后再写入`);
+    }
+    this.backupNote(safe, before);
+
+    const mode = input.mode ?? "replace";
+    let result = "";
+    await this.vault.process(file, (data) => {
+      if (input.find) {
+        const positions: number[] = [];
+        let from = 0;
+        for (;;) {
+          const at = data.indexOf(input.find, from);
+          if (at < 0) break;
+          positions.push(at);
+          from = at + input.find.length;
+        }
+        const position = positions[input.index ?? 0];
+        if (position === undefined) throw new Error(`未找到文本片段：${input.find}`);
+        result =
+          data.slice(0, position) +
+          String(input.content ?? "") +
+          data.slice(position + input.find.length);
+        return result;
+      }
+      if (input.heading) {
+        const section = findSection(data, input.heading, input.index ?? 0);
+        if (!section) throw new Error(`未找到标题：${input.heading}`);
+        const body = section.lines.slice(section.start, section.end);
+        const incoming = String(input.content ?? "").split("\n");
+        const nextBody =
+          mode === "replace" ? incoming : mode === "append" ? [...body, "", ...incoming] : [...incoming, "", ...body];
+        result = [
+          ...section.lines.slice(0, section.start),
+          ...nextBody,
+          ...section.lines.slice(section.end),
+        ].join("\n");
+        return result;
+      }
+      throw new Error("patch_note 需要 heading 或 find 参数");
+    });
+
+    this.plugin.store.updateDay(this.plugin.store.todayKey(), (day) => {
+      day.aiWordsAdded += countWords(String(input.content ?? ""));
+    });
+    return { path: safe, version: versionOf(result) };
+  }
+
+  /** 单独更新 frontmatter 字段，不动正文。 */
+  async updateFrontmatter(
+    path: string,
+    updates: Record<string, unknown>,
+    ifMatch?: string
+  ): Promise<{ path: string; version: string }> {
+    const safe = safePath(path);
+    this.assertAllowed(safe);
+    const file = this.vault.getAbstractFileByPath(safe);
+    if (!(file instanceof TFile)) throw new Error(`笔记不存在：${safe}`);
+    const before = await this.vault.read(file);
+    if (ifMatch && versionOf(before) !== ifMatch) {
+      throw new Error(`版本冲突：${safe} 已被修改，请重新读取后再写入`);
+    }
+    this.backupNote(safe, before);
+
+    let result = "";
+    await this.vault.process(file, (data) => {
+      const lines = data.split("\n");
+      let start = -1;
+      let end = -1;
+      if (lines[0]?.trim() === "---") {
+        for (let i = 1; i < lines.length; i += 1) {
+          if (lines[i].trim() === "---") {
+            end = i;
+            break;
+          }
+        }
+        if (end < 0) throw new Error("frontmatter 未闭合");
+        start = 1;
+      }
+      const block = start >= 0 ? lines.slice(start, end) : [];
+      for (const [key, value] of Object.entries(updates)) {
+        const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const targetIndex = block.findIndex((line) =>
+          new RegExp(`^${escaped}\\s*:`).test(line)
+        );
+        const replacement = Array.isArray(value)
+          ? value.length
+            ? [`${key}:`, ...value.map((item) => `  - ${JSON.stringify(String(item))}`)]
+            : [`${key}: []`]
+          : [`${key}: ${JSON.stringify(value)}`];
+        if (targetIndex >= 0) block.splice(targetIndex, 1, ...replacement);
+        else block.push(...replacement);
+      }
+      result =
+        start >= 0
+          ? [...lines.slice(0, start), ...block, ...lines.slice(end)].join("\n")
+          : ["---", ...block, "---", "", ...lines].join("\n");
+      return result;
+    });
+    return { path: safe, version: versionOf(result) };
   }
 
   logToolCall(tool: string, agent: string, path: string): void {
@@ -587,7 +777,35 @@ export class AgentApi {
       workLogs: this.listWorkLogs(days),
       memos: this.getMemos(10),
       notes: this.listNotes("", 10),
+      agentTasks: this.plugin.store.data.memos.filter(
+        (memo) => memo.tags.includes("to-agent") && !memo.converted
+      ),
     };
+  }
+
+  /** 认领一条 #to-agent 任务，避免被重复处理。 */
+  claimAgentTask(id: string): MemoRecord {
+    const memo = this.plugin.store.data.memos.find((item) => item.id === id);
+    if (!memo) throw new Error(`速记不存在：${id}`);
+    if (!memo.tags.includes("to-agent")) throw new Error(`速记 ${id} 不是待办任务`);
+    memo.tags = memo.tags.filter((tag) => tag !== "to-agent");
+    if (!memo.tags.includes("agent-in-progress")) memo.tags.push("agent-in-progress");
+    this.plugin.store.scheduleSave();
+    return memo;
+  }
+
+  /** 完成任务：标记为 #agent-done，可关联产出笔记。 */
+  completeAgentTask(id: string, resultPath?: string): MemoRecord {
+    const memo = this.plugin.store.data.memos.find((item) => item.id === id);
+    if (!memo) throw new Error(`速记不存在：${id}`);
+    memo.tags = memo.tags.filter(
+      (tag) => tag !== "to-agent" && tag !== "agent-in-progress" && tag !== "agent-done"
+    );
+    memo.tags.push("agent-done");
+    memo.converted = true;
+    if (resultPath) memo.resultPath = resultPath;
+    this.plugin.store.scheduleSave();
+    return memo;
   }
 
   /** 生成周复盘 Markdown（不落盘）。 */

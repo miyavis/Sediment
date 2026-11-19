@@ -120,7 +120,7 @@ export class AgentServer {
 
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
-          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.4.0" });
+          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.5.0" });
           return;
         case "GET /notes":
           this.json(response, 200, api.listNotes(str(query.get("folder")), num(query.get("limit"), 50)));
@@ -219,6 +219,42 @@ export class AgentServer {
         }
         case "GET /activity":
           this.json(response, 200, api.getToolActivity());
+          return;
+        case "POST /patch-note":
+          this.json(
+            response,
+            200,
+            await api.patchNote({
+              path: str(body.path as string),
+              heading: str(body.heading as string) || undefined,
+              find: str(body.find as string) || undefined,
+              content: str(body.content as string),
+              mode: str(body.mode as string, "replace") as "replace" | "append" | "prepend",
+              index: typeof body.index === "number" ? body.index : undefined,
+              ifMatch: str(body.ifMatch as string) || undefined,
+            })
+          );
+          return;
+        case "POST /frontmatter":
+          this.json(
+            response,
+            200,
+            await api.updateFrontmatter(
+              str(body.path as string),
+              (body.updates ?? {}) as Record<string, unknown>,
+              str(body.ifMatch as string) || undefined
+            )
+          );
+          return;
+        case "POST /agent-task/claim":
+          this.json(response, 200, api.claimAgentTask(str(body.id as string)));
+          return;
+        case "POST /agent-task/complete":
+          this.json(
+            response,
+            200,
+            api.completeAgentTask(str(body.id as string), str(body.resultPath as string) || undefined)
+          );
           return;
         case "GET /pomodoro":
           this.json(response, 200, api.getPomodoro());

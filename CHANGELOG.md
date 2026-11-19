@@ -2,6 +2,14 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [0.5.0] - 2026-11-19
+
+### 新增
+- P1 精准写入：`patch_note`（按标题/文本片段局部修改、`vault.process` 原子写入、写前自动备份、`ifMatch` 版本校验）与 `update_frontmatter`
+- `#to-agent` 任务闭环：`get_daily_context` 返回 `agentTasks`，新增 `claim_agent_task` / `complete_agent_task`，状态从 `#to-agent` → `#agent-in-progress` → `#agent-done`
+- 在 vault 根目录写入 `AGENTS.md` 三阶段协作协议（开工对齐 / 精准读写 / 收工沉淀）
+- MCP 工具增至 26 个
+
 ## [0.4.0] - 2026-11-19
 
 ### 新增
