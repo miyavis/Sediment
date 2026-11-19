@@ -9,6 +9,8 @@
  */
 
 import process from "node:process";
+import http from "node:http";
+import https from "node:https";
 
 const BASE = process.env.SEDIMENT_URL || "http://127.0.0.1:27123";
 const TOKEN = process.env.SEDIMENT_TOKEN || "";
@@ -185,24 +187,34 @@ const TOOLS = [
   },
 ];
 
+function request(url, method, payload) {
+  return new Promise((resolve, reject) => {
+    const transport = url.protocol === "https:" ? https : http;
+    const body = payload === undefined ? null : JSON.stringify(payload);
+    const headers = body
+      ? { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) }
+      : {};
+    const req = transport.request(url, { method, headers }, (res) => {
+      let raw = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk) => { raw += chunk; });
+      res.on("end", () => {
+        let data;
+        try { data = JSON.parse(raw); } catch (error) { data = raw; }
+        if (res.statusCode >= 200 && res.statusCode < 300) resolve(data);
+        else reject(new Error(data?.error || `HTTP ${res.statusCode}`));
+      });
+    });
+    req.on("error", reject);
+    if (body) req.write(body);
+    req.end();
+  });
+}
+
 async function call(path, params = {}, method = "GET") {
   const url = new URL(path, BASE);
   url.searchParams.set("token", TOKEN);
-  const init = { method, headers: {} };
-  if (method === "POST") {
-    init.headers["Content-Type"] = "application/json";
-    init.body = JSON.stringify(params);
-  }
-  const response = await fetch(url, init);
-  const text = await response.text();
-  let data;
-  try {
-    data = JSON.parse(text);
-  } catch (error) {
-    data = text;
-  }
-  if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`);
-  return data;
+  return request(url, method, method === "POST" ? params : undefined);
 }
 
 async function dispatch(name, args) {
