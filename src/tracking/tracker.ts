@@ -30,6 +30,7 @@ export class Tracker {
   private baseline = new Map<string, FileBaseline>();
   private countedSessions = new Set<string>();
   private activeBuckets = new Set<string>();
+  private startedAt = Date.now();
   private ready = false;
 
   constructor(private plugin: Plugin, private store: Store) {}
@@ -84,6 +85,8 @@ export class Tracker {
 
   private async onCreate(file: TFile): Promise<void> {
     if (!this.ready || !file.path.endsWith(".md") || this.isExcluded(file.path)) return;
+    // Obsidian 启动时会为已有文件补发 create 事件，不能当成"新建笔记"统计。
+    if (file.stat.ctime < this.startedAt - 60_000) return;
     const snap = await this.snapshot(file);
     this.baseline.set(file.path, snap);
     if (snap.words > 0) {

@@ -528,7 +528,7 @@ var AgentServer = class {
       };
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
-          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.2.5" });
+          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.2.6" });
           return;
         case "GET /notes":
           this.json(response, 200, api.listNotes(str(query.get("folder")), num(query.get("limit"), 50)));
@@ -2073,6 +2073,7 @@ var Tracker = class {
     this.baseline = /* @__PURE__ */ new Map();
     this.countedSessions = /* @__PURE__ */ new Set();
     this.activeBuckets = /* @__PURE__ */ new Set();
+    this.startedAt = Date.now();
     this.ready = false;
   }
   async start() {
@@ -2121,6 +2122,7 @@ var Tracker = class {
   async onCreate(file) {
     var _a, _b;
     if (!this.ready || !file.path.endsWith(".md") || this.isExcluded(file.path)) return;
+    if (file.stat.ctime < this.startedAt - 6e4) return;
     const snap = await this.snapshot(file);
     this.baseline.set(file.path, snap);
     if (snap.words > 0) {
