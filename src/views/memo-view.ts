@@ -6,7 +6,7 @@ import { ensureFolder, normalizeFolder } from "../utils/vault";
 
 export const MEMO_VIEW_TYPE = "sediment-memo";
 
-type MemoTab = "all" | "review" | "walk" | "tags";
+type MemoTab = "all" | "review" | "walk" | "tags" | "knowledge";
 
 /** 右侧栏速记面板：输入、图片附件、搜索、回顾、漫步与标签树。 */
 export class MemoView extends ItemView {
@@ -45,6 +45,7 @@ export class MemoView extends ItemView {
       ["review", "回顾"],
       ["walk", "漫步"],
       ["tags", "标签"],
+      ["knowledge", "沉淀"],
     ];
     for (const [key, label] of options) {
       const button = tabs.createEl("button", {
@@ -60,7 +61,8 @@ export class MemoView extends ItemView {
     if (this.tab === "all") this.renderAll(root);
     else if (this.tab === "review") this.renderReview(root);
     else if (this.tab === "walk") this.renderWalk(root);
-    else this.renderTags(root);
+    else if (this.tab === "tags") this.renderTags(root);
+    else this.renderKnowledge(root);
   }
 
   private renderAll(root: HTMLElement): void {
@@ -265,6 +267,35 @@ export class MemoView extends ItemView {
       };
     }
     this.walkId = current.id;
+  }
+
+  private renderKnowledge(root: HTMLElement): void {
+    const settings = this.plugin.store.settings;
+    const folders = [normalizeFolder(settings.knowledgeFolder), normalizeFolder(settings.workLogFolder)]
+      .filter((folder) => folder.length > 0);
+    const files = this.plugin.app.vault
+      .getMarkdownFiles()
+      .filter((file) => folders.some((folder) => file.path.startsWith(`${folder}/`)))
+      .sort((a, b) => b.stat.mtime - a.stat.mtime)
+      .slice(0, 30);
+
+    if (files.length === 0) {
+      root.createDiv({
+        cls: "kp-empty",
+        text: "还没有沉淀。让智能体调用 add_knowledge 或 record_work_log 后，笔记会出现在这里。",
+      });
+      return;
+    }
+
+    const card = root.createDiv({ cls: "sd-card sd-knowledge" });
+    card.createDiv({ cls: "sd-card-title", text: `知识沉淀 · ${files.length}` });
+    const list = card.createDiv({ cls: "sd-knowledge-list" });
+    for (const file of files) {
+      const row = list.createDiv({ cls: "sd-knowledge-item" });
+      const button = row.createEl("button", { cls: "sd-knowledge-open", text: file.basename });
+      button.onclick = () => void this.plugin.app.workspace.openLinkText(file.path, "", false);
+      row.createDiv({ cls: "sd-knowledge-path", text: file.path });
+    }
   }
 
   private renderTags(root: HTMLElement): void {

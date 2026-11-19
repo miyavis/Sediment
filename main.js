@@ -528,7 +528,7 @@ var AgentServer = class {
       };
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
-          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.2.7" });
+          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.2.8" });
           return;
         case "GET /notes":
           this.json(response, 200, api.listNotes(str(query.get("folder")), num(query.get("limit"), 50)));
@@ -1126,7 +1126,6 @@ var DashboardView = class extends import_obsidian7.ItemView {
       this.renderOverview(body);
       this.renderHeatmap(body);
       this.renderHorizon(body);
-      this.renderKnowledge(body);
       const footer = body.createDiv({ cls: "sd-footer" });
       footer.createSpan({ text: `Sediment ${this.plugin.manifest.version} \xB7 \u6570\u636E\u53EA\u7559\u5728\u672C\u5730` });
       const monthly = footer.createEl("button", { text: "\u6708\u62A5" });
@@ -1419,26 +1418,6 @@ ${trees}
 <ellipse cx="${x.toFixed(0)}" cy="232" rx="38" ry="9" fill="${daylight ? "#ffe08a" : "#f2f0dc"}" opacity="0.22"/>
 ${sailing}
 </svg>`;
-  }
-  renderKnowledge(root) {
-    const card = root.createDiv({ cls: "sd-card sd-knowledge" });
-    const head = card.createDiv({ cls: "sd-card-head" });
-    head.createDiv({ cls: "sd-card-title", text: "\u77E5\u8BC6\u6C89\u6DC0" });
-    head.createDiv({ cls: "sd-card-sub", text: "\u667A\u80FD\u4F53\u5199\u5165\u7684\u77E5\u8BC6\u7B14\u8BB0\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\uFF0C\u70B9\u51FB\u6807\u9898\u6253\u5F00" });
-    const settings = this.plugin.store.settings;
-    const folders = [normalizeFolder(settings.knowledgeFolder), normalizeFolder(settings.workLogFolder)].filter((folder) => folder.length > 0);
-    const files = this.plugin.app.vault.getMarkdownFiles().filter((file) => folders.some((folder) => file.path.startsWith(`${folder}/`))).sort((a, b) => b.stat.mtime - a.stat.mtime).slice(0, 12);
-    if (files.length === 0) {
-      card.createDiv({ cls: "kp-empty", text: "\u8FD8\u6CA1\u6709\u6C89\u6DC0\u3002\u8BA9\u667A\u80FD\u4F53\u8C03\u7528 add_knowledge \u6216 record_work_log \u540E\u4F1A\u51FA\u73B0\u5728\u8FD9\u91CC\u3002" });
-      return;
-    }
-    const list = card.createDiv({ cls: "sd-knowledge-list" });
-    for (const file of files) {
-      const row = list.createDiv({ cls: "sd-knowledge-item" });
-      const button = row.createEl("button", { cls: "sd-knowledge-open", text: file.basename });
-      button.onclick = () => void this.plugin.app.workspace.openLinkText(file.path, "", false);
-      row.createDiv({ cls: "sd-knowledge-path", text: file.path });
-    }
   }
   renderReview(root) {
     const card = root.createDiv({ cls: "sd-card sd-text-view" });
@@ -1852,7 +1831,8 @@ var MemoView = class extends import_obsidian8.ItemView {
       ["all", "\u5168\u90E8"],
       ["review", "\u56DE\u987E"],
       ["walk", "\u6F2B\u6B65"],
-      ["tags", "\u6807\u7B7E"]
+      ["tags", "\u6807\u7B7E"],
+      ["knowledge", "\u6C89\u6DC0"]
     ];
     for (const [key, label] of options) {
       const button = tabs.createEl("button", {
@@ -1867,7 +1847,8 @@ var MemoView = class extends import_obsidian8.ItemView {
     if (this.tab === "all") this.renderAll(root);
     else if (this.tab === "review") this.renderReview(root);
     else if (this.tab === "walk") this.renderWalk(root);
-    else this.renderTags(root);
+    else if (this.tab === "tags") this.renderTags(root);
+    else this.renderKnowledge(root);
   }
   renderAll(root) {
     const form = root.createDiv({ cls: "kp-memo-form" });
@@ -2051,6 +2032,27 @@ var MemoView = class extends import_obsidian8.ItemView {
       };
     }
     this.walkId = current.id;
+  }
+  renderKnowledge(root) {
+    const settings = this.plugin.store.settings;
+    const folders = [normalizeFolder(settings.knowledgeFolder), normalizeFolder(settings.workLogFolder)].filter((folder) => folder.length > 0);
+    const files = this.plugin.app.vault.getMarkdownFiles().filter((file) => folders.some((folder) => file.path.startsWith(`${folder}/`))).sort((a, b) => b.stat.mtime - a.stat.mtime).slice(0, 30);
+    if (files.length === 0) {
+      root.createDiv({
+        cls: "kp-empty",
+        text: "\u8FD8\u6CA1\u6709\u6C89\u6DC0\u3002\u8BA9\u667A\u80FD\u4F53\u8C03\u7528 add_knowledge \u6216 record_work_log \u540E\uFF0C\u7B14\u8BB0\u4F1A\u51FA\u73B0\u5728\u8FD9\u91CC\u3002"
+      });
+      return;
+    }
+    const card = root.createDiv({ cls: "sd-card sd-knowledge" });
+    card.createDiv({ cls: "sd-card-title", text: `\u77E5\u8BC6\u6C89\u6DC0 \xB7 ${files.length}` });
+    const list = card.createDiv({ cls: "sd-knowledge-list" });
+    for (const file of files) {
+      const row = list.createDiv({ cls: "sd-knowledge-item" });
+      const button = row.createEl("button", { cls: "sd-knowledge-open", text: file.basename });
+      button.onclick = () => void this.plugin.app.workspace.openLinkText(file.path, "", false);
+      row.createDiv({ cls: "sd-knowledge-path", text: file.path });
+    }
   }
   renderTags(root) {
     var _a;

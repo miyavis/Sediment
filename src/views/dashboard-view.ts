@@ -3,7 +3,6 @@ import type { SedimentPlugin } from "../main";
 import { buildWeeklyReview } from "../features/review";
 import { METRICS, type MetricKey } from "../types";
 import { addDays, dateKey, lastNDays, parseKey } from "../utils/dates";
-import { normalizeFolder } from "../utils/vault";
 
 export const DASHBOARD_VIEW_TYPE = "sediment-dashboard";
 
@@ -76,7 +75,6 @@ export class DashboardView extends ItemView {
       this.renderOverview(body);
       this.renderHeatmap(body);
       this.renderHorizon(body);
-      this.renderKnowledge(body);
       const footer = body.createDiv({ cls: "sd-footer" });
       footer.createSpan({ text: `Sediment ${this.plugin.manifest.version} · 数据只留在本地` });
       const monthly = footer.createEl("button", { text: "月报" });
@@ -409,34 +407,6 @@ ${trees}
 <ellipse cx="${x.toFixed(0)}" cy="232" rx="38" ry="9" fill="${daylight ? "#ffe08a" : "#f2f0dc"}" opacity="0.22"/>
 ${sailing}
 </svg>`;
-  }
-
-  private renderKnowledge(root: HTMLElement): void {
-    const card = root.createDiv({ cls: "sd-card sd-knowledge" });
-    const head = card.createDiv({ cls: "sd-card-head" });
-    head.createDiv({ cls: "sd-card-title", text: "知识沉淀" });
-    head.createDiv({ cls: "sd-card-sub", text: "智能体写入的知识笔记与工作日志，点击标题打开" });
-
-    const settings = this.plugin.store.settings;
-    const folders = [normalizeFolder(settings.knowledgeFolder), normalizeFolder(settings.workLogFolder)]
-      .filter((folder) => folder.length > 0);
-    const files = this.plugin.app.vault
-      .getMarkdownFiles()
-      .filter((file) => folders.some((folder) => file.path.startsWith(`${folder}/`)))
-      .sort((a, b) => b.stat.mtime - a.stat.mtime)
-      .slice(0, 12);
-
-    if (files.length === 0) {
-      card.createDiv({ cls: "kp-empty", text: "还没有沉淀。让智能体调用 add_knowledge 或 record_work_log 后会出现在这里。" });
-      return;
-    }
-    const list = card.createDiv({ cls: "sd-knowledge-list" });
-    for (const file of files) {
-      const row = list.createDiv({ cls: "sd-knowledge-item" });
-      const button = row.createEl("button", { cls: "sd-knowledge-open", text: file.basename });
-      button.onclick = () => void this.plugin.app.workspace.openLinkText(file.path, "", false);
-      row.createDiv({ cls: "sd-knowledge-path", text: file.path });
-    }
   }
 
   private renderReview(root: HTMLElement): void {

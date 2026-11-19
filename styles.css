@@ -976,6 +976,17 @@
   color: var(--text-faint);
 }
 
+.kp-memo-view .sd-knowledge-item {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.kp-memo-view .sd-knowledge-path {
+  font-size: 9px;
+  word-break: break-all;
+}
+
 .sd-review-preview {
   font-size: 13px;
   line-height: 1.7;
