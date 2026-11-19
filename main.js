@@ -516,7 +516,7 @@ var AgentServer = class {
       };
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
-          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.1.0" });
+          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.1.1" });
           return;
         case "GET /notes":
           this.json(response, 200, api.listNotes(str(query.get("folder")), num(query.get("limit"), 50)));
@@ -1432,7 +1432,7 @@ var SedimentPlugin = class extends import_obsidian9.Plugin {
     const workspace = this.app.workspace;
     let leaf = (_a = workspace.getLeavesOfType(type)[0]) != null ? _a : null;
     if (!leaf) {
-      leaf = (_b = workspace.getRightLeaf(false)) != null ? _b : await workspace.getLeaf(true);
+      leaf = type === MEMO_VIEW_TYPE ? (_b = workspace.getRightLeaf(false)) != null ? _b : await workspace.getLeaf(true) : await workspace.getLeaf(true);
     }
     await leaf.setViewState({ type, active: true });
     void workspace.revealLeaf(leaf);

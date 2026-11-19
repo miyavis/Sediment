@@ -126,7 +126,11 @@ export class SedimentPlugin extends Plugin {
     const workspace = this.app.workspace;
     let leaf: WorkspaceLeaf | null = workspace.getLeavesOfType(type)[0] ?? null;
     if (!leaf) {
-      leaf = workspace.getRightLeaf(false) ?? (await workspace.getLeaf(true));
+      // 看板放主编辑区（宽屏才有完整热力图），速记放右侧栏。
+      leaf =
+        type === MEMO_VIEW_TYPE
+          ? workspace.getRightLeaf(false) ?? (await workspace.getLeaf(true))
+          : await workspace.getLeaf(true);
     }
     await leaf.setViewState({ type, active: true });
     void workspace.revealLeaf(leaf);
