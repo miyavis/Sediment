@@ -287,14 +287,31 @@ export class MemoView extends ItemView {
       return;
     }
 
+    const knowledgeFolder = normalizeFolder(settings.knowledgeFolder);
+    const groups = new Map<string, typeof files>();
+    for (const file of files) {
+      let category = "工作日志";
+      if (knowledgeFolder && file.path.startsWith(`${knowledgeFolder}/`)) {
+        const parts = file.path.split("/");
+        category = parts.length > 1 ? parts[1] : "未分类";
+      }
+      const group = groups.get(category) ?? [];
+      group.push(file);
+      groups.set(category, group);
+    }
+
     const card = root.createDiv({ cls: "sd-card sd-knowledge" });
     card.createDiv({ cls: "sd-card-title", text: `知识沉淀 · ${files.length}` });
-    const list = card.createDiv({ cls: "sd-knowledge-list" });
-    for (const file of files) {
-      const row = list.createDiv({ cls: "sd-knowledge-item" });
-      const button = row.createEl("button", { cls: "sd-knowledge-open", text: file.basename });
-      button.onclick = () => void this.plugin.app.workspace.openLinkText(file.path, "", false);
-      row.createDiv({ cls: "sd-knowledge-path", text: file.path });
+    for (const [category, items] of groups) {
+      const section = card.createDiv({ cls: "sd-knowledge-group" });
+      section.createDiv({ cls: "sd-knowledge-category", text: `${category} · ${items.length}` });
+      const list = section.createDiv({ cls: "sd-knowledge-list" });
+      for (const file of items) {
+        const row = list.createDiv({ cls: "sd-knowledge-item" });
+        const button = row.createEl("button", { cls: "sd-knowledge-open", text: file.basename });
+        button.onclick = () => void this.plugin.app.workspace.openLinkText(file.path, "", false);
+        row.createDiv({ cls: "sd-knowledge-path", text: file.path });
+      }
     }
   }
 

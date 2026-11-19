@@ -300,6 +300,22 @@ ${content}`);
       backlog: store.data.memos.filter((memo) => !memo.converted).length
     };
   }
+  categories() {
+    return this.plugin.store.settings.knowledgeCategories.split(/[,，]/).map((item) => item.trim()).filter(Boolean);
+  }
+  /** 知识库分类及各分类下的笔记数。 */
+  getCategories() {
+    var _a;
+    const counts = {};
+    const base = normalizeFolder(this.plugin.store.settings.knowledgeFolder);
+    for (const file of this.vault.getMarkdownFiles()) {
+      if (!base || !file.path.startsWith(`${base}/`)) continue;
+      const parts = file.path.split("/");
+      const category = parts.length > 1 ? parts[1] : "\u672A\u5206\u7C7B";
+      counts[category] = ((_a = counts[category]) != null ? _a : 0) + 1;
+    }
+    return { categories: this.categories(), counts };
+  }
   getPomodoro() {
     return this.plugin.pomodoro.state();
   }
@@ -348,13 +364,17 @@ ${content}`);
     const block = [
       `## ${log.time} \xB7 ${log.agent}`,
       "",
-      `- **\u4EFB\u52A1**\uFF1A${log.task || "\u2014"}`,
-      `- **\u5B8C\u6210**\uFF1A${log.summary || "\u2014"}`,
-      `- **\u51B3\u7B56**\uFF1A${log.decisions || "\u2014"}`,
-      log.files.length ? `- **\u6D89\u53CA\u6587\u4EF6**\uFF1A${log.files.map((item) => `\`${item}\``).join("\u3001")}` : "",
-      `- **\u5B66\u5230\u7684\u4E1C\u897F**\uFF1A${log.learnings || "\u2014"}`,
-      `- **\u5F85\u786E\u8BA4**\uFF1A${log.openQuestions || "\u2014"}`,
-      log.tags.length ? `- **\u6807\u7B7E**\uFF1A${log.tags.map((tag) => `#${tag}`).join(" ")}` : "",
+      "> [!summary] \u4EFB\u52A1",
+      `> ${log.task || "\u2014"}`,
+      "",
+      "**\u5B8C\u6210\u4E86\u4EC0\u4E48**",
+      log.summary || "\u2014",
+      "",
+      ...log.decisions ? ["> [!tip] \u5173\u952E\u51B3\u7B56", `> ${log.decisions}`, ""] : [],
+      ...log.files.length ? ["> [!example] \u6D89\u53CA\u6587\u4EF6", ...log.files.map((item) => `> - \`${item}\``), ""] : [],
+      ...log.learnings ? ["> [!note] \u5B66\u5230\u7684\u4E1C\u897F", `> ${log.learnings}`, ""] : [],
+      ...log.openQuestions ? ["> [!question] \u5F85\u786E\u8BA4", `> ${log.openQuestions}`, ""] : [],
+      log.tags.length ? `\u6807\u7B7E\uFF1A${log.tags.map((tag) => `#${tag}`).join(" ")}` : "",
       ""
     ].join("\n");
     await this.vault.modify(file, `${previous.trimEnd()}
@@ -365,12 +385,15 @@ ${block}`);
   }
   /** 把一段知识沉淀成带 frontmatter 的独立笔记。 */
   async addKnowledge(input) {
-    var _a;
+    var _a, _b, _c;
     const title = String(input.title || "\u672A\u547D\u540D\u7B14\u8BB0").trim();
     const safeTitle = title.replace(/[\\/:*?"<>|#\[\]]/g, "-").slice(0, 80) || "\u672A\u547D\u540D\u7B14\u8BB0";
     const base = normalizeFolder(this.plugin.store.settings.knowledgeFolder);
-    const sub = normalizeFolder((_a = input.folder) != null ? _a : "");
-    const folder = [base, sub].filter(Boolean).join("/");
+    const categories = this.categories();
+    const requestedCategory = String((_a = input.category) != null ? _a : "").trim();
+    const category = requestedCategory || categories[0] || "\u672A\u5206\u7C7B";
+    const sub = normalizeFolder((_b = input.folder) != null ? _b : "");
+    const folder = [base, category, sub].filter(Boolean).join("/");
     await ensureFolder(this.vault, folder);
     const today = dateKey(/* @__PURE__ */ new Date());
     let fileName = `${today}-${safeTitle}.md`;
@@ -384,25 +407,48 @@ ${block}`);
     const tags = Array.isArray(input.tags) ? input.tags.map((tag) => String(tag).replace(/^#/, "")) : [];
     const links = Array.isArray(input.links) ? input.links.map(String) : [];
     const agent = String(input.agent || "agent").replace(/[:#]/g, "-");
-    const yaml = [
+    const frontmatter = [
       "---",
       `date: ${today}`,
       "type: knowledge",
       "source: agent",
+      `category: ${category}`,
       `agent: ${agent}`,
       ...input.source ? [`origin: ${String(input.source).replace(/[:#]/g, "-")}`] : [],
       tags.length ? "tags:" : "tags: []",
       ...tags.map((tag) => `  - ${tag}`),
       links.length ? "links:" : "links: []",
       ...links.map((link) => `  - "${link.replace(/"/g, '\\"')}"`),
-      "---",
+      "---"
+    ].join("\n");
+    const body = String(input.content || "").trim();
+    const firstLine = (_c = body.split("\n").map((line) => line.trim()).find((line) => line.length > 0)) != null ? _c : "";
+    const summary = firstLine.replace(/^[#>\-*0-9.\s]+/, "").slice(0, 120) || "\u2014";
+    const doc = [
+      frontmatter,
       "",
       `# ${title}`,
       "",
-      String(input.content || ""),
+      "> [!abstract] \u901F\u89C8",
+      `> ${summary}`,
+      "",
+      "## \u6B63\u6587",
+      "",
+      body || "\u2014",
+      "",
+      "## \u5173\u8054\u4E0E\u6765\u6E90",
+      ...input.source ? [`- \u6765\u6E90\uFF1A\`${String(input.source)}\``] : [],
+      ...links.length ? links.map((link) => `- \u5173\u8054\uFF1A[[${link}]]`) : ["- \u5173\u8054\uFF1A\u2014"],
+      "",
+      "## \u6807\u7B7E",
+      tags.length ? tags.map((tag) => `#${tag}`).join(" ") : "\u2014",
+      "",
+      "---",
+      "> [!info]- \u6C89\u6DC0\u4FE1\u606F",
+      `> \u7531 **${agent}** \u4E8E ${today} \u5199\u5165 \xB7 Sediment`,
       ""
     ].join("\n");
-    await this.vault.create(path, yaml);
+    await this.vault.create(path, doc);
     return { path };
   }
   /** 最近 N 天的工作日志。 */
@@ -528,7 +574,7 @@ var AgentServer = class {
       };
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
-          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.2.8" });
+          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.2.9" });
           return;
         case "GET /notes":
           this.json(response, 200, api.listNotes(str(query.get("folder")), num(query.get("limit"), 50)));
@@ -592,6 +638,7 @@ var AgentServer = class {
             await api.addKnowledge({
               title: str(body.title),
               content: str(body.content),
+              category: str(body.category),
               folder: str(body.folder),
               agent: str(body.agent),
               source: str(body.source),
@@ -606,6 +653,9 @@ var AgentServer = class {
           return;
         case "GET /worklogs":
           this.json(response, 200, api.listWorkLogs(num(query.get("days"), 7)));
+          return;
+        case "GET /categories":
+          this.json(response, 200, api.getCategories());
           return;
         case "GET /pomodoro":
           this.json(response, 200, api.getPomodoro());
@@ -641,6 +691,7 @@ var DEFAULT_SETTINGS = {
   reviewFolder: "reviews",
   workLogFolder: "agent-logs",
   knowledgeFolder: "knowledge",
+  knowledgeCategories: "\u6280\u672F,\u9879\u76EE,\u65B9\u6CD5,\u7075\u611F,\u590D\u76D8",
   artStyle: "lake",
   dailyWordGoal: 1e3,
   agentServerEnabled: false,
@@ -1018,6 +1069,13 @@ var PulseSettingTab = class extends import_obsidian6.PluginSettingTab {
       (text) => text.setPlaceholder("knowledge").setValue(settings.knowledgeFolder).onChange((value) => {
         settings.knowledgeFolder = value;
         save();
+      })
+    );
+    new import_obsidian6.Setting(containerEl).setName("\u77E5\u8BC6\u5E93\u5206\u7C7B").setDesc("\u9017\u53F7\u5206\u9694\uFF0C\u667A\u80FD\u4F53\u6C89\u6DC0\u7B14\u8BB0\u65F6\u4F1A\u6309\u5206\u7C7B\u5EFA\u5B50\u76EE\u5F55\u3002").addText(
+      (text) => text.setPlaceholder("\u6280\u672F,\u9879\u76EE,\u65B9\u6CD5,\u7075\u611F,\u590D\u76D8").setValue(settings.knowledgeCategories).onChange((value) => {
+        settings.knowledgeCategories = value;
+        save();
+        this.plugin.refreshViews();
       })
     );
     new import_obsidian6.Setting(containerEl).setName("\u770B\u677F\u753B\u98CE").setDesc("\u50CF\u7D20\u6E56\u9762 / \u6C34\u58A8\u5C71\u6C34 / \u50CF\u7D20\u57CE\u5E02\uFF0C\u4E5F\u53EF\u5728\u770B\u677F\u9875\u811A\u70B9\u300C\u6362\u753B\u98CE\u300D\u3002").addDropdown(
@@ -2034,6 +2092,7 @@ var MemoView = class extends import_obsidian8.ItemView {
     this.walkId = current.id;
   }
   renderKnowledge(root) {
+    var _a;
     const settings = this.plugin.store.settings;
     const folders = [normalizeFolder(settings.knowledgeFolder), normalizeFolder(settings.workLogFolder)].filter((folder) => folder.length > 0);
     const files = this.plugin.app.vault.getMarkdownFiles().filter((file) => folders.some((folder) => file.path.startsWith(`${folder}/`))).sort((a, b) => b.stat.mtime - a.stat.mtime).slice(0, 30);
@@ -2044,14 +2103,30 @@ var MemoView = class extends import_obsidian8.ItemView {
       });
       return;
     }
+    const knowledgeFolder = normalizeFolder(settings.knowledgeFolder);
+    const groups = /* @__PURE__ */ new Map();
+    for (const file of files) {
+      let category = "\u5DE5\u4F5C\u65E5\u5FD7";
+      if (knowledgeFolder && file.path.startsWith(`${knowledgeFolder}/`)) {
+        const parts = file.path.split("/");
+        category = parts.length > 1 ? parts[1] : "\u672A\u5206\u7C7B";
+      }
+      const group = (_a = groups.get(category)) != null ? _a : [];
+      group.push(file);
+      groups.set(category, group);
+    }
     const card = root.createDiv({ cls: "sd-card sd-knowledge" });
     card.createDiv({ cls: "sd-card-title", text: `\u77E5\u8BC6\u6C89\u6DC0 \xB7 ${files.length}` });
-    const list = card.createDiv({ cls: "sd-knowledge-list" });
-    for (const file of files) {
-      const row = list.createDiv({ cls: "sd-knowledge-item" });
-      const button = row.createEl("button", { cls: "sd-knowledge-open", text: file.basename });
-      button.onclick = () => void this.plugin.app.workspace.openLinkText(file.path, "", false);
-      row.createDiv({ cls: "sd-knowledge-path", text: file.path });
+    for (const [category, items] of groups) {
+      const section = card.createDiv({ cls: "sd-knowledge-group" });
+      section.createDiv({ cls: "sd-knowledge-category", text: `${category} \xB7 ${items.length}` });
+      const list = section.createDiv({ cls: "sd-knowledge-list" });
+      for (const file of items) {
+        const row = list.createDiv({ cls: "sd-knowledge-item" });
+        const button = row.createEl("button", { cls: "sd-knowledge-open", text: file.basename });
+        button.onclick = () => void this.plugin.app.workspace.openLinkText(file.path, "", false);
+        row.createDiv({ cls: "sd-knowledge-path", text: file.path });
+      }
     }
   }
   renderTags(root) {

@@ -44,6 +44,8 @@ export interface WorkLogInput {
 export interface KnowledgeInput {
   title: string;
   content: string;
+  /** 知识库分类，会作为 knowledge 下的子目录 */
+  category?: string;
   folder?: string;
   tags?: string[];
   agent?: string;
@@ -198,6 +200,26 @@ export class AgentApi {
     };
   }
 
+  private categories(): string[] {
+    return this.plugin.store.settings.knowledgeCategories
+      .split(/[,，]/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  /** 知识库分类及各分类下的笔记数。 */
+  getCategories(): { categories: string[]; counts: Record<string, number> } {
+    const counts: Record<string, number> = {};
+    const base = normalizeFolder(this.plugin.store.settings.knowledgeFolder);
+    for (const file of this.vault.getMarkdownFiles()) {
+      if (!base || !file.path.startsWith(`${base}/`)) continue;
+      const parts = file.path.split("/");
+      const category = parts.length > 1 ? parts[1] : "未分类";
+      counts[category] = (counts[category] ?? 0) + 1;
+    }
+    return { categories: this.categories(), counts };
+  }
+
   getPomodoro(): PomodoroState {
     return this.plugin.pomodoro.state();
   }
@@ -255,15 +277,19 @@ export class AgentApi {
     const block = [
       `## ${log.time} · ${log.agent}`,
       "",
-      `- **任务**：${log.task || "—"}`,
-      `- **完成**：${log.summary || "—"}`,
-      `- **决策**：${log.decisions || "—"}`,
-      log.files.length
-        ? `- **涉及文件**：${log.files.map((item) => `\`${item}\``).join("、")}`
-        : "",
-      `- **学到的东西**：${log.learnings || "—"}`,
-      `- **待确认**：${log.openQuestions || "—"}`,
-      log.tags.length ? `- **标签**：${log.tags.map((tag) => `#${tag}`).join(" ")}` : "",
+      "> [!summary] 任务",
+      `> ${log.task || "—"}`,
+      "",
+      "**完成了什么**",
+      log.summary || "—",
+      "",
+      ...(log.decisions ? ["> [!tip] 关键决策", `> ${log.decisions}`, ""] : []),
+      ...(log.files.length
+        ? ["> [!example] 涉及文件", ...log.files.map((item) => `> - \`${item}\``), ""]
+        : []),
+      ...(log.learnings ? ["> [!note] 学到的东西", `> ${log.learnings}`, ""] : []),
+      ...(log.openQuestions ? ["> [!question] 待确认", `> ${log.openQuestions}`, ""] : []),
+      log.tags.length ? `标签：${log.tags.map((tag) => `#${tag}`).join(" ")}` : "",
       "",
     ].join("\n");
 
@@ -278,8 +304,11 @@ export class AgentApi {
     const safeTitle =
       title.replace(/[\\/:*?"<>|#\[\]]/g, "-").slice(0, 80) || "未命名笔记";
     const base = normalizeFolder(this.plugin.store.settings.knowledgeFolder);
+    const categories = this.categories();
+    const requestedCategory = String(input.category ?? "").trim();
+    const category = requestedCategory || categories[0] || "未分类";
     const sub = normalizeFolder(input.folder ?? "");
-    const folder = [base, sub].filter(Boolean).join("/");
+    const folder = [base, category, sub].filter(Boolean).join("/");
     await ensureFolder(this.vault, folder);
 
     const today = dateKey(new Date());
@@ -297,11 +326,12 @@ export class AgentApi {
       : [];
     const links = Array.isArray(input.links) ? input.links.map(String) : [];
     const agent = String(input.agent || "agent").replace(/[:#]/g, "-");
-    const yaml = [
+    const frontmatter = [
       "---",
       `date: ${today}`,
       "type: knowledge",
       "source: agent",
+      `category: ${category}`,
       `agent: ${agent}`,
       ...(input.source ? [`origin: ${String(input.source).replace(/[:#]/g, "-")}`] : []),
       tags.length ? "tags:" : "tags: []",
@@ -309,14 +339,37 @@ export class AgentApi {
       links.length ? "links:" : "links: []",
       ...links.map((link) => `  - "${link.replace(/"/g, '\\"')}"`),
       "---",
+    ].join("\n");
+
+    const body = String(input.content || "").trim();
+    const firstLine = body.split("\n").map((line) => line.trim()).find((line) => line.length > 0) ?? "";
+    const summary = firstLine.replace(/^[#>\-*0-9.\s]+/, "").slice(0, 120) || "—";
+    const doc = [
+      frontmatter,
       "",
       `# ${title}`,
       "",
-      String(input.content || ""),
+      "> [!abstract] 速览",
+      `> ${summary}`,
+      "",
+      "## 正文",
+      "",
+      body || "—",
+      "",
+      "## 关联与来源",
+      ...(input.source ? [`- 来源：\`${String(input.source)}\``] : []),
+      ...(links.length ? links.map((link) => `- 关联：[[${link}]]`) : ["- 关联：—"]),
+      "",
+      "## 标签",
+      tags.length ? tags.map((tag) => `#${tag}`).join(" ") : "—",
+      "",
+      "---",
+      "> [!info]- 沉淀信息",
+      `> 由 **${agent}** 于 ${today} 写入 · Sediment`,
       "",
     ].join("\n");
 
-    await this.vault.create(path, yaml);
+    await this.vault.create(path, doc);
     return { path };
   }
 

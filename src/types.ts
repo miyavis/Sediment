@@ -76,6 +76,8 @@ export interface PulseSettings {
   workLogFolder: string;
   /** Agent 沉淀的知识笔记目录 */
   knowledgeFolder: string;
+  /** 知识库分类（逗号分隔），沉淀时按分类建子目录 */
+  knowledgeCategories: string;
   /** 看板画风：像素湖面 / 水墨山水 / 像素城市 */
   artStyle: "lake" | "ink" | "city";
   /** 每天写作目标字数，0 表示关闭 */
@@ -121,6 +123,7 @@ export const DEFAULT_SETTINGS: PulseSettings = {
   reviewFolder: "reviews",
   workLogFolder: "agent-logs",
   knowledgeFolder: "knowledge",
+  knowledgeCategories: "技术,项目,方法,灵感,复盘",
   artStyle: "lake",
   dailyWordGoal: 1000,
   agentServerEnabled: false,

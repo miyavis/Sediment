@@ -941,6 +941,18 @@
   padding: 12px;
 }
 
+.sd-knowledge-group {
+  margin-top: 10px;
+}
+
+.sd-knowledge-category {
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--interactive-accent);
+}
+
 .sd-knowledge-list {
   display: flex;
   flex-direction: column;

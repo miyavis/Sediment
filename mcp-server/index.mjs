@@ -152,7 +152,8 @@ const TOOLS = [
       properties: {
         title: { type: "string", description: "笔记标题" },
         content: { type: "string", description: "Markdown 正文" },
-        folder: { type: "string", description: "knowledge 下的子目录，可选" },
+        category: { type: "string", description: "知识库分类，如 技术/项目/方法/灵感/复盘；会按分类建子目录" },
+        folder: { type: "string", description: "分类下的进一步子目录，可选" },
         tags: { type: "array", items: { type: "string" } },
         agent: { type: "string", description: "来源智能体" },
         source: { type: "string", description: "来源任务 / 对话链接" },
@@ -160,6 +161,11 @@ const TOOLS = [
       },
       required: ["title", "content"],
     },
+  },
+  {
+    name: "list_categories",
+    description: "列出知识库分类及各分类下的笔记数。",
+    inputSchema: { type: "object", properties: {} },
   },
   {
     name: "get_pomodoro",
@@ -262,12 +268,15 @@ async function dispatch(name, args) {
       return call("/knowledge", {
         title: args.title ?? "",
         content: args.content ?? "",
+        category: args.category ?? "",
         folder: args.folder ?? "",
         tags: args.tags ?? [],
         agent: args.agent ?? "",
         source: args.source ?? "",
         links: args.links ?? [],
       }, "POST");
+    case "list_categories":
+      return call("/categories");
     case "get_pomodoro":
       return call("/pomodoro");
     case "control_pomodoro":

@@ -128,6 +128,20 @@ export class PulseSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("知识库分类")
+      .setDesc("逗号分隔，智能体沉淀笔记时会按分类建子目录。")
+      .addText((text) =>
+        text
+          .setPlaceholder("技术,项目,方法,灵感,复盘")
+          .setValue(settings.knowledgeCategories)
+          .onChange((value) => {
+            settings.knowledgeCategories = value;
+            save();
+            this.plugin.refreshViews();
+          })
+      );
+
+    new Setting(containerEl)
       .setName("看板画风")
       .setDesc("像素湖面 / 水墨山水 / 像素城市，也可在看板页脚点「换画风」。")
       .addDropdown((dropdown) =>

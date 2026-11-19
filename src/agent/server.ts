@@ -116,7 +116,7 @@ export class AgentServer {
 
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
-          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.2.8" });
+          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.2.9" });
           return;
         case "GET /notes":
           this.json(response, 200, api.listNotes(str(query.get("folder")), num(query.get("limit"), 50)));
@@ -180,6 +180,7 @@ export class AgentServer {
             await api.addKnowledge({
               title: str(body.title as string),
               content: str(body.content as string),
+              category: str(body.category as string),
               folder: str(body.folder as string),
               agent: str(body.agent as string),
               source: str(body.source as string),
@@ -194,6 +195,9 @@ export class AgentServer {
           return;
         case "GET /worklogs":
           this.json(response, 200, api.listWorkLogs(num(query.get("days"), 7)));
+          return;
+        case "GET /categories":
+          this.json(response, 200, api.getCategories());
           return;
         case "GET /pomodoro":
           this.json(response, 200, api.getPomodoro());
