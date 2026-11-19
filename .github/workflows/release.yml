@@ -27,7 +27,7 @@ jobs:
         run: npm run build
 
       - name: Generate release notes from CHANGELOG.md
-        run: npm run changelog -- ${{ github.ref_name }} > RELEASE_NOTES.md
+        run: node scripts/latest-changelog.mjs ${{ github.ref_name }} > RELEASE_NOTES.md
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
