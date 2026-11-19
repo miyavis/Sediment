@@ -2,7 +2,7 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
-## [Unreleased]
+## [0.8.1] - 2026-11-19
 
 ### 新增
 - 待办模块：扫描 vault 原生 `- [ ]` 待办，分今日 / 遗留 / Agent 三类展示
