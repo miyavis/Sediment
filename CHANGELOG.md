@@ -2,6 +2,11 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [0.5.1] - 2026-11-19
+
+### 修复
+- `get_active_context` 在主区打开看板/图谱时回退到最近一个 Markdown 标签页，不再返回空结果
+
 ## [0.5.0] - 2026-11-19
 
 ### 新增

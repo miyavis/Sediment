@@ -337,7 +337,14 @@ export class AgentApi {
     cursorParagraph: string;
   } {
     const workspace = this.plugin.app.workspace;
-    const file = workspace.getActiveFile();
+    let file = workspace.getActiveFile();
+    if (!file) {
+      // 主区开着看板/图谱时没有 activeFile，回退到最近一个 Markdown 标签页。
+      const leaf = workspace
+        .getLeavesOfType("markdown")
+        .find((item) => Boolean((item.view as { file?: TFile | null }).file));
+      file = (leaf?.view as { file?: TFile | null } | undefined)?.file ?? null;
+    }
     const editor = workspace.activeEditor?.editor;
     if (!file || this.isDeniedPath(file.path)) {
       return { file: null, selection: "", cursorLine: 0, cursorParagraph: "" };
