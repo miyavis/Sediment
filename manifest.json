@@ -1,7 +1,7 @@
 {
   "id": "sediment",
   "name": "Sediment",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "minAppVersion": "1.6.0",
   "description": "本地优先的知识工作看板与智能体知识沉淀插件。",
   "author": "miyavis",

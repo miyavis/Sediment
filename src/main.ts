@@ -3,6 +3,7 @@ import { AgentApi, generateToken } from "./agent/api";
 import { AgentServer } from "./agent/server";
 import { Store } from "./data/store";
 import { MemoManager } from "./features/memo";
+import { PomodoroManager } from "./features/pomodoro";
 import { buildWeeklyReview } from "./features/review";
 import { QuickMemoModal } from "./ui/quick-memo-modal";
 import { PulseSettingTab } from "./ui/settings-tab";
@@ -16,6 +17,7 @@ export class SedimentPlugin extends Plugin {
   store!: Store;
   tracker!: Tracker;
   memos!: MemoManager;
+  pomodoro!: PomodoroManager;
   agentApi!: AgentApi;
   agentServer!: AgentServer;
 
@@ -28,6 +30,7 @@ export class SedimentPlugin extends Plugin {
     }
     this.tracker = new Tracker(this, this.store);
     this.memos = new MemoManager(this);
+    this.pomodoro = new PomodoroManager(this);
     this.agentApi = new AgentApi(this);
     this.agentServer = new AgentServer(this);
 
@@ -45,6 +48,7 @@ export class SedimentPlugin extends Plugin {
       api: this.agentApi,
       store: this.store,
       memos: this.memos,
+      pomodoro: this.pomodoro,
       plugin: this,
     };
 
@@ -75,6 +79,16 @@ export class SedimentPlugin extends Plugin {
       id: "weekly-review",
       name: "生成本周工作复盘",
       callback: () => void this.generateReview(),
+    });
+    this.addCommand({
+      id: "pomodoro-toggle",
+      name: "开始 / 暂停番茄钟",
+      callback: () => this.pomodoro.toggle(),
+    });
+    this.addCommand({
+      id: "pomodoro-skip",
+      name: "跳过当前番茄 / 休息",
+      callback: () => this.pomodoro.skip(),
     });
     this.addCommand({
       id: "cycle-art-style",

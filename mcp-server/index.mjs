@@ -160,6 +160,22 @@ const TOOLS = [
     },
   },
   {
+    name: "get_pomodoro",
+    description: "查看内置番茄钟状态。",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "control_pomodoro",
+    description: "控制番茄钟：start / pause / reset / skip / toggle。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", description: "start / pause / reset / skip / toggle" },
+      },
+      required: ["action"],
+    },
+  },
+  {
     name: "list_work_logs",
     description: "列出最近 N 天所有智能体工作日志。",
     inputSchema: {
@@ -236,6 +252,10 @@ async function dispatch(name, args) {
         source: args.source ?? "",
         links: args.links ?? [],
       }, "POST");
+    case "get_pomodoro":
+      return call("/pomodoro");
+    case "control_pomodoro":
+      return call("/pomodoro", { action: args.action ?? "toggle" }, "POST");
     case "list_work_logs":
       return call("/worklogs", { days: args.days ?? 7 });
     default:
@@ -258,7 +278,7 @@ async function handle(message) {
         result: {
           protocolVersion: "2024-11-05",
           capabilities: { tools: {} },
-          serverInfo: { name: "sediment", version: "0.2.2" },
+          serverInfo: { name: "sediment", version: "0.2.3" },
         },
       });
       break;

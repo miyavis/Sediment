@@ -1,6 +1,7 @@
 import { TFile } from "obsidian";
 import type { SedimentPlugin } from "../main";
 import { buildWeeklyReview } from "../features/review";
+import type { PomodoroState } from "../features/pomodoro";
 import type { DayRecord, MemoRecord, WorkLogRecord } from "../types";
 import { addDays, dateKey, hhmm, lastNDays, parseKey } from "../utils/dates";
 import { ensureFolder, normalizeFolder } from "../utils/vault";
@@ -195,6 +196,20 @@ export class AgentApi {
       memos: todayMemos.length,
       backlog: store.data.memos.filter((memo) => !memo.converted).length,
     };
+  }
+
+  getPomodoro(): PomodoroState {
+    return this.plugin.pomodoro.state();
+  }
+
+  controlPomodoro(action: string): PomodoroState {
+    const pomodoro = this.plugin.pomodoro;
+    if (action === "start") pomodoro.start();
+    else if (action === "pause") pomodoro.pause();
+    else if (action === "reset") pomodoro.reset();
+    else if (action === "skip") pomodoro.skip();
+    else pomodoro.toggle();
+    return pomodoro.state();
   }
 
   getMemos(limit = 20): MemoRecord[] {

@@ -116,7 +116,7 @@ export class AgentServer {
 
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
-          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.2.2" });
+          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.2.3" });
           return;
         case "GET /notes":
           this.json(response, 200, api.listNotes(str(query.get("folder")), num(query.get("limit"), 50)));
@@ -194,6 +194,12 @@ export class AgentServer {
           return;
         case "GET /worklogs":
           this.json(response, 200, api.listWorkLogs(num(query.get("days"), 7)));
+          return;
+        case "GET /pomodoro":
+          this.json(response, 200, api.getPomodoro());
+          return;
+        case "POST /pomodoro":
+          this.json(response, 200, api.controlPomodoro(str(body.action as string, "toggle")));
           return;
         default:
           this.json(response, 404, { error: `未知接口：${request.method} ${url.pathname}` });

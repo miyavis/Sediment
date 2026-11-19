@@ -28,7 +28,7 @@ __export(main_exports, {
   default: () => main_default
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian9 = require("obsidian");
+var import_obsidian10 = require("obsidian");
 
 // src/agent/api.ts
 var import_obsidian = require("obsidian");
@@ -300,6 +300,18 @@ ${content}`);
       backlog: store.data.memos.filter((memo) => !memo.converted).length
     };
   }
+  getPomodoro() {
+    return this.plugin.pomodoro.state();
+  }
+  controlPomodoro(action) {
+    const pomodoro = this.plugin.pomodoro;
+    if (action === "start") pomodoro.start();
+    else if (action === "pause") pomodoro.pause();
+    else if (action === "reset") pomodoro.reset();
+    else if (action === "skip") pomodoro.skip();
+    else pomodoro.toggle();
+    return pomodoro.state();
+  }
   getMemos(limit = 20) {
     return this.plugin.store.data.memos.slice(0, Math.max(1, Math.min(limit, 200)));
   }
@@ -516,7 +528,7 @@ var AgentServer = class {
       };
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
-          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.2.2" });
+          this.json(response, 200, { ok: true, plugin: "sediment", version: "0.2.3" });
           return;
         case "GET /notes":
           this.json(response, 200, api.listNotes(str(query.get("folder")), num(query.get("limit"), 50)));
@@ -594,6 +606,12 @@ var AgentServer = class {
           return;
         case "GET /worklogs":
           this.json(response, 200, api.listWorkLogs(num(query.get("days"), 7)));
+          return;
+        case "GET /pomodoro":
+          this.json(response, 200, api.getPomodoro());
+          return;
+        case "POST /pomodoro":
+          this.json(response, 200, api.controlPomodoro(str(body.action, "toggle")));
           return;
         default:
           this.json(response, 404, { error: `\u672A\u77E5\u63A5\u53E3\uFF1A${request.method} ${url.pathname}` });
@@ -804,9 +822,95 @@ ${callout}`;
   }
 };
 
-// src/ui/quick-memo-modal.ts
+// src/features/pomodoro.ts
 var import_obsidian4 = require("obsidian");
-var QuickMemoModal = class extends import_obsidian4.Modal {
+var DURATION = {
+  focus: 25 * 60,
+  short: 5 * 60,
+  long: 15 * 60
+};
+var PomodoroManager = class {
+  constructor(plugin) {
+    this.plugin = plugin;
+    this.mode = "focus";
+    this.remaining = DURATION.focus;
+    this.running = false;
+    this.completed = 0;
+    this.listeners = /* @__PURE__ */ new Set();
+    this.statusEl = null;
+    this.statusEl = plugin.addStatusBarItem();
+    this.updateStatus();
+    plugin.registerInterval(window.setInterval(() => this.tick(), 1e3));
+  }
+  state() {
+    return { mode: this.mode, remaining: this.remaining, running: this.running, completed: this.completed };
+  }
+  subscribe(callback) {
+    this.listeners.add(callback);
+    return () => this.listeners.delete(callback);
+  }
+  start() {
+    if (this.running) return;
+    this.running = true;
+    this.emit();
+  }
+  pause() {
+    this.running = false;
+    this.emit();
+  }
+  reset() {
+    this.running = false;
+    this.remaining = DURATION[this.mode];
+    this.emit();
+  }
+  skip() {
+    this.running = false;
+    this.mode = this.mode === "focus" ? this.completed % 4 === 3 ? "long" : "short" : "focus";
+    this.remaining = DURATION[this.mode];
+    this.emit();
+  }
+  toggle() {
+    if (this.running) this.pause();
+    else this.start();
+  }
+  tick() {
+    if (!this.running) return;
+    this.remaining -= 1;
+    if (this.remaining <= 0) {
+      this.complete();
+    }
+    this.emit();
+  }
+  complete() {
+    if (this.mode === "focus") {
+      this.completed += 1;
+      this.plugin.store.updateDay(this.plugin.store.todayKey(), (day) => {
+        day.focusMinutes += 25;
+      });
+      new import_obsidian4.Notice("\u756A\u8304\u5B8C\u6210\uFF0C\u5DF2\u8BB0\u5165 25 \u5206\u949F\u4E13\u6CE8");
+    } else {
+      new import_obsidian4.Notice("\u4F11\u606F\u7ED3\u675F");
+    }
+    this.mode = this.mode === "focus" ? this.completed % 4 === 0 ? "long" : "short" : "focus";
+    this.remaining = DURATION[this.mode];
+    this.running = false;
+  }
+  emit() {
+    this.updateStatus();
+    for (const listener of this.listeners) listener();
+  }
+  updateStatus() {
+    if (!this.statusEl) return;
+    const minutes = String(Math.floor(this.remaining / 60)).padStart(2, "0");
+    const seconds = String(this.remaining % 60).padStart(2, "0");
+    const mode = this.mode === "focus" ? "\u756A\u8304" : this.mode === "short" ? "\u77ED\u4F11" : "\u957F\u4F11";
+    this.statusEl.setText(`${this.running ? "\u25B6" : "\u23F8"} ${mode} ${minutes}:${seconds}`);
+  }
+};
+
+// src/ui/quick-memo-modal.ts
+var import_obsidian5 = require("obsidian");
+var QuickMemoModal = class extends import_obsidian5.Modal {
   constructor(app, onSubmit) {
     super(app);
     this.onSubmit = onSubmit;
@@ -847,8 +951,8 @@ var QuickMemoModal = class extends import_obsidian4.Modal {
 };
 
 // src/ui/settings-tab.ts
-var import_obsidian5 = require("obsidian");
-var PulseSettingTab = class extends import_obsidian5.PluginSettingTab {
+var import_obsidian6 = require("obsidian");
+var PulseSettingTab = class extends import_obsidian6.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -859,32 +963,32 @@ var PulseSettingTab = class extends import_obsidian5.PluginSettingTab {
     containerEl.createEl("h2", { text: "Sediment \u8BBE\u7F6E" });
     const settings = this.plugin.store.settings;
     const save = () => void this.plugin.saveSettings();
-    new import_obsidian5.Setting(containerEl).setName("\u65E5\u8BB0\u6587\u4EF6\u5939").setDesc("\u901F\u8BB0\u5199\u5165\u7684\u76EE\u5F55\uFF0C\u7559\u7A7A\u8868\u793A\u5E93\u6839\u76EE\u5F55\u3002").addText(
+    new import_obsidian6.Setting(containerEl).setName("\u65E5\u8BB0\u6587\u4EF6\u5939").setDesc("\u901F\u8BB0\u5199\u5165\u7684\u76EE\u5F55\uFF0C\u7559\u7A7A\u8868\u793A\u5E93\u6839\u76EE\u5F55\u3002").addText(
       (text) => text.setPlaceholder("daily").setValue(settings.dailyNoteFolder).onChange((value) => {
         settings.dailyNoteFolder = value;
         save();
       })
     );
-    new import_obsidian5.Setting(containerEl).setName("\u65E5\u8BB0\u6587\u4EF6\u540D\u683C\u5F0F").setDesc("\u652F\u6301 YYYY / MM / DD \u5360\u4F4D\u7B26\u3002").addText(
+    new import_obsidian6.Setting(containerEl).setName("\u65E5\u8BB0\u6587\u4EF6\u540D\u683C\u5F0F").setDesc("\u652F\u6301 YYYY / MM / DD \u5360\u4F4D\u7B26\u3002").addText(
       (text) => text.setPlaceholder("YYYY-MM-DD").setValue(settings.dailyNoteFormat).onChange((value) => {
         settings.dailyNoteFormat = value || "YYYY-MM-DD";
         save();
       })
     );
-    new import_obsidian5.Setting(containerEl).setName("\u901F\u8BB0\u6BB5\u843D\u6807\u9898").addText(
+    new import_obsidian6.Setting(containerEl).setName("\u901F\u8BB0\u6BB5\u843D\u6807\u9898").addText(
       (text) => text.setPlaceholder("## \u901F\u8BB0").setValue(settings.memoHeading).onChange((value) => {
         settings.memoHeading = value || "## \u901F\u8BB0";
         save();
       })
     );
-    new import_obsidian5.Setting(containerEl).setName("\u6BCF\u5468\u8D77\u59CB\u65E5").addDropdown(
+    new import_obsidian6.Setting(containerEl).setName("\u6BCF\u5468\u8D77\u59CB\u65E5").addDropdown(
       (dropdown) => dropdown.addOption("1", "\u5468\u4E00").addOption("0", "\u5468\u65E5").setValue(String(settings.weekStart)).onChange((value) => {
         settings.weekStart = value === "0" ? 0 : 1;
         save();
         this.plugin.refreshViews();
       })
     );
-    new import_obsidian5.Setting(containerEl).setName("\u70ED\u529B\u56FE\u9ED8\u8BA4\u6307\u6807").addDropdown((dropdown) => {
+    new import_obsidian6.Setting(containerEl).setName("\u70ED\u529B\u56FE\u9ED8\u8BA4\u6307\u6807").addDropdown((dropdown) => {
       for (const metric of METRICS) dropdown.addOption(metric.key, metric.label);
       dropdown.setValue(settings.heatmapMetric).onChange((value) => {
         settings.heatmapMetric = value;
@@ -892,38 +996,38 @@ var PulseSettingTab = class extends import_obsidian5.PluginSettingTab {
         this.plugin.refreshViews();
       });
     });
-    new import_obsidian5.Setting(containerEl).setName("\u7EDF\u8BA1\u6709\u6548\u7F16\u8F91\u4F1A\u8BDD").setDesc("\u540C\u4E00\u6587\u4EF6\u540C\u4E00\u5929\u6700\u591A\u8BB0\u4E00\u6B21\uFF0C\u907F\u514D\u8FDE\u7EED\u952E\u5165\u5237\u5206\u3002").addToggle(
+    new import_obsidian6.Setting(containerEl).setName("\u7EDF\u8BA1\u6709\u6548\u7F16\u8F91\u4F1A\u8BDD").setDesc("\u540C\u4E00\u6587\u4EF6\u540C\u4E00\u5929\u6700\u591A\u8BB0\u4E00\u6B21\uFF0C\u907F\u514D\u8FDE\u7EED\u952E\u5165\u5237\u5206\u3002").addToggle(
       (toggle) => toggle.setValue(settings.trackEdits).onChange((value) => {
         settings.trackEdits = value;
         save();
       })
     );
-    new import_obsidian5.Setting(containerEl).setName("\u590D\u76D8\u5F52\u6863\u6587\u4EF6\u5939").addText(
+    new import_obsidian6.Setting(containerEl).setName("\u590D\u76D8\u5F52\u6863\u6587\u4EF6\u5939").addText(
       (text) => text.setPlaceholder("reviews").setValue(settings.reviewFolder).onChange((value) => {
         settings.reviewFolder = value;
         save();
       })
     );
-    new import_obsidian5.Setting(containerEl).setName("Agent \u5DE5\u4F5C\u65E5\u5FD7\u76EE\u5F55").setDesc("\u667A\u80FD\u4F53\u6BCF\u6B21\u5DE5\u4F5C\u7684\u6C89\u6DC0\u65E5\u5FD7\uFF0C\u9ED8\u8BA4\u6309\u5929\u5199\u5165\u4E00\u4E2A\u6587\u4EF6\u3002").addText(
+    new import_obsidian6.Setting(containerEl).setName("Agent \u5DE5\u4F5C\u65E5\u5FD7\u76EE\u5F55").setDesc("\u667A\u80FD\u4F53\u6BCF\u6B21\u5DE5\u4F5C\u7684\u6C89\u6DC0\u65E5\u5FD7\uFF0C\u9ED8\u8BA4\u6309\u5929\u5199\u5165\u4E00\u4E2A\u6587\u4EF6\u3002").addText(
       (text) => text.setPlaceholder("agent-logs").setValue(settings.workLogFolder).onChange((value) => {
         settings.workLogFolder = value;
         save();
       })
     );
-    new import_obsidian5.Setting(containerEl).setName("\u77E5\u8BC6\u6C89\u6DC0\u76EE\u5F55").setDesc("\u667A\u80FD\u4F53\u901A\u8FC7 add_knowledge \u5199\u5165\u7684\u957F\u671F\u7B14\u8BB0\u76EE\u5F55\u3002").addText(
+    new import_obsidian6.Setting(containerEl).setName("\u77E5\u8BC6\u6C89\u6DC0\u76EE\u5F55").setDesc("\u667A\u80FD\u4F53\u901A\u8FC7 add_knowledge \u5199\u5165\u7684\u957F\u671F\u7B14\u8BB0\u76EE\u5F55\u3002").addText(
       (text) => text.setPlaceholder("knowledge").setValue(settings.knowledgeFolder).onChange((value) => {
         settings.knowledgeFolder = value;
         save();
       })
     );
-    new import_obsidian5.Setting(containerEl).setName("\u770B\u677F\u753B\u98CE").setDesc("\u50CF\u7D20\u6E56\u9762 / \u6C34\u58A8\u5C71\u6C34 / \u50CF\u7D20\u57CE\u5E02\uFF0C\u4E5F\u53EF\u5728\u770B\u677F\u9875\u811A\u70B9\u300C\u6362\u753B\u98CE\u300D\u3002").addDropdown(
+    new import_obsidian6.Setting(containerEl).setName("\u770B\u677F\u753B\u98CE").setDesc("\u50CF\u7D20\u6E56\u9762 / \u6C34\u58A8\u5C71\u6C34 / \u50CF\u7D20\u57CE\u5E02\uFF0C\u4E5F\u53EF\u5728\u770B\u677F\u9875\u811A\u70B9\u300C\u6362\u753B\u98CE\u300D\u3002").addDropdown(
       (dropdown) => dropdown.addOption("lake", "\u50CF\u7D20\u6E56\u9762").addOption("ink", "\u6C34\u58A8\u5C71\u6C34").addOption("city", "\u50CF\u7D20\u57CE\u5E02").setValue(settings.artStyle).onChange((value) => {
         settings.artStyle = value;
         save();
         this.plugin.refreshViews();
       })
     );
-    new import_obsidian5.Setting(containerEl).setName("\u6BCF\u65E5\u5199\u4F5C\u76EE\u6807").setDesc("\u770B\u677F\u4ECA\u5929\u5361\u7247\u663E\u793A\u8FDB\u5EA6\uFF0C0 \u8868\u793A\u5173\u95ED\u3002").addText(
+    new import_obsidian6.Setting(containerEl).setName("\u6BCF\u65E5\u5199\u4F5C\u76EE\u6807").setDesc("\u770B\u677F\u4ECA\u5929\u5361\u7247\u663E\u793A\u8FDB\u5EA6\uFF0C0 \u8868\u793A\u5173\u95ED\u3002").addText(
       (text) => text.setPlaceholder("1000").setValue(String(settings.dailyWordGoal)).onChange((value) => {
         const goal = Number(value);
         settings.dailyWordGoal = Number.isFinite(goal) && goal >= 0 ? goal : 1e3;
@@ -932,13 +1036,13 @@ var PulseSettingTab = class extends import_obsidian5.PluginSettingTab {
       })
     );
     containerEl.createEl("h3", { text: "Agent \u63A5\u5165\uFF08\u672C\u5730 HTTP / MCP\uFF09" });
-    new import_obsidian5.Setting(containerEl).setName("\u542F\u7528\u672C\u5730 Agent API").setDesc("\u53EA\u76D1\u542C 127.0.0.1\uFF0C\u4F9B MCP \u6865\u63A5\u548C\u672C\u5730\u811A\u672C\u8C03\u7528\u4E2A\u4EBA\u77E5\u8BC6\u5E93\u3002").addToggle(
+    new import_obsidian6.Setting(containerEl).setName("\u542F\u7528\u672C\u5730 Agent API").setDesc("\u53EA\u76D1\u542C 127.0.0.1\uFF0C\u4F9B MCP \u6865\u63A5\u548C\u672C\u5730\u811A\u672C\u8C03\u7528\u4E2A\u4EBA\u77E5\u8BC6\u5E93\u3002").addToggle(
       (toggle) => toggle.setValue(settings.agentServerEnabled).onChange((value) => {
         settings.agentServerEnabled = value;
         save();
       })
     );
-    new import_obsidian5.Setting(containerEl).setName("\u7AEF\u53E3").setDesc("\u9ED8\u8BA4 27123\uFF0C\u4FEE\u6539\u540E\u670D\u52A1\u4F1A\u81EA\u52A8\u91CD\u542F\u3002").addText(
+    new import_obsidian6.Setting(containerEl).setName("\u7AEF\u53E3").setDesc("\u9ED8\u8BA4 27123\uFF0C\u4FEE\u6539\u540E\u670D\u52A1\u4F1A\u81EA\u52A8\u91CD\u542F\u3002").addText(
       (text) => text.setPlaceholder("27123").setValue(String(settings.agentServerPort)).onChange((value) => {
         const port = Number(value);
         if (Number.isInteger(port) && port > 0 && port < 65536) {
@@ -947,13 +1051,13 @@ var PulseSettingTab = class extends import_obsidian5.PluginSettingTab {
         }
       })
     );
-    new import_obsidian5.Setting(containerEl).setName("\u8BBF\u95EE\u4EE4\u724C").setDesc("HTTP \u8BF7\u6C42\u4E0E MCP \u6865\u63A5\u90FD\u5FC5\u987B\u643A\u5E26\u6B64\u4EE4\u724C\u3002").addText(
+    new import_obsidian6.Setting(containerEl).setName("\u8BBF\u95EE\u4EE4\u724C").setDesc("HTTP \u8BF7\u6C42\u4E0E MCP \u6865\u63A5\u90FD\u5FC5\u987B\u643A\u5E26\u6B64\u4EE4\u724C\u3002").addText(
       (text) => text.setPlaceholder("\u70B9\u51FB\u53F3\u4FA7\u6309\u94AE\u751F\u6210").setValue(settings.agentServerToken).onChange((value) => {
         settings.agentServerToken = value.trim();
         save();
       })
     );
-    new import_obsidian5.Setting(containerEl).setName("\u91CD\u65B0\u751F\u6210\u4EE4\u724C").setDesc("\u6CC4\u9732\u6216\u9057\u5FD8\u65F6\u70B9\u51FB\uFF0C\u65E7\u4EE4\u724C\u7ACB\u5373\u5931\u6548\u3002").addButton(
+    new import_obsidian6.Setting(containerEl).setName("\u91CD\u65B0\u751F\u6210\u4EE4\u724C").setDesc("\u6CC4\u9732\u6216\u9057\u5FD8\u65F6\u70B9\u51FB\uFF0C\u65E7\u4EE4\u724C\u7ACB\u5373\u5931\u6548\u3002").addButton(
       (button) => button.setButtonText("\u751F\u6210\u65B0\u4EE4\u724C").onClick(() => {
         settings.agentServerToken = generateToken();
         save();
@@ -964,7 +1068,7 @@ var PulseSettingTab = class extends import_obsidian5.PluginSettingTab {
 };
 
 // src/views/dashboard-view.ts
-var import_obsidian6 = require("obsidian");
+var import_obsidian7 = require("obsidian");
 var DASHBOARD_VIEW_TYPE = "sediment-dashboard";
 var RANGE_OPTIONS = [
   ["7d", "\u8FD1 7 \u5929"],
@@ -980,7 +1084,7 @@ var TABS = [
   ["yearly", "\u5E74\u5EA6\u753B\u50CF"]
 ];
 var WEEKDAYS = ["\u65E5", "\u4E00", "\u4E8C", "\u4E09", "\u56DB", "\u4E94", "\u516D"];
-var DashboardView = class extends import_obsidian6.ItemView {
+var DashboardView = class extends import_obsidian7.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
@@ -990,6 +1094,7 @@ var DashboardView = class extends import_obsidian6.ItemView {
     this.selected = null;
     this.posterMonth = (/* @__PURE__ */ new Date()).getMonth();
     this.bannerEl = null;
+    this.unsubscribePomodoro = null;
     this.metric = plugin.store.settings.heatmapMetric;
   }
   getViewType() {
@@ -1004,6 +1109,11 @@ var DashboardView = class extends import_obsidian6.ItemView {
   async onOpen() {
     this.render();
     this.registerInterval(window.setInterval(() => this.updateBanner(), 6e4));
+    this.unsubscribePomodoro = this.plugin.pomodoro.subscribe(() => this.updatePomodoroButton());
+  }
+  async onClose() {
+    var _a;
+    (_a = this.unsubscribePomodoro) == null ? void 0 : _a.call(this);
   }
   render() {
     const root = this.contentEl;
@@ -1017,7 +1127,7 @@ var DashboardView = class extends import_obsidian6.ItemView {
       this.renderHeatmap(body);
       this.renderHorizon(body);
       const footer = body.createDiv({ cls: "sd-footer" });
-      footer.createSpan({ text: "Sediment 0.1.3 \xB7 \u6570\u636E\u53EA\u7559\u5728\u672C\u5730" });
+      footer.createSpan({ text: `Sediment ${this.plugin.manifest.version} \xB7 \u6570\u636E\u53EA\u7559\u5728\u672C\u5730` });
       const monthly = footer.createEl("button", { text: "\u6708\u62A5" });
       monthly.onclick = () => {
         this.tab = "yearly";
@@ -1096,6 +1206,11 @@ var DashboardView = class extends import_obsidian6.ItemView {
     const goal = this.plugin.store.settings.dailyWordGoal || 1e3;
     row.createSpan({ text: `\u5199\u4F5C ${day.wordsAdded} / ${goal.toLocaleString()} \u5B57` });
     row.createSpan({ text: `\u8FDE\u7EED ${streak} \u5929` });
+    const pomoButton = row.createEl("button", { cls: "sd-pomodoro-button" });
+    pomoButton.onclick = () => this.plugin.pomodoro.toggle();
+    this.updatePomodoroButton();
+    const skipButton = row.createEl("button", { cls: "sd-pomodoro-skip", text: "\u8DF3\u8FC7" });
+    skipButton.onclick = () => this.plugin.pomodoro.skip();
     const progress = card.createDiv({ cls: "sd-progress" });
     const fill = progress.createDiv({ cls: "sd-progress-fill" });
     fill.style.width = `${Math.min(100, day.wordsAdded / goal * 100)}%`;
@@ -1259,24 +1374,49 @@ var DashboardView = class extends import_obsidian6.ItemView {
   }
   renderHorizon(root) {
     const card = root.createDiv({ cls: "sd-card sd-horizon" });
+    card.createDiv({ cls: "sd-card-title", text: "\u5730\u5E73\u7EBF \xB7 \u6700\u8FD1 60 \u5929" });
+    card.createDiv({
+      cls: "sd-card-sub",
+      text: "\u5C71\u810A\u662F\u6BCF\u5929\u7684\u8D21\u732E\u5206\uFF0C\u6700\u53F3\u8FB9\u7684\u5C0F\u65D7\u662F\u4ECA\u5929\uFF1B\u6E56\u9762\u5012\u6620\u7740\u5929\u7A7A\uFF0C\u4E13\u6CE8\u65F6\u4F1A\u6709\u5E06\u8239\u3002"
+    });
     const values = lastNDays(60).map((key) => this.value(key));
     const max = Math.max(1, ...values);
-    const bars = values.map((value, index) => {
-      const x = 20 + index * 26;
-      const height = 10 + value / max * 80;
-      return `<rect x="${x}" y="${120 - height}" width="16" height="${height}" rx="3" fill="var(--interactive-accent)" opacity="${value > 0 ? 0.75 : 0.15}"/>`;
-    }).join("");
-    const reflection = values.map((value, index) => {
-      const x = 20 + index * 26;
-      const height = 8 + value / max * 30;
-      return `<rect x="${x}" y="140" width="16" height="${height}" rx="3" fill="var(--interactive-accent)" opacity="${value > 0 ? 0.16 : 0.04}"/>`;
-    }).join("");
-    card.innerHTML = `<div class="sd-card-title">\u5730\u5E73\u7EBF \xB7 \u6700\u8FD1 60 \u5929</div>
-<svg viewBox="0 0 1600 200" preserveAspectRatio="none" class="sd-horizon-svg">
-  <line x1="0" y1="120" x2="1600" y2="120" stroke="var(--background-modifier-border)" stroke-width="1"/>
-  ${bars}
-  <rect x="0" y="136" width="1600" height="64" fill="var(--background-secondary)" opacity="0.6"/>
-  ${reflection}
+    const step = 1600 / values.length;
+    const ridge = values.map((value, index) => `${(index * step).toFixed(1)},${(190 - value / max * 110).toFixed(1)}`).join(" ");
+    const mountains = `0,200 ${ridge} 1600,200`;
+    const reflectionPoints = values.map((value, index) => `${(index * step).toFixed(1)},${(208 + value / max * 52).toFixed(1)}`).join(" ");
+    const reflection = `0,206 ${reflectionPoints} 1600,206`;
+    const stones = values.map(
+      (value, index) => value > 0 ? `<circle cx="${(index * step + step / 2).toFixed(1)}" cy="${(188 - value / max * 110).toFixed(1)}" r="2.6" fill="var(--interactive-accent)" opacity="0.8"/>` : ""
+    ).join("");
+    const now = /* @__PURE__ */ new Date();
+    const hour = now.getHours() + now.getMinutes() / 60;
+    const daylight = hour >= 6 && hour < 18;
+    const x = 180 + hour / 24 * 1240;
+    const celestial = daylight ? `<circle cx="${x.toFixed(0)}" cy="74" r="28" fill="#ffe08a"/><circle cx="${x.toFixed(0)}" cy="74" r="46" fill="#fff3c4" opacity="0.16"/>` : `<circle cx="${x.toFixed(0)}" cy="74" r="24" fill="#f2f0dc" opacity="0.9"/><text x="${x.toFixed(0)}" y="84" font-size="24" text-anchor="middle">${this.moonGlyph(now)}</text>`;
+    const month = now.getMonth();
+    const treeColor = month === 11 || month < 3 ? "#d7e4ec" : month < 6 ? "#8fbf7a" : month < 9 ? "#6fa05f" : "#d59a5b";
+    const trees = [140, 380, 650, 940, 1230].map((tx) => `<path d="M${tx} 190 l14 -34 l14 34 Z" fill="${treeColor}" opacity="0.7"/>`).join("");
+    const sailing = this.plugin.pomodoro.state().running ? `<g transform="translate(1280 232)"><path d="M0 18 h54 l-8 12 H8 Z" fill="var(--text-muted)"/><path d="M26 16 V-26 l24 34 Z" fill="var(--interactive-accent)" opacity="0.75"/></g>` : "";
+    card.innerHTML += `<svg viewBox="0 0 1600 300" preserveAspectRatio="none" class="sd-horizon-svg">
+<defs>
+  <linearGradient id="sd-hsky" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="${daylight ? "#9fc8e8" : "#2b3f60"}"/>
+    <stop offset="100%" stop-color="${daylight ? "#e6f2fa" : "#64809f"}"/>
+  </linearGradient>
+</defs>
+<rect width="1600" height="200" fill="url(#sd-hsky)"/>
+${celestial}
+<polygon points="${mountains}" fill="var(--interactive-accent)" opacity="0.28"/>
+<polygon points="${mountains}" fill="none" stroke="var(--interactive-accent)" stroke-width="2" opacity="0.6"/>
+${stones}
+${trees}
+<rect x="1560" y="118" width="3" height="76" fill="var(--text-muted)"/>
+<path d="M1563 120 l34 10 -34 10 Z" fill="var(--interactive-accent)"/>
+<rect y="200" width="1600" height="100" fill="var(--background-secondary)" opacity="0.75"/>
+<polygon points="${reflection}" fill="var(--interactive-accent)" opacity="0.12"/>
+<ellipse cx="${x.toFixed(0)}" cy="232" rx="38" ry="9" fill="${daylight ? "#ffe08a" : "#f2f0dc"}" opacity="0.22"/>
+${sailing}
 </svg>`;
   }
   renderReview(root) {
@@ -1286,10 +1426,10 @@ var DashboardView = class extends import_obsidian6.ItemView {
     const markdown = buildWeeklyReview(this.plugin.store, /* @__PURE__ */ new Date());
     const copy = head.createEl("button", { text: "\u590D\u5236 Markdown" });
     copy.onclick = () => {
-      void navigator.clipboard.writeText(markdown).then(() => new import_obsidian6.Notice("\u5468\u590D\u76D8\u5DF2\u590D\u5236"));
+      void navigator.clipboard.writeText(markdown).then(() => new import_obsidian7.Notice("\u5468\u590D\u76D8\u5DF2\u590D\u5236"));
     };
     const preview = card.createDiv({ cls: "sd-review-preview" });
-    void import_obsidian6.MarkdownRenderer.render(this.plugin.app, markdown, preview, "", this);
+    void import_obsidian7.MarkdownRenderer.render(this.plugin.app, markdown, preview, "", this);
   }
   analyticsCard(root, title, subtitle = "") {
     const card = root.createDiv({ cls: "sd-card" });
@@ -1630,6 +1770,15 @@ ${celestial}
   updateBanner() {
     if (this.bannerEl) this.bannerEl.innerHTML = this.bannerSvg();
   }
+  updatePomodoroButton() {
+    const button = this.contentEl.querySelector(".sd-pomodoro-button");
+    if (!button) return;
+    const state = this.plugin.pomodoro.state();
+    const minutes = String(Math.floor(state.remaining / 60)).padStart(2, "0");
+    const seconds = String(state.remaining % 60).padStart(2, "0");
+    const mode = state.mode === "focus" ? "\u756A\u8304" : state.mode === "short" ? "\u77ED\u4F11" : "\u957F\u4F11";
+    button.textContent = `${state.running ? "\u23F8" : "\u25B6"} ${mode} ${minutes}:${seconds}`;
+  }
   cycleArtStyle() {
     const styles = ["lake", "ink", "city"];
     const current = this.plugin.store.settings.artStyle;
@@ -1651,9 +1800,9 @@ function startOfWeekFor(date, weekStart) {
 }
 
 // src/views/memo-view.ts
-var import_obsidian7 = require("obsidian");
+var import_obsidian8 = require("obsidian");
 var MEMO_VIEW_TYPE = "sediment-memo";
-var MemoView = class extends import_obsidian7.ItemView {
+var MemoView = class extends import_obsidian8.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
@@ -1765,7 +1914,7 @@ var MemoView = class extends import_obsidian7.ItemView {
       area.value += ` ![[${name}]]`;
       area.focus();
     }
-    new import_obsidian7.Notice("\u56FE\u7247\u5DF2\u63D2\u5165\u901F\u8BB0");
+    new import_obsidian8.Notice("\u56FE\u7247\u5DF2\u63D2\u5165\u901F\u8BB0");
   }
   renderList(root) {
     var _a;
@@ -1906,7 +2055,7 @@ var MemoView = class extends import_obsidian7.ItemView {
 };
 
 // src/tracking/tracker.ts
-var import_obsidian8 = require("obsidian");
+var import_obsidian9 = require("obsidian");
 function countWords(text) {
   var _a, _b;
   const cjk = ((_a = text.match(/[\u3400-\u9fff]/g)) != null ? _a : []).length;
@@ -1933,12 +2082,12 @@ var Tracker = class {
     }
     this.plugin.registerEvent(
       vault.on("create", (file) => {
-        if (file instanceof import_obsidian8.TFile) void this.onCreate(file);
+        if (file instanceof import_obsidian9.TFile) void this.onCreate(file);
       })
     );
     this.plugin.registerEvent(
       vault.on("modify", (file) => {
-        if (file instanceof import_obsidian8.TFile) void this.onModify(file);
+        if (file instanceof import_obsidian9.TFile) void this.onModify(file);
       })
     );
     this.plugin.registerEvent(
@@ -2037,7 +2186,7 @@ var Tracker = class {
 };
 
 // src/main.ts
-var SedimentPlugin = class extends import_obsidian9.Plugin {
+var SedimentPlugin = class extends import_obsidian10.Plugin {
   constructor() {
     super(...arguments);
     this.serverRestartTimer = null;
@@ -2051,6 +2200,7 @@ var SedimentPlugin = class extends import_obsidian9.Plugin {
     }
     this.tracker = new Tracker(this, this.store);
     this.memos = new MemoManager(this);
+    this.pomodoro = new PomodoroManager(this);
     this.agentApi = new AgentApi(this);
     this.agentServer = new AgentServer(this);
     this.registerView(DASHBOARD_VIEW_TYPE, (leaf) => new DashboardView(leaf, this));
@@ -2064,6 +2214,7 @@ var SedimentPlugin = class extends import_obsidian9.Plugin {
       api: this.agentApi,
       store: this.store,
       memos: this.memos,
+      pomodoro: this.pomodoro,
       plugin: this
     };
     this.addRibbonIcon("activity", "Sediment\uFF1A\u770B\u677F", () => {
@@ -2091,6 +2242,16 @@ var SedimentPlugin = class extends import_obsidian9.Plugin {
       id: "weekly-review",
       name: "\u751F\u6210\u672C\u5468\u5DE5\u4F5C\u590D\u76D8",
       callback: () => void this.generateReview()
+    });
+    this.addCommand({
+      id: "pomodoro-toggle",
+      name: "\u5F00\u59CB / \u6682\u505C\u756A\u8304\u949F",
+      callback: () => this.pomodoro.toggle()
+    });
+    this.addCommand({
+      id: "pomodoro-skip",
+      name: "\u8DF3\u8FC7\u5F53\u524D\u756A\u8304 / \u4F11\u606F",
+      callback: () => this.pomodoro.skip()
     });
     this.addCommand({
       id: "cycle-art-style",
@@ -2166,7 +2327,7 @@ var SedimentPlugin = class extends import_obsidian9.Plugin {
     var _a;
     let parent = leaf.parent;
     while (parent) {
-      if (parent instanceof import_obsidian9.WorkspaceSidedock) return true;
+      if (parent instanceof import_obsidian10.WorkspaceSidedock) return true;
       parent = (_a = parent.parent) != null ? _a : null;
     }
     return false;
@@ -2180,7 +2341,7 @@ var SedimentPlugin = class extends import_obsidian9.Plugin {
     const path = folder ? `${folder}/${name}` : name;
     const existing = this.app.vault.getAbstractFileByPath(path);
     let file;
-    if (existing instanceof import_obsidian9.TFile) {
+    if (existing instanceof import_obsidian10.TFile) {
       const previous = await this.app.vault.read(existing);
       await this.app.vault.modify(existing, `${previous.trimEnd()}
 
@@ -2192,7 +2353,7 @@ ${markdown}`);
       file = await this.app.vault.create(path, markdown);
     }
     await this.app.workspace.getLeaf(true).openFile(file);
-    new import_obsidian9.Notice("\u5468\u590D\u76D8\u5DF2\u751F\u6210\u5E76\u6253\u5F00");
+    new import_obsidian10.Notice("\u5468\u590D\u76D8\u5DF2\u751F\u6210\u5E76\u6253\u5F00");
   }
 };
 var main_default = SedimentPlugin;

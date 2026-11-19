@@ -34,6 +34,7 @@ export class DashboardView extends ItemView {
   private selected: string | null = null;
   private posterMonth = new Date().getMonth();
   private bannerEl: HTMLElement | null = null;
+  private unsubscribePomodoro: (() => void) | null = null;
 
   constructor(leaf: WorkspaceLeaf, private plugin: SedimentPlugin) {
     super(leaf);
@@ -55,6 +56,11 @@ export class DashboardView extends ItemView {
   async onOpen(): Promise<void> {
     this.render();
     this.registerInterval(window.setInterval(() => this.updateBanner(), 60_000));
+    this.unsubscribePomodoro = this.plugin.pomodoro.subscribe(() => this.updatePomodoroButton());
+  }
+
+  async onClose(): Promise<void> {
+    this.unsubscribePomodoro?.();
   }
 
   render(): void {
@@ -70,7 +76,7 @@ export class DashboardView extends ItemView {
       this.renderHeatmap(body);
       this.renderHorizon(body);
       const footer = body.createDiv({ cls: "sd-footer" });
-      footer.createSpan({ text: "Sediment 0.1.3 · 数据只留在本地" });
+      footer.createSpan({ text: `Sediment ${this.plugin.manifest.version} · 数据只留在本地` });
       const monthly = footer.createEl("button", { text: "月报" });
       monthly.onclick = () => {
         this.tab = "yearly";
@@ -155,6 +161,11 @@ export class DashboardView extends ItemView {
     const goal = this.plugin.store.settings.dailyWordGoal || 1000;
     row.createSpan({ text: `写作 ${day.wordsAdded} / ${goal.toLocaleString()} 字` });
     row.createSpan({ text: `连续 ${streak} 天` });
+    const pomoButton = row.createEl("button", { cls: "sd-pomodoro-button" });
+    pomoButton.onclick = () => this.plugin.pomodoro.toggle();
+    this.updatePomodoroButton();
+    const skipButton = row.createEl("button", { cls: "sd-pomodoro-skip", text: "跳过" });
+    skipButton.onclick = () => this.plugin.pomodoro.skip();
     const progress = card.createDiv({ cls: "sd-progress" });
     const fill = progress.createDiv({ cls: "sd-progress-fill" });
     fill.style.width = `${Math.min(100, (day.wordsAdded / goal) * 100)}%`;
@@ -332,28 +343,69 @@ export class DashboardView extends ItemView {
 
   private renderHorizon(root: HTMLElement): void {
     const card = root.createDiv({ cls: "sd-card sd-horizon" });
+    card.createDiv({ cls: "sd-card-title", text: "地平线 · 最近 60 天" });
+    card.createDiv({
+      cls: "sd-card-sub",
+      text: "山脊是每天的贡献分，最右边的小旗是今天；湖面倒映着天空，专注时会有帆船。",
+    });
+
     const values = lastNDays(60).map((key) => this.value(key));
     const max = Math.max(1, ...values);
-    const bars = values
-      .map((value, index) => {
-        const x = 20 + index * 26;
-        const height = 10 + (value / max) * 80;
-        return `<rect x="${x}" y="${120 - height}" width="16" height="${height}" rx="3" fill="var(--interactive-accent)" opacity="${value > 0 ? 0.75 : 0.15}"/>`;
-      })
+    const step = 1600 / values.length;
+    const ridge = values
+      .map((value, index) => `${(index * step).toFixed(1)},${(190 - (value / max) * 110).toFixed(1)}`)
+      .join(" ");
+    const mountains = `0,200 ${ridge} 1600,200`;
+    const reflectionPoints = values
+      .map((value, index) => `${(index * step).toFixed(1)},${(208 + (value / max) * 52).toFixed(1)}`)
+      .join(" ");
+    const reflection = `0,206 ${reflectionPoints} 1600,206`;
+    const stones = values
+      .map((value, index) =>
+        value > 0
+          ? `<circle cx="${(index * step + step / 2).toFixed(1)}" cy="${(188 - (value / max) * 110).toFixed(1)}" r="2.6" fill="var(--interactive-accent)" opacity="0.8"/>`
+          : ""
+      )
       .join("");
-    const reflection = values
-      .map((value, index) => {
-        const x = 20 + index * 26;
-        const height = 8 + (value / max) * 30;
-        return `<rect x="${x}" y="140" width="16" height="${height}" rx="3" fill="var(--interactive-accent)" opacity="${value > 0 ? 0.16 : 0.04}"/>`;
-      })
+
+    const now = new Date();
+    const hour = now.getHours() + now.getMinutes() / 60;
+    const daylight = hour >= 6 && hour < 18;
+    const x = 180 + (hour / 24) * 1240;
+    const celestial = daylight
+      ? `<circle cx="${x.toFixed(0)}" cy="74" r="28" fill="#ffe08a"/><circle cx="${x.toFixed(0)}" cy="74" r="46" fill="#fff3c4" opacity="0.16"/>`
+      : `<circle cx="${x.toFixed(0)}" cy="74" r="24" fill="#f2f0dc" opacity="0.9"/><text x="${x.toFixed(0)}" y="84" font-size="24" text-anchor="middle">${this.moonGlyph(now)}</text>`;
+
+    const month = now.getMonth();
+    const treeColor =
+      month === 11 || month < 3 ? "#d7e4ec" : month < 6 ? "#8fbf7a" : month < 9 ? "#6fa05f" : "#d59a5b";
+    const trees = [140, 380, 650, 940, 1230]
+      .map((tx) => `<path d="M${tx} 190 l14 -34 l14 34 Z" fill="${treeColor}" opacity="0.7"/>`)
       .join("");
-    card.innerHTML = `<div class="sd-card-title">地平线 · 最近 60 天</div>
-<svg viewBox="0 0 1600 200" preserveAspectRatio="none" class="sd-horizon-svg">
-  <line x1="0" y1="120" x2="1600" y2="120" stroke="var(--background-modifier-border)" stroke-width="1"/>
-  ${bars}
-  <rect x="0" y="136" width="1600" height="64" fill="var(--background-secondary)" opacity="0.6"/>
-  ${reflection}
+
+    const sailing = this.plugin.pomodoro.state().running
+      ? `<g transform="translate(1280 232)"><path d="M0 18 h54 l-8 12 H8 Z" fill="var(--text-muted)"/><path d="M26 16 V-26 l24 34 Z" fill="var(--interactive-accent)" opacity="0.75"/></g>`
+      : "";
+
+    card.innerHTML += `<svg viewBox="0 0 1600 300" preserveAspectRatio="none" class="sd-horizon-svg">
+<defs>
+  <linearGradient id="sd-hsky" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="${daylight ? "#9fc8e8" : "#2b3f60"}"/>
+    <stop offset="100%" stop-color="${daylight ? "#e6f2fa" : "#64809f"}"/>
+  </linearGradient>
+</defs>
+<rect width="1600" height="200" fill="url(#sd-hsky)"/>
+${celestial}
+<polygon points="${mountains}" fill="var(--interactive-accent)" opacity="0.28"/>
+<polygon points="${mountains}" fill="none" stroke="var(--interactive-accent)" stroke-width="2" opacity="0.6"/>
+${stones}
+${trees}
+<rect x="1560" y="118" width="3" height="76" fill="var(--text-muted)"/>
+<path d="M1563 120 l34 10 -34 10 Z" fill="var(--interactive-accent)"/>
+<rect y="200" width="1600" height="100" fill="var(--background-secondary)" opacity="0.75"/>
+<polygon points="${reflection}" fill="var(--interactive-accent)" opacity="0.12"/>
+<ellipse cx="${x.toFixed(0)}" cy="232" rx="38" ry="9" fill="${daylight ? "#ffe08a" : "#f2f0dc"}" opacity="0.22"/>
+${sailing}
 </svg>`;
   }
 
@@ -732,6 +784,16 @@ ${celestial}
 
   private updateBanner(): void {
     if (this.bannerEl) this.bannerEl.innerHTML = this.bannerSvg();
+  }
+
+  private updatePomodoroButton(): void {
+    const button = this.contentEl.querySelector(".sd-pomodoro-button") as HTMLButtonElement | null;
+    if (!button) return;
+    const state = this.plugin.pomodoro.state();
+    const minutes = String(Math.floor(state.remaining / 60)).padStart(2, "0");
+    const seconds = String(state.remaining % 60).padStart(2, "0");
+    const mode = state.mode === "focus" ? "番茄" : state.mode === "short" ? "短休" : "长休";
+    button.textContent = `${state.running ? "⏸" : "▶"} ${mode} ${minutes}:${seconds}`;
   }
 
   private cycleArtStyle(): void {
