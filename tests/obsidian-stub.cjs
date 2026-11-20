@@ -19,7 +19,9 @@ class TFolder {
   }
 }
 class Notice {
-  constructor(_message) {}
+  /** 记录构造过的提示文案，供单测断言 Notice 行为。 */
+  static messages = [];
+  constructor(message) { Notice.messages.push(String(message)); }
   setMessage() { return this; }
   hide() {}
 }
