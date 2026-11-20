@@ -2,6 +2,11 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [Unreleased]
+
+### 改进
+- 新增 `npm run release:prepare -- X.Y.Z`：自动定稿 CHANGELOG 版本标题并更新 package.json 版本源；CI 打 tag 时也会自动执行
+
 ## [0.9.2] - 2026-11-20
 
 ### 修复

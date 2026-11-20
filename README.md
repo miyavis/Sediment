@@ -200,16 +200,15 @@ npm run test:release
 **版本号只有一个源**：`package.json` 的 `version`。构建时 `version-bump.mjs` 自动同步到 `package-lock.json`、`manifest.json`、`versions.json`、`mcp-server/index.mjs` 的 `serverInfo` 和 README 版本徽章。发版流程：
 
 ```sh
-# 只改这一处
-# package.json  ->  "version": "0.9.2"
-npm run build      # 自动同步所有位置并校验
+npm run release:prepare -- 0.9.3   # 自动把 CHANGELOG 的 [Unreleased] 定稿，并改 package.json 版本
+npm run build                      # 自动同步所有位置并生成 dist/sediment
 git add -A
-git commit -m "release: v0.9.2"
-git tag v0.9.2
+git commit -m "release: v0.9.3"
+git tag v0.9.3
 git push origin main --tags
 ```
 
-也可以在 CHANGELOG 写好对应版本后再构建；`sync-changelog.mjs` 会把 CHANGELOG 同步进插件。
+`release:prepare` 只做两件事：把 `## [Unreleased]` 改成 `## [0.9.3] - 日期`，并把 `package.json` 的 `version` 改成 `0.9.3`。其余位置由 `npm run build` 自动同步。CI 打 tag 时也会自动执行这一步。
 
 项目结构：
 
