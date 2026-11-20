@@ -2,6 +2,7 @@ import { Notice } from "obsidian";
 import type { IncomingMessage, ServerResponse } from "http";
 import type { SedimentPlugin } from "../main";
 import { AGENT_API_VERSION, ApiError } from "./api";
+import { redactAuditPath } from "./security";
 
 type HttpServer = import("http").Server;
 
@@ -124,7 +125,7 @@ export class AgentServer {
       const agent = str(query.get("agent"), "") || String(request.headers["x-agent"] ?? "");
       const loggedPath =
         (typeof body.path === "string" ? body.path : "") || str(query.get("path"), "");
-      api.logToolCall(`${request.method} ${url.pathname}`, agent, loggedPath);
+      api.logToolCall(`${request.method} ${url.pathname}`, agent, redactAuditPath(loggedPath));
       api.setCallContext(`${request.method} ${url.pathname}`, agent);
 
       switch (`${request.method} ${url.pathname}`) {

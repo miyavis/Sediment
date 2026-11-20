@@ -30,6 +30,7 @@ import { buildStatsCsv, buildExportJson, DEFAULT_EXPORT_OPTIONS } from "../src/f
 import { Store } from "../src/data/store";
 import { ApiError, safeAgentPath } from "../src/agent/api";
 import { tokenizeSemanticText } from "../src/agent/semantic";
+import { idempotencyKey, redactAuditPath, redactSecrets } from "../src/agent/security";
 
 const day = (partial: Partial<DayRecord> = {}): DayRecord => ({ ...createEmptyDay(), ...partial });
 const settings = (partial: Partial<PulseSettings> = {}): PulseSettings => ({
@@ -414,4 +415,39 @@ test("语义检索分词：支持中文、英文和混合语言", () => {
   assert.ok(tokenizeSemanticText("配置 MCP").includes("mcp"));
   assert.ok(tokenizeSemanticText("知识库 search").some((token) => token === "知识" || token === "识库"));
   assert.ok(tokenizeSemanticText("TF-IDF").includes("tf"));
+});
+
+test("幂等键：相同工具/调用者/参数稳定，参数变化则变化", () => {
+  const first = idempotencyKey("write_note", "qoder", { path: "a.md", content: "x" });
+  const second = idempotencyKey("write_note", "qoder", { content: "x", path: "a.md" });
+  const changed = idempotencyKey("write_note", "qoder", { path: "a.md", content: "y" });
+  assert.equal(first, second);
+  assert.notEqual(first, changed);
+});
+
+test("审计脱敏：路径去掉查询串，已知令牌被替换", () => {
+  assert.equal(redactAuditPath("notes/a.md?token=secret123&x=1"), "notes/a.md");
+  assert.equal(redactAuditPath("notes/a.md#heading"), "notes/a.md");
+  assert.equal(redactSecrets("token=secret123", ["secret123"]), "token=[REDACTED]");
+});
+
+test("Store.load：大批量历史数据规范化且不重复计数", async () => {
+  const days: Record<string, unknown> = {};
+  for (let index = 0; index < 400; index += 1) {
+    const date = dateKey(addDays(new Date("2026-01-01T00:00:00"), index));
+    days[date] = {
+      wordsAdded: index % 7 === 0 ? -5 : index % 3,
+      hourlyWords: [1, null, "2"],
+      folderWords: null,
+      contribution: 999,
+    };
+  }
+  const store = new Store({ loadData: async () => ({ version: 1, days }) } as unknown as Parameters<typeof Store>[0]);
+  await store.load();
+  assert.equal(Object.keys(store.data.days).length, 400);
+  const normalized = store.getDay("2026-01-01");
+  assert.equal(normalized.wordsAdded, 0);
+  assert.equal(normalized.hourlyWords.length, 24);
+  assert.deepEqual(normalized.folderWords, {});
+  assert.notEqual(normalized.contribution, 999);
 });
