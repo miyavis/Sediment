@@ -29,20 +29,22 @@ Sediment 是一个本地优先的 Obsidian 插件，把知识工作统计、快�
 
 ### 手动安装
 
-从 [Releases](https://github.com/miyavis/Sediment/releases) 下载 **整包 `sediment-vX.Y.Z.zip`**（推荐），解压后把 `sediment/` 整个目录复制到 vault 的 `.obsidian/plugins/` 即可。包内包含：
+1. 从 [Releases](https://github.com/miyavis/Sediment/releases) 下载 `sediment-vX.Y.Z.zip` 并解压。
+2. 把整个 `sediment/` 目录复制到 `<vault>/.obsidian/plugins/`。
+3. 在 Obsidian 设置 → 第三方插件中启用 Sediment。
 
-```
-sediment/
-├── main.js
-├── manifest.json
-├── styles.css
-├── mcp-server/index.mjs   # Agent/MCP 接入用；不用 Agent 也可不复制
-└── 安装说明.md
-```
+包内包含 `main.js`、`manifest.json`、`styles.css`、`mcp-server/index.mjs`（Agent 用，可不要）和 `安装说明.md`。也可只下单个文件，或复制仓库现成的 [`dist/sediment`](./dist/sediment)。
 
-如果只想下单个文件：`main.js`、`manifest.json`、`styles.css` 是插件必需；如需 MCP，再下载 `mcp-server/index.mjs`。放入 vault 的 `.obsidian/plugins/sediment/` 后重新载入插件。
+### 怎么找到 `.obsidian`
 
-源码仓库里也有构建好的现成目录 [`dist/sediment`](./dist/sediment)，可以直接复制。
+`.obsidian` 是 **vault 根目录下的隐藏文件夹**，不在插件仓库里。
+
+- Windows 资源管理器：查看 → 显示 → 勾选「隐藏的项目」；也可在地址栏直接粘贴：
+  `D:\project\Obsidian-doc\Miyavis\.obsidian\plugins\sediment`
+- macOS Finder：`Cmd + Shift + .` 显示隐藏文件
+- Linux：文件管理器按 `Ctrl + H`，或终端执行 `ls -a`
+
+目标结构是 `<vault>/.obsidian/plugins/sediment/`。
 
 首次打开插件时：
 

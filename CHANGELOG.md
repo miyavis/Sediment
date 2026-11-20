@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### 文档
+- README 补充「如何找到 .obsidian 目录」与 zip 手工安装步骤
+
 ### 改进
 - 新增安装整包 `dist/sediment/`：包含 main.js、manifest.json、styles.css、mcp-server/index.mjs 与安装说明；Release 自动附加 `sediment-vX.Y.Z.zip`，下载解压即可复制
 
