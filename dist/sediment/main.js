@@ -4720,6 +4720,7 @@ function renderInsights(view, root) {
     ["review", t("\u672C\u5468\u590D\u76D8")]
   ];
   for (const [key, label] of sections) {
+    if (import_obsidian18.Platform.isMobile && (key === "folders" || key === "yearly")) continue;
     const button = subnav.createEl("button", {
       cls: key === view.insightsSection ? "is-active" : "",
       text: label
@@ -5601,6 +5602,7 @@ var DashboardView = class extends import_obsidian19.ItemView {
     brand.createSpan({ text: "SEDIMENT" });
     const tabs = bar.createDiv({ cls: "sd-tabs" });
     for (const [key, label] of TABS) {
+      if (import_obsidian19.Platform.isMobile && key === "agent") continue;
       const button = tabs.createEl("button", {
         cls: `sd-tab ${key === this.tab ? "is-active" : ""}`,
         text: t(label),

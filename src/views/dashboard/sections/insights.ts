@@ -1,5 +1,5 @@
 /** 知识地层页签的渲染逻辑。所有共享状态/方法通过 view 访问。 */
-import { MarkdownRenderer, Notice } from "obsidian";
+import { MarkdownRenderer, Notice, Platform } from "obsidian";
 import { PosterModal } from "../../../ui/poster-modal";
 import { buildWeeklyReview } from "../../../features/review";
 import { addDays, dateKey, lastNDays, parseKey } from "../../../utils/dates";
@@ -28,6 +28,8 @@ export function renderInsights(view: DashboardView, root: HTMLElement): void {
     ["review", t("本周复盘")],
   ];
   for (const [key, label] of sections) {
+    // 移动端收窄子导航：投入分布/年度画像为桌面向重图表，窄屏不展示入口。
+    if (Platform.isMobile && (key === "folders" || key === "yearly")) continue;
     const button = subnav.createEl("button", {
       cls: key === view.insightsSection ? "is-active" : "",
       text: label,

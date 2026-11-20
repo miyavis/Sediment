@@ -1,4 +1,4 @@
-import { ItemView, Notice, type WorkspaceLeaf } from "obsidian";
+import { ItemView, Notice, Platform, type WorkspaceLeaf } from "obsidian";
 import type { SedimentPlugin } from "../main";
 import { ChangelogModal } from "../ui/changelog-modal";
 import { addDays, dateKey, lastNDays, parseKey } from "../utils/dates";
@@ -256,6 +256,8 @@ export class DashboardView extends ItemView {
     brand.createSpan({ text: "SEDIMENT" });
     const tabs = bar.createDiv({ cls: "sd-tabs" });
     for (const [key, label] of TABS) {
+      // 移动端隐藏智能体工坊入口（README 移动端承诺：Agent 管理留在桌面端）。
+      if (Platform.isMobile && key === "agent") continue;
       const button = tabs.createEl("button", {
         cls: `sd-tab ${key === this.tab ? "is-active" : ""}`,
         text: t(label),
