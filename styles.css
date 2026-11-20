@@ -991,27 +991,49 @@ settings:
   color: var(--text-faint);
 }
 
-.sd-strata-row {
-  display: flex;
-  height: 12px;
-  margin-bottom: 3px;
-  overflow: hidden;
-  border-radius: 4px;
-  background: var(--background-secondary);
+/* 知识地层剖面（Task 9 主视图）：层块堆叠 + 透明度节奏，取色全部走主题变量 */
+.sd-strata-slot {
+  margin-top: 10px;
 }
 
-.sd-strata-label {
-  width: 44px;
-  flex: none;
-  font-size: 9px;
-  line-height: 12px;
-  color: var(--text-faint);
+.sd-strata-svg {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 
-.sd-strata-segment {
-  height: 100%;
-  background: var(--interactive-accent);
-  opacity: 0.7;
+.sd-strata-hit {
+  fill: transparent;
+  cursor: crosshair;
+}
+
+.sd-strata-hit:hover {
+  fill: var(--background-modifier-hover);
+  opacity: 0.35;
+}
+
+.sd-strata-hint {
+  margin-top: 6px;
+}
+
+/* 热力图降为附属：默认折叠在剖面之下 */
+.sd-strata-heatmap {
+  margin-top: 14px;
+}
+
+.sd-strata-heatmap > summary {
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.sd-strata-heatmap > summary:hover {
+  color: var(--text-normal);
+}
+
+.sd-strata-heatmap[open] > summary {
+  margin-bottom: 10px;
 }
 
 .sd-poster-head {

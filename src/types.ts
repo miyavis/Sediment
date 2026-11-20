@@ -31,7 +31,7 @@ export interface DayRecord {
   folderWords: Record<string, number>;
   /** 交互活跃分钟（按 5 分钟桶估算） */
   activeMinutes: number;
-  /** 由 Agent API 写入的新增词数（用于人机双色热力图） */
+  /** 由 Agent API 写入的新增词数（地层剖面的 AI 沉积层） */
   aiWordsAdded: number;
 }
 

@@ -47,6 +47,7 @@ import { tokensMatch } from "../src/agent/server";
 import { idempotencyKey, redactAuditPath, redactSecrets } from "../src/agent/security";
 import { computeDiff } from "../src/ui/diff-modal";
 import { barChart, goalRing, mean, multiLine, referenceLines, ring, sparkline } from "../src/utils/charts";
+import { aggregateStrata, listMonths, recentStrataRange } from "../src/utils/strata";
 import { getLocale, localeFromPersisted, setLocale } from "../src/i18n";
 import { findViolations, stripComments } from "../scripts/lint-i18n.mjs";
 import {
@@ -2080,4 +2081,120 @@ test("Store.load：zh 预读顺序下迁移警告仍为中文", async () => {
   } finally {
     setLocale(prev);
   }
+});
+
+// ── Task 9：月度地层聚合（纯函数） ──
+
+test("aggregateStrata：正常聚合——四类贡献按月求和", () => {
+  const source = {
+    days: {
+      "2026-01-05": day({ wordsAdded: 100, aiWordsAdded: 40, tasksCompleted: 2 }),
+      "2026-01-20": day({ wordsAdded: 50, aiWordsAdded: 10, tasksCompleted: 1 }),
+      "2026-02-03": day({ wordsAdded: 70, tasksCompleted: 3 }),
+    },
+    focusSessions: [
+      { date: "2026-01-06", time: "10:00", mode: "focus", minutes: 25, source: "measured" },
+      { date: "2026-02-03", time: "09:00", mode: "focus", minutes: 25, source: "measured" },
+      { date: "2026-02-10", time: "09:00", mode: "focus", minutes: 25, source: "estimated" },
+    ] as FocusSessionRecord[],
+  };
+  assert.deepEqual(aggregateStrata(source, { from: "2026-01", to: "2026-02" }), [
+    { month: "2026-01", human: 150, agent: 50, tasks: 3, focus: 25 },
+    { month: "2026-02", human: 70, agent: 0, tasks: 3, focus: 50 },
+  ]);
+});
+
+test("aggregateStrata：空数据——范围内每月输出全 0，缺 source 字段不抛错", () => {
+  assert.deepEqual(aggregateStrata({ days: {}, focusSessions: [] }, { from: "2026-03", to: "2026-05" }), [
+    { month: "2026-03", human: 0, agent: 0, tasks: 0, focus: 0 },
+    { month: "2026-04", human: 0, agent: 0, tasks: 0, focus: 0 },
+    { month: "2026-05", human: 0, agent: 0, tasks: 0, focus: 0 },
+  ]);
+  assert.deepEqual(aggregateStrata({}, { from: "2026-01", to: "2026-01" }), [
+    { month: "2026-01", human: 0, agent: 0, tasks: 0, focus: 0 },
+  ]);
+});
+
+test("aggregateStrata：跨月/跨年边界——月末月初归各自月份，范围外数据忽略", () => {
+  const source = {
+    days: {
+      "2025-12-31": day({ wordsAdded: 10, tasksCompleted: 1 }),
+      "2026-01-01": day({ wordsAdded: 20, aiWordsAdded: 5 }),
+      "2025-10-01": day({ wordsAdded: 999 }),
+      "2026-03-01": day({ wordsAdded: 888 }),
+    },
+    focusSessions: [
+      { date: "2025-12-31", mode: "focus", minutes: 25 },
+      { date: "2026-01-01", mode: "focus", minutes: 50 },
+      { date: "2026-02-15", mode: "focus", minutes: 25 },
+    ],
+  };
+  const result = aggregateStrata(source, { from: "2025-11", to: "2026-02" });
+  assert.deepEqual(result.map((m) => m.month), ["2025-11", "2025-12", "2026-01", "2026-02"]);
+  assert.deepEqual(result[0], { month: "2025-11", human: 0, agent: 0, tasks: 0, focus: 0 });
+  assert.deepEqual(result[1], { month: "2025-12", human: 10, agent: 0, tasks: 1, focus: 25 });
+  assert.deepEqual(result[2], { month: "2026-01", human: 20, agent: 5, tasks: 0, focus: 50 });
+  assert.deepEqual(result[3], { month: "2026-02", human: 0, agent: 0, tasks: 0, focus: 25 });
+});
+
+test("aggregateStrata：缺字段/脏数据——null、NaN、负数、非法键一律按 0 或跳过", () => {
+  const source = {
+    days: {
+      "2026-01-01": { wordsAdded: 30 },
+      "2026-01-02": null,
+      "2026-01-03": { wordsAdded: Number.NaN, aiWordsAdded: -5, tasksCompleted: "2" as unknown as number },
+      "2026-01-04": { wordsAdded: 10, aiWordsAdded: undefined, tasksCompleted: undefined },
+      "not-a-date": { wordsAdded: 100 },
+    },
+    focusSessions: [
+      { date: "2026-01-05" },
+      { minutes: 25 },
+      null,
+      { date: "2026-01-06", minutes: Number.NaN },
+      { date: "2026-01-07", minutes: -25 },
+    ],
+  };
+  assert.deepEqual(aggregateStrata(source, { from: "2026-01", to: "2026-01" }), [
+    { month: "2026-01", human: 40, agent: 0, tasks: 2, focus: 0 },
+  ]);
+});
+
+test("aggregateStrata：focusSessions 只计专注——short/long 休息排除，缺 mode 旧记录按专注计", () => {
+  const source = {
+    focusSessions: [
+      { date: "2026-01-01", mode: "focus", minutes: 25 },
+      { date: "2026-01-01", mode: "short", minutes: 5 },
+      { date: "2026-01-01", mode: "long", minutes: 15 },
+      { date: "2026-01-02", minutes: 25 },
+    ],
+  };
+  const [jan] = aggregateStrata(source, { from: "2026-01", to: "2026-01" });
+  assert.equal(jan.focus, 50);
+});
+
+test("listMonths：非法格式或 reversed 范围返回空；单月范围含两端", () => {
+  assert.deepEqual(listMonths({ from: "2026-01", to: "2026-03" }), ["2026-01", "2026-02", "2026-03"]);
+  assert.deepEqual(listMonths({ from: "2026-02", to: "2026-02" }), ["2026-02"]);
+  assert.deepEqual(listMonths({ from: "2026-03", to: "2026-01" }), []);
+  assert.deepEqual(listMonths({ from: "2026-13", to: "2027-01" }), []);
+  assert.deepEqual(listMonths({ from: "2026-00", to: "2026-02" }), []);
+  assert.deepEqual(listMonths({ from: "2026-1", to: "2026-02" }), []);
+  assert.deepEqual(aggregateStrata({ days: {} }, { from: "bad", to: "2026-01" }), []);
+});
+
+test("recentStrataRange：最近 n 个月含当月，跨年正确，n<1 兜底 1", () => {
+  assert.deepEqual(recentStrataRange(12, new Date(2026, 0, 15)), { from: "2025-02", to: "2026-01" });
+  assert.deepEqual(recentStrataRange(3, new Date(2026, 10, 20)), { from: "2026-09", to: "2026-11" });
+  assert.deepEqual(recentStrataRange(1, new Date(2026, 5, 1)), { from: "2026-06", to: "2026-06" });
+  assert.deepEqual(recentStrataRange(0, new Date(2026, 5, 1)), { from: "2026-06", to: "2026-06" });
+});
+
+test("aggregateStrata：纯函数——不修改输入数据", () => {
+  const source = {
+    days: { "2026-01-01": day({ wordsAdded: 10 }) },
+    focusSessions: [{ date: "2026-01-01", mode: "focus" as const, minutes: 25 }],
+  };
+  const snapshot = JSON.stringify(source);
+  aggregateStrata(source, { from: "2026-01", to: "2026-02" });
+  assert.equal(JSON.stringify(source), snapshot);
 });

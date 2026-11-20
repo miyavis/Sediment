@@ -202,8 +202,8 @@ const EN: Record<string, string> = {
   "跳过": "Skip",
 
   // 看板 · 洞察
+  "地层剖面": "Strata",
   "脉冲概览": "Overview",
-  "热力图": "Heatmap",
   "写作趋势": "Writing trend",
   "投入分布": "Distribution",
   "年度画像": "Yearly",
@@ -218,10 +218,7 @@ const EN: Record<string, string> = {
   "最高的一天": "Best day",
   "有记录的日子": "Days with records",
   "交互 / 专注": "Interaction / focus",
-  "人机双色热力图": "Human / AI dual heatmap",
   "年度知识活跃脉冲": "Yearly knowledge pulse",
-  "人": "Human",
-  "AI": "AI",
   "少": "Less",
   "多": "More",
   "写作与时间趋势": "Writing & time trend",
@@ -573,6 +570,18 @@ const EN: Record<string, string> = {
   "移除": "Removed",
   "捕获": "Captured",
 
+  // Task 9：知识地层剖面主视图
+  "知识地层剖面": "Knowledge strata profile",
+  "近 {n} 个月 · 人 / AI / 任务 / 专注按月沉积": "Last {n} months · human / AI / tasks / focus deposited monthly",
+  "人写": "Human",
+  "AI 写": "AI",
+  "还没有沉积记录：写点笔记、勾掉待办或跑一个番茄钟，地层会随月份生长。": "No deposits yet: write a note, check off a task, or run a pomodoro — the strata grow month by month.",
+  "地层剖面：{months} 个月，人写 {human} 字，AI 写 {agent} 字，完成任务 {tasks} 个，专注 {focus} 分钟": "Strata profile: {months} months, {human} human words, {agent} AI words, {tasks} tasks completed, {focus} focus minutes",
+  "人写 {human} 字 · AI 写 {agent} 字": "{human} human words · {agent} AI words",
+  "完成任务 {tasks} 个 · 专注 {focus} 分钟": "{tasks} tasks done · {focus} focus minutes",
+  "层厚按当月量归一，越久远的月份色泽越沉。": "Layer thickness is normalized per month; older months sit deeper and duller.",
+  "年度活跃热力图（附属）": "Yearly activity heatmap (secondary)",
+
   // Task 8：前序任务遗漏的 EN 同步
   "卸载": "Uninstall",
   "卸载失败": "Uninstall failed",
@@ -589,7 +598,7 @@ const EN: Record<string, string> = {
   "近 7 天贡献": "Contribution (7 days)",
   "近 7 天新增词": "Words added (7 days)",
   "未处理速记": "Unprocessed memos",
-  "详细图表、年度画像与人机热力图已收起，点击右上角展开。": "Detailed charts, yearly view, and the human/AI heatmap are collapsed; use the top-right button to expand.",
+  "详细图表与年度画像已收起，点击右上角展开。": "Detailed charts and the yearly view are collapsed; use the top-right button to expand.",
   "首次使用提示": "First-use tips",
   "贡献分是加权统计，不代表知识质量；口径可在周复盘底部查看。": "Contribution is a weighted metric, not a measure of knowledge quality; see the bottom of the weekly review for details.",
   "Agent 生成的笔记会标为草稿，在「智能体工坊」里审核后再采纳。": "Agent-written notes are marked as drafts; review them in the Agent Hub before accepting.",

@@ -26,7 +26,9 @@ export class DashboardView extends ItemView {
   rhythmActiveOnly = true;
   foldersExpanded = false;
   insightsExpanded = false;
-  insightsSection: "overview" | "heatmap" | "trend" | "folders" | "yearly" | "review" = "overview";
+  /** 附属热力图折叠状态：重渲染（切指标/选日期）后保持展开。 */
+  strataHeatmapOpen = false;
+  insightsSection: "strata" | "overview" | "trend" | "folders" | "yearly" | "review" = "strata";
   selected: string | null = null;
   posterMonth = new Date().getMonth();
   bannerEl: HTMLElement | null = null;

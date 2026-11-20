@@ -851,8 +851,8 @@ var EN = {
   "\u4ECA\u5929\u8FD8\u6CA1\u6709\u667A\u80FD\u4F53\u6D3B\u52A8\u3002": "No agent activity today yet.",
   "\u8DF3\u8FC7": "Skip",
   // 看板 · 洞察
+  "\u5730\u5C42\u5256\u9762": "Strata",
   "\u8109\u51B2\u6982\u89C8": "Overview",
-  "\u70ED\u529B\u56FE": "Heatmap",
   "\u5199\u4F5C\u8D8B\u52BF": "Writing trend",
   "\u6295\u5165\u5206\u5E03": "Distribution",
   "\u5E74\u5EA6\u753B\u50CF": "Yearly",
@@ -867,10 +867,7 @@ var EN = {
   "\u6700\u9AD8\u7684\u4E00\u5929": "Best day",
   "\u6709\u8BB0\u5F55\u7684\u65E5\u5B50": "Days with records",
   "\u4EA4\u4E92 / \u4E13\u6CE8": "Interaction / focus",
-  "\u4EBA\u673A\u53CC\u8272\u70ED\u529B\u56FE": "Human / AI dual heatmap",
   "\u5E74\u5EA6\u77E5\u8BC6\u6D3B\u8DC3\u8109\u51B2": "Yearly knowledge pulse",
-  "\u4EBA": "Human",
-  "AI": "AI",
   "\u5C11": "Less",
   "\u591A": "More",
   "\u5199\u4F5C\u4E0E\u65F6\u95F4\u8D8B\u52BF": "Writing & time trend",
@@ -1205,6 +1202,17 @@ var EN = {
   "\u65B0\u589E": "Added",
   "\u79FB\u9664": "Removed",
   "\u6355\u83B7": "Captured",
+  // Task 9：知识地层剖面主视图
+  "\u77E5\u8BC6\u5730\u5C42\u5256\u9762": "Knowledge strata profile",
+  "\u8FD1 {n} \u4E2A\u6708 \xB7 \u4EBA / AI / \u4EFB\u52A1 / \u4E13\u6CE8\u6309\u6708\u6C89\u79EF": "Last {n} months \xB7 human / AI / tasks / focus deposited monthly",
+  "\u4EBA\u5199": "Human",
+  "AI \u5199": "AI",
+  "\u8FD8\u6CA1\u6709\u6C89\u79EF\u8BB0\u5F55\uFF1A\u5199\u70B9\u7B14\u8BB0\u3001\u52FE\u6389\u5F85\u529E\u6216\u8DD1\u4E00\u4E2A\u756A\u8304\u949F\uFF0C\u5730\u5C42\u4F1A\u968F\u6708\u4EFD\u751F\u957F\u3002": "No deposits yet: write a note, check off a task, or run a pomodoro \u2014 the strata grow month by month.",
+  "\u5730\u5C42\u5256\u9762\uFF1A{months} \u4E2A\u6708\uFF0C\u4EBA\u5199 {human} \u5B57\uFF0CAI \u5199 {agent} \u5B57\uFF0C\u5B8C\u6210\u4EFB\u52A1 {tasks} \u4E2A\uFF0C\u4E13\u6CE8 {focus} \u5206\u949F": "Strata profile: {months} months, {human} human words, {agent} AI words, {tasks} tasks completed, {focus} focus minutes",
+  "\u4EBA\u5199 {human} \u5B57 \xB7 AI \u5199 {agent} \u5B57": "{human} human words \xB7 {agent} AI words",
+  "\u5B8C\u6210\u4EFB\u52A1 {tasks} \u4E2A \xB7 \u4E13\u6CE8 {focus} \u5206\u949F": "{tasks} tasks done \xB7 {focus} focus minutes",
+  "\u5C42\u539A\u6309\u5F53\u6708\u91CF\u5F52\u4E00\uFF0C\u8D8A\u4E45\u8FDC\u7684\u6708\u4EFD\u8272\u6CFD\u8D8A\u6C89\u3002": "Layer thickness is normalized per month; older months sit deeper and duller.",
+  "\u5E74\u5EA6\u6D3B\u8DC3\u70ED\u529B\u56FE\uFF08\u9644\u5C5E\uFF09": "Yearly activity heatmap (secondary)",
   // Task 8：前序任务遗漏的 EN 同步
   "\u5378\u8F7D": "Uninstall",
   "\u5378\u8F7D\u5931\u8D25": "Uninstall failed",
@@ -1221,7 +1229,7 @@ var EN = {
   "\u8FD1 7 \u5929\u8D21\u732E": "Contribution (7 days)",
   "\u8FD1 7 \u5929\u65B0\u589E\u8BCD": "Words added (7 days)",
   "\u672A\u5904\u7406\u901F\u8BB0": "Unprocessed memos",
-  "\u8BE6\u7EC6\u56FE\u8868\u3001\u5E74\u5EA6\u753B\u50CF\u4E0E\u4EBA\u673A\u70ED\u529B\u56FE\u5DF2\u6536\u8D77\uFF0C\u70B9\u51FB\u53F3\u4E0A\u89D2\u5C55\u5F00\u3002": "Detailed charts, yearly view, and the human/AI heatmap are collapsed; use the top-right button to expand.",
+  "\u8BE6\u7EC6\u56FE\u8868\u4E0E\u5E74\u5EA6\u753B\u50CF\u5DF2\u6536\u8D77\uFF0C\u70B9\u51FB\u53F3\u4E0A\u89D2\u5C55\u5F00\u3002": "Detailed charts and the yearly view are collapsed; use the top-right button to expand.",
   "\u9996\u6B21\u4F7F\u7528\u63D0\u793A": "First-use tips",
   "\u8D21\u732E\u5206\u662F\u52A0\u6743\u7EDF\u8BA1\uFF0C\u4E0D\u4EE3\u8868\u77E5\u8BC6\u8D28\u91CF\uFF1B\u53E3\u5F84\u53EF\u5728\u5468\u590D\u76D8\u5E95\u90E8\u67E5\u770B\u3002": "Contribution is a weighted metric, not a measure of knowledge quality; see the bottom of the weekly review for details.",
   "Agent \u751F\u6210\u7684\u7B14\u8BB0\u4F1A\u6807\u4E3A\u8349\u7A3F\uFF0C\u5728\u300C\u667A\u80FD\u4F53\u5DE5\u574A\u300D\u91CC\u5BA1\u6838\u540E\u518D\u91C7\u7EB3\u3002": "Agent-written notes are marked as drafts; review them in the Agent Hub before accepting.",
@@ -5629,13 +5637,70 @@ function goalRing(value, goal, ariaLabel) {
 <text x="23" y="27" text-anchor="middle" font-size="11" fill="var(--text-normal)">${Math.round(ratio * 100)}%</text></svg>`;
 }
 
+// src/utils/strata.ts
+var MONTH_KEY = /^\d{4}-(0[1-9]|1[0-2])$/;
+function positive(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+function listMonths(range) {
+  if (!MONTH_KEY.test(range.from) || !MONTH_KEY.test(range.to)) return [];
+  let [year, month] = range.from.split("-").map(Number);
+  const [toYear, toMonth] = range.to.split("-").map(Number);
+  if (year > toYear || year === toYear && month > toMonth) return [];
+  const out = [];
+  while (year < toYear || year === toYear && month <= toMonth) {
+    out.push(`${year}-${String(month).padStart(2, "0")}`);
+    month += 1;
+    if (month > 12) {
+      month = 1;
+      year += 1;
+    }
+  }
+  return out;
+}
+function recentStrataRange(n, now = /* @__PURE__ */ new Date()) {
+  const count = Math.max(1, Math.floor(n) || 1);
+  const toYear = now.getFullYear();
+  const toMonth = now.getMonth() + 1;
+  const absolute = toYear * 12 + (toMonth - 1) - (count - 1);
+  const fromYear = Math.floor(absolute / 12);
+  const fromMonth = absolute % 12 + 1;
+  return {
+    from: `${fromYear}-${String(fromMonth).padStart(2, "0")}`,
+    to: `${toYear}-${String(toMonth).padStart(2, "0")}`
+  };
+}
+function aggregateStrata(source, range) {
+  var _a2, _b;
+  const months = listMonths(range);
+  const buckets = new Map(
+    months.map((month) => [month, { month, human: 0, agent: 0, tasks: 0, focus: 0 }])
+  );
+  for (const [key, day] of Object.entries((_a2 = source.days) != null ? _a2 : {})) {
+    const bucket = buckets.get(key.slice(0, 7));
+    if (!bucket || !day) continue;
+    bucket.human += positive(day.wordsAdded);
+    bucket.agent += positive(day.aiWordsAdded);
+    bucket.tasks += positive(day.tasksCompleted);
+  }
+  for (const session of (_b = source.focusSessions) != null ? _b : []) {
+    if (!session || typeof session.date !== "string") continue;
+    if (session.mode === "short" || session.mode === "long") continue;
+    const bucket = buckets.get(session.date.slice(0, 7));
+    if (!bucket) continue;
+    bucket.focus += positive(session.minutes);
+  }
+  return months.map((month) => buckets.get(month));
+}
+
 // src/views/dashboard/sections/insights.ts
 function renderInsights(view, root) {
   const body = root.createDiv({ cls: "sd-body" });
   const subnav = body.createDiv({ cls: "sd-subnav" });
   const sections = [
+    ["strata", t("\u5730\u5C42\u5256\u9762")],
     ["overview", t("\u8109\u51B2\u6982\u89C8")],
-    ["heatmap", t("\u70ED\u529B\u56FE")],
     ["trend", t("\u5199\u4F5C\u8D8B\u52BF")],
     ["folders", t("\u6295\u5165\u5206\u5E03")],
     ["yearly", t("\u5E74\u5EA6\u753B\u50CF")],
@@ -5653,11 +5718,18 @@ function renderInsights(view, root) {
     };
   }
   const content = body.createDiv({ cls: "sd-insight-content" });
-  if (view.insightsSection === "overview") {
+  if (view.insightsSection === "strata") {
+    renderStrata(view, content);
+    const folded = content.createEl("details", { cls: "sd-strata-heatmap" });
+    folded.open = view.strataHeatmapOpen;
+    folded.ontoggle = () => {
+      view.strataHeatmapOpen = folded.open;
+    };
+    folded.createEl("summary", { text: t("\u5E74\u5EA6\u6D3B\u8DC3\u70ED\u529B\u56FE\uFF08\u9644\u5C5E\uFF09") });
+    renderHeatmap(view, folded);
+  } else if (view.insightsSection === "overview") {
     renderInsightsSummary(view, content);
     renderOverview(view, content);
-  } else if (view.insightsSection === "heatmap") {
-    renderHeatmap(view, content, false);
   } else if (view.insightsSection === "trend") {
     renderAnalytics(view, content, "trend");
   } else if (view.insightsSection === "folders") {
@@ -5696,7 +5768,7 @@ function renderInsightsSummary(view, root) {
   item(t("\u672A\u5904\u7406\u901F\u8BB0"), String(pending));
   item(t("Agent \u5F85\u529E"), String(tasks));
   if (!view.insightsExpanded) {
-    card.createDiv({ cls: "sd-card-sub", text: t("\u8BE6\u7EC6\u56FE\u8868\u3001\u5E74\u5EA6\u753B\u50CF\u4E0E\u4EBA\u673A\u70ED\u529B\u56FE\u5DF2\u6536\u8D77\uFF0C\u70B9\u51FB\u53F3\u4E0A\u89D2\u5C55\u5F00\u3002") });
+    card.createDiv({ cls: "sd-card-sub", text: t("\u8BE6\u7EC6\u56FE\u8868\u4E0E\u5E74\u5EA6\u753B\u50CF\u5DF2\u6536\u8D77\uFF0C\u70B9\u51FB\u53F3\u4E0A\u89D2\u5C55\u5F00\u3002") });
   }
 }
 function renderOverview(view, root) {
@@ -5759,11 +5831,104 @@ function renderChartLegend(root, series) {
     entry.createSpan({ text: (_a2 = item.label) != null ? _a2 : "" });
   }
 }
-function renderHeatmap(view, root, dual) {
+var STRATA_LAYERS = [
+  { key: "human", color: "var(--interactive-accent)", label: "\u4EBA\u5199" },
+  { key: "agent", color: "var(--text-accent)", label: "AI \u5199" },
+  { key: "tasks", color: "var(--text-muted)", label: "\u4EFB\u52A1" },
+  { key: "focus", color: "var(--text-faint)", label: "\u4E13\u6CE8" }
+];
+var STRATA_MONTHS = 12;
+function renderStrata(view, root) {
+  view.hideHeatTooltip();
+  const store = view.plugin.store;
+  const months = aggregateStrata(
+    { days: store.data.days, focusSessions: store.data.focusSessions },
+    recentStrataRange(STRATA_MONTHS)
+  );
+  const card = root.createDiv({ cls: "sd-card sd-strata", attr: { id: "sd-strata" } });
+  const head = card.createDiv({ cls: "sd-card-head" });
+  head.createDiv({ cls: "sd-card-title", text: t("\u77E5\u8BC6\u5730\u5C42\u5256\u9762") });
+  head.createDiv({ cls: "sd-card-sub", text: tf("\u8FD1 {n} \u4E2A\u6708 \xB7 \u4EBA / AI / \u4EFB\u52A1 / \u4E13\u6CE8\u6309\u6708\u6C89\u79EF", { n: months.length }) });
+  const totals = months.reduce(
+    (sum, month) => ({
+      human: sum.human + month.human,
+      agent: sum.agent + month.agent,
+      tasks: sum.tasks + month.tasks,
+      focus: sum.focus + month.focus
+    }),
+    { human: 0, agent: 0, tasks: 0, focus: 0 }
+  );
+  if (totals.human + totals.agent + totals.tasks + totals.focus === 0) {
+    card.createDiv({ cls: "sd-empty", text: t("\u8FD8\u6CA1\u6709\u6C89\u79EF\u8BB0\u5F55\uFF1A\u5199\u70B9\u7B14\u8BB0\u3001\u52FE\u6389\u5F85\u529E\u6216\u8DD1\u4E00\u4E2A\u756A\u8304\u949F\uFF0C\u5730\u5C42\u4F1A\u968F\u6708\u4EFD\u751F\u957F\u3002") });
+    return;
+  }
+  const width = 900;
+  const labelW = 64;
+  const plotW = width - labelW - 8;
+  const colW = plotW / months.length;
+  const bandH = 54;
+  const bandGap = 10;
+  const topPad = 8;
+  const bandsH = STRATA_LAYERS.length * bandH + (STRATA_LAYERS.length - 1) * bandGap;
+  const height = topPad + bandsH + 20;
+  const ageOpacity = (index) => months.length > 1 ? 0.5 + 0.5 * index / (months.length - 1) : 1;
+  const bands = STRATA_LAYERS.map((layer, bandIndex) => {
+    const bandTop = topPad + bandIndex * (bandH + bandGap);
+    const values = months.map((month) => month[layer.key]);
+    const max = Math.max(1, ...values);
+    const rects = months.map((month, index) => {
+      const value = month[layer.key];
+      const thickness = value > 0 ? Math.max(3, value / max * (bandH - 8)) : 2;
+      const x = labelW + index * colW + 2;
+      const y = bandTop + bandH - thickness;
+      const opacity = value > 0 ? ageOpacity(index).toFixed(2) : "0.18";
+      return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${(colW - 4).toFixed(1)}" height="${thickness.toFixed(1)}" rx="2" fill="${layer.color}" opacity="${opacity}"/>`;
+    }).join("");
+    const bedding = `<line x1="${labelW}" y1="${bandTop + bandH}" x2="${width - 8}" y2="${bandTop + bandH}" stroke="var(--background-modifier-border)" stroke-width="1"/>`;
+    const label = `<text x="${labelW - 8}" y="${bandTop + bandH / 2}" text-anchor="end" dominant-baseline="middle" font-size="10" fill="var(--text-muted)">${t(layer.label)}</text>`;
+    return `${bedding}${rects}${label}`;
+  }).join("");
+  const monthLabels = months.map((month, index) => {
+    const mm = month.month.slice(5);
+    const text = index === 0 || mm === "01" ? month.month.slice(2) : tf("{n}\u6708", { n: Number(mm) });
+    const x = labelW + index * colW + colW / 2;
+    return `<text x="${x.toFixed(1)}" y="${height - 6}" text-anchor="middle" font-size="9" fill="var(--text-faint)">${text}</text>`;
+  }).join("");
+  const hits = months.map(
+    (_month, index) => `<rect class="sd-strata-hit" data-index="${index}" x="${(labelW + index * colW).toFixed(1)}" y="${topPad}" width="${colW.toFixed(1)}" height="${bandsH}"/>`
+  ).join("");
+  const ariaLabel = tf("\u5730\u5C42\u5256\u9762\uFF1A{months} \u4E2A\u6708\uFF0C\u4EBA\u5199 {human} \u5B57\uFF0CAI \u5199 {agent} \u5B57\uFF0C\u5B8C\u6210\u4EFB\u52A1 {tasks} \u4E2A\uFF0C\u4E13\u6CE8 {focus} \u5206\u949F", {
+    months: months.length,
+    ...totals
+  });
+  const slot = card.createDiv({ cls: "sd-strata-slot" });
+  slot.innerHTML = `<svg class="sd-strata-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${ariaLabel.replace(/"/g, "&quot;")}">${bands}${monthLabels}${hits}</svg>`;
+  const showTip = (event, month) => {
+    view.hideHeatTooltip();
+    const tip = document.createElement("div");
+    tip.className = "sd-heat-tooltip";
+    tip.createDiv({ cls: "sd-tip-date", text: month.month });
+    tip.createDiv({ cls: "sd-tip-metric", text: tf("\u4EBA\u5199 {human} \u5B57 \xB7 AI \u5199 {agent} \u5B57", { human: month.human, agent: month.agent }) });
+    tip.createDiv({ cls: "sd-tip-metric", text: tf("\u5B8C\u6210\u4EFB\u52A1 {tasks} \u4E2A \xB7 \u4E13\u6CE8 {focus} \u5206\u949F", { tasks: month.tasks, focus: month.focus }) });
+    document.body.appendChild(tip);
+    view.heatTooltip = tip;
+    view.moveHeatTooltip(event);
+  };
+  slot.querySelectorAll(".sd-strata-hit").forEach((el) => {
+    const month = months[Number(el.getAttribute("data-index"))];
+    if (!month) return;
+    el.addEventListener("mouseenter", (event) => showTip(event, month));
+    el.addEventListener("mousemove", (event) => view.moveHeatTooltip(event));
+    el.addEventListener("mouseleave", () => view.hideHeatTooltip());
+  });
+  renderChartLegend(card, STRATA_LAYERS.map((layer) => ({ color: layer.color, label: t(layer.label) })));
+  card.createDiv({ cls: "sd-card-sub sd-strata-hint", text: t("\u5C42\u539A\u6309\u5F53\u6708\u91CF\u5F52\u4E00\uFF0C\u8D8A\u4E45\u8FDC\u7684\u6708\u4EFD\u8272\u6CFD\u8D8A\u6C89\u3002") });
+}
+function renderHeatmap(view, root) {
   var _a2;
   const card = root.createDiv({ cls: "sd-card sd-heatmap", attr: { id: "sd-heatmap" } });
   const head = card.createDiv({ cls: "sd-card-head" });
-  head.createDiv({ cls: "sd-card-title", text: dual ? t("\u4EBA\u673A\u53CC\u8272\u70ED\u529B\u56FE") : t("\u5E74\u5EA6\u77E5\u8BC6\u6D3B\u8DC3\u8109\u51B2") });
+  head.createDiv({ cls: "sd-card-title", text: t("\u5E74\u5EA6\u77E5\u8BC6\u6D3B\u8DC3\u8109\u51B2") });
   head.createDiv({ cls: "sd-card-sub", text: `${t("\u8FD1 53 \u5468")} \xB7 ${view.metricLabel()}` });
   const metrics = card.createDiv({ cls: "sd-metrics" });
   for (const metric of METRICS) {
@@ -5822,7 +5987,7 @@ function renderHeatmap(view, root, dual) {
         element.onmousemove = (event) => view.moveHeatTooltip(event);
         element.onmouseleave = () => view.hideHeatTooltip();
       }
-      cells.push({ key, value: cellValue, date, el: element, ai: record.aiWordsAdded });
+      cells.push({ key, value: cellValue, date, el: element });
     }
   }
   for (const cell of cells) {
@@ -5836,15 +6001,11 @@ function renderHeatmap(view, root, dual) {
   for (const cell of cells) {
     const level = cell.value <= 0 ? 0 : Math.max(1, Math.min(4, Math.ceil(cell.value / max * 4)));
     cell.el.addClass(`sd-lvl-${level}`);
-    if (dual && view.metric === "wordsAdded" && cell.value > 0) {
-      const ratio = Math.min(100, cell.ai / cell.value * 100);
-      cell.el.style.background = `linear-gradient(90deg, var(--interactive-accent) ${ratio}%, var(--text-faint) ${ratio}%)`;
-    }
   }
   const legend = wrap.createDiv({ cls: "sd-legend" });
-  legend.createSpan({ text: dual ? t("\u4EBA") : t("\u5C11") });
+  legend.createSpan({ text: t("\u5C11") });
   for (let level = 0; level <= 4; level += 1) legend.createDiv({ cls: `sd-cell sd-lvl-${level}` });
-  legend.createSpan({ text: dual ? t("AI") : t("\u591A") });
+  legend.createSpan({ text: t("\u591A") });
   const selectable = cells.filter((cell) => !cell.el.hasClass("sd-future"));
   const focusKey = view.selected && selectable.some((cell) => cell.key === view.selected) ? view.selected : (_a2 = selectable[selectable.length - 1]) == null ? void 0 : _a2.key;
   for (const cell of selectable) cell.el.setAttribute("tabindex", cell.key === focusKey ? "0" : "-1");
@@ -6326,7 +6487,9 @@ var DashboardView = class extends import_obsidian20.ItemView {
     this.rhythmActiveOnly = true;
     this.foldersExpanded = false;
     this.insightsExpanded = false;
-    this.insightsSection = "overview";
+    /** 附属热力图折叠状态：重渲染（切指标/选日期）后保持展开。 */
+    this.strataHeatmapOpen = false;
+    this.insightsSection = "strata";
     this.selected = null;
     this.posterMonth = (/* @__PURE__ */ new Date()).getMonth();
     this.bannerEl = null;

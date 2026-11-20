@@ -12,6 +12,7 @@ import {
 } from "../../../utils/charts";
 import { METRICS } from "../../../types";
 import { t, tf } from "../../../i18n";
+import { aggregateStrata, recentStrataRange, type StrataMonth } from "../../../utils/strata";
 import { RANGE_OPTIONS, WEEKDAYS, startOfWeekFor } from "../constants";
 import type { DashboardView } from "../../dashboard-view";
 
@@ -19,8 +20,8 @@ export function renderInsights(view: DashboardView, root: HTMLElement): void {
   const body = root.createDiv({ cls: "sd-body" });
   const subnav = body.createDiv({ cls: "sd-subnav" });
   const sections: Array<[typeof view.insightsSection, string]> = [
+    ["strata", t("地层剖面")],
     ["overview", t("脉冲概览")],
-    ["heatmap", t("热力图")],
     ["trend", t("写作趋势")],
     ["folders", t("投入分布")],
     ["yearly", t("年度画像")],
@@ -40,11 +41,19 @@ export function renderInsights(view: DashboardView, root: HTMLElement): void {
   }
 
   const content = body.createDiv({ cls: "sd-insight-content" });
-  if (view.insightsSection === "overview") {
+  if (view.insightsSection === "strata") {
+    renderStrata(view, content);
+    // 热力图降为附属：默认折叠，展开后仍是完整的 WAI-ARIA grid。
+    const folded = content.createEl("details", { cls: "sd-strata-heatmap" });
+    folded.open = view.strataHeatmapOpen;
+    folded.ontoggle = () => {
+      view.strataHeatmapOpen = folded.open;
+    };
+    folded.createEl("summary", { text: t("年度活跃热力图（附属）") });
+    renderHeatmap(view, folded);
+  } else if (view.insightsSection === "overview") {
     renderInsightsSummary(view, content);
     renderOverview(view, content);
-  } else if (view.insightsSection === "heatmap") {
-    renderHeatmap(view, content, false);
   } else if (view.insightsSection === "trend") {
     renderAnalytics(view, content, "trend");
   } else if (view.insightsSection === "folders") {
@@ -84,7 +93,7 @@ export function renderInsightsSummary(view: DashboardView, root: HTMLElement): v
   item(t("未处理速记"), String(pending));
   item(t("Agent 待办"), String(tasks));
   if (!view.insightsExpanded) {
-    card.createDiv({ cls: "sd-card-sub", text: t("详细图表、年度画像与人机热力图已收起，点击右上角展开。") });
+    card.createDiv({ cls: "sd-card-sub", text: t("详细图表与年度画像已收起，点击右上角展开。") });
   }
 }
 
@@ -153,10 +162,130 @@ function renderChartLegend(root: HTMLElement, series: Array<{ color: string; lab
   }
 }
 
-export function renderHeatmap(view: DashboardView, root: HTMLElement, dual: boolean): void {
+/** 地层剖面的四个沉积层（自上而下）：人写 / AI 写 / 任务 / 专注。
+ *  取色全部走 Obsidian 主题变量，深浅主题自动适配；与图标「层理+日月」同源。 */
+const STRATA_LAYERS: Array<{ key: keyof Omit<StrataMonth, "month">; color: string; label: string }> = [
+  { key: "human", color: "var(--interactive-accent)", label: "人写" },
+  { key: "agent", color: "var(--text-accent)", label: "AI 写" },
+  { key: "tasks", color: "var(--text-muted)", label: "任务" },
+  { key: "focus", color: "var(--text-faint)", label: "专注" },
+];
+
+const STRATA_MONTHS = 12;
+
+/**
+ * 知识地层主视图：按月堆叠的地层横截面。
+ * 每层横跨时间轴（左旧右新），层厚按该层当月量归一；越久远的月份透明度越低，
+ * 呼应图标里向下渐沉的层理。悬停月份列显示四类明细（复用热力图 tooltip 生命周期）。
+ */
+export function renderStrata(view: DashboardView, root: HTMLElement): void {
+  view.hideHeatTooltip();
+  const store = view.plugin.store;
+  const months = aggregateStrata(
+    { days: store.data.days, focusSessions: store.data.focusSessions },
+    recentStrataRange(STRATA_MONTHS)
+  );
+  const card = root.createDiv({ cls: "sd-card sd-strata", attr: { id: "sd-strata" } });
+  const head = card.createDiv({ cls: "sd-card-head" });
+  head.createDiv({ cls: "sd-card-title", text: t("知识地层剖面") });
+  head.createDiv({ cls: "sd-card-sub", text: tf("近 {n} 个月 · 人 / AI / 任务 / 专注按月沉积", { n: months.length }) });
+
+  const totals = months.reduce(
+    (sum, month) => ({
+      human: sum.human + month.human,
+      agent: sum.agent + month.agent,
+      tasks: sum.tasks + month.tasks,
+      focus: sum.focus + month.focus,
+    }),
+    { human: 0, agent: 0, tasks: 0, focus: 0 }
+  );
+  if (totals.human + totals.agent + totals.tasks + totals.focus === 0) {
+    card.createDiv({ cls: "sd-empty", text: t("还没有沉积记录：写点笔记、勾掉待办或跑一个番茄钟，地层会随月份生长。") });
+    return;
+  }
+
+  const width = 900;
+  const labelW = 64;
+  const plotW = width - labelW - 8;
+  const colW = plotW / months.length;
+  const bandH = 54;
+  const bandGap = 10;
+  const topPad = 8;
+  const bandsH = STRATA_LAYERS.length * bandH + (STRATA_LAYERS.length - 1) * bandGap;
+  const height = topPad + bandsH + 20;
+  const ageOpacity = (index: number): number =>
+    months.length > 1 ? 0.5 + (0.5 * index) / (months.length - 1) : 1;
+
+  const bands = STRATA_LAYERS.map((layer, bandIndex) => {
+    const bandTop = topPad + bandIndex * (bandH + bandGap);
+    const values = months.map((month) => month[layer.key]);
+    const max = Math.max(1, ...values);
+    const rects = months
+      .map((month, index) => {
+        const value = month[layer.key];
+        const thickness = value > 0 ? Math.max(3, (value / max) * (bandH - 8)) : 2;
+        const x = labelW + index * colW + 2;
+        const y = bandTop + bandH - thickness;
+        const opacity = value > 0 ? ageOpacity(index).toFixed(2) : "0.18";
+        return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${(colW - 4).toFixed(1)}" height="${thickness.toFixed(1)}" rx="2" fill="${layer.color}" opacity="${opacity}"/>`;
+      })
+      .join("");
+    const bedding = `<line x1="${labelW}" y1="${bandTop + bandH}" x2="${width - 8}" y2="${bandTop + bandH}" stroke="var(--background-modifier-border)" stroke-width="1"/>`;
+    const label = `<text x="${labelW - 8}" y="${bandTop + bandH / 2}" text-anchor="end" dominant-baseline="middle" font-size="10" fill="var(--text-muted)">${t(layer.label)}</text>`;
+    return `${bedding}${rects}${label}`;
+  }).join("");
+
+  const monthLabels = months
+    .map((month, index) => {
+      const mm = month.month.slice(5);
+      const text = index === 0 || mm === "01" ? month.month.slice(2) : tf("{n}月", { n: Number(mm) });
+      const x = labelW + index * colW + colW / 2;
+      return `<text x="${x.toFixed(1)}" y="${height - 6}" text-anchor="middle" font-size="9" fill="var(--text-faint)">${text}</text>`;
+    })
+    .join("");
+
+  const hits = months
+    .map(
+      (_month, index) =>
+        `<rect class="sd-strata-hit" data-index="${index}" x="${(labelW + index * colW).toFixed(1)}" y="${topPad}" width="${colW.toFixed(1)}" height="${bandsH}"/>`
+    )
+    .join("");
+
+  const ariaLabel = tf("地层剖面：{months} 个月，人写 {human} 字，AI 写 {agent} 字，完成任务 {tasks} 个，专注 {focus} 分钟", {
+    months: months.length,
+    ...totals,
+  });
+  const slot = card.createDiv({ cls: "sd-strata-slot" });
+  slot.innerHTML = `<svg class="sd-strata-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${ariaLabel.replace(/"/g, "&quot;")}">${bands}${monthLabels}${hits}</svg>`;
+
+  const showTip = (event: MouseEvent, month: StrataMonth): void => {
+    view.hideHeatTooltip();
+    const tip = document.createElement("div");
+    tip.className = "sd-heat-tooltip";
+    tip.createDiv({ cls: "sd-tip-date", text: month.month });
+    tip.createDiv({ cls: "sd-tip-metric", text: tf("人写 {human} 字 · AI 写 {agent} 字", { human: month.human, agent: month.agent }) });
+    tip.createDiv({ cls: "sd-tip-metric", text: tf("完成任务 {tasks} 个 · 专注 {focus} 分钟", { tasks: month.tasks, focus: month.focus }) });
+    document.body.appendChild(tip);
+    view.heatTooltip = tip;
+    view.moveHeatTooltip(event);
+  };
+  slot.querySelectorAll(".sd-strata-hit").forEach((el) => {
+    const month = months[Number(el.getAttribute("data-index"))];
+    if (!month) return;
+    el.addEventListener("mouseenter", (event) => showTip(event as MouseEvent, month));
+    el.addEventListener("mousemove", (event) => view.moveHeatTooltip(event as MouseEvent));
+    el.addEventListener("mouseleave", () => view.hideHeatTooltip());
+  });
+
+  // 读屏信息已由 SVG aria-label 汇总，图例仅供视觉对照（renderChartLegend 内置 aria-hidden）。
+  renderChartLegend(card, STRATA_LAYERS.map((layer) => ({ color: layer.color, label: t(layer.label) })));
+  card.createDiv({ cls: "sd-card-sub sd-strata-hint", text: t("层厚按当月量归一，越久远的月份色泽越沉。") });
+}
+
+export function renderHeatmap(view: DashboardView, root: HTMLElement): void {
   const card = root.createDiv({ cls: "sd-card sd-heatmap", attr: { id: "sd-heatmap" } });
   const head = card.createDiv({ cls: "sd-card-head" });
-  head.createDiv({ cls: "sd-card-title", text: dual ? t("人机双色热力图") : t("年度知识活跃脉冲") });
+  head.createDiv({ cls: "sd-card-title", text: t("年度知识活跃脉冲") });
   head.createDiv({ cls: "sd-card-sub", text: `${t("近 53 周")} · ${view.metricLabel()}` });
 
   const metrics = card.createDiv({ cls: "sd-metrics" });
@@ -190,7 +319,7 @@ export function renderHeatmap(view: DashboardView, root: HTMLElement, dual: bool
   const months = main.createDiv({ cls: "sd-months" });
   months.style.gridTemplateColumns = "repeat(53, 15px)";
   const columns = main.createDiv({ cls: "sd-columns" });
-  const cells: Array<{ key: string; value: number; date: Date; el: HTMLElement; ai: number }> = [];
+  const cells: Array<{ key: string; value: number; date: Date; el: HTMLElement }> = [];
 
   for (let week = 0; week < 53; week += 1) {
     const column = columns.createDiv({ cls: "sd-col" });
@@ -218,7 +347,7 @@ export function renderHeatmap(view: DashboardView, root: HTMLElement, dual: bool
         element.onmousemove = (event) => view.moveHeatTooltip(event);
         element.onmouseleave = () => view.hideHeatTooltip();
       }
-      cells.push({ key, value: cellValue, date, el: element, ai: record.aiWordsAdded });
+      cells.push({ key, value: cellValue, date, el: element });
     }
   }
   for (const cell of cells) {
@@ -232,16 +361,12 @@ export function renderHeatmap(view: DashboardView, root: HTMLElement, dual: bool
   for (const cell of cells) {
     const level = cell.value <= 0 ? 0 : Math.max(1, Math.min(4, Math.ceil((cell.value / max) * 4)));
     cell.el.addClass(`sd-lvl-${level}`);
-    if (dual && view.metric === "wordsAdded" && cell.value > 0) {
-      const ratio = Math.min(100, (cell.ai / cell.value) * 100);
-      cell.el.style.background = `linear-gradient(90deg, var(--interactive-accent) ${ratio}%, var(--text-faint) ${ratio}%)`;
-    }
     // 原生 title 已移除：悬停明细由自定义 tooltip 覆盖，读屏走格子 aria-label，避免双重提示。
   }
   const legend = wrap.createDiv({ cls: "sd-legend" });
-  legend.createSpan({ text: dual ? t("人") : t("少") });
+  legend.createSpan({ text: t("少") });
   for (let level = 0; level <= 4; level += 1) legend.createDiv({ cls: `sd-cell sd-lvl-${level}` });
-  legend.createSpan({ text: dual ? t("AI") : t("多") });
+  legend.createSpan({ text: t("多") });
 
   const selectable = cells.filter((cell) => !cell.el.hasClass("sd-future"));
   const focusKey =
