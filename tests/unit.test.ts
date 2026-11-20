@@ -36,6 +36,13 @@ import { tokenizeSemanticText } from "../src/agent/semantic";
 import { idempotencyKey, redactAuditPath, redactSecrets } from "../src/agent/security";
 import { computeDiff } from "../src/ui/diff-modal";
 import { barChart, mean, referenceLines, ring } from "../src/utils/charts";
+import {
+  inferCategory,
+  isOperationAllowed,
+  isPathAllowedByMode,
+  isPathDenied,
+  listCategories,
+} from "../src/agent/access";
 
 const day = (partial: Partial<DayRecord> = {}): DayRecord => ({ ...createEmptyDay(), ...partial });
 const settings = (partial: Partial<PulseSettings> = {}): PulseSettings => ({
@@ -164,6 +171,46 @@ test("charts：referenceLines 过滤 value<=0 并输出标签", () => {
 test("charts：ring 按 active/total 输出比例", () => {
   assert.match(ring(3, 4), /class="sd-ring"/);
   assert.match(ring(3, 4), />3</);
+});
+
+const accessSettings = {
+  deniedFolders: "私有,归档/secret",
+  deniedTags: "",
+  agentAccessMode: "allow-all" as const,
+  agentAllowedFolders: " ",
+  agentAllowRead: true,
+  agentAllowCreate: true,
+  agentAllowPatch: false,
+  agentAllowOverwrite: false,
+  agentAllowDelete: false,
+};
+
+test("access：isPathDenied 命中目录及子路径", () => {
+  assert.equal(isPathDenied("私有", "私有,归档/secret"), true);
+  assert.equal(isPathDenied("私有/日记.md", "私有,归档/secret"), true);
+  assert.equal(isPathDenied("公开", "私有,归档/secret"), false);
+});
+
+test("access：isOperationAllowed 按设置判定", () => {
+  assert.equal(isOperationAllowed("read", accessSettings), true);
+  assert.equal(isOperationAllowed("patch", accessSettings), false);
+});
+
+test("access：allowlist 模式只放行白名单目录", () => {
+  const allowlist = {
+    ...accessSettings,
+    agentAccessMode: "allowlist" as const,
+    agentAllowedFolders: "知识,日记",
+  };
+  assert.equal(isPathAllowedByMode("知识/a.md", allowlist), true);
+  assert.equal(isPathAllowedByMode("其他/a.md", allowlist), false);
+  assert.equal(isPathAllowedByMode("私有/a.md", allowlist), false);
+});
+
+test("access：listCategories 与 inferCategory", () => {
+  assert.deepEqual(listCategories("技术, 项目,,灵感"), ["技术", "项目", "灵感"]);
+  assert.equal(inferCategory("周报", "", [], ["技术", "项目"]), "复盘");
+  assert.equal(inferCategory("随手记", "", [], ["灵感"]), "灵感");
 });
 
 test("countWords：中文按字计", () => {

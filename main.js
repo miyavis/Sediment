@@ -479,6 +479,53 @@ async function restoreBackup(plugin, file, name) {
   await plugin.app.vault.process(file, () => content);
 }
 
+// src/agent/access.ts
+function splitList(value) {
+  return value.split(/[,，]/).map((item) => item.trim()).filter(Boolean);
+}
+function isPathDenied(path, deniedFolders) {
+  return splitList(deniedFolders).some((folder) => path === folder || path.startsWith(`${folder}/`));
+}
+function isOperationAllowed(operation, settings) {
+  switch (operation) {
+    case "read":
+      return settings.agentAllowRead;
+    case "create":
+      return settings.agentAllowCreate;
+    case "patch":
+      return settings.agentAllowPatch;
+    case "overwrite":
+      return settings.agentAllowOverwrite;
+    case "delete":
+      return settings.agentAllowDelete;
+  }
+}
+function isPathAllowedByMode(path, settings) {
+  if (isPathDenied(path, settings.deniedFolders)) return false;
+  if (settings.agentAccessMode !== "allowlist") return true;
+  return splitList(settings.agentAllowedFolders).some(
+    (folder) => path === folder || path.startsWith(`${folder}/`)
+  );
+}
+function listCategories(knowledgeCategories) {
+  return knowledgeCategories.split(/[,，]/).map((item) => item.trim()).filter(Boolean);
+}
+var CATEGORY_RULES = [
+  ["\u590D\u76D8", /复盘|总结|周报|回顾|小结|review|retro/],
+  ["\u9879\u76EE", /项目|计划|需求|进度|里程碑|project|任务拆解/],
+  ["\u6280\u672F", /代码|插件|api|mcp|配置|报错|调试|开发|构建|故障|排查|排错|发布|维护|bug|error|code|build|技术/],
+  ["\u65B9\u6CD5", /工作流|提示词|步骤|规范|指南|流程|方法|workflow|prompt|howto|教程/],
+  ["\u7075\u611F", /想法|灵感|点子|随想|idea/]
+];
+function inferCategory(title, content, tags, categories) {
+  var _a2;
+  const text = `${title} ${tags.join(" ")} ${content.slice(0, 600)}`.toLowerCase();
+  for (const [category, pattern] of CATEGORY_RULES) {
+    if (pattern.test(text)) return category;
+  }
+  return (_a2 = categories[0]) != null ? _a2 : "\u672A\u5206\u7C7B";
+}
+
 // src/agent/api.ts
 function generateToken() {
   try {
@@ -554,9 +601,6 @@ var ApiError = class extends Error {
     this.status = status;
   }
 };
-function splitList(value) {
-  return value.split(/[,，]/).map((item) => item.trim()).filter(Boolean);
-}
 function safeAgentPath(input) {
   const path = (0, import_obsidian2.normalizePath)(String(input != null ? input : "")).replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+/g, "/");
   if (!path) throw new ApiError("EMPTY_PATH", "\u8DEF\u5F84\u4E0D\u80FD\u4E3A\u7A7A");
@@ -617,14 +661,11 @@ var AgentApi = class {
       return "";
     }
   }
-  deniedFolders() {
-    return splitList(this.plugin.store.settings.deniedFolders);
-  }
   deniedTags() {
     return splitList(this.plugin.store.settings.deniedTags);
   }
   isDeniedPath(path) {
-    return this.deniedFolders().some((folder) => path === folder || path.startsWith(`${folder}/`));
+    return isPathDenied(path, this.plugin.store.settings.deniedFolders);
   }
   assertAllowed(path) {
     if (this.isDeniedPath(path)) {
@@ -633,9 +674,7 @@ var AgentApi = class {
     }
   }
   assertOperation(operation) {
-    const settings = this.plugin.store.settings;
-    const allowed = operation === "read" ? settings.agentAllowRead : operation === "create" ? settings.agentAllowCreate : operation === "patch" ? settings.agentAllowPatch : operation === "overwrite" ? settings.agentAllowOverwrite : settings.agentAllowDelete;
-    if (!allowed) {
+    if (!isOperationAllowed(operation, this.plugin.store.settings)) {
       this.plugin.store.logDiagnostic("security", `\u64CD\u4F5C ${operation} \u88AB\u5DE5\u4F5C\u6A21\u5F0F\u62D2\u7EDD`);
       throw new ApiError("OPERATION_DENIED", `\u64CD\u4F5C ${operation} \u672A\u88AB\u5141\u8BB8`, 403);
     }
@@ -644,21 +683,13 @@ var AgentApi = class {
     this.assertOperation(operation);
     this.assertAllowed(path);
     const settings = this.plugin.store.settings;
-    if (settings.agentAccessMode === "allowlist") {
-      const folders = splitList(settings.agentAllowedFolders);
-      if (!folders.some((folder) => path === folder || path.startsWith(`${folder}/`))) {
-        this.plugin.store.logDiagnostic("security", `\u8BBF\u95EE\u88AB\u62D2\u7EDD\uFF1A${path} \u4E0D\u5728\u767D\u540D\u5355\u76EE\u5F55\u5185`);
-        throw new ApiError("FORBIDDEN", `\u8BBF\u95EE\u88AB\u62D2\u7EDD\uFF1A${path} \u4E0D\u5728\u767D\u540D\u5355\u76EE\u5F55\u5185`, 403);
-      }
+    if (!isPathAllowedByMode(path, settings)) {
+      this.plugin.store.logDiagnostic("security", `\u8BBF\u95EE\u88AB\u62D2\u7EDD\uFF1A${path} \u4E0D\u5728\u767D\u540D\u5355\u76EE\u5F55\u5185`);
+      throw new ApiError("FORBIDDEN", `\u8BBF\u95EE\u88AB\u62D2\u7EDD\uFF1A${path} \u4E0D\u5728\u767D\u540D\u5355\u76EE\u5F55\u5185`, 403);
     }
   }
   isAllowedByMode(path) {
-    if (this.isDeniedPath(path)) return false;
-    const settings = this.plugin.store.settings;
-    if (settings.agentAccessMode !== "allowlist") return true;
-    return splitList(settings.agentAllowedFolders).some(
-      (folder) => path === folder || path.startsWith(`${folder}/`)
-    );
+    return isPathAllowedByMode(path, this.plugin.store.settings);
   }
   cacheTags(file) {
     var _a2, _b, _c, _d;
@@ -1060,7 +1091,7 @@ ${content}
     };
   }
   categories() {
-    return this.plugin.store.settings.knowledgeCategories.split(/[,，]/).map((item) => item.trim()).filter(Boolean);
+    return listCategories(this.plugin.store.settings.knowledgeCategories);
   }
   /** 知识库分类及各分类下的笔记数。 */
   getCategories() {
@@ -1078,19 +1109,7 @@ ${content}
   }
   /** 根据标题、标签和正文关键词推断分类；Agent 也可自行指定任意分类名。 */
   inferCategory(title, content, tags) {
-    var _a2;
-    const text = `${title} ${tags.join(" ")} ${content.slice(0, 600)}`.toLowerCase();
-    const rules = [
-      ["\u590D\u76D8", /复盘|总结|周报|回顾|小结|review|retro/],
-      ["\u9879\u76EE", /项目|计划|需求|进度|里程碑|project|任务拆解/],
-      ["\u6280\u672F", /代码|插件|api|mcp|配置|报错|调试|开发|构建|故障|排查|排错|发布|维护|bug|error|code|build|技术/],
-      ["\u65B9\u6CD5", /工作流|提示词|步骤|规范|指南|流程|方法|workflow|prompt|howto|教程/],
-      ["\u7075\u611F", /想法|灵感|点子|随想|idea/]
-    ];
-    for (const [category, pattern] of rules) {
-      if (pattern.test(text)) return category;
-    }
-    return (_a2 = this.categories()[0]) != null ? _a2 : "\u672A\u5206\u7C7B";
+    return inferCategory(title, content, tags, this.categories());
   }
   async listTasks(scope = "all") {
     return this.plugin.tasks.list(scope);

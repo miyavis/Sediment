@@ -7,6 +7,15 @@ import { restoreBackup } from "../features/audit";
 import type { DayRecord, MemoRecord, WorkLogRecord } from "../types";
 import { addDays, dateKey, hhmm, lastNDays, parseKey } from "../utils/dates";
 import { ensureFolder, normalizeFolder } from "../utils/vault";
+import {
+  inferCategory,
+  isOperationAllowed,
+  isPathAllowedByMode,
+  isPathDenied,
+  listCategories,
+  splitList,
+  type AgentOperation,
+} from "./access";
 
 export interface NoteSummary {
   path: string;
@@ -174,13 +183,6 @@ export class ApiError extends Error {
   }
 }
 
-function splitList(value: string): string[] {
-  return value
-    .split(/[,，]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
 /** 阻止路径逃逸出库外。 */
 export function safeAgentPath(input: string): string {
   const path = normalizePath(String(input ?? ""))
@@ -256,16 +258,12 @@ export class AgentApi {
     }
   }
 
-  private deniedFolders(): string[] {
-    return splitList(this.plugin.store.settings.deniedFolders);
-  }
-
   private deniedTags(): string[] {
     return splitList(this.plugin.store.settings.deniedTags);
   }
 
   private isDeniedPath(path: string): boolean {
-    return this.deniedFolders().some((folder) => path === folder || path.startsWith(`${folder}/`));
+    return isPathDenied(path, this.plugin.store.settings.deniedFolders);
   }
 
   private assertAllowed(path: string): void {
@@ -275,44 +273,25 @@ export class AgentApi {
     }
   }
 
-  private assertOperation(operation: "read" | "create" | "patch" | "overwrite" | "delete"): void {
-    const settings = this.plugin.store.settings;
-    const allowed =
-      operation === "read"
-        ? settings.agentAllowRead
-        : operation === "create"
-          ? settings.agentAllowCreate
-          : operation === "patch"
-            ? settings.agentAllowPatch
-            : operation === "overwrite"
-              ? settings.agentAllowOverwrite
-              : settings.agentAllowDelete;
-    if (!allowed) {
+  private assertOperation(operation: AgentOperation): void {
+    if (!isOperationAllowed(operation, this.plugin.store.settings)) {
       this.plugin.store.logDiagnostic("security", `操作 ${operation} 被工作模式拒绝`);
       throw new ApiError("OPERATION_DENIED", `操作 ${operation} 未被允许`, 403);
     }
   }
 
-  private assertPathAllowed(path: string, operation: "read" | "create" | "patch" | "overwrite" | "delete"): void {
+  private assertPathAllowed(path: string, operation: AgentOperation): void {
     this.assertOperation(operation);
     this.assertAllowed(path);
     const settings = this.plugin.store.settings;
-    if (settings.agentAccessMode === "allowlist") {
-      const folders = splitList(settings.agentAllowedFolders);
-      if (!folders.some((folder) => path === folder || path.startsWith(`${folder}/`))) {
-        this.plugin.store.logDiagnostic("security", `访问被拒绝：${path} 不在白名单目录内`);
-        throw new ApiError("FORBIDDEN", `访问被拒绝：${path} 不在白名单目录内`, 403);
-      }
+    if (!isPathAllowedByMode(path, settings)) {
+      this.plugin.store.logDiagnostic("security", `访问被拒绝：${path} 不在白名单目录内`);
+      throw new ApiError("FORBIDDEN", `访问被拒绝：${path} 不在白名单目录内`, 403);
     }
   }
 
   private isAllowedByMode(path: string): boolean {
-    if (this.isDeniedPath(path)) return false;
-    const settings = this.plugin.store.settings;
-    if (settings.agentAccessMode !== "allowlist") return true;
-    return splitList(settings.agentAllowedFolders).some(
-      (folder) => path === folder || path.startsWith(`${folder}/`)
-    );
+    return isPathAllowedByMode(path, this.plugin.store.settings);
   }
 
   private cacheTags(file: TFile): string[] {
@@ -813,10 +792,7 @@ export class AgentApi {
   }
 
   private categories(): string[] {
-    return this.plugin.store.settings.knowledgeCategories
-      .split(/[,，]/)
-      .map((item) => item.trim())
-      .filter(Boolean);
+    return listCategories(this.plugin.store.settings.knowledgeCategories);
   }
 
   /** 知识库分类及各分类下的笔记数。 */
@@ -835,18 +811,7 @@ export class AgentApi {
 
   /** 根据标题、标签和正文关键词推断分类；Agent 也可自行指定任意分类名。 */
   private inferCategory(title: string, content: string, tags: string[]): string {
-    const text = `${title} ${tags.join(" ")} ${content.slice(0, 600)}`.toLowerCase();
-    const rules: Array<[string, RegExp]> = [
-      ["复盘", /复盘|总结|周报|回顾|小结|review|retro/],
-      ["项目", /项目|计划|需求|进度|里程碑|project|任务拆解/],
-      ["技术", /代码|插件|api|mcp|配置|报错|调试|开发|构建|故障|排查|排错|发布|维护|bug|error|code|build|技术/],
-      ["方法", /工作流|提示词|步骤|规范|指南|流程|方法|workflow|prompt|howto|教程/],
-      ["灵感", /想法|灵感|点子|随想|idea/],
-    ];
-    for (const [category, pattern] of rules) {
-      if (pattern.test(text)) return category;
-    }
-    return this.categories()[0] ?? "未分类";
+    return inferCategory(title, content, tags, this.categories());
   }
 
   async listTasks(scope = "all"): Promise<Array<{ path: string; line: number; text: string; date: string; checked: boolean }>> {
