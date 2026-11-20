@@ -2,7 +2,7 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
-## [Unreleased]
+## [0.9.6.1] - 2026-11-20
 
 ### 修复
 - 速记搜索框：修复输入时结果被追加到列表末尾、跳到知识区下方的 bug；新增「匹配 N 条」实时计数，搜索效果可见
