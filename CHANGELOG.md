@@ -2,7 +2,7 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
-## [Unreleased]
+## [0.9.6] - 2026-11-20
 
 ### 修复
 - Agent 时间显示改为本地时区：工具调用/变更审查/最近调用/诊断日志的时间不再显示成 UTC（如 05:30 实为本地 13:30），「今日」统计也按本地日期判定
