@@ -7,3 +7,4 @@ data.json
 tests/.unit.bundle.cjs
 tests/.bench.bundle.cjs
 src/agent/bridge-source.ts
+src/changelog.ts

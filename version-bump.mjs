@@ -57,6 +57,6 @@ writeIfChanged(
 // 6. README 版本徽章
 const readmePath = "README.md";
 const readme = readFileSync(readmePath, "utf8");
-writeIfChanged(readmePath, readme.replace(/version-v\d+\.\d+\.\d+/g, `version-v${version}`));
+writeIfChanged(readmePath, readme.replace(/version-v\d+(?:\.\d+)*/g, `version-v${version}`));
 
 console.log(`version synced: ${version}`);
