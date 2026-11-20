@@ -2,7 +2,7 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
-## [Unreleased]
+## [0.9.1] - 2026-11-20
 
 ### 改进
 - Agent 变更 Diff 重做：LCS 逐行标记增删、双栏滚动联动、变化行数统计，可在弹窗内「采用备份（撤销）」或「保留当前」
