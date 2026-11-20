@@ -136,6 +136,8 @@ export interface PulseSettings {
   layoutDensity: "compact" | "standard" | "full";
   /** 减少装饰动画和状态过渡 */
   reducedMotion: boolean;
+  /** Agent 权限工作模式 */
+  agentWorkMode: "readonly" | "draft" | "confirm" | "auto";
   /** 每天写作目标字数，0 表示关闭 */
   dailyWordGoal: number;
   /** 单日贡献分封顶，0 表示不封顶 */
@@ -239,6 +241,7 @@ export const DEFAULT_SETTINGS: PulseSettings = {
   artStyle: "lake",
   layoutDensity: "standard",
   reducedMotion: false,
+  agentWorkMode: "confirm",
   dailyWordGoal: 1000,
   contributionDailyCap: 120,
   wordsPerWriteCap: 4000,

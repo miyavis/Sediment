@@ -14,6 +14,12 @@ export class PulseSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.createEl("h2", { text: t("Sediment 设置") });
+    const onboarding = containerEl.createDiv({ cls: "sd-onboarding" });
+    onboarding.createDiv({ cls: "sd-card-title", text: t("首次使用检查") });
+    onboarding.createDiv({
+      cls: "sd-card-sub",
+      text: t("先确认日记目录、数据位置和备份；Agent 接入是可选的。"),
+    });
 
     const settings = this.plugin.store.settings;
     const save = () => void this.plugin.saveSettings();
@@ -188,6 +194,48 @@ export class PulseSettingTab extends PluginSettingTab {
       );
 
     containerEl.createEl("h3", { text: t("Agent 权限（可选）") });
+
+    new Setting(containerEl)
+      .setName(t("Agent 工作模式"))
+      .setDesc(t("选择只读、草稿、确认后写入或自动执行；实际权限仍受下方开关约束。"))
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("readonly", t("只读"))
+          .addOption("draft", t("草稿"))
+          .addOption("confirm", t("确认后写入"))
+          .addOption("auto", t("自动执行"))
+          .setValue(settings.agentWorkMode)
+          .onChange((value) => {
+            settings.agentWorkMode = value as "readonly" | "draft" | "confirm" | "auto";
+            if (settings.agentWorkMode === "readonly") {
+              settings.agentAllowRead = true;
+              settings.agentAllowCreate = false;
+              settings.agentAllowPatch = false;
+              settings.agentAllowOverwrite = false;
+              settings.agentAllowDelete = false;
+            } else if (settings.agentWorkMode === "draft") {
+              settings.agentAllowRead = true;
+              settings.agentAllowCreate = true;
+              settings.agentAllowPatch = false;
+              settings.agentAllowOverwrite = false;
+              settings.agentAllowDelete = false;
+            } else if (settings.agentWorkMode === "confirm") {
+              settings.agentAllowRead = true;
+              settings.agentAllowCreate = true;
+              settings.agentAllowPatch = true;
+              settings.agentAllowOverwrite = true;
+              settings.agentAllowDelete = false;
+            } else {
+              settings.agentAllowRead = true;
+              settings.agentAllowCreate = true;
+              settings.agentAllowPatch = true;
+              settings.agentAllowOverwrite = true;
+              settings.agentAllowDelete = false;
+            }
+            save();
+            this.display();
+          })
+      );
 
     new Setting(containerEl)
       .setName(t("访问模式"))

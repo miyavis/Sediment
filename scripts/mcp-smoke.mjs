@@ -41,15 +41,39 @@ if (!ping?.result || unknown?.error?.code !== -32601) {
 const requiredTools = [
   "get_daily_context",
   "get_active_context",
+  "search_notes",
+  "list_notes",
+  "read_note",
+  "write_note",
   "patch_note",
-  "claim_agent_task",
-  "complete_agent_task",
-  "revert_agent_change",
+  "add_memo",
+  "add_knowledge",
+  "record_work_log",
+  "manage_tasks",
+  "manage_changes",
+  "get_workspace_state",
 ];
 const names = new Set(list.result.tools.map((tool) => tool.name));
 const missingTools = requiredTools.filter((name) => !names.has(name));
 if (missingTools.length > 0) {
   console.error(`MCP tool inventory missing: ${missingTools.join(", ")}`);
+  process.exit(1);
+}
+if (list.result.tools.length !== 13) {
+  console.error(`MCP public tool count expected 13, got ${list.result.tools.length}`);
+  process.exit(1);
+}
+const removedTools = [
+  "create_note",
+  "append_note",
+  "list_agent_changes",
+  "revert_agent_change",
+  "claim_agent_task",
+  "complete_agent_task",
+];
+const unexpectedlyPresent = removedTools.filter((name) => names.has(name));
+if (unexpectedlyPresent.length > 0) {
+  console.error(`Removed MCP tools still exposed: ${unexpectedlyPresent.join(", ")}`);
   process.exit(1);
 }
 if (!missingArgument?.result?.isError || !missingArgument.result.content?.[0]?.text?.includes("缺少必填参数")) {

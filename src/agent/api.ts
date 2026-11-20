@@ -882,6 +882,7 @@ export class AgentApi {
     };
 
     const folder = normalizeFolder(this.plugin.store.settings.workLogFolder);
+    this.assertPathAllowed(folder ? `${folder}/${log.date}.md` : `${log.date}.md`, "create");
     await ensureFolder(this.vault, folder);
     const path = folder ? `${folder}/${log.date}.md` : `${log.date}.md`;
     const abstract = this.vault.getAbstractFileByPath(path);
@@ -940,6 +941,7 @@ export class AgentApi {
       "未分类";
     const sub = normalizeFolder(input.folder ?? "");
     const folder = [base, category, sub].filter(Boolean).join("/");
+    this.assertPathAllowed(folder ? `${folder}/placeholder.md` : "placeholder.md", "create");
     await ensureFolder(this.vault, folder);
 
     const today = dateKey(new Date());

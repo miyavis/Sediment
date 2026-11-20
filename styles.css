@@ -399,6 +399,11 @@ settings:
 }
 
 @media (max-width: 500px) {
+  .sd-today-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
   .kp-card-value {
     font-size: 18px;
   }
@@ -436,7 +441,7 @@ settings:
 }
 
 .sd-banner {
-  height: 200px;
+  height: 160px;
   overflow: hidden;
   border-radius: 0 0 12px 12px;
 }
@@ -511,12 +516,59 @@ settings:
   padding: 20px 28px;
 }
 
+.sd-today-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.sd-today-action {
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 9px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  cursor: pointer;
+}
+
+.sd-today-action.is-primary {
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+}
+
+.sd-save-status,
+.sd-memo-status {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.sd-memo-status {
+  display: inline-block;
+  width: fit-content;
+  margin: 4px 0 2px;
+  padding: 2px 7px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  background: var(--background-secondary);
+}
+
 .sd-card {
   margin-bottom: 18px;
   padding: 20px 22px;
   background: var(--background-primary);
   border: 1px solid var(--background-modifier-border);
   border-radius: 14px;
+}
+
+.sd-onboarding {
+  margin: 12px 0 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--interactive-accent);
+  border-radius: 12px;
+  background: var(--background-secondary);
 }
 
 .sd-card-head {
@@ -1436,6 +1488,15 @@ settings:
   .sd-status-grid .sd-status-item:first-child {
     grid-column: span 1;
   }
+
+  .sd-memo-tabs {
+    display: flex;
+    overflow-x: auto;
+  }
+
+  .sd-memo-tab {
+    min-height: 40px;
+  }
 }
 
 .sd-tag-item {
@@ -1821,6 +1882,16 @@ settings:
 
 .sd-task-item {
   overflow: hidden;
+}
+
+.sd-task-actions,
+.sd-draft-actions,
+.sd-memo-actions,
+.sd-audit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
 }
 
 .sd-task-open,

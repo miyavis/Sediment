@@ -159,6 +159,7 @@ export class DashboardView extends ItemView {
       const button = tabs.createEl("button", {
         cls: `sd-tab ${key === this.tab ? "is-active" : ""}`,
         text: t(label),
+        attr: { role: "tab", "aria-selected": key === this.tab ? "true" : "false" },
       });
       button.onclick = () => {
         this.tab = key;
@@ -173,6 +174,31 @@ export class DashboardView extends ItemView {
 
   private renderToday(root: HTMLElement): void {
     const body = root.createDiv({ cls: "sd-body" });
+    const actions = body.createDiv({ cls: "sd-today-actions" });
+    const memoAction = actions.createEl("button", {
+      cls: "sd-today-action is-primary",
+      text: t("记一条速记"),
+    });
+    memoAction.onclick = () => {
+      const area = root.querySelector(".sd-quick-memo textarea") as HTMLTextAreaElement | null;
+      area?.focus();
+      area?.scrollIntoView({ block: "center" });
+    };
+    const taskAction = actions.createEl("button", {
+      cls: "sd-today-action",
+      text: t("查看今日任务"),
+    });
+    taskAction.onclick = () => {
+      const tasks = root.querySelector(".sd-tasks") as HTMLElement | null;
+      tasks?.scrollIntoView({ block: "center" });
+    };
+    const pomodoroAction = actions.createEl("button", {
+      cls: "sd-today-action",
+      text: t("开始专注"),
+    });
+    pomodoroAction.onclick = () => {
+      if (!this.plugin.pomodoro.state().running) this.plugin.pomodoro.start();
+    };
     const bento = body.createDiv({ cls: "sd-bento" });
     this.renderTodayCard(bento);
     this.renderQuickMemo(bento);
@@ -224,13 +250,38 @@ export class DashboardView extends ItemView {
     const area = card.createEl("textarea", { cls: "kp-memo-input" });
     area.placeholder = t("想到什么，随手记下…");
     area.rows = 2;
+    const draftKey = "sediment.quick-memo.draft";
+    try {
+      area.value = localStorage.getItem(draftKey) ?? "";
+    } catch {}
+    const status = card.createDiv({ cls: "sd-save-status", text: area.value ? t("草稿已恢复") : t("未保存") });
+    area.oninput = () => {
+      try {
+        localStorage.setItem(draftKey, area.value);
+        status.setText(area.value ? t("草稿已保存") : t("未保存"));
+      } catch {
+        status.setText(t("草稿保存失败"));
+      }
+    };
     const submit = card.createEl("button", { cls: "mod-cta", text: t("记一条") });
     submit.onclick = () => {
       const text = area.value.trim();
       if (!text) return;
-      void this.plugin.memos.add(text).then(() => {
-        area.value = "";
-        this.render();
+      submit.disabled = true;
+      status.setText(t("保存中…"));
+      void this.plugin.memos.add(text).then((memo) => {
+        if (memo) {
+          area.value = "";
+          try { localStorage.removeItem(draftKey); } catch {}
+          status.setText(t("已保存"));
+          this.render();
+        } else {
+          submit.disabled = false;
+          status.setText(t("保存失败，请重试"));
+        }
+      }).catch(() => {
+        submit.disabled = false;
+        status.setText(t("保存失败，请重试"));
       });
     };
   }
@@ -288,12 +339,12 @@ export class DashboardView extends ItemView {
 
   private renderAgentHub(root: HTMLElement): void {
     const body = root.createDiv({ cls: "sd-body" });
-    this.renderAgentStatus(body);
-    this.renderAgentChanges(body);
-    this.renderTasksCard(body);
-    this.renderHeatmap(body, true);
     this.renderDrafts(body);
+    this.renderTasksCard(body);
+    this.renderAgentChanges(body);
     this.renderWorkLogs(body);
+    this.renderAgentStatus(body);
+    this.renderHeatmap(body, true);
     this.renderFooter(body);
   }
 
@@ -346,6 +397,7 @@ export class DashboardView extends ItemView {
           });
         };
         actions.createEl("button", { text: t("恢复") }).onclick = () => {
+          if (!window.confirm(t("确认恢复这个 Agent 修改快照？当前笔记内容会被替换。"))) return;
           void restoreBackup(this.plugin, file, backups[0].name).then(() => {
             new Notice(t("已恢复到最近备份"));
             this.render();
@@ -389,6 +441,30 @@ export class DashboardView extends ItemView {
               ? `Agent · ${t("原待办")} ${task.sourcePath.split("/").pop()}:${task.sourceLine ?? 1}`
               : `Agent · ${task.date}`,
         });
+        const actions = row.createDiv({ cls: "sd-task-actions" });
+        if (task.path) {
+          actions.createEl("button", { text: t("完成") }).onclick = () => {
+            if (!window.confirm(t("确认将此待办标记为完成？"))) return;
+            void this.plugin.tasks.complete(task.path, task.line).then(() => {
+              new Notice(t("待办已完成"));
+              this.render();
+            }).catch((error) => new Notice(error instanceof Error ? error.message : t("操作失败")));
+          };
+        } else if (task.memoId) {
+          actions.createEl("button", { text: t("认领") }).onclick = () => {
+            void this.plugin.agentApi.claimAgentTask(task.memoId!).then(() => {
+              new Notice(t("任务已认领"));
+              this.render();
+            }).catch((error) => new Notice(error instanceof Error ? error.message : t("操作失败")));
+          };
+          actions.createEl("button", { text: t("完成") }).onclick = () => {
+            if (!window.confirm(t("确认完成此 Agent 待办？"))) return;
+            void this.plugin.agentApi.completeAgentTask(task.memoId!).then(() => {
+              new Notice(t("Agent 待办已完成"));
+              this.render();
+            }).catch((error) => new Notice(error instanceof Error ? error.message : t("操作失败")));
+          };
+        }
       }
     });
   }
@@ -451,6 +527,7 @@ export class DashboardView extends ItemView {
       };
       actions.createEl("button", { text: t("合并到关联笔记") }).onclick = () => void this.mergeDraft(file);
       actions.createEl("button", { text: t("驳回删除") }).onclick = () => {
+        if (!window.confirm(t("确认驳回并移入回收站？草稿可在回收站恢复。"))) return;
         void this.plugin.app.vault.trash(file, false).then(() => {
           new Notice(t("已驳回并移入回收站"));
           this.render();
@@ -474,6 +551,7 @@ export class DashboardView extends ItemView {
       new Notice(tf("找不到关联笔记：{name}", { name: first }));
       return;
     }
+    if (!window.confirm(t("合并后草稿将移入回收站，是否继续？"))) return;
     const source = await this.plugin.app.vault.read(file);
     const body = source.replace(/^---[\s\S]*?---\s*/, "");
     await this.plugin.app.vault.process(target, (data) => `${data.trimEnd()}\n\n${body.trim()}\n`);
@@ -680,7 +758,8 @@ export class DashboardView extends ItemView {
     };
     mini(t("活跃天数"), `${active} / ${keys.length}`, t("有记录的日子"), this.ring(active, keys.length));
     mini(t("当前连续"), tf("{n} 天", { n: this.currentStreak() }), tf("最长 {n} 天 · 按全部历史", { n: this.longestStreak() }));
-    mini(t("投入时间"), t("0 小时"), t("交互 / 专注"));
+    const investedMinutes = keys.reduce((sum, key) => sum + (this.plugin.store.getDay(key).activeMinutes + this.plugin.store.getDay(key).focusMinutes), 0);
+    mini(t("投入时间"), tf("{n} 小时", { n: Math.round(investedMinutes / 60 * 10) / 10 }), t("交互 / 专注"));
     mini(t("最高的一天"), this.value(best) > 0 ? String(this.value(best)) : "—", best);
   }
 

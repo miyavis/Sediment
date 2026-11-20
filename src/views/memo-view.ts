@@ -72,6 +72,7 @@ export class MemoView extends ItemView {
       const button = tabs.createEl("button", {
         cls: `sd-memo-tab ${key === this.tab ? "is-active" : ""}`,
         text: label,
+        attr: { role: "tab", "aria-selected": key === this.tab ? "true" : "false" },
       });
       button.onclick = () => {
         this.tab = key;
@@ -235,6 +236,16 @@ export class MemoView extends ItemView {
     card.className = "kp-memo-card";
     if (memo.archived) card.addClass("is-archived");
     card.createDiv({ cls: "kp-memo-time", text: memo.archived ? `${memo.time} · ${t("已归档")}` : memo.time });
+    card.createDiv({
+      cls: "sd-memo-status",
+      text: memo.archived
+        ? t("已归档")
+        : memo.converted
+          ? t("已沉淀")
+          : memo.tags.includes("to-agent")
+            ? t("已委派 Agent")
+            : t("未处理"),
+    });
     const textEl = card.createDiv({ cls: "kp-memo-text", text: memo.text });
     if (memo.tags.length > 0) {
       const tags = card.createDiv({ cls: "kp-memo-tags" });
