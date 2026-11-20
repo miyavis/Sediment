@@ -140,6 +140,19 @@ export function renderOverview(view: DashboardView, root: HTMLElement): void {
   mini(t("最高的一天"), view.value(best) > 0 ? String(view.value(best)) : "—", best);
 }
 
+/** 折线图图例（DOM 层：色点 + 文字）。series 未带 label 时不渲染，保持旧调用方外观不变。 */
+function renderChartLegend(root: HTMLElement, series: Array<{ color: string; label?: string }>): void {
+  const labeled = series.filter((item) => item.label);
+  if (labeled.length === 0) return;
+  // 读屏信息已由 SVG aria-label 汇总，图例仅供视觉对照，避免重复播报。
+  const legend = root.createDiv({ cls: "sd-chart-legend", attr: { "aria-hidden": "true" } });
+  for (const item of labeled) {
+    const entry = legend.createSpan({ cls: "sd-chart-legend-item" });
+    entry.createSpan({ cls: "sd-chart-legend-dot", attr: { style: `background:${item.color}` } });
+    entry.createSpan({ text: item.label ?? "" });
+  }
+}
+
 export function renderHeatmap(view: DashboardView, root: HTMLElement, dual: boolean): void {
   const card = root.createDiv({ cls: "sd-card sd-heatmap", attr: { id: "sd-heatmap" } });
   const head = card.createDiv({ cls: "sd-card-head" });
@@ -171,7 +184,7 @@ export function renderHeatmap(view: DashboardView, root: HTMLElement, dual: bool
   const labels = grid.createDiv({ cls: "sd-weekdays" });
   for (let row = 0; row < 7; row += 1) {
     const weekday = (row + weekStart) % 7;
-    labels.createDiv({ cls: "sd-weekday", text: row % 2 === 0 ? WEEKDAYS[weekday] : "" });
+    labels.createDiv({ cls: "sd-weekday", text: row % 2 === 0 ? t(WEEKDAYS[weekday]) : "" });
   }
   const main = grid.createDiv({ cls: "sd-main" });
   const months = main.createDiv({ cls: "sd-months" });
@@ -212,7 +225,7 @@ export function renderHeatmap(view: DashboardView, root: HTMLElement, dual: bool
     if (cell.date.getDate() !== 1) continue;
     const column = Math.floor((cell.date.getTime() - start.getTime()) / (7 * 86400000));
     if (column < 0 || column >= 53) continue;
-    const label = months.createDiv({ cls: "sd-month", text: `${cell.date.getMonth() + 1}月` });
+    const label = months.createDiv({ cls: "sd-month", text: tf("{n}月", { n: cell.date.getMonth() + 1 }) });
     label.style.gridColumn = String(column + 1);
   }
   const max = Math.max(1, ...cells.map((cell) => cell.value));
@@ -223,12 +236,7 @@ export function renderHeatmap(view: DashboardView, root: HTMLElement, dual: bool
       const ratio = Math.min(100, (cell.ai / cell.value) * 100);
       cell.el.style.background = `linear-gradient(90deg, var(--interactive-accent) ${ratio}%, var(--text-faint) ${ratio}%)`;
     }
-    cell.el.setAttribute(
-      "title",
-      dual && view.metric === "wordsAdded"
-        ? `${cell.key} · 总 ${cell.value} 字，其中 AI ${cell.ai} 字`
-        : `${cell.key} · ${view.metricLabel()} ${cell.value}`
-    );
+    // 原生 title 已移除：悬停明细由自定义 tooltip 覆盖，读屏走格子 aria-label，避免双重提示。
   }
   const legend = wrap.createDiv({ cls: "sd-legend" });
   legend.createSpan({ text: dual ? t("人") : t("少") });
@@ -325,24 +333,28 @@ export function renderAnalytics(
     } else if (view.trendTab === "changes") {
       const addedValues = days.map((day) => day.wordsAdded);
       const addedMean = mean(addedValues);
+      const changeSeries = [
+        { values: addedValues, color: "var(--interactive-accent)", label: t("新增") },
+        { values: days.map((day) => day.wordsRemoved), color: "var(--text-faint)", label: t("移除") },
+        { values: days.map((day) => day.capturedWords), color: "var(--text-muted)", label: t("捕获") },
+      ];
       trendContent.innerHTML += multiLineSvg(
-        [
-          { values: addedValues, color: "var(--interactive-accent)" },
-          { values: days.map((day) => day.wordsRemoved), color: "var(--text-faint)" },
-          { values: days.map((day) => day.capturedWords), color: "var(--text-muted)" },
-        ],
+        changeSeries,
         addedMean > 0 ? [{ value: addedMean, label: tf("新增均值 {n}", { n: Math.round(addedMean) }) }] : []
       );
+      renderChartLegend(trendContent, changeSeries);
     } else if (view.trendTab === "time") {
       const activeValues = days.map((day) => day.activeMinutes);
       const activeMean = mean(activeValues);
+      const timeSeries = [
+        { values: activeValues, color: "var(--interactive-accent)", label: t("活跃") },
+        { values: days.map((day) => day.focusMinutes), color: "var(--text-faint)", label: t("专注") },
+      ];
       trendContent.innerHTML += multiLineSvg(
-        [
-          { values: activeValues, color: "var(--interactive-accent)" },
-          { values: days.map((day) => day.focusMinutes), color: "var(--text-faint)" },
-        ],
+        timeSeries,
         activeMean > 0 ? [{ value: activeMean, label: tf("活跃均值 {n}", { n: Math.round(activeMean) }) }] : []
       );
+      renderChartLegend(trendContent, timeSeries);
     } else {
       const totalWords = days.reduce((sum, day) => sum + day.wordsAdded, 0);
       const captured = days.reduce((sum, day) => sum + day.capturedWords, 0);
@@ -534,12 +546,12 @@ export function renderYearly(view: DashboardView, root: HTMLElement): void {
 
   for (let month = 0; month < 12; month += 1) {
     const section = card.createDiv({ cls: "sd-calendar-month" });
-    section.createDiv({ cls: "sd-calendar-title", text: `${month + 1} 月` });
+    section.createDiv({ cls: "sd-calendar-title", text: tf("{n} 月", { n: month + 1 }) });
     const grid = section.createDiv({ cls: "sd-calendar-grid" });
     for (let day = 1; day <= new Date(year, month + 1, 0).getDate(); day += 1) {
       const date = new Date(year, month, day);
       const value = view.plugin.store.getDay(dateKey(date)).contribution;
-      const cell = grid.createDiv({ cls: "sd-calendar-cell", attr: { title: `${dateKey(date)} · ${value} 分` } });
+      const cell = grid.createDiv({ cls: "sd-calendar-cell", attr: { title: `${dateKey(date)} · ${tf("{n} 分", { n: value })}` } });
       cell.createDiv({ cls: "sd-calendar-moon", text: view.moonGlyph(date) });
       cell.createDiv({ cls: "sd-calendar-value", text: value > 0 ? String(value) : "·" });
     }

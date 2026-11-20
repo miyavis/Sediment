@@ -22,7 +22,7 @@ import { addDays, dateKey, isSameLocalDay, parseKey, startOfWeek } from "./utils
 import { DashboardView, DASHBOARD_VIEW_TYPE } from "./views/dashboard-view";
 import { MemoView, MEMO_VIEW_TYPE } from "./views/memo-view";
 import { Tracker } from "./tracking/tracker";
-import { resolveLocale, setLocale, t, tf } from "./i18n";
+import { localeFromPersisted, resolveLocale, setLocale, t, tf } from "./i18n";
 
 export class SedimentPlugin extends Plugin {
   store!: Store;
@@ -38,6 +38,9 @@ export class SedimentPlugin extends Plugin {
     addIcon(SEDIMENT_ICON_ID, SEDIMENT_ICON_SVG);
     addIcon(SEDIMENT_MEMO_ICON_ID, SEDIMENT_MEMO_ICON_SVG);
     this.store = new Store(this);
+    // 启动 Notice 语言顺序：先从持久化数据预读语言，保证 store.load() 生成的
+    // 迁移警告按用户语言输出（EN 用户不再看到默认中文提示）。
+    setLocale(localeFromPersisted(await this.loadData()));
     await this.store.load();
     if (this.store.migrationWarning) {
       // 写入被阻塞时启动阶段提示一次，并告知恢复副本位置。
@@ -219,12 +222,12 @@ export class SedimentPlugin extends Plugin {
     });
     this.addCommand({
       id: "uninstall-mcp",
-      name: "一键卸载 MCP 接入",
+      name: t("一键卸载 MCP 接入"),
       callback: () => new McpUninstallModal(this).open(),
     });
     this.addCommand({
       id: "show-diagnostics",
-      name: "查看诊断日志",
+      name: t("查看诊断日志"),
       callback: () => new DiagnosticsModal(this.app, this.store.data.diagnostics).open(),
     });
     this.addCommand({

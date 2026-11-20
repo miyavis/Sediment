@@ -1,4 +1,5 @@
 import { App, Modal } from "obsidian";
+import { t, tf } from "../i18n";
 
 type DiffType = "same" | "add" | "remove";
 
@@ -78,22 +79,22 @@ export class DiffModal extends Modal {
     const meta = contentEl.createDiv({ cls: "sd-diff-meta" });
     const added = computeDiff(this.before, this.after).filter((line) => line.type === "add").length;
     const removed = computeDiff(this.before, this.after).filter((line) => line.type === "remove").length;
-    meta.createSpan({ text: `+${added} 行` });
-    meta.createSpan({ text: `-${removed} 行` });
+    meta.createSpan({ text: tf("+{n} 行", { n: added }) });
+    meta.createSpan({ text: tf("-{n} 行", { n: removed }) });
 
     const grid = contentEl.createDiv({ cls: "sd-diff-grid" });
-    this.left = this.column(grid, this.labels?.leftTitle ?? "备份版本（修改前）", "old");
-    this.right = this.column(grid, this.labels?.rightTitle ?? "当前版本（磁盘上）", "new");
+    this.left = this.column(grid, this.labels?.leftTitle ?? t("备份版本（修改前）"), "old");
+    this.right = this.column(grid, this.labels?.rightTitle ?? t("当前版本（磁盘上）"), "new");
     this.renderLines(computeDiff(this.before, this.after));
 
     const actions = contentEl.createDiv({ cls: "sd-diff-actions" });
     if (this.onRestore) {
-      actions.createEl("button", { text: this.labels?.restore ?? "采用备份（撤销本次修改）" }).onclick = () => {
+      actions.createEl("button", { text: this.labels?.restore ?? t("采用备份（撤销本次修改）") }).onclick = () => {
         this.onRestore?.();
         this.close();
       };
     }
-    actions.createEl("button", { cls: "mod-cta", text: this.labels?.keep ?? "保留当前并关闭" }).onclick = () => {
+    actions.createEl("button", { cls: "mod-cta", text: this.labels?.keep ?? t("保留当前并关闭") }).onclick = () => {
       this.onKeep?.();
       this.close();
     };

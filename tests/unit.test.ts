@@ -46,7 +46,9 @@ import { SemanticIndex, tokenizeSemanticText } from "../src/agent/semantic";
 import { tokensMatch } from "../src/agent/server";
 import { idempotencyKey, redactAuditPath, redactSecrets } from "../src/agent/security";
 import { computeDiff } from "../src/ui/diff-modal";
-import { barChart, mean, referenceLines, ring } from "../src/utils/charts";
+import { barChart, goalRing, mean, multiLine, referenceLines, ring, sparkline } from "../src/utils/charts";
+import { getLocale, localeFromPersisted, setLocale } from "../src/i18n";
+import { findViolations, stripComments } from "../scripts/lint-i18n.mjs";
 import {
   inferCategory,
   isOperationAllowed,
@@ -1908,4 +1910,174 @@ test("SETTINGS_SECTIONS：基础区置顶，Agent 目录/黑名单归 Agent 区�
   const all = SETTINGS_SECTIONS.flatMap((section) => section.keys);
   assert.equal(new Set(all).size, all.length); // 无一键跨区重复
   assert.throws(() => settingsSection("不存在"));
+});
+
+// ── Task 8：i18n 防再犯扫描器自测 ──
+
+test("lint-i18n：构造违规样本——createEl text 未包裹的中文字面量能被抓到", () => {
+  const source = 'contentEl.createEl("h2", { text: "诊断日志" });';
+  const violations = findViolations(source, "sample.ts");
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].line, 1);
+  assert.equal(violations[0].key, "text");
+  assert.match(violations[0].snippet, /诊断日志/);
+});
+
+test("lint-i18n：t()/tf() 包裹与多行对象写法放行", () => {
+  const source = [
+    'el.createDiv({ cls: "sd-x", text: t("中文") });',
+    "el.createSpan({",
+    '  cls: "sd-y",',
+    '  text: tf("已记录 {n} 条", { n: 3 }),',
+    "});",
+    'el.createEl("button", { text: t("取消") });',
+  ].join("\n");
+  assert.deepEqual(findViolations(source), []);
+});
+
+test("lint-i18n：注释中的中文不视为违规，字符串内 // 不被误剥", () => {
+  const source = [
+    "// 中文行注释：诊断日志",
+    "/* 中文块注释\n   第二行 */",
+    'el.createDiv({ text: t("中文") }); // 尾随中文注释',
+    'const url = "https://example.com/路径";',
+    'el.createDiv({ text: url });',
+  ].join("\n");
+  assert.deepEqual(findViolations(source), []);
+  const stripped = stripComments(source);
+  assert.match(stripped, /https:\/\/example\.com\/路径/); // 字符串内容保留
+  assert.equal(stripped.length, source.length); // 等长替换，行号不漂移
+});
+
+test("lint-i18n：模板字符串静态中文算违规，插值内 t() 不误报", () => {
+  assert.equal(findViolations("el.createSpan({ text: `+${n} 行` });").length, 1);
+  assert.equal(findViolations('el.createDiv({ text: `${t("近")} · ${x}` });').length, 0);
+  assert.equal(findViolations('el.createDiv({ text: `Sediment ${v} · ${t("数据只留在本地")}` });').length, 0);
+});
+
+test("lint-i18n：?? 回退字面量与 cls 中文算违规；attr/placeholder 不在扫描范围", () => {
+  assert.equal(findViolations('el.createEl("button", { text: label ?? "采用备份" });').length, 1);
+  assert.equal(findViolations('el.createDiv({ cls: "中文类名" });').length, 1);
+  // 范围控制（宁缺毋滥）：title/placeholder 等参数不在 text/cls 扫描口径内。
+  assert.equal(findViolations('el.createDiv({ attr: { title: "中文提示" } });').length, 0);
+  assert.equal(findViolations('el.createEl("input", { placeholder: "中文占位" });').length, 0);
+});
+
+test("lint-i18n：i18n-lint-allow 白名单（同行或上一行注释）放行", () => {
+  assert.equal(findViolations('el.createDiv({ text: "中文" }); // i18n-lint-allow').length, 0);
+  assert.equal(findViolations("// i18n-lint-allow\nel.createDiv({ text: \"中文\" });").length, 0);
+  assert.equal(findViolations('el.createDiv({ text: "中文" });').length, 1);
+});
+
+test("lint-i18n：违规行号定位准确（多行源码）", () => {
+  const source = 'const a = 1;\n// 注释\nel.createDiv({\n  text: "中文",\n});';
+  const violations = findViolations(source);
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].line, 4);
+});
+
+// ── Task 8：图表可访问性（role/aria-label/图例标签） ──
+
+test("charts：各 SVG 输出带 role=img 与汇总数值的 aria-label", () => {
+  const prev = getLocale();
+  try {
+    setLocale("zh");
+    assert.match(barChart([1, 5, 3]), /role="img"/);
+    assert.match(barChart([1, 5, 3]), /aria-label="柱状图：3 项，峰值 5"/);
+    assert.match(sparkline([2, 7, 4]), /role="img"/);
+    assert.match(sparkline([2, 7, 4]), /峰值 7/);
+    assert.match(ring(3, 4), /aria-label="环形进度：3 \/ 4"/);
+    assert.match(goalRing(50, 200), /aria-label="目标进度：50 \/ 200，25%"/);
+  } finally {
+    setLocale(prev);
+  }
+});
+
+test("charts：multiLine 系列标签进入 aria-label；无标签向后兼容", () => {
+  const prev = getLocale();
+  try {
+    setLocale("zh");
+    const labeled = multiLine([
+      { values: [1, 5], color: "red", label: "新增" },
+      { values: [2, 3], color: "gray", label: "移除" },
+    ]);
+    assert.match(labeled, /role="img"/);
+    assert.match(labeled, /新增 峰值 5; 移除 峰值 3/);
+    assert.equal((labeled.match(/<polyline /g) ?? []).length, 2);
+    // 旧调用方（无 label）不破坏：仍输出 SVG，系列用兜底名。
+    const legacy = multiLine([{ values: [1, 2], color: "red" }]);
+    assert.match(legacy, /<svg class="sd-chart"/);
+    assert.match(legacy, /系列 1 峰值 2/);
+  } finally {
+    setLocale(prev);
+  }
+});
+
+test("charts：EN 环境 aria-label 输出英文", () => {
+  const prev = getLocale();
+  try {
+    setLocale("en");
+    assert.match(barChart([1, 5]), /aria-label="Bar chart: 2 items, peak 5"/);
+    assert.match(
+      multiLine([{ values: [4], color: "red", label: "Added" }]),
+      /Line chart: Added peak 4/
+    );
+    assert.match(ring(1, 2), /Ring progress: 1 \/ 2/);
+  } finally {
+    setLocale(prev);
+  }
+});
+
+test("charts：ariaLabel 可覆盖默认文案且属性值转义", () => {
+  const svg = barChart([1], undefined, [], '自定义 "quoted" & <tag>');
+  assert.match(svg, /aria-label="自定义 &quot;quoted&quot; &amp; &lt;tag&gt;"/);
+  assert.doesNotMatch(svg, /柱状图/);
+});
+
+// ── Task 8：启动 Notice 语言顺序（Task 5 移交项） ──
+
+test("localeFromPersisted：从持久化数据预读语言，非法/缺失回退 auto", () => {
+  const prev = getLocale();
+  try {
+    assert.equal(localeFromPersisted({ settings: { language: "en" } }), "en");
+    assert.equal(localeFromPersisted({ settings: { language: "zh" } }), "zh");
+    // Node 环境无 window.moment，auto 探测兜底 zh。
+    assert.equal(localeFromPersisted({ settings: { language: "auto" } }), "zh");
+    assert.equal(localeFromPersisted({ settings: { language: "fr" } }), "zh");
+    assert.equal(localeFromPersisted({ settings: {} }), "zh");
+    assert.equal(localeFromPersisted({}), "zh");
+    assert.equal(localeFromPersisted(null), "zh");
+    assert.equal(localeFromPersisted("broken"), "zh");
+    assert.equal(localeFromPersisted([1, 2]), "zh");
+  } finally {
+    setLocale(prev);
+  }
+});
+
+test("Store.load：EN 预读顺序下启动迁移警告为英文（回归 main.ts onload 契约）", async () => {
+  const prev = getLocale();
+  try {
+    const raw = { version: 99, settings: { language: "en" }, days: {} };
+    // main.ts onload 现在先 setLocale(localeFromPersisted(loadData())) 再 store.load()。
+    setLocale(localeFromPersisted(raw));
+    const store = new Store({ loadData: async () => raw } as unknown as Parameters<typeof Store>[0]);
+    await store.load();
+    assert.match(store.migrationWarning ?? "", /Unsupported data version 99/);
+    assert.doesNotMatch(store.migrationWarning ?? "", /不支持的数据版本/);
+  } finally {
+    setLocale(prev);
+  }
+});
+
+test("Store.load：zh 预读顺序下迁移警告仍为中文", async () => {
+  const prev = getLocale();
+  try {
+    const raw = { version: 99, settings: { language: "zh" } };
+    setLocale(localeFromPersisted(raw));
+    const store = new Store({ loadData: async () => raw } as unknown as Parameters<typeof Store>[0]);
+    await store.load();
+    assert.match(store.migrationWarning ?? "", /不支持的数据版本 99/);
+  } finally {
+    setLocale(prev);
+  }
 });

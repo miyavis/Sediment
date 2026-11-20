@@ -24,7 +24,7 @@ export class QuickMemoModal extends Modal {
 
     const tagRow = contentEl.createDiv({ cls: "sd-modal-tags" });
     tagRow.createSpan({ text: t("标签（空格分隔）") });
-    const tagInput = tagRow.createEl("input", { type: "text", placeholder: "灵感 阅读" });
+    const tagInput = tagRow.createEl("input", { type: "text", placeholder: t("灵感 阅读") });
     tagInput.addEventListener("input", () => {
       this.tags = tagInput.value;
     });

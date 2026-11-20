@@ -1,6 +1,25 @@
-/** 纯 SVG 图表生成函数：只依赖入参，无 DOM / 插件状态，便于单测与复用。 */
+/**
+ * 纯 SVG 图表生成函数：只依赖入参与 i18n 文案，无 DOM / 插件状态，便于单测与复用。
+ * 所有输出带 role="img" 与汇总关键数值的 aria-label（可用末参覆盖）。
+ */
+import { tf } from "../i18n";
 
 export type ChartRef = { value: number; label: string; color?: string };
+
+/** 折线系列；label 可选，传入后进入 aria-label 汇总，调用方可据此渲染 DOM 图例。 */
+export type LineSeries = { values: number[]; color: string; label?: string };
+
+function escapeAttr(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function a11y(label: string): string {
+  return ` role="img" aria-label="${escapeAttr(label)}"`;
+}
 
 /** 数字参照线：均值/目标等水平虚线，右上角带数值标签。 */
 export function referenceLines(
@@ -31,7 +50,8 @@ export function mean(values: number[]): number {
 export function barChart(
   values: number[],
   color = "var(--interactive-accent)",
-  refs: ChartRef[] = []
+  refs: ChartRef[] = [],
+  ariaLabel?: string
 ): string {
   const width = 900;
   const height = 120;
@@ -44,12 +64,15 @@ export function barChart(
       return `<rect x="${(pad + index * barWidth).toFixed(1)}" y="${(height - pad - h).toFixed(1)}" width="${(barWidth * 0.72).toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${color}" opacity="${value > 0 ? 0.8 : 0.12}"/>`;
     })
     .join("");
-  return `<svg class="sd-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${rects}${referenceLines(refs, max, width, height, pad)}</svg>`;
+  const label =
+    ariaLabel ?? tf("柱状图：{n} 项，峰值 {max}", { n: values.length, max: Math.max(0, ...values) });
+  return `<svg class="sd-chart"${a11y(label)} viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${rects}${referenceLines(refs, max, width, height, pad)}</svg>`;
 }
 
 export function multiLine(
-  series: Array<{ values: number[]; color: string }>,
-  refs: ChartRef[] = []
+  series: LineSeries[],
+  refs: ChartRef[] = [],
+  ariaLabel?: string
 ): string {
   const width = 900;
   const height = 140;
@@ -67,10 +90,19 @@ export function multiLine(
       return `<polyline points="${points}" fill="none" stroke="${item.color}" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
     })
     .join("");
-  return `<svg class="sd-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${lines}${referenceLines(refs, max, width, height, pad)}</svg>`;
+  const summary = series
+    .map((item, index) =>
+      tf("{label} 峰值 {max}", {
+        label: item.label ?? tf("系列 {n}", { n: index + 1 }),
+        max: Math.max(0, ...item.values),
+      })
+    )
+    .join("; ");
+  const label = ariaLabel ?? tf("折线图：{summary}", { summary });
+  return `<svg class="sd-chart"${a11y(label)} viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${lines}${referenceLines(refs, max, width, height, pad)}</svg>`;
 }
 
-export function sparkline(values: number[], refs: ChartRef[] = []): string {
+export function sparkline(values: number[], refs: ChartRef[] = [], ariaLabel?: string): string {
   const width = 620;
   const height = 96;
   const pad = 10;
@@ -94,7 +126,9 @@ export function sparkline(values: number[], refs: ChartRef[] = []): string {
     peak && max > 0
       ? `<text x="${peak.x.toFixed(1)}" y="${Math.max(10, peak.y - 10).toFixed(1)}" text-anchor="middle" font-size="10" fill="var(--text-normal)">${max}</text>`
       : "";
-  return `<svg class="sd-spark" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+  const label =
+    ariaLabel ?? tf("趋势图：{n} 个数据点，峰值 {max}", { n: values.length, max: Math.max(0, ...values) });
+  return `<svg class="sd-spark"${a11y(label)} viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
 <defs><linearGradient id="sd-spark-fill" x1="0" y1="0" x2="0" y2="1">
 <stop offset="0%" stop-color="var(--interactive-accent)" stop-opacity="0.28"/>
 <stop offset="100%" stop-color="var(--interactive-accent)" stop-opacity="0"/>
@@ -104,23 +138,26 @@ export function sparkline(values: number[], refs: ChartRef[] = []): string {
 ${referenceLines(refs, max, width, height, pad)}${dots}${peakLabel}</svg>`;
 }
 
-export function ring(active: number, total: number): string {
+export function ring(active: number, total: number, ariaLabel?: string): string {
   const radius = 26;
   const circumference = 2 * Math.PI * radius;
   const ratio = total > 0 ? active / total : 0;
-  return `<svg viewBox="0 0 68 68" class="sd-ring">
+  const label = ariaLabel ?? tf("环形进度：{active} / {total}", { active, total });
+  return `<svg viewBox="0 0 68 68" class="sd-ring"${a11y(label)}>
 <circle cx="34" cy="34" r="${radius}" fill="none" stroke="var(--background-modifier-border)" stroke-width="7"/>
 <circle cx="34" cy="34" r="${radius}" fill="none" stroke="var(--interactive-accent)" stroke-width="7"
   stroke-dasharray="${(ratio * circumference).toFixed(1)} ${circumference.toFixed(1)}" transform="rotate(-90 34 34)"/>
 <text x="34" y="40" text-anchor="middle" font-size="15" fill="var(--text-normal)">${active}</text></svg>`;
 }
 
-export function goalRing(value: number, goal: number): string {
+export function goalRing(value: number, goal: number, ariaLabel?: string): string {
   const radius = 18;
   const circumference = 2 * Math.PI * radius;
   const ratio = Math.min(1, value / Math.max(1, goal));
   const overflow = value > goal;
-  return `<svg viewBox="0 0 46 46" class="sd-goal-svg${overflow ? " is-overflow" : ""}">
+  const label =
+    ariaLabel ?? tf("目标进度：{value} / {goal}，{percent}%", { value, goal, percent: Math.round(ratio * 100) });
+  return `<svg viewBox="0 0 46 46" class="sd-goal-svg${overflow ? " is-overflow" : ""}"${a11y(label)}>
 <circle cx="23" cy="23" r="${radius}" fill="none" stroke="var(--background-modifier-border)" stroke-width="4"/>
 <circle cx="23" cy="23" r="${radius}" fill="none" stroke="var(--interactive-accent)" stroke-width="4" stroke-linecap="round"
   stroke-dasharray="${(ratio * circumference).toFixed(1)} ${circumference.toFixed(1)}" transform="rotate(-90 23 23)"/>

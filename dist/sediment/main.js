@@ -694,6 +694,12 @@ function detectLocale() {
 function resolveLocale(setting) {
   return setting === "auto" ? detectLocale() : setting;
 }
+function localeFromPersisted(raw) {
+  const settings = typeof raw === "object" && raw !== null ? raw.settings : void 0;
+  const language = typeof settings === "object" && settings !== null ? settings.language : void 0;
+  const setting = language === "zh" || language === "en" || language === "auto" ? language : "auto";
+  return resolveLocale(setting);
+}
 var EN = {
   // 通用 / 命令 / ribbon
   "Sediment\uFF1A\u770B\u677F": "Sediment: Dashboard",
@@ -1149,7 +1155,80 @@ var EN = {
   "\u6D3B\u8DC3\u5747\u503C {n}": "Active mean {n}",
   "Sediment \u66F4\u65B0\u8BB0\u5F55": "Sediment changelog",
   "\u5907\u4EFD\u7248\u672C": "Backup version",
-  "\u5F53\u524D\u7248\u672C": "Current version"
+  "\u5F53\u524D\u7248\u672C": "Current version",
+  // Task 8：模态框 / 命令名 i18n 补齐
+  "\u8BCA\u65AD\u65E5\u5FD7": "Diagnostics",
+  "\u8FD9\u91CC\u8BB0\u5F55\u6570\u636E\u8FC1\u79FB\u3001Agent \u6743\u9650\u62D2\u7EDD\u3001\u6162\u67E5\u8BE2\u4E0E\u5B58\u50A8\u5F02\u5E38\u3002\u4E0D\u542B\u4EE4\u724C\u6216\u7B14\u8BB0\u6B63\u6587\u3002": "Records data migrations, agent permission denials, slow queries, and storage errors. No tokens or note content.",
+  "\u6682\u65E0\u8BCA\u65AD\u4E8B\u4EF6\u3002": "No diagnostic events yet.",
+  "\u590D\u5236\u65E5\u5FD7": "Copy log",
+  "\u65E5\u5FD7\u5DF2\u590D\u5236": "Log copied",
+  "\u67E5\u770B\u8BCA\u65AD\u65E5\u5FD7": "View diagnostics",
+  "\u4E00\u952E\u5378\u8F7D MCP \u63A5\u5165": "Uninstall MCP integration",
+  "\u53EA\u79FB\u9664\u667A\u80FD\u4F53\u5BA2\u6237\u7AEF\u91CC\u7684 sediment \u914D\u7F6E\u548C\u5E93\u5185\u6865\u63A5\u811A\u672C\uFF1B\u4E0D\u4F1A\u5220\u9664\u7B14\u8BB0\u3001\u65E5\u8BB0\u6216\u7EDF\u8BA1\u6570\u636E\u3002\u5BA2\u6237\u7AEF\u914D\u7F6E\u4F1A\u5148\u5907\u4EFD\u4E3A .bak\u3002": "Only removes the sediment config from agent clients and the in-vault bridge script; notes, daily notes, and stats are untouched. Client configs are backed up as .bak first.",
+  "\u6865\u63A5\u811A\u672C \xB7 {path}": "Bridge script \xB7 {path}",
+  "\u6CA1\u6709\u53D1\u73B0\u5DF2\u63A5\u5165\u7684 MCP \u914D\u7F6E\u6216\u6865\u63A5\u811A\u672C\u3002": "No MCP client config or bridge script found.",
+  "\u6267\u884C\u5378\u8F7D": "Uninstall",
+  "\u5DF2\u79FB\u9664 {n} \u4E2A\u5BA2\u6237\u7AEF\u914D\u7F6E{bridge}\u3002\u8BF7\u91CD\u542F\u5BF9\u5E94\u5BA2\u6237\u7AEF\u3002": "Removed {n} client config(s){bridge}. Restart the affected clients.",
+  "\uFF0C\u5E76\u5220\u9664\u6865\u63A5\u811A\u672C": ", and deleted the bridge script",
+  "\u5931\u8D25\uFF1A{list}": "Failures: {list}",
+  "\uFF1B": "; ",
+  "\u3001": ", ",
+  "+{n} \u884C": "+{n} lines",
+  "-{n} \u884C": "-{n} lines",
+  "\u5907\u4EFD\u7248\u672C\uFF08\u4FEE\u6539\u524D\uFF09": "Backup version (before changes)",
+  "\u5F53\u524D\u7248\u672C\uFF08\u78C1\u76D8\u4E0A\uFF09": "Current version (on disk)",
+  "\u91C7\u7528\u5907\u4EFD\uFF08\u64A4\u9500\u672C\u6B21\u4FEE\u6539\uFF09": "Use backup (undo this change)",
+  "\u4FDD\u7559\u5F53\u524D\u5E76\u5173\u95ED": "Keep current and close",
+  "\u7075\u611F \u9605\u8BFB": "ideas reading",
+  "{year} \u5E74 {month} \u6708": "{year}-{month}",
+  "\u8D21\u732E {c} \u5206 \xB7 \u65B0\u589E {w} \u5B57": "Contrib {c} pts \xB7 {w} words added",
+  "\uFF08AI {n}\uFF09": " (AI {n})",
+  "\u7B14\u8BB0\uFF1A{list}": "Notes: {list}",
+  "\u901F\u8BB0\uFF1A{list}": "Memos: {list}",
+  "{n}\u6708": "{n}",
+  "{n} \u6708": "{n}",
+  "\u65E5": "Sun",
+  "\u4E00": "Mon",
+  "\u4E8C": "Tue",
+  "\u4E09": "Wed",
+  "\u56DB": "Thu",
+  "\u4E94": "Fri",
+  "\u516D": "Sat",
+  // Task 8：图表可访问性（aria-label 与图例）
+  "\u67F1\u72B6\u56FE\uFF1A{n} \u9879\uFF0C\u5CF0\u503C {max}": "Bar chart: {n} items, peak {max}",
+  "\u6298\u7EBF\u56FE\uFF1A{summary}": "Line chart: {summary}",
+  "{label} \u5CF0\u503C {max}": "{label} peak {max}",
+  "\u7CFB\u5217 {n}": "Series {n}",
+  "\u8D8B\u52BF\u56FE\uFF1A{n} \u4E2A\u6570\u636E\u70B9\uFF0C\u5CF0\u503C {max}": "Trend chart: {n} data points, peak {max}",
+  "\u73AF\u5F62\u8FDB\u5EA6\uFF1A{active} / {total}": "Ring progress: {active} / {total}",
+  "\u76EE\u6807\u8FDB\u5EA6\uFF1A{value} / {goal}\uFF0C{percent}%": "Goal progress: {value} / {goal}, {percent}%",
+  "\u65B0\u589E": "Added",
+  "\u79FB\u9664": "Removed",
+  "\u6355\u83B7": "Captured",
+  // Task 8：前序任务遗漏的 EN 同步
+  "\u5378\u8F7D": "Uninstall",
+  "\u5378\u8F7D\u5931\u8D25": "Uninstall failed",
+  "MCP \u914D\u7F6E\u5DF2\u79FB\u9664\uFF0C\u91CD\u542F\u5BA2\u6237\u7AEF\u540E\u751F\u6548": "MCP config removed; restart the client to apply",
+  "\u9009\u62E9\u8981\u79FB\u9664\u7684\u5BA2\u6237\u7AEF\u914D\u7F6E\u548C\u6865\u63A5\u811A\u672C\uFF1B\u4E0D\u4F1A\u5220\u9664\u7B14\u8BB0\u6216\u7EDF\u8BA1\u6570\u636E\u3002": "Choose client configs and the bridge script to remove; notes and stats are untouched.",
+  "\u6253\u5F00\u5378\u8F7D\u5411\u5BFC": "Open uninstall wizard",
+  "\u5DF2\u91C7\u7528\u5907\u4EFD\uFF0C\u672C\u6B21 Agent \u4FEE\u6539\u5DF2\u64A4\u9500": "Backup restored; this agent change was undone",
+  "\u5DF2\u6807\u8BB0\u4E3A\u4FDD\u7559\u5F53\u524D\u7248\u672C\uFF0C\u672C\u6B21\u53D8\u66F4\u4E0D\u518D\u5F85\u5BA1": "Marked as keeping the current version; this change is no longer pending",
+  "\u5F53\u524D\u5DE5\u4F5C\u6A21\u5F0F\uFF1A": "Current work mode: ",
+  "\u67E5\u770B\u539F\u6587": "View original",
+  "\u672C\u5468\u6458\u8981": "This week's summary",
+  "\u6536\u8D77\u8BE6\u7EC6\u56FE\u8868": "Collapse detailed charts",
+  "\u5C55\u5F00\u8BE6\u7EC6\u56FE\u8868": "Expand detailed charts",
+  "\u8FD1 7 \u5929\u8D21\u732E": "Contribution (7 days)",
+  "\u8FD1 7 \u5929\u65B0\u589E\u8BCD": "Words added (7 days)",
+  "\u672A\u5904\u7406\u901F\u8BB0": "Unprocessed memos",
+  "\u8BE6\u7EC6\u56FE\u8868\u3001\u5E74\u5EA6\u753B\u50CF\u4E0E\u4EBA\u673A\u70ED\u529B\u56FE\u5DF2\u6536\u8D77\uFF0C\u70B9\u51FB\u53F3\u4E0A\u89D2\u5C55\u5F00\u3002": "Detailed charts, yearly view, and the human/AI heatmap are collapsed; use the top-right button to expand.",
+  "\u9996\u6B21\u4F7F\u7528\u63D0\u793A": "First-use tips",
+  "\u8D21\u732E\u5206\u662F\u52A0\u6743\u7EDF\u8BA1\uFF0C\u4E0D\u4EE3\u8868\u77E5\u8BC6\u8D28\u91CF\uFF1B\u53E3\u5F84\u53EF\u5728\u5468\u590D\u76D8\u5E95\u90E8\u67E5\u770B\u3002": "Contribution is a weighted metric, not a measure of knowledge quality; see the bottom of the weekly review for details.",
+  "Agent \u751F\u6210\u7684\u7B14\u8BB0\u4F1A\u6807\u4E3A\u8349\u7A3F\uFF0C\u5728\u300C\u667A\u80FD\u4F53\u5DE5\u574A\u300D\u91CC\u5BA1\u6838\u540E\u518D\u91C7\u7EB3\u3002": "Agent-written notes are marked as drafts; review them in the Agent Hub before accepting.",
+  "\u70ED\u529B\u56FE\u683C\u5B50\u53EF\u60AC\u505C\u67E5\u770B\u5F53\u5929\u660E\u7EC6\uFF0C\u4E5F\u53EF\u7528\u65B9\u5411\u952E\u79FB\u52A8\u3002": "Hover a heatmap cell for daily details, or move with the arrow keys.",
+  "\u77E5\u9053\u4E86\uFF0C\u4E0D\u518D\u663E\u793A": "Got it, don't show again",
+  "\u66F4\u591A": "More",
+  "\u5339\u914D {n} \u6761": "{n} matches"
 };
 function t(zh) {
   var _a2;
@@ -3765,7 +3844,7 @@ var QuickMemoModal = class extends import_obsidian8.Modal {
     });
     const tagRow = contentEl.createDiv({ cls: "sd-modal-tags" });
     tagRow.createSpan({ text: t("\u6807\u7B7E\uFF08\u7A7A\u683C\u5206\u9694\uFF09") });
-    const tagInput = tagRow.createEl("input", { type: "text", placeholder: "\u7075\u611F \u9605\u8BFB" });
+    const tagInput = tagRow.createEl("input", { type: "text", placeholder: t("\u7075\u611F \u9605\u8BFB") });
     tagInput.addEventListener("input", () => {
       this.tags = tagInput.value;
     });
@@ -4095,14 +4174,14 @@ var DiagnosticsModal = class extends import_obsidian11.Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.addClass("sd-diagnostics-modal");
-    contentEl.createEl("h2", { text: "\u8BCA\u65AD\u65E5\u5FD7" });
+    contentEl.createEl("h2", { text: t("\u8BCA\u65AD\u65E5\u5FD7") });
     contentEl.createDiv({
       cls: "sd-card-sub",
-      text: "\u8FD9\u91CC\u8BB0\u5F55\u6570\u636E\u8FC1\u79FB\u3001Agent \u6743\u9650\u62D2\u7EDD\u3001\u6162\u67E5\u8BE2\u4E0E\u5B58\u50A8\u5F02\u5E38\u3002\u4E0D\u542B\u4EE4\u724C\u6216\u7B14\u8BB0\u6B63\u6587\u3002"
+      text: t("\u8FD9\u91CC\u8BB0\u5F55\u6570\u636E\u8FC1\u79FB\u3001Agent \u6743\u9650\u62D2\u7EDD\u3001\u6162\u67E5\u8BE2\u4E0E\u5B58\u50A8\u5F02\u5E38\u3002\u4E0D\u542B\u4EE4\u724C\u6216\u7B14\u8BB0\u6B63\u6587\u3002")
     });
     const list = contentEl.createDiv({ cls: "sd-diagnostic-list" });
     if (this.records.length === 0) {
-      list.createDiv({ cls: "sd-empty", text: "\u6682\u65E0\u8BCA\u65AD\u4E8B\u4EF6\u3002" });
+      list.createDiv({ cls: "sd-empty", text: t("\u6682\u65E0\u8BCA\u65AD\u4E8B\u4EF6\u3002") });
     }
     for (const record of this.records.slice(0, 100)) {
       const row = list.createDiv({ cls: `sd-diagnostic-row is-${record.category}` });
@@ -4111,8 +4190,8 @@ var DiagnosticsModal = class extends import_obsidian11.Modal {
       row.createSpan({ cls: "sd-diagnostic-msg", text: record.message });
       if (record.detail) row.createDiv({ cls: "sd-diagnostic-detail", text: record.detail });
     }
-    contentEl.createEl("button", { text: "\u590D\u5236\u65E5\u5FD7" }).onclick = () => {
-      void navigator.clipboard.writeText(JSON.stringify(this.records, null, 2)).then(() => new import_obsidian11.Notice("\u65E5\u5FD7\u5DF2\u590D\u5236"));
+    contentEl.createEl("button", { text: t("\u590D\u5236\u65E5\u5FD7") }).onclick = () => {
+      void navigator.clipboard.writeText(JSON.stringify(this.records, null, 2)).then(() => new import_obsidian11.Notice(t("\u65E5\u5FD7\u5DF2\u590D\u5236")));
     };
   }
   onClose() {
@@ -4337,10 +4416,10 @@ var McpUninstallModal = class extends import_obsidian12.Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.addClass("sd-mcp-uninstall");
-    contentEl.createEl("h2", { text: "\u4E00\u952E\u5378\u8F7D MCP \u63A5\u5165" });
+    contentEl.createEl("h2", { text: t("\u4E00\u952E\u5378\u8F7D MCP \u63A5\u5165") });
     contentEl.createDiv({
       cls: "sd-card-sub",
-      text: "\u53EA\u79FB\u9664\u667A\u80FD\u4F53\u5BA2\u6237\u7AEF\u91CC\u7684 sediment \u914D\u7F6E\u548C\u5E93\u5185\u6865\u63A5\u811A\u672C\uFF1B\u4E0D\u4F1A\u5220\u9664\u7B14\u8BB0\u3001\u65E5\u8BB0\u6216\u7EDF\u8BA1\u6570\u636E\u3002\u5BA2\u6237\u7AEF\u914D\u7F6E\u4F1A\u5148\u5907\u4EFD\u4E3A .bak\u3002"
+      text: t("\u53EA\u79FB\u9664\u667A\u80FD\u4F53\u5BA2\u6237\u7AEF\u91CC\u7684 sediment \u914D\u7F6E\u548C\u5E93\u5185\u6865\u63A5\u811A\u672C\uFF1B\u4E0D\u4F1A\u5220\u9664\u7B14\u8BB0\u3001\u65E5\u8BB0\u6216\u7EDF\u8BA1\u6570\u636E\u3002\u5BA2\u6237\u7AEF\u914D\u7F6E\u4F1A\u5148\u5907\u4EFD\u4E3A .bak\u3002")
     });
     const state = listMcpInstallations(this.plugin);
     const selected = /* @__PURE__ */ new Set();
@@ -4367,19 +4446,22 @@ var McpUninstallModal = class extends import_obsidian12.Modal {
       checkbox.onchange = () => {
         bridgeChecked = checkbox.checked;
       };
-      label.createSpan({ text: `\u6865\u63A5\u811A\u672C \xB7 ${state.bridgePath}` });
+      label.createSpan({ text: tf("\u6865\u63A5\u811A\u672C \xB7 {path}", { path: state.bridgePath }) });
     }
     if (state.clients.every((client) => !client.configured) && !state.bridgeExists) {
-      list.createDiv({ cls: "kp-empty", text: "\u6CA1\u6709\u53D1\u73B0\u5DF2\u63A5\u5165\u7684 MCP \u914D\u7F6E\u6216\u6865\u63A5\u811A\u672C\u3002" });
+      list.createDiv({ cls: "kp-empty", text: t("\u6CA1\u6709\u53D1\u73B0\u5DF2\u63A5\u5165\u7684 MCP \u914D\u7F6E\u6216\u6865\u63A5\u811A\u672C\u3002") });
     }
     const actions = contentEl.createDiv({ cls: "sd-uninstall-actions" });
-    actions.createEl("button", { text: "\u53D6\u6D88" }).onclick = () => this.close();
-    const execute = actions.createEl("button", { cls: "mod-warning", text: "\u6267\u884C\u5378\u8F7D" });
+    actions.createEl("button", { text: t("\u53D6\u6D88") }).onclick = () => this.close();
+    const execute = actions.createEl("button", { cls: "mod-warning", text: t("\u6267\u884C\u5378\u8F7D") });
     execute.onclick = () => {
       const result = uninstallMcp(this.plugin, [...selected], bridgeChecked);
-      const summary = `\u5DF2\u79FB\u9664 ${result.clients} \u4E2A\u5BA2\u6237\u7AEF\u914D\u7F6E${result.bridge ? "\uFF0C\u5E76\u5220\u9664\u6865\u63A5\u811A\u672C" : ""}\u3002\u8BF7\u91CD\u542F\u5BF9\u5E94\u5BA2\u6237\u7AEF\u3002`;
+      const summary = tf("\u5DF2\u79FB\u9664 {n} \u4E2A\u5BA2\u6237\u7AEF\u914D\u7F6E{bridge}\u3002\u8BF7\u91CD\u542F\u5BF9\u5E94\u5BA2\u6237\u7AEF\u3002", {
+        n: result.clients,
+        bridge: result.bridge ? t("\uFF0C\u5E76\u5220\u9664\u6865\u63A5\u811A\u672C") : ""
+      });
       if (result.failures.length > 0) {
-        new import_obsidian12.Notice(`${summary} \u5931\u8D25\uFF1A${result.failures.join("\uFF1B")}`);
+        new import_obsidian12.Notice(`${summary} ${tf("\u5931\u8D25\uFF1A{list}", { list: result.failures.join(t("\uFF1B")) })}`);
       } else {
         new import_obsidian12.Notice(summary);
       }
@@ -4882,7 +4964,7 @@ var PosterModal = class extends import_obsidian15.Modal {
     const prev = head.createEl("button", { text: "\u2039" });
     const title = head.createDiv({
       cls: "sd-poster-title",
-      text: `${this.year} \u5E74 ${this.month + 1} \u6708`
+      text: tf("{year} \u5E74 {month} \u6708", { year: this.year, month: this.month + 1 })
     });
     const next = head.createEl("button", { text: "\u203A" });
     prev.onclick = () => {
@@ -4908,7 +4990,7 @@ var PosterModal = class extends import_obsidian15.Modal {
     for (let day = 1; day <= new Date(this.year, this.month + 1, 0).getDate(); day += 1) {
       const key = `${prefix}-${String(day).padStart(2, "0")}`;
       const value = this.store.getDay(key).contribution;
-      grid.createDiv({ cls: "sd-poster-cell", attr: { title: `${key} \xB7 ${value} \u5206` } }).setAttribute(
+      grid.createDiv({ cls: "sd-poster-cell", attr: { title: `${key} \xB7 ${tf("{n} \u5206", { n: value })}` } }).setAttribute(
         "style",
         `background:var(--interactive-accent);opacity:${value > 0 ? 0.2 + Math.min(0.8, value / 12) : 0.06}`
       );
@@ -5048,21 +5130,21 @@ var DiffModal = class extends import_obsidian16.Modal {
     const meta = contentEl.createDiv({ cls: "sd-diff-meta" });
     const added = computeDiff(this.before, this.after).filter((line) => line.type === "add").length;
     const removed = computeDiff(this.before, this.after).filter((line) => line.type === "remove").length;
-    meta.createSpan({ text: `+${added} \u884C` });
-    meta.createSpan({ text: `-${removed} \u884C` });
+    meta.createSpan({ text: tf("+{n} \u884C", { n: added }) });
+    meta.createSpan({ text: tf("-{n} \u884C", { n: removed }) });
     const grid = contentEl.createDiv({ cls: "sd-diff-grid" });
-    this.left = this.column(grid, (_b = (_a2 = this.labels) == null ? void 0 : _a2.leftTitle) != null ? _b : "\u5907\u4EFD\u7248\u672C\uFF08\u4FEE\u6539\u524D\uFF09", "old");
-    this.right = this.column(grid, (_d = (_c = this.labels) == null ? void 0 : _c.rightTitle) != null ? _d : "\u5F53\u524D\u7248\u672C\uFF08\u78C1\u76D8\u4E0A\uFF09", "new");
+    this.left = this.column(grid, (_b = (_a2 = this.labels) == null ? void 0 : _a2.leftTitle) != null ? _b : t("\u5907\u4EFD\u7248\u672C\uFF08\u4FEE\u6539\u524D\uFF09"), "old");
+    this.right = this.column(grid, (_d = (_c = this.labels) == null ? void 0 : _c.rightTitle) != null ? _d : t("\u5F53\u524D\u7248\u672C\uFF08\u78C1\u76D8\u4E0A\uFF09"), "new");
     this.renderLines(computeDiff(this.before, this.after));
     const actions = contentEl.createDiv({ cls: "sd-diff-actions" });
     if (this.onRestore) {
-      actions.createEl("button", { text: (_f = (_e = this.labels) == null ? void 0 : _e.restore) != null ? _f : "\u91C7\u7528\u5907\u4EFD\uFF08\u64A4\u9500\u672C\u6B21\u4FEE\u6539\uFF09" }).onclick = () => {
+      actions.createEl("button", { text: (_f = (_e = this.labels) == null ? void 0 : _e.restore) != null ? _f : t("\u91C7\u7528\u5907\u4EFD\uFF08\u64A4\u9500\u672C\u6B21\u4FEE\u6539\uFF09") }).onclick = () => {
         var _a3;
         (_a3 = this.onRestore) == null ? void 0 : _a3.call(this);
         this.close();
       };
     }
-    actions.createEl("button", { cls: "mod-cta", text: (_h = (_g = this.labels) == null ? void 0 : _g.keep) != null ? _h : "\u4FDD\u7559\u5F53\u524D\u5E76\u5173\u95ED" }).onclick = () => {
+    actions.createEl("button", { cls: "mod-cta", text: (_h = (_g = this.labels) == null ? void 0 : _g.keep) != null ? _h : t("\u4FDD\u7559\u5F53\u524D\u5E76\u5173\u95ED") }).onclick = () => {
       var _a3;
       (_a3 = this.onKeep) == null ? void 0 : _a3.call(this);
       this.close();
@@ -5440,6 +5522,12 @@ function renderWorkLogs(view, root) {
 var import_obsidian19 = require("obsidian");
 
 // src/utils/charts.ts
+function escapeAttr(value) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function a11y(label) {
+  return ` role="img" aria-label="${escapeAttr(label)}"`;
+}
 function referenceLines(refs, max, width, height, pad) {
   return refs.filter((ref) => ref.value > 0).map((ref) => {
     var _a2;
@@ -5452,7 +5540,7 @@ function mean(values) {
   if (values.length === 0) return 0;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
-function barChart(values, color = "var(--interactive-accent)", refs = []) {
+function barChart(values, color = "var(--interactive-accent)", refs = [], ariaLabel) {
   const width = 900;
   const height = 120;
   const pad = 4;
@@ -5462,9 +5550,10 @@ function barChart(values, color = "var(--interactive-accent)", refs = []) {
     const h = value / max * (height - pad * 2);
     return `<rect x="${(pad + index * barWidth).toFixed(1)}" y="${(height - pad - h).toFixed(1)}" width="${(barWidth * 0.72).toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${color}" opacity="${value > 0 ? 0.8 : 0.12}"/>`;
   }).join("");
-  return `<svg class="sd-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${rects}${referenceLines(refs, max, width, height, pad)}</svg>`;
+  const label = ariaLabel != null ? ariaLabel : tf("\u67F1\u72B6\u56FE\uFF1A{n} \u9879\uFF0C\u5CF0\u503C {max}", { n: values.length, max: Math.max(0, ...values) });
+  return `<svg class="sd-chart"${a11y(label)} viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${rects}${referenceLines(refs, max, width, height, pad)}</svg>`;
 }
-function multiLine(series, refs = []) {
+function multiLine(series, refs = [], ariaLabel) {
   const width = 900;
   const height = 140;
   const pad = 6;
@@ -5477,9 +5566,19 @@ function multiLine(series, refs = []) {
     }).join(" ");
     return `<polyline points="${points}" fill="none" stroke="${item.color}" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
   }).join("");
-  return `<svg class="sd-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${lines}${referenceLines(refs, max, width, height, pad)}</svg>`;
+  const summary = series.map(
+    (item, index) => {
+      var _a2;
+      return tf("{label} \u5CF0\u503C {max}", {
+        label: (_a2 = item.label) != null ? _a2 : tf("\u7CFB\u5217 {n}", { n: index + 1 }),
+        max: Math.max(0, ...item.values)
+      });
+    }
+  ).join("; ");
+  const label = ariaLabel != null ? ariaLabel : tf("\u6298\u7EBF\u56FE\uFF1A{summary}", { summary });
+  return `<svg class="sd-chart"${a11y(label)} viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${lines}${referenceLines(refs, max, width, height, pad)}</svg>`;
 }
-function sparkline(values, refs = []) {
+function sparkline(values, refs = [], ariaLabel) {
   const width = 620;
   const height = 96;
   const pad = 10;
@@ -5496,7 +5595,8 @@ function sparkline(values, refs = []) {
   const peakIndex = values.indexOf(max);
   const peak = coordinates[peakIndex];
   const peakLabel = peak && max > 0 ? `<text x="${peak.x.toFixed(1)}" y="${Math.max(10, peak.y - 10).toFixed(1)}" text-anchor="middle" font-size="10" fill="var(--text-normal)">${max}</text>` : "";
-  return `<svg class="sd-spark" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+  const label = ariaLabel != null ? ariaLabel : tf("\u8D8B\u52BF\u56FE\uFF1A{n} \u4E2A\u6570\u636E\u70B9\uFF0C\u5CF0\u503C {max}", { n: values.length, max: Math.max(0, ...values) });
+  return `<svg class="sd-spark"${a11y(label)} viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
 <defs><linearGradient id="sd-spark-fill" x1="0" y1="0" x2="0" y2="1">
 <stop offset="0%" stop-color="var(--interactive-accent)" stop-opacity="0.28"/>
 <stop offset="100%" stop-color="var(--interactive-accent)" stop-opacity="0"/>
@@ -5505,22 +5605,24 @@ function sparkline(values, refs = []) {
 <polyline points="${points}" fill="none" stroke="var(--interactive-accent)" stroke-width="2" vector-effect="non-scaling-stroke"/>
 ${referenceLines(refs, max, width, height, pad)}${dots}${peakLabel}</svg>`;
 }
-function ring(active, total) {
+function ring(active, total, ariaLabel) {
   const radius = 26;
   const circumference = 2 * Math.PI * radius;
   const ratio = total > 0 ? active / total : 0;
-  return `<svg viewBox="0 0 68 68" class="sd-ring">
+  const label = ariaLabel != null ? ariaLabel : tf("\u73AF\u5F62\u8FDB\u5EA6\uFF1A{active} / {total}", { active, total });
+  return `<svg viewBox="0 0 68 68" class="sd-ring"${a11y(label)}>
 <circle cx="34" cy="34" r="${radius}" fill="none" stroke="var(--background-modifier-border)" stroke-width="7"/>
 <circle cx="34" cy="34" r="${radius}" fill="none" stroke="var(--interactive-accent)" stroke-width="7"
   stroke-dasharray="${(ratio * circumference).toFixed(1)} ${circumference.toFixed(1)}" transform="rotate(-90 34 34)"/>
 <text x="34" y="40" text-anchor="middle" font-size="15" fill="var(--text-normal)">${active}</text></svg>`;
 }
-function goalRing(value, goal) {
+function goalRing(value, goal, ariaLabel) {
   const radius = 18;
   const circumference = 2 * Math.PI * radius;
   const ratio = Math.min(1, value / Math.max(1, goal));
   const overflow = value > goal;
-  return `<svg viewBox="0 0 46 46" class="sd-goal-svg${overflow ? " is-overflow" : ""}">
+  const label = ariaLabel != null ? ariaLabel : tf("\u76EE\u6807\u8FDB\u5EA6\uFF1A{value} / {goal}\uFF0C{percent}%", { value, goal, percent: Math.round(ratio * 100) });
+  return `<svg viewBox="0 0 46 46" class="sd-goal-svg${overflow ? " is-overflow" : ""}"${a11y(label)}>
 <circle cx="23" cy="23" r="${radius}" fill="none" stroke="var(--background-modifier-border)" stroke-width="4"/>
 <circle cx="23" cy="23" r="${radius}" fill="none" stroke="var(--interactive-accent)" stroke-width="4" stroke-linecap="round"
   stroke-dasharray="${(ratio * circumference).toFixed(1)} ${circumference.toFixed(1)}" transform="rotate(-90 23 23)"/>
@@ -5646,6 +5748,17 @@ function renderOverview(view, root) {
   mini(t("\u6295\u5165\u65F6\u95F4"), tf("{n} \u5C0F\u65F6", { n: Math.round(investedMinutes / 60 * 10) / 10 }), t("\u4EA4\u4E92 / \u4E13\u6CE8"));
   mini(t("\u6700\u9AD8\u7684\u4E00\u5929"), view.value(best) > 0 ? String(view.value(best)) : "\u2014", best);
 }
+function renderChartLegend(root, series) {
+  var _a2;
+  const labeled = series.filter((item) => item.label);
+  if (labeled.length === 0) return;
+  const legend = root.createDiv({ cls: "sd-chart-legend", attr: { "aria-hidden": "true" } });
+  for (const item of labeled) {
+    const entry = legend.createSpan({ cls: "sd-chart-legend-item" });
+    entry.createSpan({ cls: "sd-chart-legend-dot", attr: { style: `background:${item.color}` } });
+    entry.createSpan({ text: (_a2 = item.label) != null ? _a2 : "" });
+  }
+}
 function renderHeatmap(view, root, dual) {
   var _a2;
   const card = root.createDiv({ cls: "sd-card sd-heatmap", attr: { id: "sd-heatmap" } });
@@ -5676,7 +5789,7 @@ function renderHeatmap(view, root, dual) {
   const labels = grid.createDiv({ cls: "sd-weekdays" });
   for (let row = 0; row < 7; row += 1) {
     const weekday = (row + weekStart) % 7;
-    labels.createDiv({ cls: "sd-weekday", text: row % 2 === 0 ? WEEKDAYS[weekday] : "" });
+    labels.createDiv({ cls: "sd-weekday", text: row % 2 === 0 ? t(WEEKDAYS[weekday]) : "" });
   }
   const main = grid.createDiv({ cls: "sd-main" });
   const months = main.createDiv({ cls: "sd-months" });
@@ -5716,7 +5829,7 @@ function renderHeatmap(view, root, dual) {
     if (cell.date.getDate() !== 1) continue;
     const column = Math.floor((cell.date.getTime() - start.getTime()) / (7 * 864e5));
     if (column < 0 || column >= 53) continue;
-    const label = months.createDiv({ cls: "sd-month", text: `${cell.date.getMonth() + 1}\u6708` });
+    const label = months.createDiv({ cls: "sd-month", text: tf("{n}\u6708", { n: cell.date.getMonth() + 1 }) });
     label.style.gridColumn = String(column + 1);
   }
   const max = Math.max(1, ...cells.map((cell) => cell.value));
@@ -5727,10 +5840,6 @@ function renderHeatmap(view, root, dual) {
       const ratio = Math.min(100, cell.ai / cell.value * 100);
       cell.el.style.background = `linear-gradient(90deg, var(--interactive-accent) ${ratio}%, var(--text-faint) ${ratio}%)`;
     }
-    cell.el.setAttribute(
-      "title",
-      dual && view.metric === "wordsAdded" ? `${cell.key} \xB7 \u603B ${cell.value} \u5B57\uFF0C\u5176\u4E2D AI ${cell.ai} \u5B57` : `${cell.key} \xB7 ${view.metricLabel()} ${cell.value}`
-    );
   }
   const legend = wrap.createDiv({ cls: "sd-legend" });
   legend.createSpan({ text: dual ? t("\u4EBA") : t("\u5C11") });
@@ -5817,24 +5926,28 @@ function renderAnalytics(view, root, section = "all") {
     } else if (view.trendTab === "changes") {
       const addedValues = days.map((day) => day.wordsAdded);
       const addedMean = mean(addedValues);
+      const changeSeries = [
+        { values: addedValues, color: "var(--interactive-accent)", label: t("\u65B0\u589E") },
+        { values: days.map((day) => day.wordsRemoved), color: "var(--text-faint)", label: t("\u79FB\u9664") },
+        { values: days.map((day) => day.capturedWords), color: "var(--text-muted)", label: t("\u6355\u83B7") }
+      ];
       trendContent.innerHTML += multiLine(
-        [
-          { values: addedValues, color: "var(--interactive-accent)" },
-          { values: days.map((day) => day.wordsRemoved), color: "var(--text-faint)" },
-          { values: days.map((day) => day.capturedWords), color: "var(--text-muted)" }
-        ],
+        changeSeries,
         addedMean > 0 ? [{ value: addedMean, label: tf("\u65B0\u589E\u5747\u503C {n}", { n: Math.round(addedMean) }) }] : []
       );
+      renderChartLegend(trendContent, changeSeries);
     } else if (view.trendTab === "time") {
       const activeValues = days.map((day) => day.activeMinutes);
       const activeMean = mean(activeValues);
+      const timeSeries = [
+        { values: activeValues, color: "var(--interactive-accent)", label: t("\u6D3B\u8DC3") },
+        { values: days.map((day) => day.focusMinutes), color: "var(--text-faint)", label: t("\u4E13\u6CE8") }
+      ];
       trendContent.innerHTML += multiLine(
-        [
-          { values: activeValues, color: "var(--interactive-accent)" },
-          { values: days.map((day) => day.focusMinutes), color: "var(--text-faint)" }
-        ],
+        timeSeries,
         activeMean > 0 ? [{ value: activeMean, label: tf("\u6D3B\u8DC3\u5747\u503C {n}", { n: Math.round(activeMean) }) }] : []
       );
+      renderChartLegend(trendContent, timeSeries);
     } else {
       const totalWords = days.reduce((sum, day) => sum + day.wordsAdded, 0);
       const captured = days.reduce((sum, day) => sum + day.capturedWords, 0);
@@ -6017,12 +6130,12 @@ function renderYearly(view, root) {
   }
   for (let month = 0; month < 12; month += 1) {
     const section = card.createDiv({ cls: "sd-calendar-month" });
-    section.createDiv({ cls: "sd-calendar-title", text: `${month + 1} \u6708` });
+    section.createDiv({ cls: "sd-calendar-title", text: tf("{n} \u6708", { n: month + 1 }) });
     const grid = section.createDiv({ cls: "sd-calendar-grid" });
     for (let day = 1; day <= new Date(year, month + 1, 0).getDate(); day += 1) {
       const date = new Date(year, month, day);
       const value = view.plugin.store.getDay(dateKey(date)).contribution;
-      const cell = grid.createDiv({ cls: "sd-calendar-cell", attr: { title: `${dateKey(date)} \xB7 ${value} \u5206` } });
+      const cell = grid.createDiv({ cls: "sd-calendar-cell", attr: { title: `${dateKey(date)} \xB7 ${tf("{n} \u5206", { n: value })}` } });
       cell.createDiv({ cls: "sd-calendar-moon", text: view.moonGlyph(date) });
       cell.createDiv({ cls: "sd-calendar-value", text: value > 0 ? String(value) : "\xB7" });
     }
@@ -6385,12 +6498,12 @@ var DashboardView = class extends import_obsidian20.ItemView {
     tip.createDiv({ cls: "sd-tip-date", text: key });
     tip.createDiv({
       cls: "sd-tip-metric",
-      text: `\u8D21\u732E ${day.contribution} \u5206 \xB7 \u65B0\u589E ${day.wordsAdded} \u5B57${day.aiWordsAdded > 0 ? `\uFF08AI ${day.aiWordsAdded}\uFF09` : ""}`
+      text: tf("\u8D21\u732E {c} \u5206 \xB7 \u65B0\u589E {w} \u5B57", { c: day.contribution, w: day.wordsAdded }) + (day.aiWordsAdded > 0 ? tf("\uFF08AI {n}\uFF09", { n: day.aiWordsAdded }) : "")
     });
     const notes = this.plugin.app.vault.getMarkdownFiles().filter((file) => file.path.includes(key)).map((file) => file.basename).slice(0, 4);
-    if (notes.length > 0) tip.createDiv({ cls: "sd-tip-notes", text: `\u7B14\u8BB0\uFF1A${notes.join("\u3001")}` });
+    if (notes.length > 0) tip.createDiv({ cls: "sd-tip-notes", text: tf("\u7B14\u8BB0\uFF1A{list}", { list: notes.join(t("\u3001")) }) });
     const memos = this.plugin.store.data.memos.filter((memo) => memo.date === key).slice(0, 2);
-    if (memos.length > 0) tip.createDiv({ cls: "sd-tip-notes", text: `\u901F\u8BB0\uFF1A${memos.map((memo) => memo.text).join(" / ")}` });
+    if (memos.length > 0) tip.createDiv({ cls: "sd-tip-notes", text: tf("\u901F\u8BB0\uFF1A{list}", { list: memos.map((memo) => memo.text).join(" / ") }) });
     document.body.appendChild(tip);
     this.heatTooltip = tip;
     this.moveHeatTooltip(event);
@@ -7130,6 +7243,7 @@ var SedimentPlugin = class extends import_obsidian22.Plugin {
     (0, import_obsidian22.addIcon)(SEDIMENT_ICON_ID, SEDIMENT_ICON_SVG);
     (0, import_obsidian22.addIcon)(SEDIMENT_MEMO_ICON_ID, SEDIMENT_MEMO_ICON_SVG);
     this.store = new Store(this);
+    setLocale(localeFromPersisted(await this.loadData()));
     await this.store.load();
     if (this.store.migrationWarning) {
       new import_obsidian22.Notice(
@@ -7292,12 +7406,12 @@ ${tf("\u6062\u590D\u526F\u672C\uFF1A{path}", { path: this.store.recoveryCopyPath
     });
     this.addCommand({
       id: "uninstall-mcp",
-      name: "\u4E00\u952E\u5378\u8F7D MCP \u63A5\u5165",
+      name: t("\u4E00\u952E\u5378\u8F7D MCP \u63A5\u5165"),
       callback: () => new McpUninstallModal(this).open()
     });
     this.addCommand({
       id: "show-diagnostics",
-      name: "\u67E5\u770B\u8BCA\u65AD\u65E5\u5FD7",
+      name: t("\u67E5\u770B\u8BCA\u65AD\u65E5\u5FD7"),
       callback: () => new DiagnosticsModal(this.app, this.store.data.diagnostics).open()
     });
     this.addCommand({

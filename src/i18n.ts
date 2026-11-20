@@ -32,6 +32,20 @@ export function resolveLocale(setting: LanguageSetting): Locale {
   return setting === "auto" ? detectLocale() : setting;
 }
 
+/**
+ * 从持久化数据（loadData 原始结果）预读语言设置，供 store.load() 之前设置 locale，
+ * 保证启动阶段的迁移警告 Notice 使用用户语言而非默认中文。非法/缺失回退 auto。
+ */
+export function localeFromPersisted(raw: unknown): Locale {
+  const settings =
+    typeof raw === "object" && raw !== null ? (raw as { settings?: unknown }).settings : undefined;
+  const language =
+    typeof settings === "object" && settings !== null ? (settings as { language?: unknown }).language : undefined;
+  const setting: LanguageSetting =
+    language === "zh" || language === "en" || language === "auto" ? language : "auto";
+  return resolveLocale(setting);
+}
+
 /** 中文源串 → 英文。未收录的串在英文环境下原样返回（ graceful 降级）。 */
 const EN: Record<string, string> = {
   // 通用 / 命令 / ribbon
@@ -507,6 +521,82 @@ const EN: Record<string, string> = {
   "Sediment 更新记录": "Sediment changelog",
   "备份版本": "Backup version",
   "当前版本": "Current version",
+
+  // Task 8：模态框 / 命令名 i18n 补齐
+  "诊断日志": "Diagnostics",
+  "这里记录数据迁移、Agent 权限拒绝、慢查询与存储异常。不含令牌或笔记正文。": "Records data migrations, agent permission denials, slow queries, and storage errors. No tokens or note content.",
+  "暂无诊断事件。": "No diagnostic events yet.",
+  "复制日志": "Copy log",
+  "日志已复制": "Log copied",
+  "查看诊断日志": "View diagnostics",
+  "一键卸载 MCP 接入": "Uninstall MCP integration",
+  "只移除智能体客户端里的 sediment 配置和库内桥接脚本；不会删除笔记、日记或统计数据。客户端配置会先备份为 .bak。": "Only removes the sediment config from agent clients and the in-vault bridge script; notes, daily notes, and stats are untouched. Client configs are backed up as .bak first.",
+  "桥接脚本 · {path}": "Bridge script · {path}",
+  "没有发现已接入的 MCP 配置或桥接脚本。": "No MCP client config or bridge script found.",
+  "执行卸载": "Uninstall",
+  "已移除 {n} 个客户端配置{bridge}。请重启对应客户端。": "Removed {n} client config(s){bridge}. Restart the affected clients.",
+  "，并删除桥接脚本": ", and deleted the bridge script",
+  "失败：{list}": "Failures: {list}",
+  "；": "; ",
+  "、": ", ",
+  "+{n} 行": "+{n} lines",
+  "-{n} 行": "-{n} lines",
+  "备份版本（修改前）": "Backup version (before changes)",
+  "当前版本（磁盘上）": "Current version (on disk)",
+  "采用备份（撤销本次修改）": "Use backup (undo this change)",
+  "保留当前并关闭": "Keep current and close",
+  "灵感 阅读": "ideas reading",
+  "{year} 年 {month} 月": "{year}-{month}",
+  "贡献 {c} 分 · 新增 {w} 字": "Contrib {c} pts · {w} words added",
+  "（AI {n}）": " (AI {n})",
+  "笔记：{list}": "Notes: {list}",
+  "速记：{list}": "Memos: {list}",
+  "{n}月": "{n}",
+  "{n} 月": "{n}",
+  "日": "Sun",
+  "一": "Mon",
+  "二": "Tue",
+  "三": "Wed",
+  "四": "Thu",
+  "五": "Fri",
+  "六": "Sat",
+
+  // Task 8：图表可访问性（aria-label 与图例）
+  "柱状图：{n} 项，峰值 {max}": "Bar chart: {n} items, peak {max}",
+  "折线图：{summary}": "Line chart: {summary}",
+  "{label} 峰值 {max}": "{label} peak {max}",
+  "系列 {n}": "Series {n}",
+  "趋势图：{n} 个数据点，峰值 {max}": "Trend chart: {n} data points, peak {max}",
+  "环形进度：{active} / {total}": "Ring progress: {active} / {total}",
+  "目标进度：{value} / {goal}，{percent}%": "Goal progress: {value} / {goal}, {percent}%",
+  "新增": "Added",
+  "移除": "Removed",
+  "捕获": "Captured",
+
+  // Task 8：前序任务遗漏的 EN 同步
+  "卸载": "Uninstall",
+  "卸载失败": "Uninstall failed",
+  "MCP 配置已移除，重启客户端后生效": "MCP config removed; restart the client to apply",
+  "选择要移除的客户端配置和桥接脚本；不会删除笔记或统计数据。": "Choose client configs and the bridge script to remove; notes and stats are untouched.",
+  "打开卸载向导": "Open uninstall wizard",
+  "已采用备份，本次 Agent 修改已撤销": "Backup restored; this agent change was undone",
+  "已标记为保留当前版本，本次变更不再待审": "Marked as keeping the current version; this change is no longer pending",
+  "当前工作模式：": "Current work mode: ",
+  "查看原文": "View original",
+  "本周摘要": "This week's summary",
+  "收起详细图表": "Collapse detailed charts",
+  "展开详细图表": "Expand detailed charts",
+  "近 7 天贡献": "Contribution (7 days)",
+  "近 7 天新增词": "Words added (7 days)",
+  "未处理速记": "Unprocessed memos",
+  "详细图表、年度画像与人机热力图已收起，点击右上角展开。": "Detailed charts, yearly view, and the human/AI heatmap are collapsed; use the top-right button to expand.",
+  "首次使用提示": "First-use tips",
+  "贡献分是加权统计，不代表知识质量；口径可在周复盘底部查看。": "Contribution is a weighted metric, not a measure of knowledge quality; see the bottom of the weekly review for details.",
+  "Agent 生成的笔记会标为草稿，在「智能体工坊」里审核后再采纳。": "Agent-written notes are marked as drafts; review them in the Agent Hub before accepting.",
+  "热力图格子可悬停查看当天明细，也可用方向键移动。": "Hover a heatmap cell for daily details, or move with the arrow keys.",
+  "知道了，不再显示": "Got it, don't show again",
+  "更多": "More",
+  "匹配 {n} 条": "{n} matches",
 };
 
 /** 取当前语言的文案；英文未收录时回退中文源串。 */

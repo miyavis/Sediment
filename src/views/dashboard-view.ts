@@ -223,16 +223,18 @@ export class DashboardView extends ItemView {
     tip.createDiv({ cls: "sd-tip-date", text: key });
     tip.createDiv({
       cls: "sd-tip-metric",
-      text: `贡献 ${day.contribution} 分 · 新增 ${day.wordsAdded} 字${day.aiWordsAdded > 0 ? `（AI ${day.aiWordsAdded}）` : ""}`,
+      text:
+        tf("贡献 {c} 分 · 新增 {w} 字", { c: day.contribution, w: day.wordsAdded }) +
+        (day.aiWordsAdded > 0 ? tf("（AI {n}）", { n: day.aiWordsAdded }) : ""),
     });
     const notes = this.plugin.app.vault
       .getMarkdownFiles()
       .filter((file) => file.path.includes(key))
       .map((file) => file.basename)
       .slice(0, 4);
-    if (notes.length > 0) tip.createDiv({ cls: "sd-tip-notes", text: `笔记：${notes.join("、")}` });
+    if (notes.length > 0) tip.createDiv({ cls: "sd-tip-notes", text: tf("笔记：{list}", { list: notes.join(t("、")) }) });
     const memos = this.plugin.store.data.memos.filter((memo) => memo.date === key).slice(0, 2);
-    if (memos.length > 0) tip.createDiv({ cls: "sd-tip-notes", text: `速记：${memos.map((memo) => memo.text).join(" / ")}` });
+    if (memos.length > 0) tip.createDiv({ cls: "sd-tip-notes", text: tf("速记：{list}", { list: memos.map((memo) => memo.text).join(" / ") }) });
     document.body.appendChild(tip);
     this.heatTooltip = tip;
     this.moveHeatTooltip(event);

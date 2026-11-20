@@ -29,7 +29,7 @@ export class PosterModal extends Modal {
     const prev = head.createEl("button", { text: "‹" });
     const title = head.createDiv({
       cls: "sd-poster-title",
-      text: `${this.year} 年 ${this.month + 1} 月`,
+      text: tf("{year} 年 {month} 月", { year: this.year, month: this.month + 1 }),
     });
     const next = head.createEl("button", { text: "›" });
     prev.onclick = () => {
@@ -57,7 +57,7 @@ export class PosterModal extends Modal {
     for (let day = 1; day <= new Date(this.year, this.month + 1, 0).getDate(); day += 1) {
       const key = `${prefix}-${String(day).padStart(2, "0")}`;
       const value = this.store.getDay(key).contribution;
-      grid.createDiv({ cls: "sd-poster-cell", attr: { title: `${key} · ${value} 分` } }).setAttribute(
+      grid.createDiv({ cls: "sd-poster-cell", attr: { title: `${key} · ${tf("{n} 分", { n: value })}` } }).setAttribute(
         "style",
         `background:var(--interactive-accent);opacity:${value > 0 ? 0.2 + Math.min(0.8, value / 12) : 0.06}`
       );
