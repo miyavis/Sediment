@@ -4169,19 +4169,10 @@ var ChangelogModal = class extends import_obsidian13.Modal {
 
 // src/ui/logo.ts
 var SEDIMENT_ICON_ID = "sediment-logo";
-var SEDIMENT_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-<circle cx="17" cy="4.8" r="2" fill="currentColor" stroke="none"/>
-<path d="M3 10c3-2 6-2 9 0s6 2 9 0"/>
-<path d="M3 15c3-2 6-2 9 0s6 2 9 0"/>
-<path d="M3 20c3-2 6-2 9 0s6 2 9 0"/>
-</svg>`;
-var SEDIMENT_LOGO_SVG = `<svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true">
-<rect width="32" height="32" rx="9" fill="#3f6f9f"/>
-<circle cx="22.5" cy="9" r="3.6" fill="#ffe08a"/>
-<path d="M3 18.5c4-3.2 8.5-3.2 13 0s9 3.2 13 0V22H3z" fill="#9aa0a3"/>
-<path d="M3 23c4-3.2 8.5-3.2 13 0s9 3.2 13 0v3.2c0 2.1-1.7 3.8-3.8 3.8H6.8C4.7 30 3 28.3 3 26.2z" fill="#c9a884"/>
-<path d="M3 23c4-3.2 8.5-3.2 13 0s9 3.2 13 0" fill="none" stroke="#f5f5f2" stroke-width="0.8" opacity="0.5"/>
-</svg>`;
+var SEDIMENT_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg"><circle cx="17" cy="4.8" r="2" fill="currentColor" stroke="none"/><path d="M3 10c3-2 6-2 9 0s6 2 9 0"/><path d="M3 15c3-2 6-2 9 0s6 2 9 0" opacity=".72"/><path d="M3 20c3-2 6-2 9 0s6 2 9 0" opacity=".45"/></svg>`;
+var SEDIMENT_LOGO_SVG = `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect width="32" height="32" rx="9" fill="#3f6f9f"/><circle cx="22.5" cy="8.8" r="3.3" fill="#ffe08a"/><path d="M4 18.5c4-3 8.5-3 13 0s9 3 13 0" stroke="#f2f7fa" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M4 23.5c4-2.6 8.5-2.6 13 0s9 2.6 13 0" stroke="#c8d9e6" stroke-width="2.5" fill="none" stroke-linecap="round" opacity=".9"/><path d="M4 28c4-2.2 8.5-2.2 13 0s9 2.2 13 0" stroke="#a3bdd2" stroke-width="3" fill="none" stroke-linecap="round" opacity=".75"/></svg>`;
+var SEDIMENT_MEMO_ICON_ID = "sediment-memo";
+var SEDIMENT_MEMO_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg"><path d="M5 4.5h14V15l-4.5 4.5H5z"/><path d="M14.5 19.5V15H19"/><path d="M8.5 9.5h7M8.5 13h4.5"/></svg>`;
 
 // src/views/dashboard-view.ts
 var import_obsidian19 = require("obsidian");
@@ -6291,6 +6282,7 @@ var SedimentPlugin = class extends import_obsidian21.Plugin {
   }
   async onload() {
     (0, import_obsidian21.addIcon)(SEDIMENT_ICON_ID, SEDIMENT_ICON_SVG);
+    (0, import_obsidian21.addIcon)(SEDIMENT_MEMO_ICON_ID, SEDIMENT_MEMO_ICON_SVG);
     this.store = new Store(this);
     await this.store.load();
     if (this.store.migrationWarning) {
@@ -6352,7 +6344,7 @@ var SedimentPlugin = class extends import_obsidian21.Plugin {
     this.addRibbonIcon(SEDIMENT_ICON_ID, t("Sediment\uFF1A\u770B\u677F"), () => {
       void this.activateView(DASHBOARD_VIEW_TYPE);
     });
-    this.addRibbonIcon(SEDIMENT_ICON_ID, t("Sediment\uFF1A\u901F\u8BB0"), () => {
+    this.addRibbonIcon(SEDIMENT_MEMO_ICON_ID, t("Sediment\uFF1A\u901F\u8BB0"), () => {
       void this.activateView(MEMO_VIEW_TYPE);
     });
     this.registerCommands();

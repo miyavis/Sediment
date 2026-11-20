@@ -16,7 +16,7 @@ import { DiagnosticsModal } from "./ui/diagnostics-modal";
 import { McpUninstallModal } from "./ui/mcp-uninstall-modal";
 import { PulseSettingTab } from "./ui/settings-tab";
 import { ChangelogModal } from "./ui/changelog-modal";
-import { SEDIMENT_ICON_ID, SEDIMENT_ICON_SVG } from "./ui/logo";
+import { SEDIMENT_ICON_ID, SEDIMENT_ICON_SVG, SEDIMENT_MEMO_ICON_ID, SEDIMENT_MEMO_ICON_SVG } from "./ui/logo";
 import { normalizeFolder, ensureFolder } from "./utils/vault";
 import { addDays, dateKey, isSameLocalDay, parseKey, startOfWeek } from "./utils/dates";
 import { DashboardView, DASHBOARD_VIEW_TYPE } from "./views/dashboard-view";
@@ -36,6 +36,7 @@ export class SedimentPlugin extends Plugin {
 
   async onload(): Promise<void> {
     addIcon(SEDIMENT_ICON_ID, SEDIMENT_ICON_SVG);
+    addIcon(SEDIMENT_MEMO_ICON_ID, SEDIMENT_MEMO_ICON_SVG);
     this.store = new Store(this);
     await this.store.load();
     if (this.store.migrationWarning) {
@@ -106,7 +107,7 @@ export class SedimentPlugin extends Plugin {
     this.addRibbonIcon(SEDIMENT_ICON_ID, t("Sediment：看板"), () => {
       void this.activateView(DASHBOARD_VIEW_TYPE);
     });
-    this.addRibbonIcon(SEDIMENT_ICON_ID, t("Sediment：速记"), () => {
+    this.addRibbonIcon(SEDIMENT_MEMO_ICON_ID, t("Sediment：速记"), () => {
       void this.activateView(MEMO_VIEW_TYPE);
     });
 
