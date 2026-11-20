@@ -109,6 +109,11 @@ export class AgentServer {
     const supplied = url.searchParams.get("token") ?? headerToken;
     const expected = this.plugin.store.settings.agentServerToken;
     if (!expected || supplied !== expected) {
+      this.plugin.store.logDiagnostic(
+        "security",
+        "本地 API 鉴权失败",
+        `source=${request.socket.remoteAddress ?? "unknown"} path=${redactAuditPath(url.pathname)}`
+      );
       this.json(response, 401, { error: "unauthorized" });
       return;
     }

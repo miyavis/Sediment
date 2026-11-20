@@ -43,6 +43,14 @@ export interface ToolCallRecord {
   path: string;
 }
 
+/** 真实环境诊断记录 */
+export interface DiagnosticRecord {
+  time: string;
+  category: "migration" | "security" | "performance" | "storage";
+  message: string;
+  detail?: string;
+}
+
 /** 修改前的全文快照记录 */
 export interface SnapshotRecord {
   id: string;
@@ -138,6 +146,8 @@ export interface PulseSettings {
   reducedMotion: boolean;
   /** 是否已关闭首次使用上下文提示 */
   hintsDismissed: boolean;
+  /** 是否记录诊断日志 */
+  diagnosticsEnabled: boolean;
   /** Agent 权限工作模式 */
   agentWorkMode: "readonly" | "draft" | "confirm" | "auto";
   /** 每天写作目标字数，0 表示关闭 */
@@ -190,6 +200,7 @@ export interface PulseData {
   workLogs: WorkLogRecord[];
   toolCalls: ToolCallRecord[];
   snapshots: SnapshotRecord[];
+  diagnostics: DiagnosticRecord[];
   /** 已计过编辑会话的 日期→文件路径 列表，重启后不重复计分 */
   editSessions: Record<string, string[]>;
   /** 专注会话日志（实测），最多保留 500 条 */
@@ -244,6 +255,7 @@ export const DEFAULT_SETTINGS: PulseSettings = {
   layoutDensity: "standard",
   reducedMotion: false,
   hintsDismissed: false,
+  diagnosticsEnabled: true,
   agentWorkMode: "confirm",
   dailyWordGoal: 1000,
   contributionDailyCap: 120,
@@ -300,6 +312,7 @@ export const DEFAULT_DATA: PulseData = {
   workLogs: [],
   toolCalls: [],
   snapshots: [],
+  diagnostics: [],
   editSessions: {},
   focusSessions: [],
   pomodoro: null,

@@ -12,24 +12,24 @@ export class QuickMemoModal extends Modal {
 
   onOpen(): void {
     const { contentEl } = this;
-    contentEl.addClass("kp-modal");
+    contentEl.addClass("sd-modal");
     contentEl.createEl("h2", { text: t("记一条速记") });
 
-    const area = contentEl.createEl("textarea", { cls: "kp-modal-input" });
+    const area = contentEl.createEl("textarea", { cls: "sd-modal-input" });
     area.placeholder = t("想到什么，随手记下…");
     area.rows = 6;
     area.addEventListener("input", () => {
       this.text = area.value;
     });
 
-    const tagRow = contentEl.createDiv({ cls: "kp-modal-tags" });
+    const tagRow = contentEl.createDiv({ cls: "sd-modal-tags" });
     tagRow.createSpan({ text: t("标签（空格分隔）") });
     const tagInput = tagRow.createEl("input", { type: "text", placeholder: "灵感 阅读" });
     tagInput.addEventListener("input", () => {
       this.tags = tagInput.value;
     });
 
-    const actions = contentEl.createDiv({ cls: "kp-modal-actions" });
+    const actions = contentEl.createDiv({ cls: "sd-modal-actions" });
     const cancel = actions.createEl("button", { text: t("取消") });
     cancel.onclick = () => this.close();
     const save = actions.createEl("button", { cls: "mod-cta", text: t("保存") });

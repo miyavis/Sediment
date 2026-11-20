@@ -46,7 +46,7 @@ export class MemoView extends ItemView {
       return;
     }
     const root = this.contentEl;
-    root.querySelector(".kp-memo-list")?.remove();
+    root.querySelector(".sd-memo-list")?.remove();
     root.querySelector(".sd-knowledge-inline")?.remove();
     root.querySelector(".sd-context-card")?.remove();
     this.renderList(root);
@@ -57,7 +57,7 @@ export class MemoView extends ItemView {
   render(): void {
     const root = this.contentEl;
     root.empty();
-    root.addClass("kp-memo-view");
+    root.addClass("sd-memo-view");
     root.setAttribute("data-density", this.plugin.store.settings.layoutDensity);
     root.toggleClass("is-reduced-motion", this.plugin.store.settings.reducedMotion);
 
@@ -110,11 +110,11 @@ export class MemoView extends ItemView {
   }
 
   private renderAll(root: HTMLElement): void {
-    const form = root.createDiv({ cls: "kp-memo-form" });
-    const area = form.createEl("textarea", { cls: "kp-memo-input" });
+    const form = root.createDiv({ cls: "sd-memo-form" });
+    const area = form.createEl("textarea", { cls: "sd-memo-input" });
     area.placeholder = t("想到什么，随手记下…（可粘贴图片）");
     area.rows = 3;
-    const row = form.createDiv({ cls: "kp-memo-row" });
+    const row = form.createDiv({ cls: "sd-memo-row" });
     const tagInput = row.createEl("input", { type: "text", placeholder: t("标签，空格分隔") });
     const submit = row.createEl("button", { cls: "mod-cta", text: t("记一条") });
 
@@ -152,7 +152,7 @@ export class MemoView extends ItemView {
       }
     });
 
-    const filterRow = root.createDiv({ cls: "kp-memo-filter" });
+    const filterRow = root.createDiv({ cls: "sd-memo-filter" });
     const filterInput = filterRow.createEl("input", {
       type: "text",
       placeholder: t("搜索速记 / 输入 #标签 筛选"),
@@ -189,7 +189,7 @@ export class MemoView extends ItemView {
       .filter((log) => log.files.some((item) => item === file.path || item.endsWith(`/${file.basename}`)))
       .slice(0, 5);
     if (relatedMemos.length === 0 && relatedLogs.length === 0) {
-      card.createDiv({ cls: "kp-empty", text: t("这篇笔记还没有相关的速记或工作日志。") });
+      card.createDiv({ cls: "sd-empty", text: t("这篇笔记还没有相关的速记或工作日志。") });
       return;
     }
     const list = card.createDiv({ cls: "sd-knowledge-list" });
@@ -217,7 +217,7 @@ export class MemoView extends ItemView {
     await ensureFolder(this.plugin.app.vault, folder);
     const path = folder ? `${folder}/${name}` : name;
     await this.plugin.app.vault.createBinary(path, buffer);
-    const area = this.contentEl.querySelector(".kp-memo-input") as HTMLTextAreaElement | null;
+    const area = this.contentEl.querySelector(".sd-memo-input") as HTMLTextAreaElement | null;
     if (area) {
       area.value += ` ![[${name}]]`;
       area.focus();
@@ -226,8 +226,8 @@ export class MemoView extends ItemView {
   }
 
   private renderList(root: HTMLElement): void {
-    root.querySelector(".kp-memo-list")?.remove();
-    const list = root.createDiv({ cls: "kp-memo-list" });
+    root.querySelector(".sd-memo-list")?.remove();
+    const list = root.createDiv({ cls: "sd-memo-list" });
     let memos = this.plugin.store.data.memos.slice();
     if (!this.showArchived) memos = memos.filter((memo) => !memo.archived);
     if (this.filter) {
@@ -240,14 +240,14 @@ export class MemoView extends ItemView {
       );
     }
     if (memos.length === 0) {
-      list.createDiv({ cls: "kp-empty", text: t("还没有速记，或没有匹配的速记。") });
+      list.createDiv({ cls: "sd-empty", text: t("还没有速记，或没有匹配的速记。") });
       return;
     }
     let currentDate = "";
     for (const memo of memos) {
       if (memo.date !== currentDate) {
         currentDate = memo.date;
-        list.createDiv({ cls: "kp-memo-date", text: currentDate });
+        list.createDiv({ cls: "sd-memo-date", text: currentDate });
       }
       list.appendChild(this.memoCard(memo));
     }
@@ -255,9 +255,9 @@ export class MemoView extends ItemView {
 
   private memoCard(memo: MemoRecord): HTMLElement {
     const card = document.createElement("div");
-    card.className = "kp-memo-card";
+    card.className = "sd-memo-card";
     if (memo.archived) card.addClass("is-archived");
-    card.createDiv({ cls: "kp-memo-time", text: memo.archived ? `${memo.time} · ${t("已归档")}` : memo.time });
+    card.createDiv({ cls: "sd-memo-time", text: memo.archived ? `${memo.time} · ${t("已归档")}` : memo.time });
     card.createDiv({
       cls: "sd-memo-status",
       text: memo.archived
@@ -268,11 +268,11 @@ export class MemoView extends ItemView {
             ? t("已委派 Agent")
             : t("未处理"),
     });
-    const textEl = card.createDiv({ cls: "kp-memo-text", text: memo.text });
+    const textEl = card.createDiv({ cls: "sd-memo-text", text: memo.text });
     if (memo.tags.length > 0) {
-      const tags = card.createDiv({ cls: "kp-memo-tags" });
+      const tags = card.createDiv({ cls: "sd-memo-tags" });
       for (const tag of memo.tags) {
-        const button = tags.createEl("button", { cls: "kp-tag", text: `#${tag}` });
+        const button = tags.createEl("button", { cls: "sd-tag", text: `#${tag}` });
         button.onclick = () => {
           this.filter = `#${tag}`;
           this.tab = "all";
@@ -294,7 +294,7 @@ export class MemoView extends ItemView {
     actions.createEl("button", { text: t("分享图") }).onclick = () => exportMemoCard(memo, "minimal");
     actions.createEl("button", { text: t("编辑") }).onclick = () => {
       const area = document.createElement("textarea");
-      area.className = "kp-memo-edit";
+      area.className = "sd-memo-edit";
       area.value = memo.text;
       area.rows = Math.min(8, Math.max(3, memo.text.split("\n").length + 1));
       textEl.replaceWith(area);
@@ -356,7 +356,7 @@ export class MemoView extends ItemView {
       const card = root.createDiv({ cls: "sd-card sd-review-section" });
       card.createDiv({ cls: "sd-card-title", text: title });
       if (items.length === 0) {
-        card.createDiv({ cls: "kp-empty", text: t("这天没有速记。") });
+        card.createDiv({ cls: "sd-empty", text: t("这天没有速记。") });
         return;
       }
       for (const memo of items.slice(0, 3)) card.appendChild(this.memoCard(memo));
@@ -393,7 +393,7 @@ export class MemoView extends ItemView {
   private renderWalk(root: HTMLElement): void {
     const memos = this.plugin.store.data.memos;
     if (memos.length === 0) {
-      root.createDiv({ cls: "kp-empty", text: t("还没有速记可以漫步。") });
+      root.createDiv({ cls: "sd-empty", text: t("还没有速记可以漫步。") });
       return;
     }
     let current = memos.find((memo) => memo.id === this.walkId) ?? memos[0];
@@ -444,7 +444,7 @@ export class MemoView extends ItemView {
     if (files.length === 0) {
       if (!compact) {
         root.createDiv({
-          cls: "kp-empty",
+          cls: "sd-empty",
           text: t("还没有沉淀。让智能体调用 add_knowledge 或 record_work_log 后，笔记会出现在这里。"),
         });
       }
@@ -516,7 +516,7 @@ export class MemoView extends ItemView {
     const card = root.createDiv({ cls: "sd-card sd-tag-tree" });
     card.createDiv({ cls: "sd-card-title", text: `${t("标签")} · ${tf("{n} 个", { n: counts.size })}` });
     if (counts.size === 0) {
-      card.createDiv({ cls: "kp-empty", text: t("还没有标签。") });
+      card.createDiv({ cls: "sd-empty", text: t("还没有标签。") });
       return;
     }
     for (const [tag, count] of [...counts.entries()].sort((a, b) => b[1] - a[1])) {

@@ -28,7 +28,7 @@ export class HealthModal extends Modal {
       text: t("孤儿笔记＝无出链无反链；断链＝链接指向不存在的笔记；久未更新＝90 天以上。勾选后转为 Agent 任务，智能体整理完成会标记 #agent-done。"),
     });
     if (this.issues.length === 0) {
-      contentEl.createDiv({ cls: "kp-empty", text: t("没有发现健康问题，库很整洁。") });
+      contentEl.createDiv({ cls: "sd-empty", text: t("没有发现健康问题，库很整洁。") });
       return;
     }
     const counts = { orphan: 0, "broken-link": 0, stale: 0 } as Record<string, number>;

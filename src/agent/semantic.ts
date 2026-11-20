@@ -170,6 +170,7 @@ export class SemanticIndex {
   }
 
   async search(query: string, limit = 10): Promise<SemanticHit[]> {
+    const started = performance.now();
     await this.build();
     const queryVector = this.vectorFor(tokenizeSemanticText(query));
     if (queryVector.size === 0) return [];
@@ -189,6 +190,15 @@ export class SemanticIndex {
       }
       results.push({ path, score, snippet, matchType: "semantic", matchSource: "tf-idf" });
     }
-    return results.sort((a, b) => b.score - a.score).slice(0, Math.max(1, Math.min(limit, 50)));
+    const ranked = results.sort((a, b) => b.score - a.score).slice(0, Math.max(1, Math.min(limit, 50)));
+    const elapsed = performance.now() - started;
+    if (elapsed > 80) {
+      this.plugin.store.logDiagnostic(
+        "performance",
+        `语义检索耗时 ${elapsed.toFixed(0)}ms`,
+        `notes=${this.vectors.size} results=${ranked.length}`
+      );
+    }
+    return ranked;
   }
 }

@@ -5,6 +5,7 @@ import {
   DEFAULT_DATA,
   DEFAULT_SETTINGS,
   type DayRecord,
+  type DiagnosticRecord,
   type FocusSessionRecord,
   type MemoRecord,
   type PulseData,
@@ -26,24 +27,38 @@ export class Store {
 
   constructor(private plugin: Plugin) {}
 
-  private async preserveRecoveryCopy(raw: unknown): Promise<void> {
+  /** 记录可在真实环境查看的诊断事件；默认同时安排一次保存。 */
+  logDiagnostic(
+    category: DiagnosticRecord["category"],
+    message: string,
+    detail?: string,
+    schedule = true
+  ): void {
+    if (!this.data.settings?.diagnosticsEnabled) return;
+    this.data.diagnostics ??= [];
+    this.data.diagnostics.unshift({ time: new Date().toISOString(), category, message, detail });
+    if (this.data.diagnostics.length > 300) this.data.diagnostics.length = 300;
+    if (schedule) this.scheduleSave(2000);
+  }
+
+  private async preserveRecoveryCopy(raw: unknown): Promise<string> {
     try {
       const adapter = this.plugin.app?.vault?.adapter;
-      if (!adapter?.write) return;
+      if (!adapter?.write) return "";
       await ensureFolder(this.plugin.app.vault, ".obsidian/plugins/sediment/recovery");
       const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-      await adapter.write(
-        `.obsidian/plugins/sediment/recovery/data-${stamp}.json`,
-        JSON.stringify(raw, null, 2)
-      );
+      const path = `.obsidian/plugins/sediment/recovery/data-${stamp}.json`;
+      await adapter.write(path, JSON.stringify(raw, null, 2));
+      return path;
     } catch {
-      // Recovery copy failure must not replace or overwrite the original data.
+      return "";
     }
   }
 
   async load(): Promise<void> {
     const raw = await this.plugin.loadData();
     const loaded = raw && typeof raw === "object" ? (raw as Partial<PulseData>) : {};
+    let recoveryPath = "";
     if (raw && typeof raw === "object") {
       const version = (raw as Partial<PulseData>).version;
       if (typeof version !== "number" || version !== 1) {
@@ -51,12 +66,12 @@ export class Store {
         this.migrationWarning = typeof version === "number"
           ? `不支持的数据版本 ${version}，已暂停写入以保护原始数据`
           : "数据缺少有效版本号，已暂停写入以保护原始数据";
-        await this.preserveRecoveryCopy(raw);
+        recoveryPath = await this.preserveRecoveryCopy(raw);
       }
     } else if (raw != null) {
       this.persistenceBlocked = true;
       this.migrationWarning = "数据格式异常，已暂停写入以保护原始数据";
-      await this.preserveRecoveryCopy(raw);
+      recoveryPath = await this.preserveRecoveryCopy(raw);
     }
     this.data = {
       version: loaded.version ?? 1,
@@ -65,6 +80,7 @@ export class Store {
       workLogs: Array.isArray(loaded.workLogs) ? loaded.workLogs : [],
       toolCalls: Array.isArray(loaded.toolCalls) ? loaded.toolCalls : [],
       snapshots: Array.isArray(loaded.snapshots) ? loaded.snapshots : [],
+      diagnostics: Array.isArray(loaded.diagnostics) ? loaded.diagnostics : [],
       editSessions: loaded.editSessions && typeof loaded.editSessions === "object" && !Array.isArray(loaded.editSessions)
         ? loaded.editSessions
         : {},
@@ -72,6 +88,15 @@ export class Store {
       pomodoro: loaded.pomodoro ?? null,
       settings: { ...DEFAULT_SETTINGS, ...(loaded.settings && typeof loaded.settings === "object" ? loaded.settings : {}) },
     };
+    if (this.migrationWarning) {
+      this.logDiagnostic(
+        "migration",
+        this.migrationWarning,
+        recoveryPath ? `恢复副本：${recoveryPath}` : "恢复副本创建失败",
+        false
+      );
+    }
+
     // 编辑会话去重表只保留最近两天，避免无限增长。
     const keepSince = dateKey(new Date(Date.now() - 86400000));
     for (const key of Object.keys(this.data.editSessions)) {

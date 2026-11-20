@@ -520,7 +520,7 @@ export class PulseSettingTab extends PluginSettingTab {
     );
     const agents = detectAgents();
     if (agents.length === 0) {
-      containerEl.createDiv({ cls: "kp-empty", text: t("没有探测到受支持的智能体客户端。") });
+      containerEl.createDiv({ cls: "sd-empty", text: t("没有探测到受支持的智能体客户端。") });
     }
     for (const agent of agents) {
       const configured = isAgentConfigured(agent);

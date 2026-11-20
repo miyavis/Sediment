@@ -101,7 +101,7 @@ export class DashboardView extends ItemView {
     if (scroller) scroller.scrollTop = scrollTop;
     if (this.pendingFocusDate) {
       const target = root.querySelector(
-        `.kp-cell[data-date="${this.pendingFocusDate}"]`
+        `.sd-cell[data-date="${this.pendingFocusDate}"]`
       ) as HTMLElement | null;
       this.pendingFocusDate = null;
       target?.focus();
@@ -268,7 +268,7 @@ export class DashboardView extends ItemView {
   private renderQuickMemo(root: HTMLElement): void {
     const card = root.createDiv({ cls: "sd-card sd-quick-memo" });
     card.createDiv({ cls: "sd-card-title", text: t("快速速记") });
-    const area = card.createEl("textarea", { cls: "kp-memo-input" });
+    const area = card.createEl("textarea", { cls: "sd-memo-input" });
     area.placeholder = t("想到什么，随手记下…");
     area.rows = 2;
     const draftKey = "sediment.quick-memo.draft";
@@ -314,7 +314,7 @@ export class DashboardView extends ItemView {
     const calls = this.plugin.store.data.toolCalls.filter((call) => call.time.startsWith(today));
     const logs = this.plugin.store.data.workLogs.filter((log) => log.date === today);
     if (calls.length === 0 && logs.length === 0) {
-      card.createDiv({ cls: "kp-empty", text: t("今天还没有智能体活动。") });
+      card.createDiv({ cls: "sd-empty", text: t("今天还没有智能体活动。") });
       return;
     }
     const list = card.createDiv({ cls: "sd-feed-list" });
@@ -419,7 +419,7 @@ export class DashboardView extends ItemView {
       .slice(0, 8);
 
     if (calls.length === 0) {
-      card.createDiv({ cls: "kp-empty", text: t("暂无 Agent 变更记录。") });
+      card.createDiv({ cls: "sd-empty", text: t("暂无 Agent 变更记录。") });
       return;
     }
     const list = card.createDiv({ cls: "sd-feed-list" });
@@ -474,7 +474,7 @@ export class DashboardView extends ItemView {
     const card = root.createDiv({ cls: "sd-card sd-tasks" });
     card.createDiv({ cls: "sd-card-title", text: t("待办 · 今日 / 遗留 / Agent") });
     const list = card.createDiv({ cls: "sd-task-list" });
-    list.createDiv({ cls: "kp-empty", text: t("加载中…") });
+    list.createDiv({ cls: "sd-empty", text: t("加载中…") });
     void Promise.all([
       this.plugin.tasks.list("today"),
       this.plugin.tasks.list("overdue"),
@@ -483,7 +483,7 @@ export class DashboardView extends ItemView {
       list.empty();
       const items = [...today.filter((task) => !task.checked), ...overdue, ...agent];
       if (items.length === 0) {
-        list.createDiv({ cls: "kp-empty", text: t("没有未完成待办。") });
+        list.createDiv({ cls: "sd-empty", text: t("没有未完成待办。") });
         return;
       }
       for (const task of items.slice(0, 12)) {
@@ -581,7 +581,7 @@ export class DashboardView extends ItemView {
       if (cache?.frontmatter?.sediment_status === "draft") drafts.push(file);
     }
     if (drafts.length === 0) {
-      card.createDiv({ cls: "kp-empty", text: t("没有待审核的 AI 草稿。") });
+      card.createDiv({ cls: "sd-empty", text: t("没有待审核的 AI 草稿。") });
       return;
     }
     const list = card.createDiv({ cls: "sd-draft-list" });
@@ -644,7 +644,7 @@ export class DashboardView extends ItemView {
     card.createDiv({ cls: "sd-card-title", text: t("智能体工作日志") });
     const logs = this.plugin.store.data.workLogs.slice(0, 10);
     if (logs.length === 0) {
-      card.createDiv({ cls: "kp-empty", text: t("还没有工作日志。") });
+      card.createDiv({ cls: "sd-empty", text: t("还没有工作日志。") });
       return;
     }
     const list = card.createDiv({ cls: "sd-feed-list" });
@@ -926,32 +926,32 @@ ${refLines}${dots}${peakLabel}</svg>`;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const start = addDays(startOfWeekFor(today, weekStart), -52 * 7);
-    const wrap = card.createDiv({ cls: "kp-heatmap-wrap" });
-    const grid = wrap.createDiv({ cls: "kp-grid" });
-    const labels = grid.createDiv({ cls: "kp-weekdays" });
+    const wrap = card.createDiv({ cls: "sd-heatmap-wrap" });
+    const grid = wrap.createDiv({ cls: "sd-grid" });
+    const labels = grid.createDiv({ cls: "sd-weekdays" });
     for (let row = 0; row < 7; row += 1) {
       const weekday = (row + weekStart) % 7;
-      labels.createDiv({ cls: "kp-weekday", text: row % 2 === 0 ? WEEKDAYS[weekday] : "" });
+      labels.createDiv({ cls: "sd-weekday", text: row % 2 === 0 ? WEEKDAYS[weekday] : "" });
     }
-    const main = grid.createDiv({ cls: "kp-main" });
-    const months = main.createDiv({ cls: "kp-months" });
+    const main = grid.createDiv({ cls: "sd-main" });
+    const months = main.createDiv({ cls: "sd-months" });
     months.style.gridTemplateColumns = "repeat(53, 15px)";
-    const columns = main.createDiv({ cls: "kp-columns" });
+    const columns = main.createDiv({ cls: "sd-columns" });
     const cells: Array<{ key: string; value: number; date: Date; el: HTMLElement; ai: number }> = [];
 
     for (let week = 0; week < 53; week += 1) {
-      const column = columns.createDiv({ cls: "kp-col" });
+      const column = columns.createDiv({ cls: "sd-col" });
       for (let day = 0; day < 7; day += 1) {
         const date = addDays(start, week * 7 + day);
         const key = dateKey(date);
         const record = store.getDay(key);
         const cellValue = Number(record[this.metric]) || 0;
         const element = column.createDiv({
-          cls: "kp-cell",
+          cls: "sd-cell",
           attr: { "data-date": key, role: "gridcell", tabindex: "-1" },
         });
         if (date > today) {
-          element.addClass("kp-future");
+          element.addClass("sd-future");
           element.setAttribute("aria-disabled", "true");
         } else {
           element.setAttribute("aria-label", `${key} · ${this.metricLabel()} ${cellValue}`);
@@ -972,13 +972,13 @@ ${refLines}${dots}${peakLabel}</svg>`;
       if (cell.date.getDate() !== 1) continue;
       const column = Math.floor((cell.date.getTime() - start.getTime()) / (7 * 86400000));
       if (column < 0 || column >= 53) continue;
-      const label = months.createDiv({ cls: "kp-month", text: `${cell.date.getMonth() + 1}月` });
+      const label = months.createDiv({ cls: "sd-month", text: `${cell.date.getMonth() + 1}月` });
       label.style.gridColumn = String(column + 1);
     }
     const max = Math.max(1, ...cells.map((cell) => cell.value));
     for (const cell of cells) {
       const level = cell.value <= 0 ? 0 : Math.max(1, Math.min(4, Math.ceil((cell.value / max) * 4)));
-      cell.el.addClass(`kp-lvl-${level}`);
+      cell.el.addClass(`sd-lvl-${level}`);
       if (dual && this.metric === "wordsAdded" && cell.value > 0) {
         const ratio = Math.min(100, (cell.ai / cell.value) * 100);
         cell.el.style.background = `linear-gradient(90deg, var(--interactive-accent) ${ratio}%, var(--text-faint) ${ratio}%)`;
@@ -990,13 +990,13 @@ ${refLines}${dots}${peakLabel}</svg>`;
           : `${cell.key} · ${this.metricLabel()} ${cell.value}`
       );
     }
-    const legend = wrap.createDiv({ cls: "kp-legend" });
+    const legend = wrap.createDiv({ cls: "sd-legend" });
     legend.createSpan({ text: dual ? t("人") : t("少") });
-    for (let level = 0; level <= 4; level += 1) legend.createDiv({ cls: `kp-cell kp-lvl-${level}` });
+    for (let level = 0; level <= 4; level += 1) legend.createDiv({ cls: `sd-cell sd-lvl-${level}` });
     legend.createSpan({ text: dual ? t("AI") : t("多") });
 
     // 键盘导航：roving tabindex，方向键在周/日间移动，Enter/空格选中。
-    const selectable = cells.filter((cell) => !cell.el.hasClass("kp-future"));
+    const selectable = cells.filter((cell) => !cell.el.hasClass("sd-future"));
     const focusKey =
       this.selected && selectable.some((cell) => cell.key === this.selected)
         ? this.selected
@@ -1012,7 +1012,7 @@ ${refLines}${dots}${peakLabel}</svg>`;
       if (event.key in deltas) {
         event.preventDefault();
         const next = index + deltas[event.key];
-        if (next < 0 || next >= cells.length || cells[next].el.hasClass("kp-future")) return;
+        if (next < 0 || next >= cells.length || cells[next].el.hasClass("sd-future")) return;
         cells[index].el.setAttribute("tabindex", "-1");
         cells[next].el.setAttribute("tabindex", "0");
         cells[next].el.focus();
@@ -1039,7 +1039,7 @@ ${refLines}${dots}${peakLabel}</svg>`;
       ];
       for (const [label, value] of rows) {
         const item = detail.createDiv({ cls: "sd-day-item" });
-        item.createDiv({ cls: "kp-detail-label", text: t(label) });
+        item.createDiv({ cls: "sd-detail-label", text: t(label) });
         item.createEl("strong", { text: String(value) });
       }
     }

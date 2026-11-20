@@ -270,6 +270,7 @@ export class AgentApi {
 
   private assertAllowed(path: string): void {
     if (this.isDeniedPath(path)) {
+      this.plugin.store.logDiagnostic("security", `访问被拒绝：${path} 位于黑名单目录`);
       throw new ApiError("FORBIDDEN", `访问被拒绝：${path} 位于黑名单目录`, 403);
     }
   }
@@ -287,6 +288,7 @@ export class AgentApi {
               ? settings.agentAllowOverwrite
               : settings.agentAllowDelete;
     if (!allowed) {
+      this.plugin.store.logDiagnostic("security", `操作 ${operation} 被工作模式拒绝`);
       throw new ApiError("OPERATION_DENIED", `操作 ${operation} 未被允许`, 403);
     }
   }
@@ -298,6 +300,7 @@ export class AgentApi {
     if (settings.agentAccessMode === "allowlist") {
       const folders = splitList(settings.agentAllowedFolders);
       if (!folders.some((folder) => path === folder || path.startsWith(`${folder}/`))) {
+        this.plugin.store.logDiagnostic("security", `访问被拒绝：${path} 不在白名单目录内`);
         throw new ApiError("FORBIDDEN", `访问被拒绝：${path} 不在白名单目录内`, 403);
       }
     }

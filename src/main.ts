@@ -12,6 +12,7 @@ import { rebuildHistory } from "./features/rebuild";
 import { QuickMemoModal } from "./ui/quick-memo-modal";
 import { HealthModal } from "./ui/health-modal";
 import { ExportModal } from "./ui/export-modal";
+import { DiagnosticsModal } from "./ui/diagnostics-modal";
 import { PulseSettingTab } from "./ui/settings-tab";
 import { ChangelogModal } from "./ui/changelog-modal";
 import { normalizeFolder, ensureFolder } from "./utils/vault";
@@ -197,6 +198,11 @@ export class SedimentPlugin extends Plugin {
       id: "export-data",
       name: t("导出数据（CSV/JSON，默认脱敏）"),
       callback: () => new ExportModal(this.app, this).open(),
+    });
+    this.addCommand({
+      id: "show-diagnostics",
+      name: "查看诊断日志",
+      callback: () => new DiagnosticsModal(this.app, this.store.data.diagnostics).open(),
     });
     this.addCommand({
       id: "show-changelog",
