@@ -43,13 +43,22 @@ export function isOperationAllowed(operation: AgentOperation, settings: AccessSe
   }
 }
 
-/** 路径是否在当前访问模式下可达（黑名单 + 白名单）。 */
+/**
+ * 路径是否在当前访问模式下可达（黑名单 + 白名单）。
+ * fail-closed：仅显式的 allow-all 放行全部路径；allowlist 之外的任何值
+ * （含数据损坏产生的未知模式）一律按最严的白名单模式处理。
+ */
 export function isPathAllowedByMode(path: string, settings: AccessSettings): boolean {
   if (isPathDenied(path, settings.deniedFolders)) return false;
-  if (settings.agentAccessMode !== "allowlist") return true;
+  if (settings.agentAccessMode === "allow-all") return true;
   return splitList(settings.agentAllowedFolders).some(
     (folder) => path === folder || path.startsWith(`${folder}/`)
   );
+}
+
+/** 分类/子目录名会被直接拼进 vault 路径，含路径分隔符或 .. 的一律视为非法。 */
+export function isSafePathSegmentName(value: string): boolean {
+  return !/[/\\]|\.\./.test(value);
 }
 
 /** 根据设置解析出知识库分类列表。 */

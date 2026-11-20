@@ -15,6 +15,21 @@ function getHttp(): typeof import("http") | null {
   }
 }
 
+/**
+ * 恒定时间令牌比较：两侧先各自做 SHA-256 摘要（定长，避免长度不等抛异常
+ * 与长度侧信道），再用 timingSafeEqual 比较；crypto 不可用时直接判为不匹配（fail-closed）。
+ */
+export function tokensMatch(supplied: string, expected: string): boolean {
+  try {
+    const crypto = require("crypto") as typeof import("crypto");
+    const a = crypto.createHash("sha256").update(String(supplied), "utf8").digest();
+    const b = crypto.createHash("sha256").update(String(expected), "utf8").digest();
+    return crypto.timingSafeEqual(a, b);
+  } catch (error) {
+    return false;
+  }
+}
+
 /** 127.0.0.1 上的轻量 HTTP API，供 MCP 桥接与本地脚本调用。 */
 export class AgentServer {
   private server: HttpServer | null = null;
@@ -108,7 +123,7 @@ export class AgentServer {
     const headerToken = String(request.headers.authorization ?? "").replace(/^Bearer\s+/i, "");
     const supplied = url.searchParams.get("token") ?? headerToken;
     const expected = this.plugin.store.settings.agentServerToken;
-    if (!expected || supplied !== expected) {
+    if (!expected || !tokensMatch(supplied, expected)) {
       this.plugin.store.logDiagnostic(
         "security",
         "本地 API 鉴权失败",

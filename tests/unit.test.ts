@@ -31,8 +31,9 @@ import { countWords, countCheckedTasks, noteDateKey } from "../src/tracking/trac
 import { normalizeFolder } from "../src/utils/vault";
 import { buildStatsCsv, buildExportJson, DEFAULT_EXPORT_OPTIONS } from "../src/features/export";
 import { Store } from "../src/data/store";
-import { ApiError, safeAgentPath } from "../src/agent/api";
-import { tokenizeSemanticText } from "../src/agent/semantic";
+import { AgentApi, ApiError, safeAgentPath } from "../src/agent/api";
+import { SemanticIndex, tokenizeSemanticText } from "../src/agent/semantic";
+import { tokensMatch } from "../src/agent/server";
 import { idempotencyKey, redactAuditPath, redactSecrets } from "../src/agent/security";
 import { computeDiff } from "../src/ui/diff-modal";
 import { barChart, mean, referenceLines, ring } from "../src/utils/charts";
@@ -41,7 +42,9 @@ import {
   isOperationAllowed,
   isPathAllowedByMode,
   isPathDenied,
+  isSafePathSegmentName,
   listCategories,
+  splitList,
 } from "../src/agent/access";
 
 const day = (partial: Partial<DayRecord> = {}): DayRecord => ({ ...createEmptyDay(), ...partial });
@@ -547,4 +550,245 @@ test("computeDiff：逐行标记新增与删除，未变化行保留", () => {
   assert.equal(lines.filter((line) => line.type === "add").length, 2);
   assert.equal(lines.find((line) => line.type === "remove")?.oldLine, "b");
   assert.ok(lines.some((line) => line.type === "add" && line.newLine === "d"));
+});
+
+// ---------------------------------------------------------------------------
+// 权限统一门禁（v0.9.7 评审修复 H6/H7/M1/M3 + 令牌恒定时间比较）
+// ---------------------------------------------------------------------------
+
+/** 构造只够跑门禁路径的假 SedimentPlugin（拒绝分支不触碰 vault）。 */
+function fakeAgentPlugin(partial: Partial<PulseSettings> = {}, extra: Record<string, unknown> = {}) {
+  const s = settings(partial);
+  const calls: Record<string, unknown[]> = { complete: [], delegate: [], snapshot: [] };
+  const plugin = {
+    store: {
+      settings: s,
+      data: { snapshots: [], memos: [], workLogs: [], toolCalls: [], days: {}, ...((extra.data as object) ?? {}) },
+      logDiagnostic: () => {},
+      updateDay: () => {},
+      scheduleSave: () => {},
+    },
+    app: {
+      vault: {
+        getAbstractFileByPath: () => null,
+        getMarkdownFiles: () => [],
+        createFolder: async () => {},
+        create: async (p: string) => new TFileStub(p),
+        cachedRead: async () => "",
+        read: async () => "",
+        configDir: ".obsidian",
+      },
+      metadataCache: { getFileCache: () => undefined, resolvedLinks: {} },
+    },
+    tracker: { markAgentWrite: () => {} },
+    tasks: {
+      complete: async (...args: unknown[]) => { calls.complete.push(args); },
+      delegate: async (...args: unknown[]) => { calls.delegate.push(args); return "memo-1"; },
+      snapshot: async () => { calls.snapshot.push([]); return 3; },
+    },
+    ...((extra.plugin as object) ?? {}),
+  };
+  return { api: new AgentApi(plugin as never), calls };
+}
+
+class TFileStub {
+  path: string;
+  basename: string;
+  stat = { ctime: 0, mtime: 0, size: 0 };
+  constructor(p: string) {
+    this.path = p;
+    this.basename = p.split("/").pop() ?? "";
+  }
+}
+
+const asApiError = (error: unknown): ApiError => {
+  assert.ok(error instanceof ApiError, `应抛 ApiError，实际：${String(error)}`);
+  return error;
+};
+
+test("access：splitList 支持全角逗号与空白项", () => {
+  assert.deepEqual(splitList("a，b, c ,,d，"), ["a", "b", "c", "d"]);
+  assert.deepEqual(splitList(""), []);
+});
+
+test("access：allow-all 分支放行非黑名单路径（白名单为空也放行）", () => {
+  const s = { ...accessSettings, agentAccessMode: "allow-all" as const, agentAllowedFolders: "" };
+  assert.equal(isPathAllowedByMode("公开/a.md", s), true);
+  assert.equal(isPathAllowedByMode("私有/a.md", s), false, "allow-all 也要过黑名单");
+});
+
+test("access：create/overwrite/delete 操作矩阵", () => {
+  const matrix: Array<["create" | "overwrite" | "delete", keyof PulseSettings]> = [
+    ["create", "agentAllowCreate"],
+    ["overwrite", "agentAllowOverwrite"],
+    ["delete", "agentAllowDelete"],
+  ];
+  for (const [operation, key] of matrix) {
+    for (const allowed of [true, false]) {
+      const s = {
+        ...accessSettings,
+        agentAllowCreate: false,
+        agentAllowOverwrite: false,
+        agentAllowDelete: false,
+        [key]: allowed,
+      };
+      assert.equal(isOperationAllowed(operation, s), allowed, `${operation}=${allowed}`);
+    }
+  }
+});
+
+test("access：未知 agentAccessMode fail-closed（M3）", () => {
+  const bogus = {
+    ...accessSettings,
+    agentAccessMode: "yolo" as unknown as typeof accessSettings.agentAccessMode,
+    agentAllowedFolders: "",
+  };
+  assert.equal(isPathAllowedByMode("公开/a.md", bogus), false, "未知模式不得放全库");
+  const bogusWithList = { ...bogus, agentAllowedFolders: "公开" };
+  assert.equal(isPathAllowedByMode("公开/a.md", bogusWithList), true, "未知模式按白名单处理");
+  assert.equal(isPathAllowedByMode("其他/a.md", bogusWithList), false);
+});
+
+test("access：isSafePathSegmentName 拦截路径穿越分类（M1 规则）", () => {
+  assert.equal(isSafePathSegmentName("技术"), true);
+  assert.equal(isSafePathSegmentName("a/b"), false);
+  assert.equal(isSafePathSegmentName("a\\b"), false);
+  assert.equal(isSafePathSegmentName("../evil"), false);
+  assert.equal(isSafePathSegmentName("a..b"), false);
+});
+
+test("H6：completeTask 受 patch 与黑名单门禁约束", async () => {
+  const denied = fakeAgentPlugin({ deniedFolders: "私有" });
+  await assert.rejects(denied.api.completeTask("私有/a.md", 3), (error) => {
+    const e = asApiError(error);
+    return e.code === "FORBIDDEN" && e.status === 403;
+  });
+  assert.equal(denied.calls.complete.length, 0, "被拒绝时不得落到 TaskManager");
+
+  const noPatch = fakeAgentPlugin({ agentAllowPatch: false });
+  await assert.rejects(noPatch.api.completeTask("公开/a.md", 3), (error) => {
+    const e = asApiError(error);
+    return e.code === "OPERATION_DENIED" && e.status === 403;
+  });
+
+  const ok = fakeAgentPlugin();
+  await assert.doesNotReject(ok.api.completeTask("公开\\a.md", 3));
+  assert.ok(ok.calls.complete.length === 1 && (ok.calls.complete[0][0] as string) === "公开/a.md");
+});
+
+test("H6：delegateTask 需要 read 权限且受白名单约束", async () => {
+  const { api, calls } = fakeAgentPlugin({
+    agentAccessMode: "allowlist",
+    agentAllowedFolders: "知识",
+    agentAllowRead: true,
+  });
+  await assert.rejects(api.delegateTask("私有/a.md", 2), (error) => {
+    const e = asApiError(error);
+    return e.code === "FORBIDDEN";
+  });
+  assert.equal(calls.delegate.length, 0);
+  await assert.doesNotReject(api.delegateTask("知识/a.md", 2));
+  assert.equal(calls.delegate.length, 1);
+});
+
+test("H6：snapshotTasks 写当天日记前过 patch 门禁", async () => {
+  const { api, calls } = fakeAgentPlugin({ deniedFolders: "daily", agentAllowPatch: true });
+  await assert.rejects(api.snapshotTasks(), (error) => {
+    const e = asApiError(error);
+    return e.code === "FORBIDDEN";
+  });
+  assert.equal(calls.snapshot.length, 0, "被拒绝时不得写日记");
+
+  const noPatch = fakeAgentPlugin({ agentAllowPatch: false });
+  await assert.rejects(noPatch.api.snapshotTasks(), (error) => asApiError(error).code === "OPERATION_DENIED");
+
+  const ok = fakeAgentPlugin();
+  assert.deepEqual(await ok.api.snapshotTasks(), { count: 3 });
+});
+
+test("H6：revertAgentChange 恢复前按快照路径过 overwrite 门禁", async () => {
+  const snapshots = [{ id: "s1", path: "私有/a.md", time: "2026-11-20T00:00:00Z", tool: "t", agent: "a" }];
+  const { api } = fakeAgentPlugin({ deniedFolders: "私有" }, { data: { snapshots } });
+  await assert.rejects(api.revertAgentChange("s1"), (error) => {
+    const e = asApiError(error);
+    return e.code === "FORBIDDEN" && e.status === 403;
+  });
+
+  const noOverwrite = fakeAgentPlugin({ agentAllowOverwrite: false }, { data: { snapshots } });
+  await assert.rejects(noOverwrite.api.revertAgentChange("s1"), (error) => {
+    const e = asApiError(error);
+    return e.code === "OPERATION_DENIED";
+  });
+});
+
+test("H7：语义检索遵守白名单模式，越权文档不出现在结果与摘要里", async () => {
+  const files = [new TFileStub("知识/甲.md"), new TFileStub("私有/乙.md")];
+  const texts: Record<string, string> = {
+    "知识/甲.md": "这是关于配置管理的笔记",
+    "私有/乙.md": "私密内容：配置了秘密参数",
+  };
+  const s = settings({
+    agentAccessMode: "allowlist",
+    agentAllowedFolders: "知识",
+    deniedFolders: "",
+    deniedTags: "",
+  });
+  const plugin = {
+    store: { settings: s, logDiagnostic: () => {} },
+    app: {
+      vault: {
+        getMarkdownFiles: () => files,
+        cachedRead: async (file: TFileStub) => texts[file.path] ?? "",
+        getAbstractFileByPath: (p: string) => files.find((f) => f.path === p) ?? null,
+      },
+      metadataCache: { getFileCache: () => undefined },
+    },
+  };
+  const index = new SemanticIndex(plugin as never);
+  const hits = await index.search("配置", 10);
+  const paths = hits.map((hit) => hit.path);
+  assert.ok(paths.includes("知识/甲.md"), "白名单内文档应命中");
+  assert.ok(!paths.includes("私有/乙.md"), "白名单外文档必须被过滤");
+});
+
+test("M1：addKnowledge 非法 category 回退默认分类并说明", async () => {
+  const created: Array<{ path: string; content: string }> = [];
+  const plugin = {
+    store: {
+      settings: settings({}),
+      data: { snapshots: [] },
+      logDiagnostic: () => {},
+      updateDay: () => {},
+    },
+    app: {
+      vault: {
+        getAbstractFileByPath: () => null,
+        createFolder: async () => {},
+        create: async (p: string, c: string) => {
+          created.push({ path: p, content: c });
+          return new TFileStub(p);
+        },
+      },
+      metadataCache: { getFileCache: () => undefined },
+    },
+    tracker: { markAgentWrite: () => {} },
+  };
+  const api = new AgentApi(plugin as never);
+
+  const evil = await api.addKnowledge({ title: "沉淀", content: "正文", category: "../../evil" });
+  assert.ok(!evil.path.includes(".."), `路径不得含 ..：${evil.path}`);
+  assert.ok(evil.path.startsWith("knowledge/技术/"), `应回退到默认分类：${evil.path}`);
+  assert.ok(evil.note && evil.note.length > 0, "返回信息需说明分类被回退");
+
+  const good = await api.addKnowledge({ title: "沉淀", content: "正文", category: "方法" });
+  assert.ok(good.path.startsWith("knowledge/方法/"));
+  assert.equal(good.note, undefined);
+  assert.equal(created.length, 2, "两次调用都应真实落盘");
+});
+
+test("令牌比较：SHA-256 定长 + timingSafeEqual，长度不等不抛异常", () => {
+  assert.equal(tokensMatch("secret-token", "secret-token"), true);
+  assert.equal(tokensMatch("secret-token", "secret-tokeX"), false);
+  assert.equal(tokensMatch("short", "much-longer-token"), false);
+  assert.equal(tokensMatch("", ""), true);
 });

@@ -7,11 +7,13 @@ import { restoreBackup } from "../features/audit";
 import type { DayRecord, MemoRecord, WorkLogRecord } from "../types";
 import { addDays, dateKey, hhmm, lastNDays, parseKey } from "../utils/dates";
 import { ensureFolder, normalizeFolder } from "../utils/vault";
+import { t, tf } from "../i18n";
 import {
   inferCategory,
   isOperationAllowed,
   isPathAllowedByMode,
   isPathDenied,
+  isSafePathSegmentName,
   listCategories,
   splitList,
   type AgentOperation,
@@ -268,15 +270,17 @@ export class AgentApi {
 
   private assertAllowed(path: string): void {
     if (this.isDeniedPath(path)) {
-      this.plugin.store.logDiagnostic("security", `访问被拒绝：${path} 位于黑名单目录`);
-      throw new ApiError("FORBIDDEN", `访问被拒绝：${path} 位于黑名单目录`, 403);
+      const message = tf("访问被拒绝：{path} 位于黑名单目录", { path });
+      this.plugin.store.logDiagnostic("security", message);
+      throw new ApiError("FORBIDDEN", message, 403);
     }
   }
 
   private assertOperation(operation: AgentOperation): void {
     if (!isOperationAllowed(operation, this.plugin.store.settings)) {
-      this.plugin.store.logDiagnostic("security", `操作 ${operation} 被工作模式拒绝`);
-      throw new ApiError("OPERATION_DENIED", `操作 ${operation} 未被允许`, 403);
+      const message = tf("操作 {operation} 未被允许", { operation });
+      this.plugin.store.logDiagnostic("security", message);
+      throw new ApiError("OPERATION_DENIED", message, 403);
     }
   }
 
@@ -285,8 +289,9 @@ export class AgentApi {
     this.assertAllowed(path);
     const settings = this.plugin.store.settings;
     if (!isPathAllowedByMode(path, settings)) {
-      this.plugin.store.logDiagnostic("security", `访问被拒绝：${path} 不在白名单目录内`);
-      throw new ApiError("FORBIDDEN", `访问被拒绝：${path} 不在白名单目录内`, 403);
+      const message = tf("访问被拒绝：{path} 不在白名单目录内", { path });
+      this.plugin.store.logDiagnostic("security", message);
+      throw new ApiError("FORBIDDEN", message, 403);
     }
   }
 
@@ -819,16 +824,29 @@ export class AgentApi {
   }
 
   async completeTask(path: string, line: number): Promise<{ ok: true }> {
-    this.plugin.tracker.markAgentWrite(path);
-    await this.plugin.tasks.complete(path, line);
+    const safe = safeAgentPath(path);
+    this.assertPathAllowed(safe, "patch");
+    this.plugin.tracker.markAgentWrite(safe);
+    await this.plugin.tasks.complete(safe, line);
     return { ok: true };
   }
 
   async delegateTask(path: string, line: number): Promise<{ id: string }> {
-    return { id: await this.plugin.tasks.delegate(path, line) };
+    const safe = safeAgentPath(path);
+    this.assertPathAllowed(safe, "read");
+    return { id: await this.plugin.tasks.delegate(safe, line) };
   }
 
   async snapshotTasks(): Promise<{ count: number }> {
+    // 与 TaskManager.snapshot 相同的路径口径：写入当天日记前先过权限门禁。
+    const settings = this.plugin.store.settings;
+    const folder = normalizeFolder(settings.dailyNoteFolder);
+    const now = new Date();
+    const name = settings.dailyNoteFormat
+      .replace(/YYYY/g, String(now.getFullYear()))
+      .replace(/MM/g, String(now.getMonth() + 1).padStart(2, "0"))
+      .replace(/DD/g, String(now.getDate()).padStart(2, "0"));
+    this.assertPathAllowed(folder ? `${folder}/${name}.md` : `${name}.md`, "patch");
     return { count: await this.plugin.tasks.snapshot() };
   }
 
@@ -846,10 +864,12 @@ export class AgentApi {
   async revertAgentChange(snapshotId: string): Promise<{ path: string; reverted: true }> {
     const snapshot = this.plugin.store.data.snapshots.find((item) => item.id === snapshotId);
     if (!snapshot) throw new ApiError("NOT_FOUND", `快照不存在：${snapshotId}`, 404);
-    const file = this.vault.getAbstractFileByPath(snapshot.path);
-    if (!(file instanceof TFile)) throw new ApiError("NOT_FOUND", `笔记不存在：${snapshot.path}`, 404);
+    const safe = safeAgentPath(snapshot.path);
+    this.assertPathAllowed(safe, "overwrite");
+    const file = this.vault.getAbstractFileByPath(safe);
+    if (!(file instanceof TFile)) throw new ApiError("NOT_FOUND", `笔记不存在：${safe}`, 404);
     await restoreBackup(this.plugin, file, snapshotId);
-    return { path: snapshot.path, reverted: true };
+    return { path: safe, reverted: true };
   }
 
   getPomodoro(): PomodoroState {
@@ -936,7 +956,7 @@ export class AgentApi {
   }
 
   /** 把一段知识沉淀成带 frontmatter 的独立笔记。 */
-  async addKnowledge(input: KnowledgeInput): Promise<{ path: string }> {
+  async addKnowledge(input: KnowledgeInput): Promise<{ path: string; note?: string }> {
     const title = String(input.title || "未命名笔记").trim();
     const safeTitle =
       title.replace(/[\\/:*?"<>|#\[\]]/g, "-").slice(0, 80) || "未命名笔记";
@@ -948,13 +968,24 @@ export class AgentApi {
     const links = Array.isArray(input.links) ? input.links.map(String) : [];
     const agent = String(input.agent || "agent").replace(/[:#]/g, "-");
     const requestedCategory = String(input.category ?? "").trim();
+    // category 会直接作为 knowledge 下的子目录名，含 / \ .. 的会路径穿越，视为非法并回退推断分类。
+    const invalidCategory = requestedCategory.length > 0 && !isSafePathSegmentName(requestedCategory);
+    if (invalidCategory) {
+      this.plugin.store.logDiagnostic(
+        "security",
+        tf("addKnowledge 拒绝了非法分类：{category}", { category: requestedCategory })
+      );
+    }
     const category =
-      requestedCategory ||
+      (invalidCategory ? "" : requestedCategory) ||
       (tags.length || String(input.content ?? "").length > 0
         ? this.inferCategory(title, String(input.content ?? ""), tags)
         : categories[0]) ||
       "未分类";
-    const sub = normalizeFolder(input.folder ?? "");
+    const sub = normalizeFolder(input.folder ?? "")
+      .split("/")
+      .filter((part) => part && part !== "." && part !== "..")
+      .join("/");
     const folder = [base, category, sub].filter(Boolean).join("/");
     this.assertPathAllowed(folder ? `${folder}/placeholder.md` : "placeholder.md", "create");
     await ensureFolder(this.vault, folder);
@@ -1019,7 +1050,12 @@ export class AgentApi {
     this.plugin.store.updateDay(today, (day) => {
       day.aiWordsAdded += countWords(doc);
     });
-    return { path };
+    return {
+      path,
+      ...(invalidCategory
+        ? { note: t("category 含路径分隔符，非法值已被忽略，笔记已回退到默认分类") }
+        : {}),
+    };
   }
 
   /** 最近 N 天的工作日志。 */

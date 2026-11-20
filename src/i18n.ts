@@ -265,6 +265,12 @@ const EN: Record<string, string> = {
   "默认开启以兼容旧工作流；关闭后 Agent 必须用 patch_note。": "On by default for legacy workflows; off forces agents to use patch_note.",
   "允许删除": "Allow delete",
   "当前插件未开放删除工具，默认关闭。": "No delete tool is exposed; off by default.",
+  // Agent API 运行时拒绝文案（access.ts 门禁，api.ts/server.ts 使用）
+  "访问被拒绝：{path} 位于黑名单目录": "Access denied: {path} is inside a denied folder",
+  "访问被拒绝：{path} 不在白名单目录内": "Access denied: {path} is outside the allowlist folders",
+  "操作 {operation} 未被允许": "Operation {operation} is not allowed",
+  "addKnowledge 拒绝了非法分类：{category}": "addKnowledge rejected an unsafe category: {category}",
+  "category 含路径分隔符，非法值已被忽略，笔记已回退到默认分类": "category contained path separators; ignored, the note fell back to the default category",
   "修改前存快照": "Snapshot before changes",
   "覆盖或 Patch 前保存原文，支持 Agent 变更审查与一键恢复。": "Save original before overwrite/patch; enables review and one-click restore.",
   "自动备份统计数据": "Auto-backup stats",

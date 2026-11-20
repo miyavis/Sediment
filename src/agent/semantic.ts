@@ -1,5 +1,6 @@
 import type { SedimentPlugin } from "../main";
 import { normalizeFolder } from "../utils/vault";
+import { isPathAllowedByMode, splitList } from "./access";
 
 export interface SemanticHit {
   path: string;
@@ -78,26 +79,20 @@ export class SemanticIndex {
     this.dirty = true;
   }
 
-  private deniedFolders(): string[] {
-    return this.plugin.store.settings.deniedFolders
-      .split(/[,，]/)
-      .map((item) => item.trim())
-      .filter(Boolean);
+  private deniedTags(): string[] {
+    return splitList(this.plugin.store.settings.deniedTags);
   }
 
-  private deniedTags(): string[] {
-    return this.plugin.store.settings.deniedTags
-      .split(/[,，]/)
-      .map((item) => item.trim())
-      .filter(Boolean);
+  /** 语义索引必须与 Agent 访问策略同口径：黑名单目录 + 白名单模式统一走 access.ts。 */
+  private isReachable(path: string): boolean {
+    return isPathAllowedByMode(path, this.plugin.store.settings);
   }
 
   private async buildOnce(): Promise<void> {
     const vault = this.plugin.app.vault;
-    const folders = this.deniedFolders();
     const deniedTags = this.deniedTags();
     const files = vault.getMarkdownFiles().filter((file) => {
-      if (folders.some((folder) => file.path === folder || file.path.startsWith(`${folder}/`))) return false;
+      if (!this.isReachable(file.path)) return false;
       const cache = this.plugin.app.metadataCache.getFileCache(file);
       const tags = [...(cache?.tags ?? []).map((tag) => tag.tag.replace(/^#/, ""))];
       const frontmatterTags = cache?.frontmatter?.tags;
@@ -177,6 +172,8 @@ export class SemanticIndex {
 
     const results: SemanticHit[] = [];
     for (const [path, documentVector] of this.vectors) {
+      // 索引可能在设置收紧前建成；逐条再过一次门禁，宁可少不可漏。
+      if (!this.isReachable(path)) continue;
       const score = this.cosine(documentVector, queryVector);
       if (score <= 0) continue;
       const file = this.plugin.app.vault.getAbstractFileByPath(path);

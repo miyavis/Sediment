@@ -479,6 +479,431 @@ async function restoreBackup(plugin, file, name) {
   await plugin.app.vault.process(file, () => content);
 }
 
+// src/i18n.ts
+var locale = "zh";
+function setLocale(next) {
+  locale = next;
+}
+function detectLocale() {
+  try {
+    const moment = window.moment;
+    const lang = typeof (moment == null ? void 0 : moment.locale) === "function" ? String(moment.locale()) : "";
+    return lang.toLowerCase().startsWith("zh") ? "zh" : "en";
+  } catch (e) {
+    return "zh";
+  }
+}
+function resolveLocale(setting) {
+  return setting === "auto" ? detectLocale() : setting;
+}
+var EN = {
+  // 通用 / 命令 / ribbon
+  "Sediment\uFF1A\u770B\u677F": "Sediment: Dashboard",
+  "Sediment\uFF1A\u901F\u8BB0": "Sediment: Memos",
+  "\u6253\u5F00\u77E5\u8BC6\u8109\u51B2\u770B\u677F": "Open Knowledge Pulse dashboard",
+  "\u6253\u5F00\u901F\u8BB0\u9762\u677F": "Open memo panel",
+  "\u8BB0\u4E00\u6761\u901F\u8BB0": "Add a memo",
+  "\u751F\u6210\u672C\u5468\u5DE5\u4F5C\u590D\u76D8": "Generate this week's review",
+  "\u5F00\u59CB / \u6682\u505C\u756A\u8304\u949F": "Start / pause pomodoro",
+  "\u8DF3\u8FC7\u5F53\u524D\u756A\u8304 / \u4F11\u606F": "Skip current pomodoro / break",
+  "\u8BB0\u5F55\u4ECA\u65E5\u9057\u7559\u5F85\u529E\u5230\u65E5\u8BB0": "Snapshot today's pending tasks to daily note",
+  "\u5BFC\u51FA\u4ECA\u65E5\u6218\u62A5\u56FE\u7247": "Export today's report image",
+  "\u5907\u4EFD\u7EDF\u8BA1\u6570\u636E\u5230\u5E93\u5185": "Back up stats into the vault",
+  "\u91CD\u5EFA\u5386\u53F2\u7EDF\u8BA1\uFF08\u6309\u7B14\u8BB0\u65E5\u671F\u8865\u9F50\u7A7A\u65E5\u671F\uFF09": "Rebuild history (fill empty days by note date)",
+  "\u626B\u63CF\u7B14\u8BB0\u5065\u5EB7\u5EA6\uFF08\u5B64\u513F/\u65AD\u94FE/\u4E45\u672A\u66F4\u65B0\uFF09": "Scan note health (orphan / broken link / stale)",
+  "\u5BFC\u51FA\u6570\u636E\uFF08CSV/JSON\uFF0C\u9ED8\u8BA4\u8131\u654F\uFF09": "Export data (CSV/JSON, sanitized by default)",
+  "\u67E5\u770B\u66F4\u65B0\u8BB0\u5F55": "View changelog",
+  "\u5207\u6362\u770B\u677F\u9876\u90E8\u548C\u5E95\u90E8\u7684\u753B\u98CE": "Cycle dashboard banner art style",
+  "\u5468\u590D\u76D8\u5DF2\u751F\u6210\u5E76\u6253\u5F00": "Weekly review generated and opened",
+  "Sediment \u5DF2\u66F4\u65B0\u5230 v{version}\uFF0C\u53EF\u5728\u300C\u67E5\u770B\u66F4\u65B0\u8BB0\u5F55\u300D\u4E2D\u4E86\u89E3\u53D8\u5316": "Sediment updated to v{version}; see \u201CView changelog\u201D for what's new",
+  "\u5DF2\u8BB0\u5F55 {n} \u6761\u9057\u7559\u5F85\u529E": "Recorded {n} pending tasks",
+  "\u5DF2\u626B\u63CF {scanned} \u7BC7\u7B14\u8BB0\uFF0C\u8865\u9F50 {days} \u5929\uFF08{notes} \u7BC7 / {words} \u8BCD\uFF09": "Scanned {scanned} notes; filled {days} days ({notes} notes / {words} words)",
+  "\u626B\u63CF\u4E86 {scanned} \u7BC7\u7B14\u8BB0\uFF0C\u6CA1\u6709\u9700\u8981\u8865\u9F50\u7684\u7A7A\u65E5\u671F": "Scanned {scanned} notes; no empty days to fill",
+  "\u6570\u636E\u5DF2\u5907\u4EFD\u5230\u5E93\u5185": "Data backed up into the vault",
+  "\u5907\u4EFD\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u8BBE\u7F6E\u4E2D\u7684\u5907\u4EFD\u76EE\u5F55": "Backup failed; check the backup folder in settings",
+  "\u6CA1\u6709\u9057\u7559\u5F85\u529E": "No pending tasks",
+  "\u5237\u65B0": "Refresh",
+  "\u5168\u90E8": "All",
+  "\u590D\u5236": "Copy",
+  "\u5DF2\u590D\u5236": "Copied",
+  "\u4FDD\u5B58": "Save",
+  "\u53D6\u6D88": "Cancel",
+  "\u5220\u9664": "Delete",
+  "\u7F16\u8F91": "Edit",
+  "\u5F52\u6863": "Archive",
+  "\u53D6\u6D88\u5F52\u6863": "Unarchive",
+  "\u542B\u5F52\u6863": "Include archived",
+  "\u5DF2\u5F52\u6863": "Archived",
+  "\u672A\u5904\u7406": "Unprocessed",
+  "\u5DF2\u59D4\u6D3E Agent": "Delegated to Agent",
+  "\u5DF2\u6C89\u6DC0": "Deposited",
+  "\u8349\u7A3F\u5DF2\u6062\u590D": "Draft restored",
+  "\u8349\u7A3F\u5DF2\u4FDD\u5B58": "Draft saved",
+  "\u8349\u7A3F\u4FDD\u5B58\u5931\u8D25": "Draft save failed",
+  "\u672A\u4FDD\u5B58": "Not saved",
+  "\u4FDD\u5B58\u4E2D\u2026": "Saving\u2026",
+  "\u5DF2\u4FDD\u5B58": "Saved",
+  "\u4FDD\u5B58\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5": "Save failed, please retry",
+  "\u786E\u8BA4\u9A73\u56DE\u5E76\u79FB\u5165\u56DE\u6536\u7AD9\uFF1F\u8349\u7A3F\u53EF\u5728\u56DE\u6536\u7AD9\u6062\u590D\u3002": "Reject and move to trash? The draft can be restored from trash.",
+  "\u5408\u5E76\u540E\u8349\u7A3F\u5C06\u79FB\u5165\u56DE\u6536\u7AD9\uFF0C\u662F\u5426\u7EE7\u7EED\uFF1F": "The draft will move to trash after merge. Continue?",
+  "\u786E\u8BA4\u6062\u590D\u8FD9\u4E2A Agent \u4FEE\u6539\u5FEB\u7167\uFF1F\u5F53\u524D\u7B14\u8BB0\u5185\u5BB9\u4F1A\u88AB\u66FF\u6362\u3002": "Restore this Agent snapshot? Current note content will be replaced.",
+  "\u5206\u4EAB\u56FE": "Share image",
+  "\u8F6C Agent": "To Agent",
+  "\u5DF2\u52A0\u5165 Agent \u5F85\u529E": "Added to Agent backlog",
+  "\u5DF2\u590D\u5236\uFF0C\u53EF\u7C98\u8D34\u5230\u5BA2\u6237\u7AEF": "Copied; paste into your client",
+  // 页签 / 范围 / 指标
+  "\u4ECA\u65E5\u8109\u51B2": "Today",
+  "\u77E5\u8BC6\u5730\u5C42": "Insights",
+  "\u667A\u80FD\u4F53\u5DE5\u574A": "Agent Hub",
+  "\u8FD1 7 \u5929": "Last 7 days",
+  "\u8FD1 30 \u5929": "Last 30 days",
+  "\u8FD1 90 \u5929": "Last 90 days",
+  "\u4ECA\u5E74": "This year",
+  "\u8FD1\u4E00\u5E74": "Last year",
+  "\u8D21\u732E\u5206": "Contribution",
+  "\u65B0\u589E\u8BCD\u6570": "Words added",
+  "\u7F16\u8F91\u4F1A\u8BDD": "Edit sessions",
+  "\u65B0\u5EFA\u7B14\u8BB0": "Notes created",
+  "\u5B8C\u6210\u4EFB\u52A1": "Tasks done",
+  "\u4E13\u6CE8\u5206\u949F": "Focus minutes",
+  "\u7EFC\u5408\u52A0\u6743\u5F97\u5206": "Weighted composite score",
+  "\u81EA\u5DF1\u6253\u7684\u5B57": "Words you typed",
+  "\u6709\u6548\u7F16\u8F91\u6B21\u6570": "Effective edit count",
+  "\u5F53\u5929\u6709\u5185\u5BB9\u7684\u65B0\u7B14\u8BB0": "New notes with content that day",
+  "\u65B0\u589E\u52FE\u9009\u7684\u5F85\u529E": "Newly checked tasks",
+  "\u9884\u7559\u7ED9\u4E13\u6CE8\u63D2\u4EF6\u8054\u52A8": "Reserved for focus-plugin integration",
+  // 速记面板
+  "\u901F\u8BB0": "Memos",
+  "\u56DE\u987E": "Review",
+  "\u6F2B\u6B65": "Walk",
+  "\u6807\u7B7E": "Tags",
+  "\u6C89\u6DC0": "Knowledge",
+  "\u60F3\u5230\u4EC0\u4E48\uFF0C\u968F\u624B\u8BB0\u4E0B\u2026\uFF08\u53EF\u7C98\u8D34\u56FE\u7247\uFF09": "Jot anything down\u2026 (paste images)",
+  "\u60F3\u5230\u4EC0\u4E48\uFF0C\u968F\u624B\u8BB0\u4E0B\u2026": "Jot anything down\u2026",
+  "\u6807\u7B7E\uFF0C\u7A7A\u683C\u5206\u9694": "Tags, space separated",
+  "\u8BB0\u4E00\u6761": "Add",
+  "\u641C\u7D22\u901F\u8BB0 / \u8F93\u5165 #\u6807\u7B7E \u7B5B\u9009": "Search memos / type #tag to filter",
+  "\u8FD8\u6CA1\u6709\u901F\u8BB0\uFF0C\u6216\u6CA1\u6709\u5339\u914D\u7684\u901F\u8BB0\u3002": "No memos yet, or none match.",
+  "\u8FD8\u6CA1\u6709\u901F\u8BB0\u53EF\u4EE5\u6F2B\u6B65\u3002": "No memos to walk yet.",
+  "\u8FD8\u6CA1\u6709\u6807\u7B7E\u3002": "No tags yet.",
+  "\u56FE\u7247\u5DF2\u63D2\u5165\u901F\u8BB0": "Image inserted into memo",
+  "\u5185\u5BB9\u4E3A\u7A7A\uFF0C\u672A\u4FDD\u5B58": "Empty content; not saved",
+  "\u5220\u9664\u8FD9\u6761\u901F\u8BB0\uFF1F\u65E5\u8BB0\u4E2D\u5BF9\u5E94\u7684\u901F\u8BB0\u8BB0\u5F55\u4E5F\u4F1A\u4E00\u5E76\u79FB\u9664\u3002": "Delete this memo? The matching daily-note entry is removed too.",
+  "\u5DF2\u5F52\u6863\uFF0C\u53EF\u5728\u300C\u542B\u5F52\u6863\u300D\u4E2D\u67E5\u770B": "Archived; view under \u201CInclude archived\u201D",
+  "\u5DF2\u53D6\u6D88\u5F52\u6863": "Unarchived",
+  "\u8FD9\u5929\u6CA1\u6709\u901F\u8BB0\u3002": "No memos on this day.",
+  "\u5171\u540C\u7684\u8BCD\uFF1A": "Shared words: ",
+  "\u7EE7\u7EED\u6F2B\u6B65 \u2192": "Keep walking \u2192",
+  "\u8FD8\u6CA1\u6709\u6C89\u6DC0\u3002\u8BA9\u667A\u80FD\u4F53\u8C03\u7528 add_knowledge \u6216 record_work_log \u540E\uFF0C\u7B14\u8BB0\u4F1A\u51FA\u73B0\u5728\u8FD9\u91CC\u3002": "No knowledge yet. Notes appear here after an agent calls add_knowledge or record_work_log.",
+  "\u77E5\u8BC6\u6C89\u6DC0": "Knowledge",
+  "\u5DE5\u4F5C\u65E5\u5FD7": "Work logs",
+  "\u672A\u5206\u7C7B": "Uncategorized",
+  "\u8FD9\u7BC7\u7B14\u8BB0\u8FD8\u6CA1\u6709\u76F8\u5173\u7684\u901F\u8BB0\u6216\u5DE5\u4F5C\u65E5\u5FD7\u3002": "No related memos or work logs for this note yet.",
+  "\u4E0E\u300A{name}\u300B\u76F8\u5173": "Related to \u201C{name}\u201D",
+  "\u539F\u5F85\u529E": "Source task",
+  "\u6BCF\u65E5\u56DE\u987E": "Daily review",
+  "\u53BB\u5E74\u4ECA\u65E5": "This day last year",
+  "\u4E0A\u6708\u4ECA\u65E5": "This day last month",
+  "\u5171\u540C\u7684\u8BCD\uFF1A{n} \u4E2A": "Shared words: {n}",
+  "{n} \u4E2A": "{n}",
+  // 看板 · 今日
+  "\u4ECA\u5929": "Today",
+  "Sediment \u77E5\u8BC6\u8109\u51B2": "Sediment Knowledge Pulse",
+  "{n} \u5206": "{n} pts",
+  "\u5199\u4F5C {words} / {goal} \u5B57": "Writing {words} / {goal} words",
+  "\u8FDE\u7EED {streak} \u5929 \xB7 \u6700\u957F {longest} \u5929": "Streak {streak} days \xB7 best {longest}",
+  "\u8FD1": "Last",
+  "\u8FD1 53 \u5468": "Last 53 weeks",
+  "{active} \u5929\u6709\u8BB0\u5F55 \xB7 \u65E5\u5747 {avg} \u5206": "{active} days recorded \xB7 avg {avg} pts/day",
+  "{n} \u5929": "{n} days",
+  "\u6700\u957F {n} \u5929 \xB7 \u6309\u5168\u90E8\u5386\u53F2": "Best {n} days \xB7 all history",
+  "0 \u5C0F\u65F6": "0 hours",
+  "\u9010\u6B65\u5199\u5165 {typed} \u5B57 \xB7 \u5927\u6BB5\u6355\u83B7 {captured} \u5B57": "Typed {typed} words \xB7 pasted {captured} words",
+  "{words} \u5B57 \xB7 {percent}%": "{words} words \xB7 {percent}%",
+  "\u5C55\u5F00\u5176\u4F59 {n} \u9879": "Show {n} more",
+  "\u8FD8\u6CA1\u5F00\u59CB": "Not started",
+  "\u6218\u62A5\u56FE\u7247": "Report image",
+  "\u5FEB\u901F\u901F\u8BB0": "Quick memo",
+  "\u67E5\u770B\u4ECA\u65E5\u4EFB\u52A1": "View today's tasks",
+  "\u5F00\u59CB\u4E13\u6CE8": "Start focus",
+  "\u4ECA\u65E5 Agent \u52A8\u6001": "Today's agent activity",
+  "\u4ECA\u5929\u8FD8\u6CA1\u6709\u667A\u80FD\u4F53\u6D3B\u52A8\u3002": "No agent activity today yet.",
+  "\u8DF3\u8FC7": "Skip",
+  // 看板 · 洞察
+  "\u8109\u51B2\u6982\u89C8": "Overview",
+  "\u70ED\u529B\u56FE": "Heatmap",
+  "\u5199\u4F5C\u8D8B\u52BF": "Writing trend",
+  "\u6295\u5165\u5206\u5E03": "Distribution",
+  "\u5E74\u5EA6\u753B\u50CF": "Yearly",
+  "\u672C\u5468\u590D\u76D8": "Weekly review",
+  "\u77E5\u8BC6\u8109\u51B2\u6982\u89C8": "Knowledge Pulse overview",
+  "\u53EF\u9760\u8BB0\u5F55": "reliable records",
+  "\u7D2F\u8BA1\u8D21\u732E\u5206": "Total contribution",
+  "\u6D3B\u8DC3\u5929\u6570": "Active days",
+  "\u5F53\u524D\u8FDE\u7EED": "Current streak",
+  "\u6295\u5165\u65F6\u95F4": "Time invested",
+  "{n} \u5C0F\u65F6": "{n} hours",
+  "\u6700\u9AD8\u7684\u4E00\u5929": "Best day",
+  "\u6709\u8BB0\u5F55\u7684\u65E5\u5B50": "Days with records",
+  "\u4EA4\u4E92 / \u4E13\u6CE8": "Interaction / focus",
+  "\u4EBA\u673A\u53CC\u8272\u70ED\u529B\u56FE": "Human / AI dual heatmap",
+  "\u5E74\u5EA6\u77E5\u8BC6\u6D3B\u8DC3\u8109\u51B2": "Yearly knowledge pulse",
+  "\u4EBA": "Human",
+  "AI": "AI",
+  "\u5C11": "Less",
+  "\u591A": "More",
+  "\u5199\u4F5C\u4E0E\u65F6\u95F4\u8D8B\u52BF": "Writing & time trend",
+  "\u6BCF\u65E5\u5199\u4F5C": "Daily writing",
+  "\u5199\u4F5C\u53D8\u5316": "Writing change",
+  "\u65F6\u95F4\u6295\u5165": "Time invested",
+  "\u5199\u4F5C\u6765\u6E90": "Writing source",
+  "\u9010\u6B65\u5199\u5165 / \u5927\u6BB5\u6355\u83B7": "Typed / pasted",
+  "\u6295\u5165\u53BB\u5411": "Where words go",
+  "\u6309\u76EE\u5F55\u7EDF\u8BA1\uFF08\u7B14\u8BB0 \xD7 \u5929\uFF09": "By folder (note \xD7 day)",
+  "\u6536\u8D77": "Collapse",
+  "\u6D3B\u8DC3\u65F6\u6BB5": "Active hours",
+  "\u6309\u5C0F\u65F6\u7684\u65B0\u589E\u8BCD\u6570": "Words added by hour",
+  "\u6295\u5165\u8282\u5F8B\u77E9\u9635": "Rhythm matrix",
+  "\u516D\u9879\u6307\u6807\u6309\u5929\u5BF9\u9F50": "Six metrics aligned by day",
+  "\u4EC5\u6D3B\u8DC3\u65E5\u671F": "Active days only",
+  "\u5168\u90E8\u65E5\u671F": "All days",
+  "\u65E5\u671F": "Date",
+  "\u8D21\u732E": "Contrib",
+  "\u65B0\u589E\u8BCD": "Words",
+  "\u6D3B\u8DC3": "Active",
+  "\u4E13\u6CE8": "Focus",
+  "\u65B0\u7B14\u8BB0": "Notes",
+  "\u4EFB\u52A1": "Tasks",
+  "\u5E74\u8F6E": "Year wheel",
+  "\u5730\u5E73\u7EBF \xB7 \u6700\u8FD1 60 \u5929": "Horizon \xB7 last 60 days",
+  "AI \u65B0\u589E\u8BCD": "AI words",
+  // 设置
+  "Sediment \u8BBE\u7F6E": "Sediment settings",
+  "\u9996\u6B21\u4F7F\u7528\u68C0\u67E5": "First-use check",
+  "\u5148\u786E\u8BA4\u65E5\u8BB0\u76EE\u5F55\u3001\u6570\u636E\u4F4D\u7F6E\u548C\u5907\u4EFD\uFF1BAgent \u63A5\u5165\u662F\u53EF\u9009\u7684\u3002": "Start by confirming the daily-note folder, data location, and backup; Agent access is optional.",
+  "\u65E5\u8BB0\u6587\u4EF6\u5939": "Daily note folder",
+  "\u901F\u8BB0\u5199\u5165\u7684\u76EE\u5F55\uFF0C\u7559\u7A7A\u8868\u793A\u5E93\u6839\u76EE\u5F55\u3002": "Folder for memos; empty means vault root.",
+  "\u65E5\u8BB0\u6587\u4EF6\u540D\u683C\u5F0F": "Daily note filename format",
+  "\u652F\u6301 YYYY / MM / DD \u5360\u4F4D\u7B26\u3002": "Supports YYYY / MM / DD placeholders.",
+  "\u901F\u8BB0\u6BB5\u843D\u6807\u9898": "Memo section heading",
+  "\u6BCF\u5468\u8D77\u59CB\u65E5": "Week starts on",
+  "\u5468\u4E00": "Monday",
+  "\u5468\u65E5": "Sunday",
+  "\u70ED\u529B\u56FE\u9ED8\u8BA4\u6307\u6807": "Default heatmap metric",
+  "\u7EDF\u8BA1\u6709\u6548\u7F16\u8F91\u4F1A\u8BDD": "Count effective edit sessions",
+  "\u540C\u4E00\u6587\u4EF6\u540C\u4E00\u5929\u6700\u591A\u8BB0\u4E00\u6B21\uFF0C\u907F\u514D\u8FDE\u7EED\u952E\u5165\u5237\u5206\u3002": "At most once per file per day, to avoid inflating by continuous typing.",
+  "\u590D\u76D8\u5F52\u6863\u6587\u4EF6\u5939": "Review archive folder",
+  "Agent \u5DE5\u4F5C\u65E5\u5FD7\u76EE\u5F55": "Agent work-log folder",
+  "\u667A\u80FD\u4F53\u6BCF\u6B21\u5DE5\u4F5C\u7684\u6C89\u6DC0\u65E5\u5FD7\uFF0C\u9ED8\u8BA4\u6309\u5929\u5199\u5165\u4E00\u4E2A\u6587\u4EF6\u3002": "Per-session agent logs; one file per day by default.",
+  "\u77E5\u8BC6\u6C89\u6DC0\u76EE\u5F55": "Knowledge folder",
+  "\u667A\u80FD\u4F53\u901A\u8FC7 add_knowledge \u5199\u5165\u7684\u957F\u671F\u7B14\u8BB0\u76EE\u5F55\u3002": "Long-term notes written by agents via add_knowledge.",
+  "\u77E5\u8BC6\u5E93\u5206\u7C7B": "Knowledge categories",
+  "\u9017\u53F7\u5206\u9694\uFF0C\u667A\u80FD\u4F53\u6C89\u6DC0\u7B14\u8BB0\u65F6\u4F1A\u6309\u5206\u7C7B\u5EFA\u5B50\u76EE\u5F55\u3002": "Comma separated; agents create subfolders per category.",
+  "Agent \u7981\u6B62\u8BBF\u95EE\u7684\u6587\u4EF6\u5939": "Folders denied to Agent",
+  "\u9017\u53F7\u5206\u9694\uFF1B\u8FD9\u4E9B\u76EE\u5F55\u5BF9 Agent \u7684\u8BFB\u5199\u548C\u641C\u7D22\u5168\u90E8\u9690\u85CF\u3002": "Comma separated; hidden from agent read/write/search.",
+  "Agent \u7981\u6B62\u8BBF\u95EE\u7684\u6807\u7B7E": "Tags denied to Agent",
+  "\u9017\u53F7\u5206\u9694\uFF1B\u5E26\u8FD9\u4E9B\u6807\u7B7E\u7684\u7B14\u8BB0\u5BF9 Agent \u4E0D\u53EF\u8BFB\u3002": "Comma separated; notes with these tags are unreadable to agents.",
+  "Agent \u6743\u9650\uFF08\u53EF\u9009\uFF09": "Agent permissions (optional)",
+  "Agent \u5DE5\u4F5C\u6A21\u5F0F": "Agent work mode",
+  "\u9009\u62E9\u53EA\u8BFB\u3001\u8349\u7A3F\u3001\u786E\u8BA4\u540E\u5199\u5165\u6216\u81EA\u52A8\u6267\u884C\uFF1B\u5B9E\u9645\u6743\u9650\u4ECD\u53D7\u4E0B\u65B9\u5F00\u5173\u7EA6\u675F\u3002": "Choose read-only, draft, confirm-before-write, or automatic execution; detailed switches still apply.",
+  "\u53EA\u8BFB": "Read-only",
+  "\u8349\u7A3F": "Draft",
+  "\u786E\u8BA4\u540E\u5199\u5165": "Confirm before writing",
+  "\u81EA\u52A8\u6267\u884C": "Automatic",
+  "\u8BBF\u95EE\u6A21\u5F0F": "Access mode",
+  "allowlist \u6A21\u5F0F\u4E0B Agent \u53EA\u80FD\u8BBF\u95EE\u4E0B\u65B9\u767D\u540D\u5355\u76EE\u5F55\u3002\u9ED8\u8BA4\u5168\u5E93\uFF0C\u4F46\u7CFB\u7EDF\u76EE\u5F55\u59CB\u7EC8\u7981\u6B62\u3002": "In allowlist mode agents only reach the folders below. Default is whole vault; system folders always denied.",
+  "\u5168\u5E93\u53EF\u8BBF\u95EE\uFF08\u9ED8\u8BA4\uFF09": "Whole vault (default)",
+  "\u4EC5\u767D\u540D\u5355\u76EE\u5F55": "Allowlist only",
+  "\u767D\u540D\u5355\u76EE\u5F55": "Allowed folders",
+  "\u9017\u53F7\u5206\u9694\uFF0C\u4F8B\u5982 knowledge,projects,agent-logs\u3002": "Comma separated, e.g. knowledge,projects,agent-logs.",
+  "\u5141\u8BB8\u8BFB\u53D6": "Allow read",
+  "\u5141\u8BB8\u65B0\u5EFA": "Allow create",
+  "\u5141\u8BB8\u5C40\u90E8\u4FEE\u6539": "Allow patch",
+  "\u5141\u8BB8\u5168\u91CF\u8986\u76D6": "Allow overwrite",
+  "\u9ED8\u8BA4\u5F00\u542F\u4EE5\u517C\u5BB9\u65E7\u5DE5\u4F5C\u6D41\uFF1B\u5173\u95ED\u540E Agent \u5FC5\u987B\u7528 patch_note\u3002": "On by default for legacy workflows; off forces agents to use patch_note.",
+  "\u5141\u8BB8\u5220\u9664": "Allow delete",
+  "\u5F53\u524D\u63D2\u4EF6\u672A\u5F00\u653E\u5220\u9664\u5DE5\u5177\uFF0C\u9ED8\u8BA4\u5173\u95ED\u3002": "No delete tool is exposed; off by default.",
+  // Agent API 运行时拒绝文案（access.ts 门禁，api.ts/server.ts 使用）
+  "\u8BBF\u95EE\u88AB\u62D2\u7EDD\uFF1A{path} \u4F4D\u4E8E\u9ED1\u540D\u5355\u76EE\u5F55": "Access denied: {path} is inside a denied folder",
+  "\u8BBF\u95EE\u88AB\u62D2\u7EDD\uFF1A{path} \u4E0D\u5728\u767D\u540D\u5355\u76EE\u5F55\u5185": "Access denied: {path} is outside the allowlist folders",
+  "\u64CD\u4F5C {operation} \u672A\u88AB\u5141\u8BB8": "Operation {operation} is not allowed",
+  "addKnowledge \u62D2\u7EDD\u4E86\u975E\u6CD5\u5206\u7C7B\uFF1A{category}": "addKnowledge rejected an unsafe category: {category}",
+  "category \u542B\u8DEF\u5F84\u5206\u9694\u7B26\uFF0C\u975E\u6CD5\u503C\u5DF2\u88AB\u5FFD\u7565\uFF0C\u7B14\u8BB0\u5DF2\u56DE\u9000\u5230\u9ED8\u8BA4\u5206\u7C7B": "category contained path separators; ignored, the note fell back to the default category",
+  "\u4FEE\u6539\u524D\u5B58\u5FEB\u7167": "Snapshot before changes",
+  "\u8986\u76D6\u6216 Patch \u524D\u4FDD\u5B58\u539F\u6587\uFF0C\u652F\u6301 Agent \u53D8\u66F4\u5BA1\u67E5\u4E0E\u4E00\u952E\u6062\u590D\u3002": "Save original before overwrite/patch; enables review and one-click restore.",
+  "\u81EA\u52A8\u5907\u4EFD\u7EDF\u8BA1\u6570\u636E": "Auto-backup stats",
+  "\u628A data.json \u5FEB\u7167\u5199\u5165\u5E93\u5185\u666E\u901A\u6587\u4EF6\u5939\uFF0C\u907F\u514D .obsidian \u88AB\u540C\u6B65\u5DE5\u5177\u5FFD\u7565\u3002": "Write data.json snapshots to a normal vault folder, since .obsidian may be ignored by sync tools.",
+  "\u5907\u4EFD\u76EE\u5F55": "Backup folder",
+  "\u5E93\u5185\u76F8\u5BF9\u8DEF\u5F84\uFF0C\u9ED8\u8BA4 sediment-backup/\u3002": "Vault-relative path; default sediment-backup/.",
+  "\u4FDD\u7559\u5907\u4EFD\u4EFD\u6570": "Backups to keep",
+  "\u770B\u677F\u753B\u98CE": "Dashboard art style",
+  "\u50CF\u7D20\u6E56\u9762 / \u6C34\u58A8\u5C71\u6C34 / \u50CF\u7D20\u57CE\u5E02\uFF0C\u4E5F\u53EF\u5728\u770B\u677F\u9875\u811A\u70B9\u300C\u6362\u753B\u98CE\u300D\u3002": "Pixel lake / ink landscape / pixel city; also via the dashboard footer.",
+  "\u50CF\u7D20\u6E56\u9762": "Pixel lake",
+  "\u6C34\u58A8\u5C71\u6C34": "Ink landscape",
+  "\u50CF\u7D20\u57CE\u5E02": "Pixel city",
+  "\u754C\u9762\u5BC6\u5EA6": "Interface density",
+  "\u7CBE\u7B80\u6A21\u5F0F\u4F18\u5148\u663E\u793A\u6355\u83B7\u3001\u4EFB\u52A1\u548C\u6458\u8981\u3002": "Compact mode prioritizes capture, tasks, and summaries.",
+  "\u7CBE\u7B80": "Compact",
+  "\u6807\u51C6": "Standard",
+  "\u5B8C\u6574": "Full",
+  "\u51CF\u5C11\u52A8\u6001\u6548\u679C": "Reduce motion",
+  "\u5173\u95ED\u6A2A\u5E45\u548C\u5361\u7247\u52A8\u753B\uFF0C\u4FDD\u7559\u5FC5\u8981\u72B6\u6001\u53CD\u9988\u3002": "Disable banner and card animation while keeping necessary status feedback.",
+  "\u6BCF\u65E5\u5199\u4F5C\u76EE\u6807": "Daily writing goal",
+  "\u770B\u677F\u4ECA\u5929\u5361\u7247\u663E\u793A\u8FDB\u5EA6\uFF0C0 \u8868\u793A\u5173\u95ED\u3002": "Shown on the Today card; 0 disables.",
+  "\u7EDF\u8BA1\u53E3\u5F84\uFF08\u8D21\u732E\u5206\u5C01\u9876\u4E0E\u6743\u91CD\uFF09": "Statistics (contribution cap & weights)",
+  "\u5355\u65E5\u8D21\u732E\u5206\u5C01\u9876": "Daily contribution cap",
+  "\u9632\u6B62\u5355\u65E5\u5237\u5206\u62C9\u7206\u70ED\u529B\u56FE\uFF0C0 \u8868\u793A\u4E0D\u5C01\u9876\u3002\u9ED8\u8BA4 120\u3002": "Prevents a single day from blowing up the heatmap; 0 = no cap. Default 120.",
+  "\u5355\u6B21\u5199\u5165\u8BCD\u6570\u4E0A\u9650": "Per-write word cap",
+  "\u4E00\u6B21\u4FDD\u5B58/\u7C98\u8D34\u6700\u591A\u8BA1\u5165\u7684\u8BCD\u6570\uFF0C0 \u8868\u793A\u4E0D\u5C01\u9876\u3002\u9ED8\u8BA4 4000\u3002": "Max words counted per save/paste; 0 = no cap. Default 4000.",
+  "\u6743\u91CD\uFF1A\u65B0\u5EFA\u7B14\u8BB0\uFF08\u6BCF\u7BC7\uFF09": "Weight: note created (each)",
+  "\u9ED8\u8BA4 2 \u5206\u3002": "Default 2 points.",
+  "\u6743\u91CD\uFF1A\u7F16\u8F91\u4F1A\u8BDD\uFF08\u6BCF\u6B21\uFF09": "Weight: edit session (each)",
+  "\u9ED8\u8BA4 1 \u5206\u3002": "Default 1 point.",
+  "\u6743\u91CD\uFF1A\u5B8C\u6210\u4EFB\u52A1\uFF08\u6BCF\u6761\uFF09": "Weight: task completed (each)",
+  "\u6743\u91CD\uFF1A\u6BCF\u591A\u5C11\u65B0\u589E\u8BCD\u5F97 1 \u5206": "Weight: words per point",
+  "\u9ED8\u8BA4 100 \u8BCD\u3002": "Default 100 words.",
+  "\u6743\u91CD\uFF1A\u6BCF\u591A\u5C11\u4E13\u6CE8\u5206\u949F\u5F97 1 \u5206": "Weight: focus minutes per point",
+  "\u9ED8\u8BA4 25 \u5206\u949F\u3002": "Default 25 minutes.",
+  "\u4FEE\u6539\u6743\u91CD\u6216\u5C01\u9876\u540E\u4F1A\u7ACB\u5373\u5168\u91CF\u91CD\u7B97\u5386\u53F2\u8D21\u732E\u5206\u3002Agent \u5199\u5165\u53EA\u8BA1\u300CAI \u65B0\u589E\u8BCD\u300D\uFF0C\u4E0D\u91CD\u590D\u8BA1\u5165\u4EBA\u7C7B\u5199\u4F5C\u7EDF\u8BA1\u3002": "Changing weights or cap recomputes all history immediately. Agent writes count only as AI words, not human writing.",
+  "Agent \u63A5\u5165\uFF08\u672C\u5730 HTTP / MCP\uFF09": "Agent access (local HTTP / MCP)",
+  "\u542F\u7528\u672C\u5730 Agent API": "Enable local Agent API",
+  "\u53EA\u76D1\u542C 127.0.0.1\uFF0C\u4F9B MCP \u6865\u63A5\u548C\u672C\u5730\u811A\u672C\u8C03\u7528\u4E2A\u4EBA\u77E5\u8BC6\u5E93\u3002": "Listens on 127.0.0.1 only, for the MCP bridge and local scripts.",
+  "\u7AEF\u53E3": "Port",
+  "\u9ED8\u8BA4 27123\uFF0C\u4FEE\u6539\u540E\u670D\u52A1\u4F1A\u81EA\u52A8\u91CD\u542F\u3002": "Default 27123; the server restarts on change.",
+  "\u8BBF\u95EE\u4EE4\u724C": "Access token",
+  "HTTP \u8BF7\u6C42\u4E0E MCP \u6865\u63A5\u90FD\u5FC5\u987B\u643A\u5E26\u6B64\u4EE4\u724C\u3002": "Required for both HTTP requests and the MCP bridge.",
+  "\u70B9\u51FB\u53F3\u4FA7\u6309\u94AE\u751F\u6210": "Click the button to generate",
+  "\u91CD\u65B0\u751F\u6210\u4EE4\u724C": "Regenerate token",
+  "\u6CC4\u9732\u6216\u9057\u5FD8\u65F6\u70B9\u51FB\uFF0C\u65E7\u4EE4\u724C\u7ACB\u5373\u5931\u6548\u3002": "Click if leaked or forgotten; the old token is invalidated immediately.",
+  "\u751F\u6210\u65B0\u4EE4\u724C": "Generate new token",
+  "\u4E00\u952E\u914D\u7F6E\u667A\u80FD\u4F53\u5BA2\u6237\u7AEF": "One-click agent client setup",
+  "\u81EA\u52A8\u63A2\u6D4B\u672C\u673A\u5DF2\u5B89\u88C5\u7684\u667A\u80FD\u4F53\uFF0C\u52FE\u9009\u540E\u4E00\u952E\u5199\u5165 MCP \u914D\u7F6E\u3002\u5199\u5165\u524D\u4F1A\u5907\u4EFD\u539F\u6587\u4EF6\uFF0C\u91CD\u542F\u5BA2\u6237\u7AEF\u5373\u53EF\u751F\u6548\u3002": "Detects installed agents and writes MCP config in one click. The original file is backed up first; restart the client to apply.",
+  "\u6CA1\u6709\u63A2\u6D4B\u5230\u53D7\u652F\u6301\u7684\u667A\u80FD\u4F53\u5BA2\u6237\u7AEF\u3002": "No supported agent client detected.",
+  "\u5DF2\u914D\u7F6E": "configured",
+  "\u91CD\u65B0\u5199\u5165": "Rewrite",
+  "\u4E00\u952E\u914D\u7F6E": "Set up",
+  "\u590D\u5236\u914D\u7F6E JSON": "Copy config JSON",
+  "\u624B\u52A8\u7C98\u8D34\u5230\u5BA2\u6237\u7AEF\u7684 MCP \u914D\u7F6E\u6587\u4EF6\u4E2D\u3002": "Paste manually into the client's MCP config file.",
+  "\u914D\u7F6E\u5DF2\u590D\u5236": "Config copied",
+  "\u914D\u7F6E\u5931\u8D25": "Setup failed",
+  "\u914D\u7F6E\u5DF2\u5199\u5165\uFF0C\u91CD\u542F\u5BA2\u6237\u7AEF\u540E\u751F\u6548": "config written; restart the client to apply",
+  "\u754C\u9762\u8BED\u8A00": "Interface language",
+  "\u8DDF\u968F Obsidian\uFF08auto\uFF09\uFF0C\u6216\u5F3A\u5236\u4E2D\u6587 / \u82F1\u6587\u3002": "Follow Obsidian (auto), or force Chinese / English.",
+  "\u8DDF\u968F\u7CFB\u7EDF": "Follow system",
+  "\u4E2D\u6587": "Chinese",
+  "\u82F1\u6587": "English",
+  // 模态框
+  "\u7B14\u8BB0\u5065\u5EB7\u5EA6": "Note health",
+  "\u5BFC\u51FA\u6570\u636E": "Export data",
+  "\u66F4\u65B0\u8BB0\u5F55": "Changelog",
+  "\u8F6C\u4E3A Agent \u4EFB\u52A1": "Convert to Agent tasks",
+  "\u683C\u5F0F": "Format",
+  "\u5305\u542B\u901F\u8BB0\u6B63\u6587": "Include memo text",
+  "\u5305\u542B\u6587\u4EF6\u8DEF\u5F84": "Include file paths",
+  "\u5BFC\u51FA": "Export",
+  "\u9ED8\u8BA4\u8131\u654F\uFF1A\u4E0D\u542B\u901F\u8BB0\u6B63\u6587\u4E0E\u8DEF\u5F84\uFF0C\u4E5F\u4E0D\u542B\u4EE4\u724C\u3002": "Sanitized by default: no memo text, paths, or token.",
+  "\u6807\u7B7E\uFF08\u7A7A\u683C\u5206\u9694\uFF09": "Tags (space separated)",
+  "\u5B64\u513F\u7B14\u8BB0\uFF1D\u65E0\u51FA\u94FE\u65E0\u53CD\u94FE\uFF1B\u65AD\u94FE\uFF1D\u94FE\u63A5\u6307\u5411\u4E0D\u5B58\u5728\u7684\u7B14\u8BB0\uFF1B\u4E45\u672A\u66F4\u65B0\uFF1D90 \u5929\u4EE5\u4E0A\u3002\u52FE\u9009\u540E\u8F6C\u4E3A Agent \u4EFB\u52A1\uFF0C\u667A\u80FD\u4F53\u6574\u7406\u5B8C\u6210\u4F1A\u6807\u8BB0 #agent-done\u3002": "Orphan = no outgoing or back links; broken link = target note missing; stale = untouched for 90+ days. Select to convert into Agent tasks; agents mark #agent-done when finished.",
+  "\u6CA1\u6709\u53D1\u73B0\u5065\u5EB7\u95EE\u9898\uFF0C\u5E93\u5F88\u6574\u6D01\u3002": "No health issues found; your vault is tidy.",
+  "\u65AD\u94FE {broken} \xB7 \u5B64\u513F {orphan} \xB7 \u4E45\u672A\u66F4\u65B0 {stale}": "Broken {broken} \xB7 orphan {orphan} \xB7 stale {stale}",
+  "\u5B64\u513F\u7B14\u8BB0": "Orphan",
+  "\u65AD\u94FE": "Broken link",
+  "\u4E45\u672A\u66F4\u65B0": "Stale",
+  "\u5DF2\u521B\u5EFA {n} \u6761 Agent \u6574\u7406\u4EFB\u52A1\uFF08#to-agent #note-health\uFF09": "Created {n} agent cleanup tasks (#to-agent #note-health)",
+  "\u6240\u9009\u95EE\u9898\u90FD\u5DF2\u6709\u5BF9\u5E94\u7684\u672A\u5B8C\u6210\u4EFB\u52A1": "All selected issues already have pending tasks",
+  "\u8F6C\u4E3A Agent \u4EFB\u52A1\uFF08{n}\uFF09": "Convert to Agent tasks ({n})",
+  "\u8BBF\u95EE\u4EE4\u724C\u7B49\u654F\u611F\u8BBE\u7F6E\u6C38\u4E0D\u5BFC\u51FA\u3002\u901F\u8BB0\u6B63\u6587\u4E0E\u6587\u4EF6\u8DEF\u5F84\u9ED8\u8BA4\u5254\u9664\uFF0C\u52FE\u9009\u540E\u624D\u5305\u542B\u3002\u6587\u4EF6\u5199\u5165\u5E93\u5185 sediment-export/ \u76EE\u5F55\u3002": "Sensitive settings such as the access token are never exported. Memo text and file paths are excluded unless enabled. Files are written to sediment-export/ in the vault.",
+  "CSV \u53EA\u542B\u6BCF\u65E5\u805A\u5408\u6307\u6807\uFF1BJSON \u542B\u5929\u8BB0\u5F55\u3001\u901F\u8BB0\u5143\u6570\u636E\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\u3002": "CSV holds daily aggregates only; JSON holds day records, memo metadata, and work logs.",
+  "JSON\uFF08\u5B8C\u6574\u7ED3\u6784\uFF09": "JSON (full structure)",
+  "CSV\uFF08\u6BCF\u65E5\u6307\u6807\uFF09": "CSV (daily metrics)",
+  "\u5173\u95ED\u65F6\u53EA\u5BFC\u51FA\u901F\u8BB0\u7684\u65F6\u95F4\u3001\u6807\u7B7E\u4E0E\u72B6\u6001\u3002": "When off, only memo time, tags, and status are exported.",
+  "\u5173\u95ED\u65F6\u5254\u9664\u6765\u6E90\u5F85\u529E\u8DEF\u5F84\u3001\u4EA7\u51FA\u8DEF\u5F84\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\u6D89\u53CA\u6587\u4EF6\u3002": "When off, source task paths, result paths, and work-log files are removed.",
+  "\u5DF2\u5BFC\u51FA\uFF1A{path}": "Exported: {path}",
+  "\u5BFC\u51FA\u5931\u8D25": "Export failed",
+  // 看板 · 智能体工坊 / 年度 / 复盘 / 参照线
+  "\u6708\u62A5": "Monthly",
+  "Agent \u53D8\u66F4\u5BA1\u67E5": "Agent change review",
+  "\u6682\u65E0 Agent \u53D8\u66F4\u8BB0\u5F55\u3002": "No agent changes yet.",
+  "\u5C40\u90E8\u4FEE\u6539": "Patch",
+  "\u5C5E\u6027": "Frontmatter",
+  "\u65B0\u5EFA/\u8986\u76D6": "Create/overwrite",
+  "\u5DEE\u5F02({n})": "Diff ({n})",
+  "\u53D8\u66F4\u5BF9\u6BD4": "change diff",
+  "\u6062\u590D": "Restore",
+  "\u5DF2\u6062\u590D\u5230\u6700\u8FD1\u5907\u4EFD": "Restored to the latest backup",
+  "\u5F85\u529E \xB7 \u4ECA\u65E5 / \u9057\u7559 / Agent": "Tasks \xB7 today / overdue / agent",
+  "\u52A0\u8F7D\u4E2D\u2026": "Loading\u2026",
+  "\u6CA1\u6709\u672A\u5B8C\u6210\u5F85\u529E\u3002": "No pending tasks.",
+  "\u5B8C\u6210": "Complete",
+  "\u8BA4\u9886": "Claim",
+  "\u786E\u8BA4\u5C06\u6B64\u5F85\u529E\u6807\u8BB0\u4E3A\u5B8C\u6210\uFF1F": "Mark this task complete?",
+  "\u5F85\u529E\u5DF2\u5B8C\u6210": "Task completed",
+  "\u4EFB\u52A1\u5DF2\u8BA4\u9886": "Task claimed",
+  "\u786E\u8BA4\u5B8C\u6210\u6B64 Agent \u5F85\u529E\uFF1F": "Complete this Agent task?",
+  "Agent \u5F85\u529E\u5DF2\u5B8C\u6210": "Agent task completed",
+  "\u64CD\u4F5C\u5931\u8D25": "Operation failed",
+  "Agent \u4EFB\u52A1": "Agent task",
+  "\u8FDE\u63A5\u4E0E\u8C03\u7528\u72B6\u6001": "Connection & call status",
+  "\u672C\u5730 API": "Local API",
+  "\u5728\u7EBF": "Online",
+  "\u672A\u542F\u7528": "Disabled",
+  "\u7D2F\u8BA1\u8C03\u7528": "Total calls",
+  "{n} \u6B21": "{n} calls",
+  "\u6700\u8FD1\u8C03\u7528": "Last call",
+  "AI \u6C89\u6DC0\u5BA1\u6838": "AI knowledge review",
+  "\u6CA1\u6709\u5F85\u5BA1\u6838\u7684 AI \u8349\u7A3F\u3002": "No AI drafts awaiting review.",
+  "\u91C7\u7EB3\u5E76\u5F52\u6863": "Accept & archive",
+  "\u5DF2\u91C7\u7EB3": "Accepted",
+  "\u5408\u5E76\u5230\u5173\u8054\u7B14\u8BB0": "Merge into linked note",
+  "\u9A73\u56DE\u5220\u9664": "Reject & delete",
+  "\u5DF2\u9A73\u56DE\u5E76\u79FB\u5165\u56DE\u6536\u7AD9": "Rejected and moved to trash",
+  "\u8FD9\u5F20\u8349\u7A3F\u6CA1\u6709\u5173\u8054\u7B14\u8BB0\uFF0C\u65E0\u6CD5\u5408\u5E76": "This draft has no linked note to merge into",
+  "\u627E\u4E0D\u5230\u5173\u8054\u7B14\u8BB0\uFF1A{name}": "Linked note not found: {name}",
+  "\u5DF2\u5408\u5E76\u5230 {name}": "Merged into {name}",
+  "\u667A\u80FD\u4F53\u5DE5\u4F5C\u65E5\u5FD7": "Agent work logs",
+  "\u8FD8\u6CA1\u6709\u5DE5\u4F5C\u65E5\u5FD7\u3002": "No work logs yet.",
+  "\u6570\u636E\u53EA\u7559\u5728\u672C\u5730": "data stays local",
+  "\u6362\u753B\u98CE": "Change art",
+  "\u77E5\u8BC6\u6307\u7EB9": "Knowledge fingerprint",
+  "\u6BCF\u5929\u4E00\u6839\u8272\u6761": "One bar per day",
+  "\u6708\u76F8\u65E5\u5386": "Moon-phase calendar",
+  "\u6EE1\u6708\u662F\u9AD8\u5CF0\u65E5\uFF0C\u65B0\u6708\u662F\u4F11\u606F\u65E5": "Full moon = peak day, new moon = rest day",
+  "\u6708\u62A5\u6D77\u62A5": "Monthly poster",
+  "\u70B9\u5DE6\u53F3\u7BAD\u5934\u5207\u6362\u6708\u4EFD": "Use the arrows to change month",
+  "{year} \u5E74": "{year}",
+  "\u6307\u7EB9": "Fingerprint",
+  "\u6708\u76F8": "Moon phases",
+  "\u8282\u5F8B\u77E9\u9635": "Rhythm matrix",
+  "\u672C\u6708\u8D21\u732E\u5206": "Contribution this month",
+  "\u6D3B\u8DC3 {n} \u5929": "Active {n} days",
+  "\u65B0\u589E {n} \u5B57": "{n} words added",
+  "\u5BFC\u51FA PNG": "Export PNG",
+  "\u77E5\u8BC6\u590D\u76D8 \xB7 \u672C\u5468": "Knowledge review \xB7 this week",
+  "\u590D\u5236 Markdown": "Copy Markdown",
+  "\u5468\u590D\u76D8\u5DF2\u590D\u5236": "Weekly review copied",
+  "\u756A\u8304": "Focus",
+  "\u77ED\u4F11": "Short break",
+  "\u957F\u4F11": "Long break",
+  "\u5E74\u5EA6\u6D3B\u8DC3\u70ED\u529B\u56FE\uFF0C\u65B9\u5411\u952E\u79FB\u52A8\uFF0C\u56DE\u8F66\u9009\u4E2D": "Yearly activity heatmap; arrow keys to move, Enter to select",
+  "\u5747\u503C {n}": "Mean {n}",
+  "\u76EE\u6807 {n}": "Goal {n}",
+  "\u65B0\u589E\u5747\u503C {n}": "Added mean {n}",
+  "\u6D3B\u8DC3\u5747\u503C {n}": "Active mean {n}",
+  "Sediment \u66F4\u65B0\u8BB0\u5F55": "Sediment changelog",
+  "\u5907\u4EFD\u7248\u672C": "Backup version",
+  "\u5F53\u524D\u7248\u672C": "Current version"
+};
+function t(zh) {
+  var _a2;
+  return locale === "en" ? (_a2 = EN[zh]) != null ? _a2 : zh : zh;
+}
+function tf(zh, vars) {
+  return t(zh).replace(
+    /\{(\w+)\}/g,
+    (_match, key) => key in vars ? String(vars[key]) : `{${key}}`
+  );
+}
+
 // src/agent/access.ts
 function splitList(value) {
   return value.split(/[,，]/).map((item) => item.trim()).filter(Boolean);
@@ -502,10 +927,13 @@ function isOperationAllowed(operation, settings) {
 }
 function isPathAllowedByMode(path, settings) {
   if (isPathDenied(path, settings.deniedFolders)) return false;
-  if (settings.agentAccessMode !== "allowlist") return true;
+  if (settings.agentAccessMode === "allow-all") return true;
   return splitList(settings.agentAllowedFolders).some(
     (folder) => path === folder || path.startsWith(`${folder}/`)
   );
+}
+function isSafePathSegmentName(value) {
+  return !/[/\\]|\.\./.test(value);
 }
 function listCategories(knowledgeCategories) {
   return knowledgeCategories.split(/[,，]/).map((item) => item.trim()).filter(Boolean);
@@ -669,14 +1097,16 @@ var AgentApi = class {
   }
   assertAllowed(path) {
     if (this.isDeniedPath(path)) {
-      this.plugin.store.logDiagnostic("security", `\u8BBF\u95EE\u88AB\u62D2\u7EDD\uFF1A${path} \u4F4D\u4E8E\u9ED1\u540D\u5355\u76EE\u5F55`);
-      throw new ApiError("FORBIDDEN", `\u8BBF\u95EE\u88AB\u62D2\u7EDD\uFF1A${path} \u4F4D\u4E8E\u9ED1\u540D\u5355\u76EE\u5F55`, 403);
+      const message = tf("\u8BBF\u95EE\u88AB\u62D2\u7EDD\uFF1A{path} \u4F4D\u4E8E\u9ED1\u540D\u5355\u76EE\u5F55", { path });
+      this.plugin.store.logDiagnostic("security", message);
+      throw new ApiError("FORBIDDEN", message, 403);
     }
   }
   assertOperation(operation) {
     if (!isOperationAllowed(operation, this.plugin.store.settings)) {
-      this.plugin.store.logDiagnostic("security", `\u64CD\u4F5C ${operation} \u88AB\u5DE5\u4F5C\u6A21\u5F0F\u62D2\u7EDD`);
-      throw new ApiError("OPERATION_DENIED", `\u64CD\u4F5C ${operation} \u672A\u88AB\u5141\u8BB8`, 403);
+      const message = tf("\u64CD\u4F5C {operation} \u672A\u88AB\u5141\u8BB8", { operation });
+      this.plugin.store.logDiagnostic("security", message);
+      throw new ApiError("OPERATION_DENIED", message, 403);
     }
   }
   assertPathAllowed(path, operation) {
@@ -684,8 +1114,9 @@ var AgentApi = class {
     this.assertAllowed(path);
     const settings = this.plugin.store.settings;
     if (!isPathAllowedByMode(path, settings)) {
-      this.plugin.store.logDiagnostic("security", `\u8BBF\u95EE\u88AB\u62D2\u7EDD\uFF1A${path} \u4E0D\u5728\u767D\u540D\u5355\u76EE\u5F55\u5185`);
-      throw new ApiError("FORBIDDEN", `\u8BBF\u95EE\u88AB\u62D2\u7EDD\uFF1A${path} \u4E0D\u5728\u767D\u540D\u5355\u76EE\u5F55\u5185`, 403);
+      const message = tf("\u8BBF\u95EE\u88AB\u62D2\u7EDD\uFF1A{path} \u4E0D\u5728\u767D\u540D\u5355\u76EE\u5F55\u5185", { path });
+      this.plugin.store.logDiagnostic("security", message);
+      throw new ApiError("FORBIDDEN", message, 403);
     }
   }
   isAllowedByMode(path) {
@@ -1115,14 +1546,23 @@ ${content}
     return this.plugin.tasks.list(scope);
   }
   async completeTask(path, line) {
-    this.plugin.tracker.markAgentWrite(path);
-    await this.plugin.tasks.complete(path, line);
+    const safe = safeAgentPath(path);
+    this.assertPathAllowed(safe, "patch");
+    this.plugin.tracker.markAgentWrite(safe);
+    await this.plugin.tasks.complete(safe, line);
     return { ok: true };
   }
   async delegateTask(path, line) {
-    return { id: await this.plugin.tasks.delegate(path, line) };
+    const safe = safeAgentPath(path);
+    this.assertPathAllowed(safe, "read");
+    return { id: await this.plugin.tasks.delegate(safe, line) };
   }
   async snapshotTasks() {
+    const settings = this.plugin.store.settings;
+    const folder = normalizeFolder(settings.dailyNoteFolder);
+    const now = /* @__PURE__ */ new Date();
+    const name = settings.dailyNoteFormat.replace(/YYYY/g, String(now.getFullYear())).replace(/MM/g, String(now.getMonth() + 1).padStart(2, "0")).replace(/DD/g, String(now.getDate()).padStart(2, "0"));
+    this.assertPathAllowed(folder ? `${folder}/${name}.md` : `${name}.md`, "patch");
     return { count: await this.plugin.tasks.snapshot() };
   }
   /** 最近 Agent 变更及其快照 id。 */
@@ -1132,10 +1572,12 @@ ${content}
   async revertAgentChange(snapshotId) {
     const snapshot = this.plugin.store.data.snapshots.find((item) => item.id === snapshotId);
     if (!snapshot) throw new ApiError("NOT_FOUND", `\u5FEB\u7167\u4E0D\u5B58\u5728\uFF1A${snapshotId}`, 404);
-    const file = this.vault.getAbstractFileByPath(snapshot.path);
-    if (!(file instanceof import_obsidian2.TFile)) throw new ApiError("NOT_FOUND", `\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${snapshot.path}`, 404);
+    const safe = safeAgentPath(snapshot.path);
+    this.assertPathAllowed(safe, "overwrite");
+    const file = this.vault.getAbstractFileByPath(safe);
+    if (!(file instanceof import_obsidian2.TFile)) throw new ApiError("NOT_FOUND", `\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`, 404);
     await restoreBackup(this.plugin, file, snapshotId);
-    return { path: snapshot.path, reverted: true };
+    return { path: safe, reverted: true };
   }
   getPomodoro() {
     return this.plugin.pomodoro.state();
@@ -1220,8 +1662,15 @@ ${block}`);
     const links = Array.isArray(input.links) ? input.links.map(String) : [];
     const agent = String(input.agent || "agent").replace(/[:#]/g, "-");
     const requestedCategory = String((_a2 = input.category) != null ? _a2 : "").trim();
-    const category = requestedCategory || (tags.length || String((_b = input.content) != null ? _b : "").length > 0 ? this.inferCategory(title, String((_c = input.content) != null ? _c : ""), tags) : categories[0]) || "\u672A\u5206\u7C7B";
-    const sub = normalizeFolder((_d = input.folder) != null ? _d : "");
+    const invalidCategory = requestedCategory.length > 0 && !isSafePathSegmentName(requestedCategory);
+    if (invalidCategory) {
+      this.plugin.store.logDiagnostic(
+        "security",
+        tf("addKnowledge \u62D2\u7EDD\u4E86\u975E\u6CD5\u5206\u7C7B\uFF1A{category}", { category: requestedCategory })
+      );
+    }
+    const category = (invalidCategory ? "" : requestedCategory) || (tags.length || String((_b = input.content) != null ? _b : "").length > 0 ? this.inferCategory(title, String((_c = input.content) != null ? _c : ""), tags) : categories[0]) || "\u672A\u5206\u7C7B";
+    const sub = normalizeFolder((_d = input.folder) != null ? _d : "").split("/").filter((part) => part && part !== "." && part !== "..").join("/");
     const folder = [base, category, sub].filter(Boolean).join("/");
     this.assertPathAllowed(folder ? `${folder}/placeholder.md` : "placeholder.md", "create");
     await ensureFolder(this.vault, folder);
@@ -1282,7 +1731,10 @@ ${block}`);
     this.plugin.store.updateDay(today, (day) => {
       day.aiWordsAdded += countWords(doc);
     });
-    return { path };
+    return {
+      path,
+      ...invalidCategory ? { note: t("category \u542B\u8DEF\u5F84\u5206\u9694\u7B26\uFF0C\u975E\u6CD5\u503C\u5DF2\u88AB\u5FFD\u7565\uFF0C\u7B14\u8BB0\u5DF2\u56DE\u9000\u5230\u9ED8\u8BA4\u5206\u7C7B") } : {}
+    };
   }
   /** 最近 N 天的工作日志。 */
   listWorkLogs(days = 7) {
@@ -1350,6 +1802,16 @@ function getHttp() {
     return require("http");
   } catch (error) {
     return null;
+  }
+}
+function tokensMatch(supplied, expected) {
+  try {
+    const crypto2 = require("crypto");
+    const a = crypto2.createHash("sha256").update(String(supplied), "utf8").digest();
+    const b = crypto2.createHash("sha256").update(String(expected), "utf8").digest();
+    return crypto2.timingSafeEqual(a, b);
+  } catch (error) {
+    return false;
   }
 }
 var AgentServer = class {
@@ -1433,7 +1895,7 @@ var AgentServer = class {
     const headerToken = String((_b = request.headers.authorization) != null ? _b : "").replace(/^Bearer\s+/i, "");
     const supplied = (_c = url.searchParams.get("token")) != null ? _c : headerToken;
     const expected = this.plugin.store.settings.agentServerToken;
-    if (!expected || supplied !== expected) {
+    if (!expected || !tokensMatch(supplied, expected)) {
       this.plugin.store.logDiagnostic(
         "security",
         "\u672C\u5730 API \u9274\u6743\u5931\u8D25",
@@ -1746,20 +2208,20 @@ var SemanticIndex = class {
   invalidate() {
     this.dirty = true;
   }
-  deniedFolders() {
-    return this.plugin.store.settings.deniedFolders.split(/[,，]/).map((item) => item.trim()).filter(Boolean);
-  }
   deniedTags() {
-    return this.plugin.store.settings.deniedTags.split(/[,，]/).map((item) => item.trim()).filter(Boolean);
+    return splitList(this.plugin.store.settings.deniedTags);
+  }
+  /** 语义索引必须与 Agent 访问策略同口径：黑名单目录 + 白名单模式统一走 access.ts。 */
+  isReachable(path) {
+    return isPathAllowedByMode(path, this.plugin.store.settings);
   }
   async buildOnce() {
     var _a2, _b, _c;
     const vault = this.plugin.app.vault;
-    const folders = this.deniedFolders();
     const deniedTags = this.deniedTags();
     const files = vault.getMarkdownFiles().filter((file) => {
       var _a3, _b2;
-      if (folders.some((folder) => file.path === folder || file.path.startsWith(`${folder}/`))) return false;
+      if (!this.isReachable(file.path)) return false;
       const cache = this.plugin.app.metadataCache.getFileCache(file);
       const tags = [...((_a3 = cache == null ? void 0 : cache.tags) != null ? _a3 : []).map((tag) => tag.tag.replace(/^#/, ""))];
       const frontmatterTags = (_b2 = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _b2.tags;
@@ -1836,6 +2298,7 @@ var SemanticIndex = class {
     if (queryVector.size === 0) return [];
     const results = [];
     for (const [path, documentVector] of this.vectors) {
+      if (!this.isReachable(path)) continue;
       const score = this.cosine(documentVector, queryVector);
       if (score <= 0) continue;
       const file = this.plugin.app.vault.getAbstractFileByPath(path);
@@ -2740,427 +3203,6 @@ async function rebuildHistory(store, vault) {
 
 // src/ui/quick-memo-modal.ts
 var import_obsidian7 = require("obsidian");
-
-// src/i18n.ts
-var locale = "zh";
-function setLocale(next) {
-  locale = next;
-}
-function detectLocale() {
-  try {
-    const moment = window.moment;
-    const lang = typeof (moment == null ? void 0 : moment.locale) === "function" ? String(moment.locale()) : "";
-    return lang.toLowerCase().startsWith("zh") ? "zh" : "en";
-  } catch (e) {
-    return "zh";
-  }
-}
-function resolveLocale(setting) {
-  return setting === "auto" ? detectLocale() : setting;
-}
-var EN = {
-  // 通用 / 命令 / ribbon
-  "Sediment\uFF1A\u770B\u677F": "Sediment: Dashboard",
-  "Sediment\uFF1A\u901F\u8BB0": "Sediment: Memos",
-  "\u6253\u5F00\u77E5\u8BC6\u8109\u51B2\u770B\u677F": "Open Knowledge Pulse dashboard",
-  "\u6253\u5F00\u901F\u8BB0\u9762\u677F": "Open memo panel",
-  "\u8BB0\u4E00\u6761\u901F\u8BB0": "Add a memo",
-  "\u751F\u6210\u672C\u5468\u5DE5\u4F5C\u590D\u76D8": "Generate this week's review",
-  "\u5F00\u59CB / \u6682\u505C\u756A\u8304\u949F": "Start / pause pomodoro",
-  "\u8DF3\u8FC7\u5F53\u524D\u756A\u8304 / \u4F11\u606F": "Skip current pomodoro / break",
-  "\u8BB0\u5F55\u4ECA\u65E5\u9057\u7559\u5F85\u529E\u5230\u65E5\u8BB0": "Snapshot today's pending tasks to daily note",
-  "\u5BFC\u51FA\u4ECA\u65E5\u6218\u62A5\u56FE\u7247": "Export today's report image",
-  "\u5907\u4EFD\u7EDF\u8BA1\u6570\u636E\u5230\u5E93\u5185": "Back up stats into the vault",
-  "\u91CD\u5EFA\u5386\u53F2\u7EDF\u8BA1\uFF08\u6309\u7B14\u8BB0\u65E5\u671F\u8865\u9F50\u7A7A\u65E5\u671F\uFF09": "Rebuild history (fill empty days by note date)",
-  "\u626B\u63CF\u7B14\u8BB0\u5065\u5EB7\u5EA6\uFF08\u5B64\u513F/\u65AD\u94FE/\u4E45\u672A\u66F4\u65B0\uFF09": "Scan note health (orphan / broken link / stale)",
-  "\u5BFC\u51FA\u6570\u636E\uFF08CSV/JSON\uFF0C\u9ED8\u8BA4\u8131\u654F\uFF09": "Export data (CSV/JSON, sanitized by default)",
-  "\u67E5\u770B\u66F4\u65B0\u8BB0\u5F55": "View changelog",
-  "\u5207\u6362\u770B\u677F\u9876\u90E8\u548C\u5E95\u90E8\u7684\u753B\u98CE": "Cycle dashboard banner art style",
-  "\u5468\u590D\u76D8\u5DF2\u751F\u6210\u5E76\u6253\u5F00": "Weekly review generated and opened",
-  "Sediment \u5DF2\u66F4\u65B0\u5230 v{version}\uFF0C\u53EF\u5728\u300C\u67E5\u770B\u66F4\u65B0\u8BB0\u5F55\u300D\u4E2D\u4E86\u89E3\u53D8\u5316": "Sediment updated to v{version}; see \u201CView changelog\u201D for what's new",
-  "\u5DF2\u8BB0\u5F55 {n} \u6761\u9057\u7559\u5F85\u529E": "Recorded {n} pending tasks",
-  "\u5DF2\u626B\u63CF {scanned} \u7BC7\u7B14\u8BB0\uFF0C\u8865\u9F50 {days} \u5929\uFF08{notes} \u7BC7 / {words} \u8BCD\uFF09": "Scanned {scanned} notes; filled {days} days ({notes} notes / {words} words)",
-  "\u626B\u63CF\u4E86 {scanned} \u7BC7\u7B14\u8BB0\uFF0C\u6CA1\u6709\u9700\u8981\u8865\u9F50\u7684\u7A7A\u65E5\u671F": "Scanned {scanned} notes; no empty days to fill",
-  "\u6570\u636E\u5DF2\u5907\u4EFD\u5230\u5E93\u5185": "Data backed up into the vault",
-  "\u5907\u4EFD\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u8BBE\u7F6E\u4E2D\u7684\u5907\u4EFD\u76EE\u5F55": "Backup failed; check the backup folder in settings",
-  "\u6CA1\u6709\u9057\u7559\u5F85\u529E": "No pending tasks",
-  "\u5237\u65B0": "Refresh",
-  "\u5168\u90E8": "All",
-  "\u590D\u5236": "Copy",
-  "\u5DF2\u590D\u5236": "Copied",
-  "\u4FDD\u5B58": "Save",
-  "\u53D6\u6D88": "Cancel",
-  "\u5220\u9664": "Delete",
-  "\u7F16\u8F91": "Edit",
-  "\u5F52\u6863": "Archive",
-  "\u53D6\u6D88\u5F52\u6863": "Unarchive",
-  "\u542B\u5F52\u6863": "Include archived",
-  "\u5DF2\u5F52\u6863": "Archived",
-  "\u672A\u5904\u7406": "Unprocessed",
-  "\u5DF2\u59D4\u6D3E Agent": "Delegated to Agent",
-  "\u5DF2\u6C89\u6DC0": "Deposited",
-  "\u8349\u7A3F\u5DF2\u6062\u590D": "Draft restored",
-  "\u8349\u7A3F\u5DF2\u4FDD\u5B58": "Draft saved",
-  "\u8349\u7A3F\u4FDD\u5B58\u5931\u8D25": "Draft save failed",
-  "\u672A\u4FDD\u5B58": "Not saved",
-  "\u4FDD\u5B58\u4E2D\u2026": "Saving\u2026",
-  "\u5DF2\u4FDD\u5B58": "Saved",
-  "\u4FDD\u5B58\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5": "Save failed, please retry",
-  "\u786E\u8BA4\u9A73\u56DE\u5E76\u79FB\u5165\u56DE\u6536\u7AD9\uFF1F\u8349\u7A3F\u53EF\u5728\u56DE\u6536\u7AD9\u6062\u590D\u3002": "Reject and move to trash? The draft can be restored from trash.",
-  "\u5408\u5E76\u540E\u8349\u7A3F\u5C06\u79FB\u5165\u56DE\u6536\u7AD9\uFF0C\u662F\u5426\u7EE7\u7EED\uFF1F": "The draft will move to trash after merge. Continue?",
-  "\u786E\u8BA4\u6062\u590D\u8FD9\u4E2A Agent \u4FEE\u6539\u5FEB\u7167\uFF1F\u5F53\u524D\u7B14\u8BB0\u5185\u5BB9\u4F1A\u88AB\u66FF\u6362\u3002": "Restore this Agent snapshot? Current note content will be replaced.",
-  "\u5206\u4EAB\u56FE": "Share image",
-  "\u8F6C Agent": "To Agent",
-  "\u5DF2\u52A0\u5165 Agent \u5F85\u529E": "Added to Agent backlog",
-  "\u5DF2\u590D\u5236\uFF0C\u53EF\u7C98\u8D34\u5230\u5BA2\u6237\u7AEF": "Copied; paste into your client",
-  // 页签 / 范围 / 指标
-  "\u4ECA\u65E5\u8109\u51B2": "Today",
-  "\u77E5\u8BC6\u5730\u5C42": "Insights",
-  "\u667A\u80FD\u4F53\u5DE5\u574A": "Agent Hub",
-  "\u8FD1 7 \u5929": "Last 7 days",
-  "\u8FD1 30 \u5929": "Last 30 days",
-  "\u8FD1 90 \u5929": "Last 90 days",
-  "\u4ECA\u5E74": "This year",
-  "\u8FD1\u4E00\u5E74": "Last year",
-  "\u8D21\u732E\u5206": "Contribution",
-  "\u65B0\u589E\u8BCD\u6570": "Words added",
-  "\u7F16\u8F91\u4F1A\u8BDD": "Edit sessions",
-  "\u65B0\u5EFA\u7B14\u8BB0": "Notes created",
-  "\u5B8C\u6210\u4EFB\u52A1": "Tasks done",
-  "\u4E13\u6CE8\u5206\u949F": "Focus minutes",
-  "\u7EFC\u5408\u52A0\u6743\u5F97\u5206": "Weighted composite score",
-  "\u81EA\u5DF1\u6253\u7684\u5B57": "Words you typed",
-  "\u6709\u6548\u7F16\u8F91\u6B21\u6570": "Effective edit count",
-  "\u5F53\u5929\u6709\u5185\u5BB9\u7684\u65B0\u7B14\u8BB0": "New notes with content that day",
-  "\u65B0\u589E\u52FE\u9009\u7684\u5F85\u529E": "Newly checked tasks",
-  "\u9884\u7559\u7ED9\u4E13\u6CE8\u63D2\u4EF6\u8054\u52A8": "Reserved for focus-plugin integration",
-  // 速记面板
-  "\u901F\u8BB0": "Memos",
-  "\u56DE\u987E": "Review",
-  "\u6F2B\u6B65": "Walk",
-  "\u6807\u7B7E": "Tags",
-  "\u6C89\u6DC0": "Knowledge",
-  "\u60F3\u5230\u4EC0\u4E48\uFF0C\u968F\u624B\u8BB0\u4E0B\u2026\uFF08\u53EF\u7C98\u8D34\u56FE\u7247\uFF09": "Jot anything down\u2026 (paste images)",
-  "\u60F3\u5230\u4EC0\u4E48\uFF0C\u968F\u624B\u8BB0\u4E0B\u2026": "Jot anything down\u2026",
-  "\u6807\u7B7E\uFF0C\u7A7A\u683C\u5206\u9694": "Tags, space separated",
-  "\u8BB0\u4E00\u6761": "Add",
-  "\u641C\u7D22\u901F\u8BB0 / \u8F93\u5165 #\u6807\u7B7E \u7B5B\u9009": "Search memos / type #tag to filter",
-  "\u8FD8\u6CA1\u6709\u901F\u8BB0\uFF0C\u6216\u6CA1\u6709\u5339\u914D\u7684\u901F\u8BB0\u3002": "No memos yet, or none match.",
-  "\u8FD8\u6CA1\u6709\u901F\u8BB0\u53EF\u4EE5\u6F2B\u6B65\u3002": "No memos to walk yet.",
-  "\u8FD8\u6CA1\u6709\u6807\u7B7E\u3002": "No tags yet.",
-  "\u56FE\u7247\u5DF2\u63D2\u5165\u901F\u8BB0": "Image inserted into memo",
-  "\u5185\u5BB9\u4E3A\u7A7A\uFF0C\u672A\u4FDD\u5B58": "Empty content; not saved",
-  "\u5220\u9664\u8FD9\u6761\u901F\u8BB0\uFF1F\u65E5\u8BB0\u4E2D\u5BF9\u5E94\u7684\u901F\u8BB0\u8BB0\u5F55\u4E5F\u4F1A\u4E00\u5E76\u79FB\u9664\u3002": "Delete this memo? The matching daily-note entry is removed too.",
-  "\u5DF2\u5F52\u6863\uFF0C\u53EF\u5728\u300C\u542B\u5F52\u6863\u300D\u4E2D\u67E5\u770B": "Archived; view under \u201CInclude archived\u201D",
-  "\u5DF2\u53D6\u6D88\u5F52\u6863": "Unarchived",
-  "\u8FD9\u5929\u6CA1\u6709\u901F\u8BB0\u3002": "No memos on this day.",
-  "\u5171\u540C\u7684\u8BCD\uFF1A": "Shared words: ",
-  "\u7EE7\u7EED\u6F2B\u6B65 \u2192": "Keep walking \u2192",
-  "\u8FD8\u6CA1\u6709\u6C89\u6DC0\u3002\u8BA9\u667A\u80FD\u4F53\u8C03\u7528 add_knowledge \u6216 record_work_log \u540E\uFF0C\u7B14\u8BB0\u4F1A\u51FA\u73B0\u5728\u8FD9\u91CC\u3002": "No knowledge yet. Notes appear here after an agent calls add_knowledge or record_work_log.",
-  "\u77E5\u8BC6\u6C89\u6DC0": "Knowledge",
-  "\u5DE5\u4F5C\u65E5\u5FD7": "Work logs",
-  "\u672A\u5206\u7C7B": "Uncategorized",
-  "\u8FD9\u7BC7\u7B14\u8BB0\u8FD8\u6CA1\u6709\u76F8\u5173\u7684\u901F\u8BB0\u6216\u5DE5\u4F5C\u65E5\u5FD7\u3002": "No related memos or work logs for this note yet.",
-  "\u4E0E\u300A{name}\u300B\u76F8\u5173": "Related to \u201C{name}\u201D",
-  "\u539F\u5F85\u529E": "Source task",
-  "\u6BCF\u65E5\u56DE\u987E": "Daily review",
-  "\u53BB\u5E74\u4ECA\u65E5": "This day last year",
-  "\u4E0A\u6708\u4ECA\u65E5": "This day last month",
-  "\u5171\u540C\u7684\u8BCD\uFF1A{n} \u4E2A": "Shared words: {n}",
-  "{n} \u4E2A": "{n}",
-  // 看板 · 今日
-  "\u4ECA\u5929": "Today",
-  "Sediment \u77E5\u8BC6\u8109\u51B2": "Sediment Knowledge Pulse",
-  "{n} \u5206": "{n} pts",
-  "\u5199\u4F5C {words} / {goal} \u5B57": "Writing {words} / {goal} words",
-  "\u8FDE\u7EED {streak} \u5929 \xB7 \u6700\u957F {longest} \u5929": "Streak {streak} days \xB7 best {longest}",
-  "\u8FD1": "Last",
-  "\u8FD1 53 \u5468": "Last 53 weeks",
-  "{active} \u5929\u6709\u8BB0\u5F55 \xB7 \u65E5\u5747 {avg} \u5206": "{active} days recorded \xB7 avg {avg} pts/day",
-  "{n} \u5929": "{n} days",
-  "\u6700\u957F {n} \u5929 \xB7 \u6309\u5168\u90E8\u5386\u53F2": "Best {n} days \xB7 all history",
-  "0 \u5C0F\u65F6": "0 hours",
-  "\u9010\u6B65\u5199\u5165 {typed} \u5B57 \xB7 \u5927\u6BB5\u6355\u83B7 {captured} \u5B57": "Typed {typed} words \xB7 pasted {captured} words",
-  "{words} \u5B57 \xB7 {percent}%": "{words} words \xB7 {percent}%",
-  "\u5C55\u5F00\u5176\u4F59 {n} \u9879": "Show {n} more",
-  "\u8FD8\u6CA1\u5F00\u59CB": "Not started",
-  "\u6218\u62A5\u56FE\u7247": "Report image",
-  "\u5FEB\u901F\u901F\u8BB0": "Quick memo",
-  "\u67E5\u770B\u4ECA\u65E5\u4EFB\u52A1": "View today's tasks",
-  "\u5F00\u59CB\u4E13\u6CE8": "Start focus",
-  "\u4ECA\u65E5 Agent \u52A8\u6001": "Today's agent activity",
-  "\u4ECA\u5929\u8FD8\u6CA1\u6709\u667A\u80FD\u4F53\u6D3B\u52A8\u3002": "No agent activity today yet.",
-  "\u8DF3\u8FC7": "Skip",
-  // 看板 · 洞察
-  "\u8109\u51B2\u6982\u89C8": "Overview",
-  "\u70ED\u529B\u56FE": "Heatmap",
-  "\u5199\u4F5C\u8D8B\u52BF": "Writing trend",
-  "\u6295\u5165\u5206\u5E03": "Distribution",
-  "\u5E74\u5EA6\u753B\u50CF": "Yearly",
-  "\u672C\u5468\u590D\u76D8": "Weekly review",
-  "\u77E5\u8BC6\u8109\u51B2\u6982\u89C8": "Knowledge Pulse overview",
-  "\u53EF\u9760\u8BB0\u5F55": "reliable records",
-  "\u7D2F\u8BA1\u8D21\u732E\u5206": "Total contribution",
-  "\u6D3B\u8DC3\u5929\u6570": "Active days",
-  "\u5F53\u524D\u8FDE\u7EED": "Current streak",
-  "\u6295\u5165\u65F6\u95F4": "Time invested",
-  "{n} \u5C0F\u65F6": "{n} hours",
-  "\u6700\u9AD8\u7684\u4E00\u5929": "Best day",
-  "\u6709\u8BB0\u5F55\u7684\u65E5\u5B50": "Days with records",
-  "\u4EA4\u4E92 / \u4E13\u6CE8": "Interaction / focus",
-  "\u4EBA\u673A\u53CC\u8272\u70ED\u529B\u56FE": "Human / AI dual heatmap",
-  "\u5E74\u5EA6\u77E5\u8BC6\u6D3B\u8DC3\u8109\u51B2": "Yearly knowledge pulse",
-  "\u4EBA": "Human",
-  "AI": "AI",
-  "\u5C11": "Less",
-  "\u591A": "More",
-  "\u5199\u4F5C\u4E0E\u65F6\u95F4\u8D8B\u52BF": "Writing & time trend",
-  "\u6BCF\u65E5\u5199\u4F5C": "Daily writing",
-  "\u5199\u4F5C\u53D8\u5316": "Writing change",
-  "\u65F6\u95F4\u6295\u5165": "Time invested",
-  "\u5199\u4F5C\u6765\u6E90": "Writing source",
-  "\u9010\u6B65\u5199\u5165 / \u5927\u6BB5\u6355\u83B7": "Typed / pasted",
-  "\u6295\u5165\u53BB\u5411": "Where words go",
-  "\u6309\u76EE\u5F55\u7EDF\u8BA1\uFF08\u7B14\u8BB0 \xD7 \u5929\uFF09": "By folder (note \xD7 day)",
-  "\u6536\u8D77": "Collapse",
-  "\u6D3B\u8DC3\u65F6\u6BB5": "Active hours",
-  "\u6309\u5C0F\u65F6\u7684\u65B0\u589E\u8BCD\u6570": "Words added by hour",
-  "\u6295\u5165\u8282\u5F8B\u77E9\u9635": "Rhythm matrix",
-  "\u516D\u9879\u6307\u6807\u6309\u5929\u5BF9\u9F50": "Six metrics aligned by day",
-  "\u4EC5\u6D3B\u8DC3\u65E5\u671F": "Active days only",
-  "\u5168\u90E8\u65E5\u671F": "All days",
-  "\u65E5\u671F": "Date",
-  "\u8D21\u732E": "Contrib",
-  "\u65B0\u589E\u8BCD": "Words",
-  "\u6D3B\u8DC3": "Active",
-  "\u4E13\u6CE8": "Focus",
-  "\u65B0\u7B14\u8BB0": "Notes",
-  "\u4EFB\u52A1": "Tasks",
-  "\u5E74\u8F6E": "Year wheel",
-  "\u5730\u5E73\u7EBF \xB7 \u6700\u8FD1 60 \u5929": "Horizon \xB7 last 60 days",
-  "AI \u65B0\u589E\u8BCD": "AI words",
-  // 设置
-  "Sediment \u8BBE\u7F6E": "Sediment settings",
-  "\u9996\u6B21\u4F7F\u7528\u68C0\u67E5": "First-use check",
-  "\u5148\u786E\u8BA4\u65E5\u8BB0\u76EE\u5F55\u3001\u6570\u636E\u4F4D\u7F6E\u548C\u5907\u4EFD\uFF1BAgent \u63A5\u5165\u662F\u53EF\u9009\u7684\u3002": "Start by confirming the daily-note folder, data location, and backup; Agent access is optional.",
-  "\u65E5\u8BB0\u6587\u4EF6\u5939": "Daily note folder",
-  "\u901F\u8BB0\u5199\u5165\u7684\u76EE\u5F55\uFF0C\u7559\u7A7A\u8868\u793A\u5E93\u6839\u76EE\u5F55\u3002": "Folder for memos; empty means vault root.",
-  "\u65E5\u8BB0\u6587\u4EF6\u540D\u683C\u5F0F": "Daily note filename format",
-  "\u652F\u6301 YYYY / MM / DD \u5360\u4F4D\u7B26\u3002": "Supports YYYY / MM / DD placeholders.",
-  "\u901F\u8BB0\u6BB5\u843D\u6807\u9898": "Memo section heading",
-  "\u6BCF\u5468\u8D77\u59CB\u65E5": "Week starts on",
-  "\u5468\u4E00": "Monday",
-  "\u5468\u65E5": "Sunday",
-  "\u70ED\u529B\u56FE\u9ED8\u8BA4\u6307\u6807": "Default heatmap metric",
-  "\u7EDF\u8BA1\u6709\u6548\u7F16\u8F91\u4F1A\u8BDD": "Count effective edit sessions",
-  "\u540C\u4E00\u6587\u4EF6\u540C\u4E00\u5929\u6700\u591A\u8BB0\u4E00\u6B21\uFF0C\u907F\u514D\u8FDE\u7EED\u952E\u5165\u5237\u5206\u3002": "At most once per file per day, to avoid inflating by continuous typing.",
-  "\u590D\u76D8\u5F52\u6863\u6587\u4EF6\u5939": "Review archive folder",
-  "Agent \u5DE5\u4F5C\u65E5\u5FD7\u76EE\u5F55": "Agent work-log folder",
-  "\u667A\u80FD\u4F53\u6BCF\u6B21\u5DE5\u4F5C\u7684\u6C89\u6DC0\u65E5\u5FD7\uFF0C\u9ED8\u8BA4\u6309\u5929\u5199\u5165\u4E00\u4E2A\u6587\u4EF6\u3002": "Per-session agent logs; one file per day by default.",
-  "\u77E5\u8BC6\u6C89\u6DC0\u76EE\u5F55": "Knowledge folder",
-  "\u667A\u80FD\u4F53\u901A\u8FC7 add_knowledge \u5199\u5165\u7684\u957F\u671F\u7B14\u8BB0\u76EE\u5F55\u3002": "Long-term notes written by agents via add_knowledge.",
-  "\u77E5\u8BC6\u5E93\u5206\u7C7B": "Knowledge categories",
-  "\u9017\u53F7\u5206\u9694\uFF0C\u667A\u80FD\u4F53\u6C89\u6DC0\u7B14\u8BB0\u65F6\u4F1A\u6309\u5206\u7C7B\u5EFA\u5B50\u76EE\u5F55\u3002": "Comma separated; agents create subfolders per category.",
-  "Agent \u7981\u6B62\u8BBF\u95EE\u7684\u6587\u4EF6\u5939": "Folders denied to Agent",
-  "\u9017\u53F7\u5206\u9694\uFF1B\u8FD9\u4E9B\u76EE\u5F55\u5BF9 Agent \u7684\u8BFB\u5199\u548C\u641C\u7D22\u5168\u90E8\u9690\u85CF\u3002": "Comma separated; hidden from agent read/write/search.",
-  "Agent \u7981\u6B62\u8BBF\u95EE\u7684\u6807\u7B7E": "Tags denied to Agent",
-  "\u9017\u53F7\u5206\u9694\uFF1B\u5E26\u8FD9\u4E9B\u6807\u7B7E\u7684\u7B14\u8BB0\u5BF9 Agent \u4E0D\u53EF\u8BFB\u3002": "Comma separated; notes with these tags are unreadable to agents.",
-  "Agent \u6743\u9650\uFF08\u53EF\u9009\uFF09": "Agent permissions (optional)",
-  "Agent \u5DE5\u4F5C\u6A21\u5F0F": "Agent work mode",
-  "\u9009\u62E9\u53EA\u8BFB\u3001\u8349\u7A3F\u3001\u786E\u8BA4\u540E\u5199\u5165\u6216\u81EA\u52A8\u6267\u884C\uFF1B\u5B9E\u9645\u6743\u9650\u4ECD\u53D7\u4E0B\u65B9\u5F00\u5173\u7EA6\u675F\u3002": "Choose read-only, draft, confirm-before-write, or automatic execution; detailed switches still apply.",
-  "\u53EA\u8BFB": "Read-only",
-  "\u8349\u7A3F": "Draft",
-  "\u786E\u8BA4\u540E\u5199\u5165": "Confirm before writing",
-  "\u81EA\u52A8\u6267\u884C": "Automatic",
-  "\u8BBF\u95EE\u6A21\u5F0F": "Access mode",
-  "allowlist \u6A21\u5F0F\u4E0B Agent \u53EA\u80FD\u8BBF\u95EE\u4E0B\u65B9\u767D\u540D\u5355\u76EE\u5F55\u3002\u9ED8\u8BA4\u5168\u5E93\uFF0C\u4F46\u7CFB\u7EDF\u76EE\u5F55\u59CB\u7EC8\u7981\u6B62\u3002": "In allowlist mode agents only reach the folders below. Default is whole vault; system folders always denied.",
-  "\u5168\u5E93\u53EF\u8BBF\u95EE\uFF08\u9ED8\u8BA4\uFF09": "Whole vault (default)",
-  "\u4EC5\u767D\u540D\u5355\u76EE\u5F55": "Allowlist only",
-  "\u767D\u540D\u5355\u76EE\u5F55": "Allowed folders",
-  "\u9017\u53F7\u5206\u9694\uFF0C\u4F8B\u5982 knowledge,projects,agent-logs\u3002": "Comma separated, e.g. knowledge,projects,agent-logs.",
-  "\u5141\u8BB8\u8BFB\u53D6": "Allow read",
-  "\u5141\u8BB8\u65B0\u5EFA": "Allow create",
-  "\u5141\u8BB8\u5C40\u90E8\u4FEE\u6539": "Allow patch",
-  "\u5141\u8BB8\u5168\u91CF\u8986\u76D6": "Allow overwrite",
-  "\u9ED8\u8BA4\u5F00\u542F\u4EE5\u517C\u5BB9\u65E7\u5DE5\u4F5C\u6D41\uFF1B\u5173\u95ED\u540E Agent \u5FC5\u987B\u7528 patch_note\u3002": "On by default for legacy workflows; off forces agents to use patch_note.",
-  "\u5141\u8BB8\u5220\u9664": "Allow delete",
-  "\u5F53\u524D\u63D2\u4EF6\u672A\u5F00\u653E\u5220\u9664\u5DE5\u5177\uFF0C\u9ED8\u8BA4\u5173\u95ED\u3002": "No delete tool is exposed; off by default.",
-  "\u4FEE\u6539\u524D\u5B58\u5FEB\u7167": "Snapshot before changes",
-  "\u8986\u76D6\u6216 Patch \u524D\u4FDD\u5B58\u539F\u6587\uFF0C\u652F\u6301 Agent \u53D8\u66F4\u5BA1\u67E5\u4E0E\u4E00\u952E\u6062\u590D\u3002": "Save original before overwrite/patch; enables review and one-click restore.",
-  "\u81EA\u52A8\u5907\u4EFD\u7EDF\u8BA1\u6570\u636E": "Auto-backup stats",
-  "\u628A data.json \u5FEB\u7167\u5199\u5165\u5E93\u5185\u666E\u901A\u6587\u4EF6\u5939\uFF0C\u907F\u514D .obsidian \u88AB\u540C\u6B65\u5DE5\u5177\u5FFD\u7565\u3002": "Write data.json snapshots to a normal vault folder, since .obsidian may be ignored by sync tools.",
-  "\u5907\u4EFD\u76EE\u5F55": "Backup folder",
-  "\u5E93\u5185\u76F8\u5BF9\u8DEF\u5F84\uFF0C\u9ED8\u8BA4 sediment-backup/\u3002": "Vault-relative path; default sediment-backup/.",
-  "\u4FDD\u7559\u5907\u4EFD\u4EFD\u6570": "Backups to keep",
-  "\u770B\u677F\u753B\u98CE": "Dashboard art style",
-  "\u50CF\u7D20\u6E56\u9762 / \u6C34\u58A8\u5C71\u6C34 / \u50CF\u7D20\u57CE\u5E02\uFF0C\u4E5F\u53EF\u5728\u770B\u677F\u9875\u811A\u70B9\u300C\u6362\u753B\u98CE\u300D\u3002": "Pixel lake / ink landscape / pixel city; also via the dashboard footer.",
-  "\u50CF\u7D20\u6E56\u9762": "Pixel lake",
-  "\u6C34\u58A8\u5C71\u6C34": "Ink landscape",
-  "\u50CF\u7D20\u57CE\u5E02": "Pixel city",
-  "\u754C\u9762\u5BC6\u5EA6": "Interface density",
-  "\u7CBE\u7B80\u6A21\u5F0F\u4F18\u5148\u663E\u793A\u6355\u83B7\u3001\u4EFB\u52A1\u548C\u6458\u8981\u3002": "Compact mode prioritizes capture, tasks, and summaries.",
-  "\u7CBE\u7B80": "Compact",
-  "\u6807\u51C6": "Standard",
-  "\u5B8C\u6574": "Full",
-  "\u51CF\u5C11\u52A8\u6001\u6548\u679C": "Reduce motion",
-  "\u5173\u95ED\u6A2A\u5E45\u548C\u5361\u7247\u52A8\u753B\uFF0C\u4FDD\u7559\u5FC5\u8981\u72B6\u6001\u53CD\u9988\u3002": "Disable banner and card animation while keeping necessary status feedback.",
-  "\u6BCF\u65E5\u5199\u4F5C\u76EE\u6807": "Daily writing goal",
-  "\u770B\u677F\u4ECA\u5929\u5361\u7247\u663E\u793A\u8FDB\u5EA6\uFF0C0 \u8868\u793A\u5173\u95ED\u3002": "Shown on the Today card; 0 disables.",
-  "\u7EDF\u8BA1\u53E3\u5F84\uFF08\u8D21\u732E\u5206\u5C01\u9876\u4E0E\u6743\u91CD\uFF09": "Statistics (contribution cap & weights)",
-  "\u5355\u65E5\u8D21\u732E\u5206\u5C01\u9876": "Daily contribution cap",
-  "\u9632\u6B62\u5355\u65E5\u5237\u5206\u62C9\u7206\u70ED\u529B\u56FE\uFF0C0 \u8868\u793A\u4E0D\u5C01\u9876\u3002\u9ED8\u8BA4 120\u3002": "Prevents a single day from blowing up the heatmap; 0 = no cap. Default 120.",
-  "\u5355\u6B21\u5199\u5165\u8BCD\u6570\u4E0A\u9650": "Per-write word cap",
-  "\u4E00\u6B21\u4FDD\u5B58/\u7C98\u8D34\u6700\u591A\u8BA1\u5165\u7684\u8BCD\u6570\uFF0C0 \u8868\u793A\u4E0D\u5C01\u9876\u3002\u9ED8\u8BA4 4000\u3002": "Max words counted per save/paste; 0 = no cap. Default 4000.",
-  "\u6743\u91CD\uFF1A\u65B0\u5EFA\u7B14\u8BB0\uFF08\u6BCF\u7BC7\uFF09": "Weight: note created (each)",
-  "\u9ED8\u8BA4 2 \u5206\u3002": "Default 2 points.",
-  "\u6743\u91CD\uFF1A\u7F16\u8F91\u4F1A\u8BDD\uFF08\u6BCF\u6B21\uFF09": "Weight: edit session (each)",
-  "\u9ED8\u8BA4 1 \u5206\u3002": "Default 1 point.",
-  "\u6743\u91CD\uFF1A\u5B8C\u6210\u4EFB\u52A1\uFF08\u6BCF\u6761\uFF09": "Weight: task completed (each)",
-  "\u6743\u91CD\uFF1A\u6BCF\u591A\u5C11\u65B0\u589E\u8BCD\u5F97 1 \u5206": "Weight: words per point",
-  "\u9ED8\u8BA4 100 \u8BCD\u3002": "Default 100 words.",
-  "\u6743\u91CD\uFF1A\u6BCF\u591A\u5C11\u4E13\u6CE8\u5206\u949F\u5F97 1 \u5206": "Weight: focus minutes per point",
-  "\u9ED8\u8BA4 25 \u5206\u949F\u3002": "Default 25 minutes.",
-  "\u4FEE\u6539\u6743\u91CD\u6216\u5C01\u9876\u540E\u4F1A\u7ACB\u5373\u5168\u91CF\u91CD\u7B97\u5386\u53F2\u8D21\u732E\u5206\u3002Agent \u5199\u5165\u53EA\u8BA1\u300CAI \u65B0\u589E\u8BCD\u300D\uFF0C\u4E0D\u91CD\u590D\u8BA1\u5165\u4EBA\u7C7B\u5199\u4F5C\u7EDF\u8BA1\u3002": "Changing weights or cap recomputes all history immediately. Agent writes count only as AI words, not human writing.",
-  "Agent \u63A5\u5165\uFF08\u672C\u5730 HTTP / MCP\uFF09": "Agent access (local HTTP / MCP)",
-  "\u542F\u7528\u672C\u5730 Agent API": "Enable local Agent API",
-  "\u53EA\u76D1\u542C 127.0.0.1\uFF0C\u4F9B MCP \u6865\u63A5\u548C\u672C\u5730\u811A\u672C\u8C03\u7528\u4E2A\u4EBA\u77E5\u8BC6\u5E93\u3002": "Listens on 127.0.0.1 only, for the MCP bridge and local scripts.",
-  "\u7AEF\u53E3": "Port",
-  "\u9ED8\u8BA4 27123\uFF0C\u4FEE\u6539\u540E\u670D\u52A1\u4F1A\u81EA\u52A8\u91CD\u542F\u3002": "Default 27123; the server restarts on change.",
-  "\u8BBF\u95EE\u4EE4\u724C": "Access token",
-  "HTTP \u8BF7\u6C42\u4E0E MCP \u6865\u63A5\u90FD\u5FC5\u987B\u643A\u5E26\u6B64\u4EE4\u724C\u3002": "Required for both HTTP requests and the MCP bridge.",
-  "\u70B9\u51FB\u53F3\u4FA7\u6309\u94AE\u751F\u6210": "Click the button to generate",
-  "\u91CD\u65B0\u751F\u6210\u4EE4\u724C": "Regenerate token",
-  "\u6CC4\u9732\u6216\u9057\u5FD8\u65F6\u70B9\u51FB\uFF0C\u65E7\u4EE4\u724C\u7ACB\u5373\u5931\u6548\u3002": "Click if leaked or forgotten; the old token is invalidated immediately.",
-  "\u751F\u6210\u65B0\u4EE4\u724C": "Generate new token",
-  "\u4E00\u952E\u914D\u7F6E\u667A\u80FD\u4F53\u5BA2\u6237\u7AEF": "One-click agent client setup",
-  "\u81EA\u52A8\u63A2\u6D4B\u672C\u673A\u5DF2\u5B89\u88C5\u7684\u667A\u80FD\u4F53\uFF0C\u52FE\u9009\u540E\u4E00\u952E\u5199\u5165 MCP \u914D\u7F6E\u3002\u5199\u5165\u524D\u4F1A\u5907\u4EFD\u539F\u6587\u4EF6\uFF0C\u91CD\u542F\u5BA2\u6237\u7AEF\u5373\u53EF\u751F\u6548\u3002": "Detects installed agents and writes MCP config in one click. The original file is backed up first; restart the client to apply.",
-  "\u6CA1\u6709\u63A2\u6D4B\u5230\u53D7\u652F\u6301\u7684\u667A\u80FD\u4F53\u5BA2\u6237\u7AEF\u3002": "No supported agent client detected.",
-  "\u5DF2\u914D\u7F6E": "configured",
-  "\u91CD\u65B0\u5199\u5165": "Rewrite",
-  "\u4E00\u952E\u914D\u7F6E": "Set up",
-  "\u590D\u5236\u914D\u7F6E JSON": "Copy config JSON",
-  "\u624B\u52A8\u7C98\u8D34\u5230\u5BA2\u6237\u7AEF\u7684 MCP \u914D\u7F6E\u6587\u4EF6\u4E2D\u3002": "Paste manually into the client's MCP config file.",
-  "\u914D\u7F6E\u5DF2\u590D\u5236": "Config copied",
-  "\u914D\u7F6E\u5931\u8D25": "Setup failed",
-  "\u914D\u7F6E\u5DF2\u5199\u5165\uFF0C\u91CD\u542F\u5BA2\u6237\u7AEF\u540E\u751F\u6548": "config written; restart the client to apply",
-  "\u754C\u9762\u8BED\u8A00": "Interface language",
-  "\u8DDF\u968F Obsidian\uFF08auto\uFF09\uFF0C\u6216\u5F3A\u5236\u4E2D\u6587 / \u82F1\u6587\u3002": "Follow Obsidian (auto), or force Chinese / English.",
-  "\u8DDF\u968F\u7CFB\u7EDF": "Follow system",
-  "\u4E2D\u6587": "Chinese",
-  "\u82F1\u6587": "English",
-  // 模态框
-  "\u7B14\u8BB0\u5065\u5EB7\u5EA6": "Note health",
-  "\u5BFC\u51FA\u6570\u636E": "Export data",
-  "\u66F4\u65B0\u8BB0\u5F55": "Changelog",
-  "\u8F6C\u4E3A Agent \u4EFB\u52A1": "Convert to Agent tasks",
-  "\u683C\u5F0F": "Format",
-  "\u5305\u542B\u901F\u8BB0\u6B63\u6587": "Include memo text",
-  "\u5305\u542B\u6587\u4EF6\u8DEF\u5F84": "Include file paths",
-  "\u5BFC\u51FA": "Export",
-  "\u9ED8\u8BA4\u8131\u654F\uFF1A\u4E0D\u542B\u901F\u8BB0\u6B63\u6587\u4E0E\u8DEF\u5F84\uFF0C\u4E5F\u4E0D\u542B\u4EE4\u724C\u3002": "Sanitized by default: no memo text, paths, or token.",
-  "\u6807\u7B7E\uFF08\u7A7A\u683C\u5206\u9694\uFF09": "Tags (space separated)",
-  "\u5B64\u513F\u7B14\u8BB0\uFF1D\u65E0\u51FA\u94FE\u65E0\u53CD\u94FE\uFF1B\u65AD\u94FE\uFF1D\u94FE\u63A5\u6307\u5411\u4E0D\u5B58\u5728\u7684\u7B14\u8BB0\uFF1B\u4E45\u672A\u66F4\u65B0\uFF1D90 \u5929\u4EE5\u4E0A\u3002\u52FE\u9009\u540E\u8F6C\u4E3A Agent \u4EFB\u52A1\uFF0C\u667A\u80FD\u4F53\u6574\u7406\u5B8C\u6210\u4F1A\u6807\u8BB0 #agent-done\u3002": "Orphan = no outgoing or back links; broken link = target note missing; stale = untouched for 90+ days. Select to convert into Agent tasks; agents mark #agent-done when finished.",
-  "\u6CA1\u6709\u53D1\u73B0\u5065\u5EB7\u95EE\u9898\uFF0C\u5E93\u5F88\u6574\u6D01\u3002": "No health issues found; your vault is tidy.",
-  "\u65AD\u94FE {broken} \xB7 \u5B64\u513F {orphan} \xB7 \u4E45\u672A\u66F4\u65B0 {stale}": "Broken {broken} \xB7 orphan {orphan} \xB7 stale {stale}",
-  "\u5B64\u513F\u7B14\u8BB0": "Orphan",
-  "\u65AD\u94FE": "Broken link",
-  "\u4E45\u672A\u66F4\u65B0": "Stale",
-  "\u5DF2\u521B\u5EFA {n} \u6761 Agent \u6574\u7406\u4EFB\u52A1\uFF08#to-agent #note-health\uFF09": "Created {n} agent cleanup tasks (#to-agent #note-health)",
-  "\u6240\u9009\u95EE\u9898\u90FD\u5DF2\u6709\u5BF9\u5E94\u7684\u672A\u5B8C\u6210\u4EFB\u52A1": "All selected issues already have pending tasks",
-  "\u8F6C\u4E3A Agent \u4EFB\u52A1\uFF08{n}\uFF09": "Convert to Agent tasks ({n})",
-  "\u8BBF\u95EE\u4EE4\u724C\u7B49\u654F\u611F\u8BBE\u7F6E\u6C38\u4E0D\u5BFC\u51FA\u3002\u901F\u8BB0\u6B63\u6587\u4E0E\u6587\u4EF6\u8DEF\u5F84\u9ED8\u8BA4\u5254\u9664\uFF0C\u52FE\u9009\u540E\u624D\u5305\u542B\u3002\u6587\u4EF6\u5199\u5165\u5E93\u5185 sediment-export/ \u76EE\u5F55\u3002": "Sensitive settings such as the access token are never exported. Memo text and file paths are excluded unless enabled. Files are written to sediment-export/ in the vault.",
-  "CSV \u53EA\u542B\u6BCF\u65E5\u805A\u5408\u6307\u6807\uFF1BJSON \u542B\u5929\u8BB0\u5F55\u3001\u901F\u8BB0\u5143\u6570\u636E\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\u3002": "CSV holds daily aggregates only; JSON holds day records, memo metadata, and work logs.",
-  "JSON\uFF08\u5B8C\u6574\u7ED3\u6784\uFF09": "JSON (full structure)",
-  "CSV\uFF08\u6BCF\u65E5\u6307\u6807\uFF09": "CSV (daily metrics)",
-  "\u5173\u95ED\u65F6\u53EA\u5BFC\u51FA\u901F\u8BB0\u7684\u65F6\u95F4\u3001\u6807\u7B7E\u4E0E\u72B6\u6001\u3002": "When off, only memo time, tags, and status are exported.",
-  "\u5173\u95ED\u65F6\u5254\u9664\u6765\u6E90\u5F85\u529E\u8DEF\u5F84\u3001\u4EA7\u51FA\u8DEF\u5F84\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\u6D89\u53CA\u6587\u4EF6\u3002": "When off, source task paths, result paths, and work-log files are removed.",
-  "\u5DF2\u5BFC\u51FA\uFF1A{path}": "Exported: {path}",
-  "\u5BFC\u51FA\u5931\u8D25": "Export failed",
-  // 看板 · 智能体工坊 / 年度 / 复盘 / 参照线
-  "\u6708\u62A5": "Monthly",
-  "Agent \u53D8\u66F4\u5BA1\u67E5": "Agent change review",
-  "\u6682\u65E0 Agent \u53D8\u66F4\u8BB0\u5F55\u3002": "No agent changes yet.",
-  "\u5C40\u90E8\u4FEE\u6539": "Patch",
-  "\u5C5E\u6027": "Frontmatter",
-  "\u65B0\u5EFA/\u8986\u76D6": "Create/overwrite",
-  "\u5DEE\u5F02({n})": "Diff ({n})",
-  "\u53D8\u66F4\u5BF9\u6BD4": "change diff",
-  "\u6062\u590D": "Restore",
-  "\u5DF2\u6062\u590D\u5230\u6700\u8FD1\u5907\u4EFD": "Restored to the latest backup",
-  "\u5F85\u529E \xB7 \u4ECA\u65E5 / \u9057\u7559 / Agent": "Tasks \xB7 today / overdue / agent",
-  "\u52A0\u8F7D\u4E2D\u2026": "Loading\u2026",
-  "\u6CA1\u6709\u672A\u5B8C\u6210\u5F85\u529E\u3002": "No pending tasks.",
-  "\u5B8C\u6210": "Complete",
-  "\u8BA4\u9886": "Claim",
-  "\u786E\u8BA4\u5C06\u6B64\u5F85\u529E\u6807\u8BB0\u4E3A\u5B8C\u6210\uFF1F": "Mark this task complete?",
-  "\u5F85\u529E\u5DF2\u5B8C\u6210": "Task completed",
-  "\u4EFB\u52A1\u5DF2\u8BA4\u9886": "Task claimed",
-  "\u786E\u8BA4\u5B8C\u6210\u6B64 Agent \u5F85\u529E\uFF1F": "Complete this Agent task?",
-  "Agent \u5F85\u529E\u5DF2\u5B8C\u6210": "Agent task completed",
-  "\u64CD\u4F5C\u5931\u8D25": "Operation failed",
-  "Agent \u4EFB\u52A1": "Agent task",
-  "\u8FDE\u63A5\u4E0E\u8C03\u7528\u72B6\u6001": "Connection & call status",
-  "\u672C\u5730 API": "Local API",
-  "\u5728\u7EBF": "Online",
-  "\u672A\u542F\u7528": "Disabled",
-  "\u7D2F\u8BA1\u8C03\u7528": "Total calls",
-  "{n} \u6B21": "{n} calls",
-  "\u6700\u8FD1\u8C03\u7528": "Last call",
-  "AI \u6C89\u6DC0\u5BA1\u6838": "AI knowledge review",
-  "\u6CA1\u6709\u5F85\u5BA1\u6838\u7684 AI \u8349\u7A3F\u3002": "No AI drafts awaiting review.",
-  "\u91C7\u7EB3\u5E76\u5F52\u6863": "Accept & archive",
-  "\u5DF2\u91C7\u7EB3": "Accepted",
-  "\u5408\u5E76\u5230\u5173\u8054\u7B14\u8BB0": "Merge into linked note",
-  "\u9A73\u56DE\u5220\u9664": "Reject & delete",
-  "\u5DF2\u9A73\u56DE\u5E76\u79FB\u5165\u56DE\u6536\u7AD9": "Rejected and moved to trash",
-  "\u8FD9\u5F20\u8349\u7A3F\u6CA1\u6709\u5173\u8054\u7B14\u8BB0\uFF0C\u65E0\u6CD5\u5408\u5E76": "This draft has no linked note to merge into",
-  "\u627E\u4E0D\u5230\u5173\u8054\u7B14\u8BB0\uFF1A{name}": "Linked note not found: {name}",
-  "\u5DF2\u5408\u5E76\u5230 {name}": "Merged into {name}",
-  "\u667A\u80FD\u4F53\u5DE5\u4F5C\u65E5\u5FD7": "Agent work logs",
-  "\u8FD8\u6CA1\u6709\u5DE5\u4F5C\u65E5\u5FD7\u3002": "No work logs yet.",
-  "\u6570\u636E\u53EA\u7559\u5728\u672C\u5730": "data stays local",
-  "\u6362\u753B\u98CE": "Change art",
-  "\u77E5\u8BC6\u6307\u7EB9": "Knowledge fingerprint",
-  "\u6BCF\u5929\u4E00\u6839\u8272\u6761": "One bar per day",
-  "\u6708\u76F8\u65E5\u5386": "Moon-phase calendar",
-  "\u6EE1\u6708\u662F\u9AD8\u5CF0\u65E5\uFF0C\u65B0\u6708\u662F\u4F11\u606F\u65E5": "Full moon = peak day, new moon = rest day",
-  "\u6708\u62A5\u6D77\u62A5": "Monthly poster",
-  "\u70B9\u5DE6\u53F3\u7BAD\u5934\u5207\u6362\u6708\u4EFD": "Use the arrows to change month",
-  "{year} \u5E74": "{year}",
-  "\u6307\u7EB9": "Fingerprint",
-  "\u6708\u76F8": "Moon phases",
-  "\u8282\u5F8B\u77E9\u9635": "Rhythm matrix",
-  "\u672C\u6708\u8D21\u732E\u5206": "Contribution this month",
-  "\u6D3B\u8DC3 {n} \u5929": "Active {n} days",
-  "\u65B0\u589E {n} \u5B57": "{n} words added",
-  "\u5BFC\u51FA PNG": "Export PNG",
-  "\u77E5\u8BC6\u590D\u76D8 \xB7 \u672C\u5468": "Knowledge review \xB7 this week",
-  "\u590D\u5236 Markdown": "Copy Markdown",
-  "\u5468\u590D\u76D8\u5DF2\u590D\u5236": "Weekly review copied",
-  "\u756A\u8304": "Focus",
-  "\u77ED\u4F11": "Short break",
-  "\u957F\u4F11": "Long break",
-  "\u5E74\u5EA6\u6D3B\u8DC3\u70ED\u529B\u56FE\uFF0C\u65B9\u5411\u952E\u79FB\u52A8\uFF0C\u56DE\u8F66\u9009\u4E2D": "Yearly activity heatmap; arrow keys to move, Enter to select",
-  "\u5747\u503C {n}": "Mean {n}",
-  "\u76EE\u6807 {n}": "Goal {n}",
-  "\u65B0\u589E\u5747\u503C {n}": "Added mean {n}",
-  "\u6D3B\u8DC3\u5747\u503C {n}": "Active mean {n}",
-  "Sediment \u66F4\u65B0\u8BB0\u5F55": "Sediment changelog",
-  "\u5907\u4EFD\u7248\u672C": "Backup version",
-  "\u5F53\u524D\u7248\u672C": "Current version"
-};
-function t(zh) {
-  var _a2;
-  return locale === "en" ? (_a2 = EN[zh]) != null ? _a2 : zh : zh;
-}
-function tf(zh, vars) {
-  return t(zh).replace(
-    /\{(\w+)\}/g,
-    (_match, key) => key in vars ? String(vars[key]) : `{${key}}`
-  );
-}
-
-// src/ui/quick-memo-modal.ts
 var QuickMemoModal = class extends import_obsidian7.Modal {
   constructor(app, onSubmit) {
     super(app);
