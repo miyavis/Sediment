@@ -2,6 +2,18 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [Unreleased]
+
+### 改进（代码结构）
+- 抽出纯 SVG 图表函数到 `utils/charts.ts`，看板不再内联生成图表逻辑
+- 抽出 Agent 访问策略纯规则到 `agent/access.ts`（黑名单/白名单/操作权限/分类推断），可单测
+- `main.ts` 的 14 个命令注册抽成 `registerCommands()`，`onload` 更清晰
+- 统一生成文件策略：`changelog.ts` 与 `bridge-source.ts` 均由构建生成并加入 `.gitignore`
+
+### 修复
+- 修复版本号徽章在多段版本号下每次构建重复追加尾号的 bug
+- 左侧功能栏图标改用新的 Sediment 品牌图标
+
 ## [0.9.6.1] - 2026-11-20
 
 ### 修复
