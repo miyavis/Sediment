@@ -2,6 +2,12 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [1.0.1] - 2026-11-20
+
+### 改进
+- 发布流水线升级 Node 24 运行时：checkout v7、setup-node v7、action-gh-release v3（v3 仅运行时迁移，输入不变），消除 GitHub Actions Node 20 弃用警告
+- CI 构建 Node 18（已 EOL）升级 22 LTS
+
 ## [1.0.0] - 2026-11-21
 
 ### 新增
