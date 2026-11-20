@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Notice } from "obsidian";
+import { Notice, TFile, type Plugin } from "obsidian";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -37,9 +37,7 @@ import { PomodoroManager } from "../src/features/pomodoro";
 import { MemoManager } from "../src/features/memo";
 import { buildWeeklyReview } from "../src/features/review";
 import SedimentPlugin from "../src/main";
-import { Notice, TFile, type Plugin } from "obsidian";
 import { normalizeFolder } from "../src/utils/vault";
-import { TFile } from "obsidian";
 import { TaskManager } from "../src/features/tasks";
 import { buildStatsCsv, buildExportJson, DEFAULT_EXPORT_OPTIONS } from "../src/features/export";
 import { Store } from "../src/data/store";
@@ -522,6 +520,25 @@ test("Store.load：结构性损坏保留恢复副本并阻塞写入", async () =
   // 损坏字段不再静默重置：内存态仍可供只读展示。
   assert.deepEqual(store.data.days, {});
   assert.deepEqual(store.data.memos, []);
+});
+
+test("Store.load：pendingWrites 损坏同样阻塞写入并保留恢复副本", async () => {
+  const raw = { version: 1, pendingWrites: "x" };
+  const { vault, written } = fakeVault();
+  const { plugin, saved } = fakePluginWith(vault, raw);
+  const store = new Store(plugin);
+
+  await store.load();
+  await store.save();
+
+  assert.match(store.migrationWarning ?? "", /数据结构损坏/);
+  assert.match(store.migrationWarning ?? "", /pendingWrites/);
+  assert.equal(store.isPersistenceBlocked, true);
+  assert.equal(saved.length, 0);
+  assert.ok(store.recoveryCopyPath?.startsWith(".obsidian/plugins/sediment/recovery/data-"));
+  const copy = written.find(([p]) => p === store.recoveryCopyPath);
+  assert.ok(copy);
+  assert.deepEqual(JSON.parse(copy[1]), raw);
 });
 
 test("Store.load：无版本号且形状符合 v1 时自动迁移写回", async () => {
@@ -1450,6 +1467,10 @@ function fakeClock(start: number) {
     clearTimeout(id: number): void {
       timers.delete(id);
     },
+    /** 只推进时间、不触发任何定时器：模拟后台节流下定时器延迟触发的竞态。 */
+    jump(ms: number): void {
+      now += ms;
+    },
     advance(ms: number): void {
       const target = now + ms;
       for (;;) {
@@ -1472,8 +1493,10 @@ function fakeClock(start: number) {
 }
 
 /** tracker 行为测试桩：假 vault + 假 store + 可注入时钟。 */
-function trackerHarness(initial: Record<string, string>) {
-  const clock = fakeClock(new Date(2026, 10, 20, 9, 0, 0).getTime());
+function trackerHarness(
+  initial: Record<string, string>,
+  clock = fakeClock(new Date(2026, 10, 20, 9, 0, 0).getTime())
+) {
   const contents = new Map<string, string>(Object.entries(initial));
   const files = new Map<string, TFile>();
   const fileFor = (path: string): TFile => {
@@ -1539,6 +1562,39 @@ test("tracker：Agent 抑制期内人的编辑不被吞，窗口结束按实际 
   await h.advance(10_000); // 窗口结束，按实际 diff 补计人的编辑
   assert.equal(h.days[key].wordsAdded, 2); // 只补计人的 2 词，而非整段 5 词
   assert.equal(h.days[key].edits, 1);
+});
+
+test("tracker：窗口过期后的 modify 走 settle 即返回，不回退基线不重复计分", async () => {
+  const clock = fakeClock(new Date(2026, 10, 20, 9, 0, 0).getTime());
+  const h = trackerHarness({ "notes/a.md": "hello world" }, clock); // 基线 2 词
+  await h.tracker.start();
+  const key = dateKey(new Date(clock.now()));
+
+  h.tracker.markAgentWrite("notes/a.md");
+  h.contents.set("notes/a.md", "hello world agent added three"); // Agent 写到 5 词
+  h.fire("modify", "notes/a.md");
+  await h.advance(200); // Agent 事件记为基准快照
+  assert.equal(h.days[key]?.wordsAdded ?? 0, 0);
+
+  // 人的编辑去抖回调已触发、onModify 正挂起等待快照读取；
+  // 此时时间越过窗口末尾，但 settle 定时器被节流尚未触发。
+  h.contents.set("notes/a.md", "hello world agent added three human edit"); // 7 词
+  h.fire("modify", "notes/a.md");
+  clock.advance(120); // 去抖触发，onModify 读到 7 词快照后挂起
+  clock.jump(10_000); // 时间越过 endsAt，settle 定时器仍未触发
+  h.contents.set("notes/a.md", "hello world agent added three human edit more"); // 8 词
+  h.fire("modify", "notes/a.md");
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  // 过期分支：settle 按最新 8 词快照补计 8-5=3 词后必须直接返回，
+  // 不得再用 settle 前的 7 词旧快照回退基线。
+  assert.equal(h.days[key].wordsAdded, 3);
+  assert.equal(h.days[key].wordsRemoved, 0);
+  assert.equal(h.days[key].edits, 1);
+
+  // 后续编辑以 settle 后的 8 词基线计算，不因基线回退重复计分。
+  await h.advance(200);
+  assert.equal(h.days[key].wordsAdded, 3);
+  assert.equal(h.days[key].wordsRemoved, 0);
 });
 
 test("tracker：无基线文件只建基线，不把整篇内容误计为新增", async () => {
@@ -1646,6 +1702,8 @@ test("pomodoro：检测到另一存活实例则禁用，心跳过期则正常接
 
   const stale = pomodoroHarness({ ...saved, heartbeatAt: now - 120_000 }, now);
   assert.equal(stale.manager.state().disabled, false); // 心跳过期 → 接管
+  assert.notEqual(stale.store.data.pomodoro?.instanceId, "other-instance"); // 接管立即写入本实例标识
+  assert.equal(stale.store.data.pomodoro?.heartbeatAt, now); // 心跳立即刷新，接管窗口近零
 });
 
 /** memo 行为测试桩：内存 vault + 现有 Obsidian 桩。 */

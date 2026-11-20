@@ -323,6 +323,9 @@ export class Tracker {
         return;
       }
       await this.settleAgentWindow(file.path);
+      // settle 已按最新快照更新基线并补计 diff；此处的 snap 是 settle 前的旧快照，
+      // 继续执行会把基线回退并重复计分，直接返回。
+      return;
     }
 
     const prev = this.baseline.get(file.path);

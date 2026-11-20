@@ -26,7 +26,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** 字段存在但类型/形状异常视为结构损坏；缺失或 null 走默认值补齐，不算损坏。 */
 function corruptFields(loaded: Partial<PulseData>): string[] {
   const recordKeys = ["days", "reviewedChanges", "editSessions", "settings", "pomodoro"] as const;
-  const arrayKeys = ["memos", "workLogs", "toolCalls", "snapshots", "diagnostics", "focusSessions"] as const;
+  const arrayKeys = ["memos", "workLogs", "toolCalls", "snapshots", "diagnostics", "focusSessions", "pendingWrites"] as const;
   const corrupt: string[] = [];
   for (const key of recordKeys) {
     const value = loaded[key];

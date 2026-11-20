@@ -582,6 +582,7 @@ var Tracker = class {
         return;
       }
       await this.settleAgentWindow(file.path);
+      return;
     }
     const prev = this.baseline.get(file.path);
     this.baseline.set(file.path, snap);
@@ -2875,7 +2876,7 @@ function isRecord(value) {
 }
 function corruptFields(loaded) {
   const recordKeys = ["days", "reviewedChanges", "editSessions", "settings", "pomodoro"];
-  const arrayKeys = ["memos", "workLogs", "toolCalls", "snapshots", "diagnostics", "focusSessions"];
+  const arrayKeys = ["memos", "workLogs", "toolCalls", "snapshots", "diagnostics", "focusSessions", "pendingWrites"];
   const corrupt = [];
   for (const key of recordKeys) {
     const value = loaded[key];
@@ -3397,7 +3398,7 @@ var PomodoroManager = class {
         this.complete(true, startedAt + startRemaining * 1e3);
       }
     }
-    this.lastHeartbeatAt = this.now();
+    this.persist();
   }
   /** 运行中按时间戳换算剩余秒数；暂停时 remaining 即权威值。 */
   currentRemaining() {

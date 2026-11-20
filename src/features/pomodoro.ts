@@ -97,7 +97,8 @@ export class PomodoroManager {
         this.complete(true, startedAt + startRemaining * 1000);
       }
     }
-    this.lastHeartbeatAt = this.now();
+    // 接管后立即持久化本实例 instanceId + 心跳，把多开检测的接管窗口从 15s 缩到近零。
+    this.persist();
   }
 
   /** 运行中按时间戳换算剩余秒数；暂停时 remaining 即权威值。 */
