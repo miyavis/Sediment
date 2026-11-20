@@ -4,8 +4,9 @@
   "description": "Local-first Obsidian plugin: knowledge stats, heatmap, quick memos, weekly reviews and agent knowledge deposition.",
   "main": "main.js",
   "scripts": {
-    "dev": "node scripts/sync-changelog.mjs && node scripts/sync-bridge.mjs && node esbuild.config.mjs",
-    "build": "node scripts/sync-changelog.mjs && node scripts/sync-bridge.mjs && tsc --noEmit && node esbuild.config.mjs production",
+    "dev": "node version-bump.mjs && node scripts/sync-changelog.mjs && node scripts/sync-bridge.mjs && node esbuild.config.mjs",
+    "build": "node version-bump.mjs && node scripts/sync-changelog.mjs && node scripts/sync-bridge.mjs && tsc --noEmit && node esbuild.config.mjs production",
+    "sync-version": "node version-bump.mjs",
     "changelog": "node scripts/latest-changelog.mjs",
     "mcp": "node mcp-server/index.mjs",
     "test:mcp": "node scripts/mcp-smoke.mjs",
@@ -13,7 +14,7 @@
     "test:bench": "node scripts/benchmark.mjs",
     "test:release": "node scripts/verify-release.mjs",
     "test": "npm run test:unit && npm run test:mcp",
-    "version": "node version-bump.mjs && git add manifest.json versions.json mcp-server/index.mjs"
+    "version": "node version-bump.mjs && git add package.json package-lock.json manifest.json versions.json mcp-server/index.mjs README.md"
   },
   "keywords": [
     "obsidian",

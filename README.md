@@ -6,7 +6,7 @@ Sediment 是一个本地优先的 Obsidian 插件，把知识工作统计、快�
 
 [![Obsidian](https://img.shields.io/badge/Obsidian-v1.6.0%2B-blue.svg)](https://obsidian.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.9.0-blue.svg)](https://github.com/miyavis/Sediment/releases)
+[![Version](https://img.shields.io/badge/version-v0.9.1-blue.svg)](https://github.com/miyavis/Sediment/releases)
 
 ## 核心入口
 
@@ -182,9 +182,23 @@ npm test
 npm run test:release
 ```
 
-- `npm run build`：同步文档和 MCP bridge、类型检查、生成 `main.js`
+- `npm run build`：同步版本、文档和 MCP bridge、类型检查、生成 `main.js`
 - `npm test`：运行单元测试和 MCP 冒烟
 - `npm run test:release`：校验版本、CHANGELOG 和发布产物
+
+**版本号只有一个源**：`package.json` 的 `version`。构建时 `version-bump.mjs` 自动同步到 `package-lock.json`、`manifest.json`、`versions.json`、`mcp-server/index.mjs` 的 `serverInfo` 和 README 版本徽章。发版流程：
+
+```sh
+# 只改这一处
+# package.json  ->  "version": "0.9.2"
+npm run build      # 自动同步所有位置并校验
+git add -A
+git commit -m "release: v0.9.2"
+git tag v0.9.2
+git push origin main --tags
+```
+
+也可以在 CHANGELOG 写好对应版本后再构建；`sync-changelog.mjs` 会把 CHANGELOG 同步进插件。
 
 项目结构：
 

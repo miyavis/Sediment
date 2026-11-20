@@ -2,6 +2,11 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [Unreleased]
+
+### 改进
+- 版本号统一到 `package.json` 单一源：`version-bump.mjs` 在构建时同步 lockfile、manifest、versions、MCP bridge 和 README 徽章；发版只改一处
+
 ## [0.9.1] - 2026-11-20
 
 ### 改进
