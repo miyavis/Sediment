@@ -6,7 +6,7 @@ Sediment 是一个本地优先的 Obsidian 插件，把知识工作统计、快�
 
 [![Obsidian](https://img.shields.io/badge/Obsidian-v1.6.0%2B-blue.svg)](https://obsidian.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.9.1-blue.svg)](https://github.com/miyavis/Sediment/releases)
+[![Version](https://img.shields.io/badge/version-v0.9.2-blue.svg)](https://github.com/miyavis/Sediment/releases)
 
 ## 核心入口
 
