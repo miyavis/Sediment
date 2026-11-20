@@ -2,6 +2,11 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [Unreleased]
+
+### 修复
+- 锚点跳转按吸顶导航高度留偏移，避免目标标题被导航条盖住造成的视觉跳动
+
 ## [0.9.3] - 2026-11-20
 
 ### 修复

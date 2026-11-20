@@ -387,7 +387,17 @@ export class DashboardView extends ItemView {
     ];
     for (const [id, label] of anchors) {
       const button = subnav.createEl("button", { text: label });
-      button.onclick = () => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      button.onclick = () => {
+        const target = document.getElementById(id);
+        if (!target) return;
+        const scroller = this.scrollParent(root) ?? this.fallbackScroller();
+        if (!scroller) {
+          target.scrollIntoView({ behavior: "smooth", block: "start" });
+          return;
+        }
+        const top = target.getBoundingClientRect().top + scroller.scrollTop - 64;
+        scroller.scrollTo({ top, behavior: "smooth" });
+      };
     }
     this.renderInsightsSummary(body);
     this.renderOverview(body);

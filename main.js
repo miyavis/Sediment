@@ -4720,7 +4720,15 @@ var DashboardView = class extends import_obsidian17.ItemView {
       const button = subnav.createEl("button", { text: label });
       button.onclick = () => {
         var _a2;
-        return (_a2 = document.getElementById(id)) == null ? void 0 : _a2.scrollIntoView({ behavior: "smooth", block: "start" });
+        const target = document.getElementById(id);
+        if (!target) return;
+        const scroller = (_a2 = this.scrollParent(root)) != null ? _a2 : this.fallbackScroller();
+        if (!scroller) {
+          target.scrollIntoView({ behavior: "smooth", block: "start" });
+          return;
+        }
+        const top = target.getBoundingClientRect().top + scroller.scrollTop - 64;
+        scroller.scrollTo({ top, behavior: "smooth" });
       };
     }
     this.renderInsightsSummary(body);
