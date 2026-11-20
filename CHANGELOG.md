@@ -2,7 +2,7 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
-## [Unreleased]
+## [0.9.4] - 2026-11-20
 
 ### 修复
 - 「查看今日任务」「记一条速记」改用带偏移的平滑滚动并阻止 focus 自动跳屏，不再硬跳
