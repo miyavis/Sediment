@@ -29,25 +29,66 @@ interface OsModule {
   homedir(): string;
 }
 
+interface ChildProcessModule {
+  execSync(command: string, options: { timeout: number; encoding: string; windowsHide: boolean; stdio: ["ignore", "pipe", "ignore"] }): string;
+}
+
+/** 探测本机 OpenCode 主版本号；未安装或执行失败返回 undefined。 */
+function probeOpenCodeVersion(): number | undefined {
+  const cp = nodeModule<ChildProcessModule>("child_process");
+  if (!cp) return undefined;
+  try {
+    const out = cp.execSync("opencode --version", { timeout: 5000, encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
+    const match = /v?(\d+)\./.exec(String(out));
+    return match ? Number(match[1]) : undefined;
+  } catch (error) {
+    return undefined;
+  }
+}
+
+/**
+ * 判定 OpenCode 配置布局：
+ * 1. 直挂的 type/command 数组条目 → v1（v1 格式是两版都接受的公共分母，混合配置优先保 v1）；
+ * 2. 已有 mcp.servers → v2；形状明确时不探测版本。
+ * 3. 形状无线索（含 Claude 风格残留）时按探测版本判定，探测失败默认 v2。
+ * 依据官方迁移文档：v1 直挂 mcp.<name>（enabled/数字 timeout），v2 归入 mcp.servers（disabled/对象 timeout），V2 兼容 V1 条目。
+ */
+export function detectOpenCodeLayout(data: Record<string, unknown>, probe?: () => number | undefined): "v1" | "v2" {
+  const mcp = (data.mcp ?? {}) as Record<string, unknown>;
+  for (const [key, value] of Object.entries(mcp)) {
+    if (key === "servers" || key === "timeout") continue;
+    const entry = value as { type?: unknown; command?: unknown } | null;
+    if (entry && typeof entry === "object" && (entry.type === "local" || entry.type === "remote" || Array.isArray(entry.command))) {
+      return "v1";
+    }
+  }
+  if (mcp.servers && typeof mcp.servers === "object") return "v2";
+  return probe?.() === 1 ? "v1" : "v2";
+}
+
+/** 候选客户端清单（纯函数，便于测试）。路径均对照各客户端官方文档核实。 */
+export function agentCandidates(home: string, appdata: string): AgentTarget[] {
+  return [
+    { id: "opencode", name: "OpenCode", configPath: `${home}/.config/opencode/opencode.jsonc`, rootKey: "mcp", envKey: "environment" },
+    { id: "qoder", name: "Qoder", configPath: `${home}/.qoder/settings.json`, rootKey: "mcpServers", envKey: "env" },
+    { id: "qoder-cn", name: "Qoder CN", configPath: `${home}/.qoder-cn/settings.json`, rootKey: "mcpServers", envKey: "env" },
+    { id: "claude-desktop", name: "Claude Desktop", configPath: `${appdata}/Claude/claude_desktop_config.json`, rootKey: "mcpServers", envKey: "env" },
+    { id: "cursor", name: "Cursor", configPath: `${home}/.cursor/mcp.json`, rootKey: "mcpServers", envKey: "env" },
+    // Cline CLI 与 IDE 扩展的配置文件名/位置不同，均非 ~/.cline/mcp_settings.json。
+    { id: "cline", name: "Cline CLI", configPath: `${home}/.cline/data/settings/cline_mcp_settings.json`, rootKey: "mcpServers", envKey: "env" },
+    { id: "cline-ide", name: "Cline (VS Code)", configPath: `${appdata}/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json`, rootKey: "mcpServers", envKey: "env" },
+    { id: "gemini", name: "Gemini CLI", configPath: `${home}/.gemini/settings.json`, rootKey: "mcpServers", envKey: "env" },
+    { id: "windsurf", name: "Windsurf", configPath: `${home}/.codeium/windsurf/mcp_config.json`, rootKey: "mcpServers", envKey: "env" },
+    { id: "windsurf-next", name: "Windsurf Next", configPath: `${home}/.codeium/windsurf-next/mcp_config.json`, rootKey: "mcpServers", envKey: "env" },
+  ];
+}
+
 /** 探测本机已存在配置文件的智能体客户端。 */
 export function detectAgents(): AgentTarget[] {
   const fs = nodeModule<FsModule>("fs");
   const os = nodeModule<OsModule>("os");
   if (!fs || !os) return [];
-  const home = os.homedir();
-  const appdata = String(process.env.APPDATA ?? "");
-  const candidates: AgentTarget[] = [
-    { id: "opencode", name: "OpenCode", configPath: `${home}/.config/opencode/opencode.jsonc`, rootKey: "mcp", envKey: "environment" },
-    { id: "opencode-home", name: "OpenCode (用户目录)", configPath: `${home}/.opencode.json`, rootKey: "mcp", envKey: "environment" },
-    { id: "qoder", name: "Qoder", configPath: `${home}/.qoder/settings.json`, rootKey: "mcpServers", envKey: "env" },
-    { id: "qoder-cn", name: "Qoder CN", configPath: `${home}/.qoder-cn/settings.json`, rootKey: "mcpServers", envKey: "env" },
-    { id: "claude-desktop", name: "Claude Desktop", configPath: `${appdata}/Claude/claude_desktop_config.json`, rootKey: "mcpServers", envKey: "env" },
-    { id: "cursor", name: "Cursor", configPath: `${home}/.cursor/mcp.json`, rootKey: "mcpServers", envKey: "env" },
-    { id: "cline", name: "Cline", configPath: `${home}/.cline/mcp_settings.json`, rootKey: "mcpServers", envKey: "env" },
-    { id: "gemini", name: "Gemini CLI", configPath: `${home}/.gemini/settings.json`, rootKey: "mcpServers", envKey: "env" },
-    { id: "windsurf", name: "Windsurf", configPath: `${home}/.codeium/windsurf/mcp_config.json`, rootKey: "mcpServers", envKey: "env" },
-  ];
-  return candidates.filter((target) => fs.existsSync(target.configPath));
+  return agentCandidates(os.homedir(), String(process.env.APPDATA ?? "")).filter((target) => fs.existsSync(target.configPath));
 }
 
 function stripComments(raw: string): string {
@@ -62,13 +103,17 @@ function readJson(raw: string): Record<string, unknown> {
   }
 }
 
-/** 该客户端是否已经写入过 Sediment 配置。 */
+/** 该客户端是否已经写入过 Sediment 配置（OpenCode 兼容 v1 直挂与 v2 servers 两个位置）。 */
 export function isAgentConfigured(target: AgentTarget): boolean {
   const fs = nodeModule<FsModule>("fs");
   if (!fs || !fs.existsSync(target.configPath)) return false;
   try {
     const data = readJson(fs.readFileSync(target.configPath, "utf8"));
     const root = (data[target.rootKey] ?? {}) as Record<string, unknown>;
+    if (target.rootKey === "mcp") {
+      const servers = (root.servers ?? {}) as Record<string, unknown>;
+      return Boolean(root.sediment || servers.sediment);
+    }
     return Boolean(root.sediment);
   } catch (error) {
     return false;
@@ -103,13 +148,19 @@ export function resolveBridgePath(plugin: SedimentPlugin, target?: AgentTarget):
   if (target) {
     try {
       const data = readJson(fs.readFileSync(target.configPath, "utf8"));
-      const root = (data[target.rootKey] ?? {}) as Record<string, { args?: string[] }>;
-      const args = root.sediment?.args ?? [];
-      const existing = args.find((arg) => arg.endsWith("index.mjs") && fs.existsSync(arg));
-      if (existing) {
-        // 引用的正是库内副本时先同步；库外路径属用户自有文件，不覆盖。
-        if (vaultBridge && samePath(existing, vaultBridge)) return syncVaultBridge();
-        return existing;
+      const root = (data[target.rootKey] ?? {}) as Record<string, unknown>;
+      const servers = (root.servers ?? {}) as Record<string, unknown>;
+      // OpenCode 条目可能在 v1 直挂或 v2 servers 位置；路径在 args（Claude 风格）或 command 数组里。
+      const entries = [root.sediment, servers.sediment].filter(Boolean) as Array<{ args?: string[]; command?: unknown }>;
+      for (const entry of entries) {
+        const command = Array.isArray(entry.command) ? (entry.command.filter((x) => typeof x === "string") as string[]) : [];
+        const candidates = [...(entry.args ?? []), ...command];
+        const existing = candidates.find((arg) => arg.endsWith("index.mjs") && fs.existsSync(arg));
+        if (existing) {
+          // 引用的正是库内副本时先同步；库外路径属用户自有文件，不覆盖。
+          if (vaultBridge && samePath(existing, vaultBridge)) return syncVaultBridge();
+          return existing;
+        }
       }
     } catch (error) {
       // 沿用默认探测
@@ -120,7 +171,7 @@ export function resolveBridgePath(plugin: SedimentPlugin, target?: AgentTarget):
 
 function buildEntry(plugin: SedimentPlugin, target: AgentTarget, bridge: string): Record<string, unknown> {
   const url = `http://127.0.0.1:${plugin.store.settings.agentServerPort}`;
-  return {
+  const entry: Record<string, unknown> = {
     command: "node",
     args: [bridge],
     [target.envKey]: {
@@ -128,24 +179,46 @@ function buildEntry(plugin: SedimentPlugin, target: AgentTarget, bridge: string)
       SEDIMENT_TOKEN: plugin.store.settings.agentServerToken,
       AGENT_NAME: target.id,
     },
-    timeout: 60000,
   };
+  // Cline 的 timeout 按秒计，写毫秒值会被误读；其余客户端忽略或按毫秒解释，统一 60000。
+  if (!target.id.startsWith("cline")) entry.timeout = 60000;
+  return entry;
 }
 
-/** 返回可复制的 JSON 片段。 */
+/** OpenCode 专用条目：type:local + command 数组；v1 直挂（enabled/数字 timeout），v2 归入 servers（对象 timeout）。 */
+function buildOpenCodeEntry(plugin: SedimentPlugin, target: AgentTarget, bridge: string, layout: "v1" | "v2"): Record<string, unknown> {
+  const environment = {
+    SEDIMENT_URL: `http://127.0.0.1:${plugin.store.settings.agentServerPort}`,
+    SEDIMENT_TOKEN: plugin.store.settings.agentServerToken,
+    AGENT_NAME: target.id,
+  };
+  if (layout === "v1") {
+    return { type: "local", command: ["node", bridge], environment, enabled: true, timeout: 60000 };
+  }
+  return { type: "local", command: ["node", bridge], environment, timeout: { startup: 60000 } };
+}
+
+/** 返回可复制的 JSON 片段（OpenCode 按本机版本输出 v1/v2 原生结构）。 */
 export function configSnippet(plugin: SedimentPlugin, id = "opencode"): string {
+  const isOpenCode = id === "opencode";
   const target: AgentTarget = {
     id,
     name: id,
     configPath: "",
-    rootKey: id === "opencode" ? "mcp" : "mcpServers",
-    envKey: id === "opencode" ? "environment" : "env",
+    rootKey: isOpenCode ? "mcp" : "mcpServers",
+    envKey: isOpenCode ? "environment" : "env",
   };
   const bridge = resolveBridgePath(plugin);
+  if (isOpenCode) {
+    const layout = detectOpenCodeLayout({}, probeOpenCodeVersion);
+    const entry = buildOpenCodeEntry(plugin, target, bridge, layout);
+    const mcp = layout === "v2" ? { servers: { sediment: entry } } : { sediment: entry };
+    return JSON.stringify({ mcp }, null, 2);
+  }
   return JSON.stringify({ [target.rootKey]: { sediment: buildEntry(plugin, target, bridge) } }, null, 2);
 }
 
-/** 把 Sediment MCP 配置合并进目标客户端配置，写入前备份。 */
+/** 把 Sediment MCP 配置合并进目标客户端配置，写入前备份。OpenCode 按检测到的 v1/v2 布局写入并清理另一位置的旧条目。 */
 export function configureAgent(plugin: SedimentPlugin, target: AgentTarget): void {
   const fs = nodeModule<FsModule>("fs");
   if (!fs) throw new Error("一键配置需要桌面版 Obsidian");
@@ -153,9 +226,29 @@ export function configureAgent(plugin: SedimentPlugin, target: AgentTarget): voi
   if (!bridge) throw new Error("找不到 mcp-server/index.mjs，无法配置");
   const raw = fs.readFileSync(target.configPath, "utf8");
   const data = readJson(raw);
-  const root = (data[target.rootKey] ?? {}) as Record<string, unknown>;
-  root.sediment = buildEntry(plugin, target, bridge);
-  data[target.rootKey] = root;
+  if (target.rootKey === "mcp") {
+    const layout = detectOpenCodeLayout(data, probeOpenCodeVersion);
+    const mcp = (data.mcp ?? {}) as Record<string, unknown>;
+    const entry = buildOpenCodeEntry(plugin, target, bridge, layout);
+    if (layout === "v2") {
+      const servers = (mcp.servers ?? {}) as Record<string, unknown>;
+      servers.sediment = entry;
+      mcp.servers = servers;
+      delete mcp.sediment;
+    } else {
+      mcp.sediment = entry;
+      const servers = (mcp.servers ?? {}) as Record<string, unknown>;
+      delete servers.sediment;
+      // 清空的 servers 键移除，避免 v1 把它误读为服务器条目。
+      if (Object.keys(servers).length === 0) delete mcp.servers;
+      else mcp.servers = servers;
+    }
+    data.mcp = mcp;
+  } else {
+    const root = (data[target.rootKey] ?? {}) as Record<string, unknown>;
+    root.sediment = buildEntry(plugin, target, bridge);
+    data[target.rootKey] = root;
+  }
   fs.writeFileSync(`${target.configPath}.bak`, raw, "utf8");
   fs.writeFileSync(target.configPath, JSON.stringify(data, null, 2), "utf8");
 }

@@ -6,7 +6,8 @@ import os from "node:os";
 import path from "node:path";
 import net from "node:net";
 import { spawnSync } from "node:child_process";
-import { resolveBridgePath } from "../src/agent/setup";
+import { configureAgent, configSnippet, isAgentConfigured, resolveBridgePath } from "../src/agent/setup";
+import * as setupNs from "../src/agent/setup";
 import { BRIDGE_SOURCE } from "../src/agent/bridge-source";
 import {
   computeContribution,
@@ -428,6 +429,230 @@ test("resolveBridgePath：库内旧版桥接被刷新为嵌入源码（协议升
     const bridge3 = resolveBridgePath(asPlugin, target);
     assert.equal(bridge3, external);
     assert.equal(fs.readFileSync(external, "utf8"), "// user-managed bridge\n", "库外用户文件不得被覆盖");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// ---------- OpenCode v1/v2 一键配置适配 ----------
+
+type LayoutFn = (data: Record<string, unknown>, probe?: () => number | undefined) => "v1" | "v2";
+function layoutFn(): LayoutFn {
+  const fn = (setupNs as unknown as { detectOpenCodeLayout?: LayoutFn }).detectOpenCodeLayout;
+  assert.equal(typeof fn, "function", "setup.ts 应导出 detectOpenCodeLayout");
+  return fn as LayoutFn;
+}
+
+function fakeSetupPlugin(tmp: string) {
+  return {
+    app: {
+      vault: {
+        configDir: ".obsidian",
+        adapter: { getFullPath: (p: string) => path.join(tmp, p) },
+      },
+    },
+    store: { settings: { agentServerPort: 27123, agentServerToken: "t".repeat(32) } },
+  } as unknown as Parameters<typeof configureAgent>[0];
+}
+
+function openCodeTarget(cfgPath: string) {
+  return { id: "opencode", name: "OpenCode", configPath: cfgPath, rootKey: "mcp" as const, envKey: "environment" as const };
+}
+
+test("detectOpenCodeLayout：配置形状优先——有 mcp.servers 判 v2，直挂 type/command 数组条目判 v1，形状明确时不探测版本", () => {
+  const detect = layoutFn();
+  const noProbe = () => {
+    throw new Error("形状明确时不应探测版本");
+  };
+  assert.equal(detect({ mcp: { servers: {} } }, noProbe), "v2");
+  assert.equal(detect({ mcp: { other: { type: "local", command: ["x"] } } }, noProbe), "v1");
+  assert.equal(detect({ mcp: { other: { type: "remote", url: "https://x" } } }, noProbe), "v1");
+});
+
+test("detectOpenCodeLayout：形状无线索时按探测版本判定（1→v1，2→v2，探测失败默认 v2）；Claude 风格条目不算 v1 形状", () => {
+  const detect = layoutFn();
+  const claudeStyle = { mcp: { sediment: { command: "node", args: ["x"], environment: {} } } };
+  assert.equal(detect(claudeStyle, () => 1), "v1");
+  assert.equal(detect(claudeStyle, () => 2), "v2");
+  assert.equal(detect(claudeStyle, () => undefined), "v2");
+  assert.equal(detect({}, () => 1), "v1");
+  assert.equal(detect({}, () => undefined), "v2");
+});
+
+test("configureAgent：OpenCode v2 配置写入 mcp.servers.sediment（type:local + command 数组 + environment）", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sediment-oc-v2-"));
+  try {
+    const cfgPath = path.join(tmp, "opencode.jsonc");
+    fs.writeFileSync(cfgPath, JSON.stringify({ mcp: { servers: {} } }), "utf8");
+    configureAgent(fakeSetupPlugin(tmp), openCodeTarget(cfgPath));
+    const data = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+    const entry = data.mcp.servers.sediment;
+    assert.ok(entry, "应写入 mcp.servers.sediment");
+    assert.equal(entry.type, "local");
+    assert.ok(Array.isArray(entry.command), "command 必须是数组");
+    assert.equal(entry.command[0], "node");
+    assert.ok(entry.command[1].endsWith("index.mjs"));
+    assert.ok(fs.existsSync(entry.command[1]), "桥接路径必须真实存在");
+    assert.equal(entry.environment.SEDIMENT_URL, "http://127.0.0.1:27123");
+    assert.equal(entry.environment.AGENT_NAME, "opencode");
+    assert.equal(data.mcp.sediment, undefined, "不得直挂 mcp.sediment");
+    assert.ok(fs.existsSync(cfgPath + ".bak"), "写入前应备份");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("configureAgent：OpenCode v1 配置直挂 mcp.sediment（type:local + command 数组 + enabled）", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sediment-oc-v1-"));
+  try {
+    const cfgPath = path.join(tmp, "opencode.json");
+    fs.writeFileSync(cfgPath, JSON.stringify({ mcp: { other: { type: "local", command: ["x"] } } }), "utf8");
+    configureAgent(fakeSetupPlugin(tmp), openCodeTarget(cfgPath));
+    const data = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+    const entry = data.mcp.sediment;
+    assert.ok(entry, "v1 应直挂 mcp.sediment");
+    assert.equal(entry.type, "local");
+    assert.ok(Array.isArray(entry.command));
+    assert.equal(entry.command[0], "node");
+    assert.equal(entry.enabled, true);
+    assert.equal(data.mcp.servers, undefined, "v1 不得创建 mcp.servers");
+    assert.ok(data.mcp.other, "不得动其它服务器条目");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("configureAgent：旧 Claude 风格 mcp.sediment 迁移到 v2 位置并清除旧条目", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sediment-oc-migrate-"));
+  try {
+    const cfgPath = path.join(tmp, "opencode.jsonc");
+    fs.writeFileSync(
+      cfgPath,
+      JSON.stringify({ mcp: { sediment: { command: "node", args: ["old.mjs"], environment: {} }, servers: {} } }),
+      "utf8"
+    );
+    configureAgent(fakeSetupPlugin(tmp), openCodeTarget(cfgPath));
+    const data = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+    assert.equal(data.mcp.sediment, undefined, "旧位置条目应被清除");
+    assert.equal(data.mcp.servers.sediment.type, "local");
+    assert.ok(Array.isArray(data.mcp.servers.sediment.command));
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("configureAgent：判定 v1 时清除 mcp.servers.sediment 残留，servers 清空后移除该键", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sediment-oc-v1clean-"));
+  try {
+    const cfgPath = path.join(tmp, "opencode.json");
+    fs.writeFileSync(
+      cfgPath,
+      JSON.stringify({ mcp: { other: { type: "local", command: ["x"] }, servers: { sediment: { type: "local", command: ["node", "y"] } } } }),
+      "utf8"
+    );
+    configureAgent(fakeSetupPlugin(tmp), openCodeTarget(cfgPath));
+    const data = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+    assert.equal(data.mcp.sediment.type, "local");
+    assert.equal(data.mcp.servers, undefined, "清空的 servers 键应移除，避免 v1 误读");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("isAgentConfigured：OpenCode 新旧两个位置都识别为已配置", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sediment-oc-configured-"));
+  try {
+    const cfgPath = path.join(tmp, "opencode.jsonc");
+    const target = openCodeTarget(cfgPath);
+    fs.writeFileSync(cfgPath, JSON.stringify({ mcp: { servers: { sediment: { type: "local" } } } }), "utf8");
+    assert.equal(isAgentConfigured(target), true, "v2 位置应识别");
+    fs.writeFileSync(cfgPath, JSON.stringify({ mcp: { sediment: { type: "local" } } }), "utf8");
+    assert.equal(isAgentConfigured(target), true, "v1 位置应识别");
+    fs.writeFileSync(cfgPath, JSON.stringify({ mcp: { servers: {} } }), "utf8");
+    assert.equal(isAgentConfigured(target), false);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("resolveBridgePath：从 OpenCode command 数组复用库外桥接路径且不覆盖", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sediment-oc-cmd-"));
+  try {
+    const external = path.join(tmp, "elsewhere", "index.mjs");
+    fs.mkdirSync(path.dirname(external), { recursive: true });
+    fs.writeFileSync(external, "// user-managed bridge\n", "utf8");
+    const cfgPath = path.join(tmp, "opencode.jsonc");
+    fs.writeFileSync(
+      cfgPath,
+      JSON.stringify({ mcp: { servers: { sediment: { type: "local", command: ["node", external] } } } }),
+      "utf8"
+    );
+    const bridge = resolveBridgePath(fakeSetupPlugin(tmp), openCodeTarget(cfgPath));
+    assert.equal(bridge, external);
+    assert.equal(fs.readFileSync(external, "utf8"), "// user-managed bridge\n");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("configSnippet：opencode 输出 V2 原生结构（mcp.servers + type:local + command 数组）", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sediment-oc-snippet-"));
+  try {
+    const snippet = JSON.parse(configSnippet(fakeSetupPlugin(tmp), "opencode"));
+    const entry = snippet.mcp?.servers?.sediment;
+    assert.ok(entry, "snippet 应为 mcp.servers.sediment 结构");
+    assert.equal(entry.type, "local");
+    assert.ok(Array.isArray(entry.command));
+    assert.equal(entry.command[0], "node");
+    assert.ok(entry.environment.SEDIMENT_TOKEN);
+    assert.equal(snippet.mcp.sediment, undefined);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("configureAgent：非 OpenCode 客户端保持 command+args+env 结构不变", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sediment-oc-claude-"));
+  try {
+    const cfgPath = path.join(tmp, "settings.json");
+    fs.writeFileSync(cfgPath, JSON.stringify({ mcpServers: {} }), "utf8");
+    const target = { id: "qoder", name: "Qoder", configPath: cfgPath, rootKey: "mcpServers" as const, envKey: "env" as const };
+    configureAgent(fakeSetupPlugin(tmp), target);
+    const data = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+    const entry = data.mcpServers.sediment;
+    assert.equal(entry.command, "node");
+    assert.ok(Array.isArray(entry.args));
+    assert.ok(entry.env.SEDIMENT_TOKEN);
+    assert.equal(entry.timeout, 60000);
+    assert.equal(entry.type, undefined, "Claude 风格不加 type");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("agentCandidates：Cline 用官方 CLI 与 VS Code globalStorage 路径，移除无效的 ~/.opencode.json，补 Windsurf next", () => {
+  const fn = (setupNs as unknown as { agentCandidates?: (home: string, appdata: string) => Array<{ id: string; configPath: string }> }).agentCandidates;
+  assert.equal(typeof fn, "function", "setup.ts 应导出 agentCandidates 纯函数");
+  const candidates = (fn as NonNullable<typeof fn>)("/home/u", "C:/AppData");
+  const byId = Object.fromEntries(candidates.map((c) => [c.id, c.configPath]));
+  assert.equal(byId["cline"], "/home/u/.cline/data/settings/cline_mcp_settings.json");
+  assert.equal(byId["cline-ide"], "C:/AppData/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json");
+  assert.equal(byId["opencode-home"], undefined, "~/.opencode.json 不是任何 OpenCode 版本读取的位置");
+  assert.equal(byId["windsurf-next"], "/home/u/.codeium/windsurf-next/mcp_config.json");
+  assert.equal(byId["opencode"], "/home/u/.config/opencode/opencode.jsonc");
+});
+
+test("configureAgent：Cline 条目不写 timeout（Cline 超时按秒计，60000 会被误读为 60000 秒）", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sediment-cline-"));
+  try {
+    const cfgPath = path.join(tmp, "cline_mcp_settings.json");
+    fs.writeFileSync(cfgPath, JSON.stringify({ mcpServers: {} }), "utf8");
+    const target = { id: "cline", name: "Cline", configPath: cfgPath, rootKey: "mcpServers" as const, envKey: "env" as const };
+    configureAgent(fakeSetupPlugin(tmp), target);
+    const entry = JSON.parse(fs.readFileSync(cfgPath, "utf8")).mcpServers.sediment;
+    assert.equal(entry.command, "node");
+    assert.ok(Array.isArray(entry.args));
+    assert.equal(entry.timeout, undefined, "Cline 不写 timeout");
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
