@@ -2,6 +2,21 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [1.0.0] - 2026-11-20
+
+### 新增
+- OpenCode 一键配置 v1/v2 双布局适配：按配置形状判定（v1 直挂条目优先，其次 mcp.servers），形状无线索时探测本机 `opencode --version`，探测失败默认 v2；写入原生结构（type:local + command 数组 + environment），v2 用对象 timeout、v1 用 enabled + 数字 timeout
+- 配置迁移自愈：写入 v2 时清理 v1 直挂残留，写入 v1 时清理 servers 内旧条目并移除空 servers 键，避免旧版误读
+- Windsurf Next 客户端候选（~/.codeium/windsurf-next/mcp_config.json）
+- 一键配置单元测试 +12（布局判定、双布局写入、迁移清理、桥接复用、片段输出、候选路径），全量 151 项
+
+### 修复
+- OpenCode 一键配置不生效：此前对所有客户端写 Claude 风格条目（command 字符串 + args），OpenCode v1/v2 均不识别；现按客户端原生 schema 写入，实测 `opencode mcp list` 连接成功
+- Cline 配置路径修正：CLI 为 ~/.cline/data/settings/cline_mcp_settings.json，VS Code 扩展为 globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json，原 ~/.cline/mcp_settings.json 两者皆非
+- Cline 条目不再写 timeout：Cline 按秒解释，写 60000 会被误读为 60000 秒；其余客户端保持 60000 毫秒
+- 移除无效候选 ~/.opencode.json：OpenCode 任何版本都不读取该位置
+- isAgentConfigured 兼容 OpenCode 双位置（v1 直挂与 v2 servers），已配置状态不再漏报
+
 ## [0.9.8] - 2026-11-20
 
 ### 新增
