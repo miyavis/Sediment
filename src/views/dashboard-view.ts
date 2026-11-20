@@ -194,8 +194,9 @@ export class DashboardView extends ItemView {
     });
     memoAction.onclick = () => {
       const area = root.querySelector(".sd-quick-memo textarea") as HTMLTextAreaElement | null;
-      area?.focus();
-      area?.scrollIntoView({ block: "center" });
+      if (!area) return;
+      this.scrollToElement(area, 120);
+      area.focus({ preventScroll: true });
     };
     const taskAction = actions.createEl("button", {
       cls: "sd-today-action",
@@ -203,7 +204,7 @@ export class DashboardView extends ItemView {
     });
     taskAction.onclick = () => {
       const tasks = root.querySelector(".sd-tasks") as HTMLElement | null;
-      tasks?.scrollIntoView({ block: "center" });
+      if (tasks) this.scrollToElement(tasks, 80);
     };
     const pomodoroAction = actions.createEl("button", {
       cls: "sd-today-action",
@@ -389,14 +390,7 @@ export class DashboardView extends ItemView {
       const button = subnav.createEl("button", { text: label });
       button.onclick = () => {
         const target = document.getElementById(id);
-        if (!target) return;
-        const scroller = this.scrollParent(root) ?? this.fallbackScroller();
-        if (!scroller) {
-          target.scrollIntoView({ behavior: "smooth", block: "start" });
-          return;
-        }
-        const top = target.getBoundingClientRect().top + scroller.scrollTop - 64;
-        scroller.scrollTo({ top, behavior: "smooth" });
+        if (target instanceof HTMLElement) this.scrollToElement(target, 64);
       };
     }
     this.renderInsightsSummary(body);
@@ -813,6 +807,17 @@ export class DashboardView extends ItemView {
     if (!this.heatTooltip) return;
     this.heatTooltip.style.left = `${event.clientX + 14}px`;
     this.heatTooltip.style.top = `${event.clientY + 14}px`;
+  }
+
+  /** 平滑滚动到目标，并为吸顶导航预留偏移。 */
+  private scrollToElement(target: HTMLElement, offset = 80): void {
+    const scroller = this.scrollParent(this.contentEl) ?? this.fallbackScroller();
+    if (!scroller) {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    const top = target.getBoundingClientRect().top + scroller.scrollTop - offset;
+    scroller.scrollTo({ top, behavior: "smooth" });
   }
 
   private fallbackScroller(): HTMLElement | null {
