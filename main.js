@@ -946,12 +946,14 @@ var EN = {
   "\u5DF2\u9A73\u56DE\uFF0C\u672A\u5199\u5165\u4EFB\u4F55\u5185\u5BB9": "Rejected; nothing was written",
   "\u52FE\u9009\u5F85\u529E": "Task check",
   "\u9057\u7559\u5F85\u529E\u5FEB\u7167": "Overdue task snapshot",
+  "\u8F6C\u4EA4\u5F85\u529E": "Task delegation",
   "\u9A73\u56DE": "Reject",
   "\u3002\u8349\u7A3F\u9700\u624B\u52A8\u5BA1\u6838\uFF1B\u300C\u786E\u8BA4\u540E\u5199\u5165\u300D\u6863\u4E0B Agent \u7684\u5199\u64CD\u4F5C\u4F1A\u6302\u8D77\u5728\u300C\u5F85\u5BA1\u5199\u5165\u300D\u5217\u8868\uFF0C\u91C7\u7EB3\u540E\u624D\u843D\u76D8\uFF1B\u300C\u81EA\u52A8\u6267\u884C\u300D\u6863\u4E0D\u6302\u8D77\u3002": ". Drafts need manual review; in confirm mode agent writes are held in the Pending writes list until accepted; automatic mode applies them directly.",
   "confirm \u6A21\u5F0F\u4E0B\u5199\u5165\u5DF2\u6302\u8D77\u5F85\u5BA1\uFF1A{path}": "Write held for review in confirm mode: {path}",
   "readonly \u6A21\u5F0F\u62D2\u7EDD\u5199\u5165\uFF1A\u64CD\u4F5C {operation} \u4E0D\u88AB\u5141\u8BB8": "Read-only mode refuses writes: operation {operation} is not allowed",
   "\u5F85\u5BA1\u5199\u5165\u5DF2\u91C7\u7EB3\u5E76\u843D\u76D8\uFF1A{path}": "Pending write accepted and applied: {path}",
   "\u5F85\u5BA1\u5199\u5165\u5DF2\u9A73\u56DE\u5E76\u4E22\u5F03\uFF1A{path}": "Pending write rejected and discarded: {path}",
+  "\u5F85\u5BA1\u5199\u5165\u4E0D\u5B58\u5728\uFF1A{id}": "Pending write not found: {id}",
   "\u672A\u77E5\u7684\u5F85\u5BA1\u5199\u5165\u7C7B\u578B\uFF1A{kind}": "Unknown pending write kind: {kind}",
   "\u8BB0\u4E00\u6761\u901F\u8BB0\u5230 {path}": "Add a memo to {path}",
   "\u5C06 {n} \u6761\u9057\u7559\u5F85\u529E\u5199\u5165 {path}": "Copy {n} overdue tasks into {path}",
@@ -1317,7 +1319,7 @@ var AgentApi = class {
   /** 采纳：按挂起时保存的原请求重放对应的落盘函数（重放前再次过门禁）。 */
   async approvePendingWrite(id) {
     const record = this.getPendingWrite(id);
-    if (!record) throw new ApiError("NOT_FOUND", `\u5F85\u5BA1\u5199\u5165\u4E0D\u5B58\u5728\uFF1A${id}`, 404);
+    if (!record) throw new ApiError("NOT_FOUND", tf("\u5F85\u5BA1\u5199\u5165\u4E0D\u5B58\u5728\uFF1A{id}", { id }), 404);
     await this.replayPending(record.request);
     this.plugin.store.removePendingWrite(id);
     const message = tf("\u5F85\u5BA1\u5199\u5165\u5DF2\u91C7\u7EB3\u5E76\u843D\u76D8\uFF1A{path}", { path: record.path });
@@ -1327,7 +1329,7 @@ var AgentApi = class {
   /** 驳回：丢弃挂起请求（不落盘），并记安全诊断。 */
   rejectPendingWrite(id) {
     const removed = this.plugin.store.removePendingWrite(id);
-    if (!removed) throw new ApiError("NOT_FOUND", `\u5F85\u5BA1\u5199\u5165\u4E0D\u5B58\u5728\uFF1A${id}`, 404);
+    if (!removed) throw new ApiError("NOT_FOUND", tf("\u5F85\u5BA1\u5199\u5165\u4E0D\u5B58\u5728\uFF1A{id}", { id }), 404);
     const message = tf("\u5F85\u5BA1\u5199\u5165\u5DF2\u9A73\u56DE\u5E76\u4E22\u5F03\uFF1A{path}", { path: removed.path });
     this.plugin.store.logDiagnostic("security", message, `${removed.id} \xB7 ${removed.tool}`);
     return { ok: true, path: removed.path };
@@ -1379,7 +1381,7 @@ var AgentApi = class {
         await this.snapshotTasks(true);
         return;
       default:
-        throw new ApiError("INVALID_PENDING", `\u672A\u77E5\u7684\u5F85\u5BA1\u5199\u5165\u7C7B\u578B\uFF1A${request.kind}`, 400);
+        throw new ApiError("INVALID_PENDING", tf("\u672A\u77E5\u7684\u5F85\u5BA1\u5199\u5165\u7C7B\u578B\uFF1A{kind}", { kind: request.kind }), 400);
     }
   }
   cacheTags(file) {
@@ -1842,9 +1844,26 @@ ${content}
     await this.plugin.tasks.complete(safe, line);
     return { ok: true };
   }
-  async delegateTask(path, line) {
+  async delegateTask(path, line, bypassConfirm = false) {
     const safe = safeAgentPath(path);
     this.assertPathAllowed(safe, "read");
+    this.assertOperation("create");
+    if (!bypassConfirm && this.isConfirmMode()) {
+      const tasks = await this.plugin.tasks.list("all");
+      const task = tasks.find((item) => item.path === safe && item.line === line);
+      if (!task) throw new Error(`\u627E\u4E0D\u5230\u5F85\u529E\uFF1A${safe}:${line}`);
+      const daily = dailyNotePath(this.plugin.store.settings, /* @__PURE__ */ new Date());
+      return this.holdForConfirm(
+        "delegate_task",
+        daily,
+        "memo",
+        { text: task.text, tags: ["to-agent"], sourcePath: safe, sourceLine: line },
+        "",
+        tf("\u8BB0\u4E00\u6761\u901F\u8BB0\u5230 {path}", { path: daily }) + `
+${task.text}
+\u6807\u7B7E\uFF1A#to-agent`
+      );
+    }
     return { id: await this.plugin.tasks.delegate(safe, line) };
   }
   async snapshotTasks(bypassConfirm = false) {
@@ -1856,7 +1875,7 @@ ${content}
     if (!bypassConfirm && this.isConfirmMode()) {
       const overdue = await this.plugin.tasks.list("overdue", { accessible });
       const summary = overdue.length ? tf("\u5C06 {n} \u6761\u9057\u7559\u5F85\u529E\u5199\u5165 {path}", { n: overdue.length, path }) : t("\u6CA1\u6709\u9700\u8981\u8BB0\u5F55\u7684\u9057\u7559\u5F85\u529E");
-      return this.holdForConfirm("snapshot_tasks", path, "task_snapshot", { date: now.toISOString() }, "", summary);
+      return this.holdForConfirm("snapshot_tasks", path, "task_snapshot", {}, "", summary);
     }
     return { count: await this.plugin.tasks.snapshot({ accessible, date: now }) };
   }
@@ -2796,8 +2815,9 @@ var Store = class {
       snapshots: Array.isArray(loaded.snapshots) ? loaded.snapshots : [],
       reviewedChanges: loaded.reviewedChanges && typeof loaded.reviewedChanges === "object" && !Array.isArray(loaded.reviewedChanges) ? loaded.reviewedChanges : {},
       // 旧版 data.json 没有该字段时默认空数组，保证升级兼容。
+      // 缺 request.kind 的畸形条目会让 approvePendingWrite 抛裸 TypeError，迁移时一并过滤。
       pendingWrites: Array.isArray(loaded.pendingWrites) ? loaded.pendingWrites.filter(
-        (item) => item && typeof item === "object" && typeof item.id === "string" && typeof item.path === "string"
+        (item) => item && typeof item === "object" && typeof item.id === "string" && typeof item.path === "string" && item.request && typeof item.request.kind === "string"
       ) : [],
       diagnostics: Array.isArray(loaded.diagnostics) ? loaded.diagnostics : [],
       editSessions: loaded.editSessions && typeof loaded.editSessions === "object" && !Array.isArray(loaded.editSessions) ? loaded.editSessions : {},
@@ -4675,7 +4695,8 @@ var PENDING_TOOL_LABELS = {
   add_memo: "\u901F\u8BB0",
   record_work_log: "\u5DE5\u4F5C\u65E5\u5FD7",
   complete_task: "\u52FE\u9009\u5F85\u529E",
-  snapshot_tasks: "\u9057\u7559\u5F85\u529E\u5FEB\u7167"
+  snapshot_tasks: "\u9057\u7559\u5F85\u529E\u5FEB\u7167",
+  delegate_task: "\u8F6C\u4EA4\u5F85\u529E"
 };
 function pendingToolLabel(tool) {
   const zh = PENDING_TOOL_LABELS[tool];

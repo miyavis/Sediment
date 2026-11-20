@@ -65,6 +65,7 @@ const PENDING_TOOL_LABELS: Record<string, string> = {
   record_work_log: "工作日志",
   complete_task: "勾选待办",
   snapshot_tasks: "遗留待办快照",
+  delegate_task: "转交待办",
 };
 
 function pendingToolLabel(tool: string): string {

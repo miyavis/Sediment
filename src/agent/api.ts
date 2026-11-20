@@ -401,7 +401,7 @@ export class AgentApi {
   /** 采纳：按挂起时保存的原请求重放对应的落盘函数（重放前再次过门禁）。 */
   async approvePendingWrite(id: string): Promise<{ path: string }> {
     const record = this.getPendingWrite(id);
-    if (!record) throw new ApiError("NOT_FOUND", `待审写入不存在：${id}`, 404);
+    if (!record) throw new ApiError("NOT_FOUND", tf("待审写入不存在：{id}", { id }), 404);
     await this.replayPending(record.request);
     this.plugin.store.removePendingWrite(id);
     const message = tf("待审写入已采纳并落盘：{path}", { path: record.path });
@@ -412,7 +412,7 @@ export class AgentApi {
   /** 驳回：丢弃挂起请求（不落盘），并记安全诊断。 */
   rejectPendingWrite(id: string): { ok: true; path: string } {
     const removed = this.plugin.store.removePendingWrite(id);
-    if (!removed) throw new ApiError("NOT_FOUND", `待审写入不存在：${id}`, 404);
+    if (!removed) throw new ApiError("NOT_FOUND", tf("待审写入不存在：{id}", { id }), 404);
     const message = tf("待审写入已驳回并丢弃：{path}", { path: removed.path });
     this.plugin.store.logDiagnostic("security", message, `${removed.id} · ${removed.tool}`);
     return { ok: true, path: removed.path };
@@ -464,7 +464,7 @@ export class AgentApi {
         await this.snapshotTasks(true);
         return;
       default:
-        throw new ApiError("INVALID_PENDING", `未知的待审写入类型：${request.kind}`, 400);
+        throw new ApiError("INVALID_PENDING", tf("未知的待审写入类型：{kind}", { kind: request.kind }), 400);
     }
   }
 
@@ -1045,9 +1045,31 @@ export class AgentApi {
     return { ok: true };
   }
 
-  async delegateTask(path: string, line: number): Promise<{ id: string }> {
+  async delegateTask(
+    path: string,
+    line: number,
+    bypassConfirm = false
+  ): Promise<WithPending<{ id: string }>> {
     const safe = safeAgentPath(path);
     this.assertPathAllowed(safe, "read");
+    // delegate 内部经 memos.add -> appendToDailyNote 直接写当天日记：
+    // 必须与 addMemo 同款过写权限门禁（堵 readonly 旁路），confirm 档走挂起。
+    this.assertOperation("create");
+    if (!bypassConfirm && this.isConfirmMode()) {
+      // 人用看板调用面传 bypassConfirm=true 直接生效；Agent 面（HTTP/MCP）默认挂起。
+      const tasks = await this.plugin.tasks.list("all");
+      const task = tasks.find((item) => item.path === safe && item.line === line);
+      if (!task) throw new Error(`找不到待办：${safe}:${line}`);
+      const daily = dailyNotePath(this.plugin.store.settings, new Date());
+      return this.holdForConfirm(
+        "delegate_task",
+        daily,
+        "memo",
+        { text: task.text, tags: ["to-agent"], sourcePath: safe, sourceLine: line },
+        "",
+        tf("记一条速记到 {path}", { path: daily }) + `\n${task.text}\n标签：#to-agent`
+      );
+    }
     return { id: await this.plugin.tasks.delegate(safe, line) };
   }
 
@@ -1065,7 +1087,8 @@ export class AgentApi {
       const summary = overdue.length
         ? tf("将 {n} 条遗留待办写入 {path}", { n: overdue.length, path })
         : t("没有需要记录的遗留待办");
-      return this.holdForConfirm("snapshot_tasks", path, "task_snapshot", { date: now.toISOString() }, "", summary);
+      // args 只存重放所需信息：task_snapshot 重放时按当时日期重算，不落 date 死字段。
+      return this.holdForConfirm("snapshot_tasks", path, "task_snapshot", {}, "", summary);
     }
     return { count: await this.plugin.tasks.snapshot({ accessible, date: now }) };
   }

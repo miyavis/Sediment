@@ -1011,6 +1011,56 @@ test("confirm 档：速记 / 工作日志 / 勾选待办挂起，采纳走真实
   assert.equal(ctx.pendingWrites.length, 0);
 });
 
+test("confirm 档：delegateTask 挂起不落盘，采纳走 memo 重放；bypass 面直接生效；readonly 拒、auto 不受影响", async () => {
+  const taskFile = { "notes/a.md": "- [ ] 交给agent\n- [ ] 别的\n" };
+
+  // confirm：挂起为 memo 同款待审项，不落盘
+  const ctx = fakeConfirmPlugin({ agentWorkMode: "confirm" }, taskFile);
+  const held = (await ctx.api.delegateTask("notes/a.md", 1)) as HoldResult;
+  const id = pendingIdOf(held);
+  assert.equal(ctx.store.data.memos.length, 0, "挂起期间不得创建 Agent 任务");
+  assert.equal(ctx.pendingWrites.length, 1);
+  const rec = ctx.pendingWrites[0];
+  assert.equal(rec.tool, "delegate_task");
+  assert.equal(rec.request.kind, "memo", "kind 复用 memo，采纳走 addMemo 真实落盘");
+  assert.equal(rec.path, dailyNotePath(ctx.store.settings, new Date()));
+  assert.ok(String(rec.after).includes("交给agent"));
+  assert.ok(String(rec.after).includes("#to-agent"));
+
+  await ctx.api.approvePendingWrite(id);
+  assert.equal(ctx.store.data.memos.length, 1);
+  assert.deepEqual(ctx.store.data.memos[0].tags, ["to-agent"]);
+  assert.equal(ctx.pendingWrites.length, 0);
+
+  // 人用看板调用面：bypassConfirm=true 直接生效，不产生挂起项
+  await ctx.api.delegateTask("notes/a.md", 2, true);
+  assert.equal(ctx.store.data.memos.length, 2);
+  assert.equal(ctx.pendingWrites.length, 0, "bypass 面不挂起");
+
+  // readonly：delegate 内部写日记，必须被写权限门禁拒绝
+  const ro = fakeConfirmPlugin({
+    agentWorkMode: "readonly",
+    agentAllowRead: true,
+    agentAllowCreate: false,
+    agentAllowPatch: false,
+    agentAllowOverwrite: false,
+  }, taskFile);
+  await assert.rejects(ro.api.delegateTask("notes/a.md", 1), (error) => {
+    const e = asApiError(error);
+    return e.code === "OPERATION_DENIED" && /readonly 模式拒绝写入/.test(e.message);
+  });
+  assert.equal(ro.store.data.memos.length, 0);
+  assert.equal(ro.pendingWrites.length, 0, "被拒的越权写不得转挂起");
+
+  // auto：直接落盘，不受影响
+  const auto = fakeConfirmPlugin({ agentWorkMode: "auto" }, taskFile);
+  const res = (await auto.api.delegateTask("notes/a.md", 1)) as HoldResult & { id?: string };
+  assert.equal(res.pending, undefined);
+  assert.ok(res.id);
+  assert.equal(auto.store.data.memos.length, 1);
+  assert.equal(auto.pendingWrites.length, 0);
+});
+
 test("pendingWrites：旧 data.json 缺字段默认空数组，往返保存不丢", async () => {
   // 迁移兼容：缺字段 → 空数组
   let saved: Record<string, any> | null = null;
@@ -1038,13 +1088,20 @@ test("pendingWrites：旧 data.json 缺字段默认空数组，往返保存不�
 
   // 往返：重启加载后挂起项保留（设计意图：跨重启待审），坏条目被过滤
   const plugin2 = {
-    loadData: async () => ({ version: 1, pendingWrites: ["坏数据", record] }),
+    loadData: async () => ({
+      version: 1,
+      pendingWrites: [
+        "坏数据",
+        { id: "pw-no-request", time: "t", tool: "x", agent: "a", path: "p.md", before: "", after: "" },
+        record,
+      ],
+    }),
     saveData: async () => {},
   } as unknown as Parameters<typeof Store>[0];
   const store2 = new Store(plugin2);
   store2.scheduleSave = () => {};
   await store2.load();
-  assert.equal(store2.data.pendingWrites.length, 1);
+  assert.equal(store2.data.pendingWrites.length, 1, "非对象与缺 request.kind 的畸形条目都要被过滤");
   assert.equal(store2.data.pendingWrites[0].id, "pw-1");
   assert.equal(store2.removePendingWrite("pw-1")?.path, "notes/a.md");
   assert.equal(store2.data.pendingWrites.length, 0);

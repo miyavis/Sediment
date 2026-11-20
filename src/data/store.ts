@@ -86,9 +86,16 @@ export class Store {
           ? (loaded.reviewedChanges as Record<string, "kept" | "reverted">)
           : {},
       // 旧版 data.json 没有该字段时默认空数组，保证升级兼容。
+      // 缺 request.kind 的畸形条目会让 approvePendingWrite 抛裸 TypeError，迁移时一并过滤。
       pendingWrites: Array.isArray(loaded.pendingWrites)
         ? (loaded.pendingWrites as PendingWriteRecord[]).filter(
-            (item) => item && typeof item === "object" && typeof item.id === "string" && typeof item.path === "string"
+            (item) =>
+              item &&
+              typeof item === "object" &&
+              typeof item.id === "string" &&
+              typeof item.path === "string" &&
+              item.request &&
+              typeof item.request.kind === "string"
           )
         : [],
       diagnostics: Array.isArray(loaded.diagnostics) ? loaded.diagnostics : [],

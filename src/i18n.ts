@@ -383,6 +383,7 @@ const EN: Record<string, string> = {
   "已驳回，未写入任何内容": "Rejected; nothing was written",
   "勾选待办": "Task check",
   "遗留待办快照": "Overdue task snapshot",
+  "转交待办": "Task delegation",
   "驳回": "Reject",
   "。草稿需手动审核；「确认后写入」档下 Agent 的写操作会挂起在「待审写入」列表，采纳后才落盘；「自动执行」档不挂起。":
     ". Drafts need manual review; in confirm mode agent writes are held in the Pending writes list until accepted; automatic mode applies them directly.",
@@ -390,6 +391,7 @@ const EN: Record<string, string> = {
   "readonly 模式拒绝写入：操作 {operation} 不被允许": "Read-only mode refuses writes: operation {operation} is not allowed",
   "待审写入已采纳并落盘：{path}": "Pending write accepted and applied: {path}",
   "待审写入已驳回并丢弃：{path}": "Pending write rejected and discarded: {path}",
+  "待审写入不存在：{id}": "Pending write not found: {id}",
   "未知的待审写入类型：{kind}": "Unknown pending write kind: {kind}",
   "记一条速记到 {path}": "Add a memo to {path}",
   "将 {n} 条遗留待办写入 {path}": "Copy {n} overdue tasks into {path}",
