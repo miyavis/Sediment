@@ -44,6 +44,7 @@ export class DashboardView extends ItemView {
   private rhythmActiveOnly = true;
   private foldersExpanded = false;
   private insightsExpanded = false;
+  private insightsSection: "overview" | "heatmap" | "trend" | "folders" | "yearly" | "review" = "overview";
   private selected: string | null = null;
   private posterMonth = new Date().getMonth();
   private bannerEl: HTMLElement | null = null;
@@ -198,7 +199,7 @@ export class DashboardView extends ItemView {
     memoAction.onclick = () => {
       const area = root.querySelector(".sd-quick-memo textarea") as HTMLTextAreaElement | null;
       if (!area) return;
-      this.scrollToElement(area);
+      this.scrollToElement(area, "center");
       area.focus({ preventScroll: true });
     };
     const taskAction = actions.createEl("button", {
@@ -381,31 +382,41 @@ export class DashboardView extends ItemView {
   private renderInsights(root: HTMLElement): void {
     const body = root.createDiv({ cls: "sd-body" });
     const subnav = body.createDiv({ cls: "sd-subnav" });
-    const anchors: Array<[string, string]> = [
-      ["sd-overview", t("脉冲概览")],
-      ["sd-heatmap", t("热力图")],
-      ["sd-trend", t("写作趋势")],
-      ["sd-folders", t("投入分布")],
-      ["sd-yearly", t("年度画像")],
-      ["sd-review-card", t("本周复盘")],
+    const sections: Array<[typeof this.insightsSection, string]> = [
+      ["overview", t("脉冲概览")],
+      ["heatmap", t("热力图")],
+      ["trend", t("写作趋势")],
+      ["folders", t("投入分布")],
+      ["yearly", t("年度画像")],
+      ["review", t("本周复盘")],
     ];
-    for (const [id, label] of anchors) {
-      const button = subnav.createEl("button", { text: label });
+    for (const [key, label] of sections) {
+      const button = subnav.createEl("button", {
+        cls: key === this.insightsSection ? "is-active" : "",
+        text: label,
+      });
       button.onclick = () => {
-        const target = document.getElementById(id);
-        if (target instanceof HTMLElement) this.scrollToElement(target);
+        this.insightsSection = key;
+        this.render();
       };
     }
-    this.renderInsightsSummary(body);
-    this.renderOverview(body);
-    this.renderHeatmap(body, false);
-    if (this.insightsExpanded) {
-      const secondary = body.createDiv({ cls: "sd-secondary sd-insights-secondary" });
-      this.renderAnalytics(secondary);
-      this.renderHeatmap(secondary, true);
-      this.renderYearly(secondary);
+
+    const content = body.createDiv({ cls: "sd-insight-content" });
+    if (this.insightsSection === "overview") {
+      this.renderInsightsSummary(content);
+      this.renderOverview(content);
+    } else if (this.insightsSection === "heatmap") {
+      this.renderHeatmap(content, false);
+    } else if (this.insightsSection === "trend") {
+      this.renderAnalytics(content, "trend");
+    } else if (this.insightsSection === "folders") {
+      this.renderAnalytics(content, "folders");
+      this.renderAnalytics(content, "rhythm");
+    } else if (this.insightsSection === "yearly") {
+      this.renderYearly(content);
+    } else {
+      this.renderReview(content);
     }
-    this.renderReview(body);
     const footer = this.renderFooter(body);
     footer.createEl("button", { text: t("月报") }).onclick = () => {
       new PosterModal(this.plugin.app, this.plugin.store, this.posterMonth).open();
@@ -813,10 +824,10 @@ export class DashboardView extends ItemView {
   }
 
   /** 平滑滚动到目标，并为吸顶导航预留偏移。 */
-  private scrollToElement(target: HTMLElement): void {
+  private scrollToElement(target: HTMLElement, align: ScrollLogicalPosition = "start"): void {
     // 用户主动滚动时，取消上一次重绘排队的滚动恢复，避免两者打架。
     this.scrollRestoreToken += 1;
-    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    target.scrollIntoView({ behavior: "smooth", block: align });
   }
 
   private fallbackScroller(): HTMLElement | null {
@@ -1084,11 +1095,12 @@ ${refLines}${dots}${peakLabel}</svg>`;
     }
   }
 
-  private renderAnalytics(root: HTMLElement): void {
+  private renderAnalytics(root: HTMLElement, section: "all" | "trend" | "folders" | "rhythm" = "all"): void {
     const keys = this.chartKeys();
     const days = keys.map((key) => this.plugin.store.getDay(key));
     const label = t(RANGE_OPTIONS.find((range) => range[0] === this.range)?.[1] ?? "");
 
+    if (section === "all" || section === "trend") {
     const trend = this.analyticsCard(root, t("写作与时间趋势"), label);
     trend.setAttribute("id", "sd-trend");
     const trendTabs = trend.querySelector(".sd-card-head")?.createDiv({ cls: "sd-trend-tabs" });
@@ -1148,6 +1160,9 @@ ${refLines}${dots}${peakLabel}</svg>`;
       trendContent.createDiv({ cls: "sd-card-sub", text: tf("逐步写入 {typed} 字 · 大段捕获 {captured} 字", { typed, captured }) });
     }
 
+    }
+
+    if (section === "all" || section === "folders") {
     const folders = this.analyticsCard(root, t("投入去向"), t("按目录统计（笔记 × 天）"));
     folders.setAttribute("id", "sd-folders");
     const folderTotals = new Map<string, number>();
@@ -1176,6 +1191,9 @@ ${refLines}${dots}${peakLabel}</svg>`;
       };
     }
 
+    }
+
+    if (section === "all" || section === "rhythm") {
     const rhythm = this.analyticsCard(root, t("投入节律矩阵"), t("六项指标按天对齐"));
     const rhythmHead = rhythm.querySelector(".sd-card-head");
     const rhythmTabs = rhythmHead?.createDiv({ cls: "sd-trend-tabs" });
@@ -1248,6 +1266,7 @@ ${refLines}${dots}${peakLabel}</svg>`;
         const cell = grid.createDiv({ cls: `sd-rhythm-cell${value > 0 ? "" : " is-empty"}` });
         cell.setAttribute("style", `background:var(--interactive-accent);opacity:${value > 0 ? 0.1 + 0.9 * (value / maxima[index]) : 0.04}`);
       });
+    }
     }
   }
 

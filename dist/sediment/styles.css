@@ -1994,6 +1994,15 @@ settings:
   cursor: pointer;
 }
 
+.sd-subnav button.is-active {
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+}
+
+.sd-insight-content {
+  min-height: 240px;
+}
+
 .sd-trend-tabs {
   display: flex;
   gap: 4px;
