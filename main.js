@@ -99,14 +99,55 @@ function buildWeeklyReview(store, anchor) {
   const memos = store.data.memos.filter(
     (memo) => memo.date >= keys[0] && memo.date <= keys[keys.length - 1]
   );
+  const pendingMemos = memos.filter((memo) => !memo.converted && !memo.archived);
+  const agentTasks = store.data.memos.filter(
+    (memo) => memo.tags.includes("to-agent") && !memo.converted
+  );
+  const best = keys.reduce(
+    (bestDay, day) => store.getDay(day).contribution > store.getDay(bestDay).contribution ? day : bestDay,
+    keys[0]
+  );
   const lines = [];
   lines.push(`# \u5DE5\u4F5C\u590D\u76D8 ${dateKey(start)} ~ ${dateKey(end)}`);
   lines.push("");
-  const s = store.settings;
-  const capNote = s.contributionDailyCap > 0 ? `\uFF0C\u5355\u65E5\u5C01\u9876 ${s.contributionDailyCap}` : "";
-  lines.push(
-    `> \u751F\u6210\u4E8E ${dateKey(/* @__PURE__ */ new Date())}\u3002\u53E3\u5F84\uFF1A\u8D21\u732E\u5206 = \u65B0\u5EFA\u7B14\u8BB0\xD7${s.weightNotesCreated} + \u7F16\u8F91\u4F1A\u8BDD\xD7${s.weightEdits} + \u5B8C\u6210\u4EFB\u52A1\xD7${s.weightTasks} + \u65B0\u589E\u8BCD\u6570/${s.wordsPerPoint} + \u4E13\u6CE8\u5206\u949F/${s.focusMinutesPerPoint}${capNote}\uFF1B\u672A\u8BB0\u5F55\u65E5\u671F\u4E0D\u89C6\u4F5C\u96F6\u3002`
-  );
+  lines.push("## \u503C\u5F97\u56DE\u770B");
+  lines.push("");
+  const clues = [];
+  if (store.getDay(best).contribution > 0) {
+    clues.push(`\u8D21\u732E\u6700\u9AD8\u7684\u4E00\u5929\u662F ${best}\uFF08${store.getDay(best).contribution} \u5206\uFF09\u3002`);
+  }
+  if (pendingMemos.length > 0) clues.push(`\u8FD8\u6709 ${pendingMemos.length} \u6761\u901F\u8BB0\u5C1A\u672A\u8F6C\u5316\u3002`);
+  if (agentTasks.length > 0) clues.push(`\u6709 ${agentTasks.length} \u6761\u5E26 #to-agent \u7684\u5F85\u529E\u7B49\u5F85\u5904\u7406\u3002`);
+  if (clues.length === 0) clues.push("\u672C\u671F\u8BB0\u5F55\u8F83\u5C11\uFF0C\u5148\u628A\u8BB0\u5F55\u4E60\u60EF\u4FDD\u6301\u4F4F\u3002");
+  for (const clue of clues) lines.push(`- ${clue}`);
+  lines.push("");
+  lines.push("## \u672C\u671F\u6210\u679C");
+  lines.push("");
+  if (memos.length === 0) {
+    lines.push("_\u672C\u671F\u6CA1\u6709\u901F\u8BB0\u3002_");
+  } else {
+    for (const memo of memos) {
+      const tags = memo.tags.length ? ` ${memo.tags.map((tag) => `#${tag}`).join(" ")}` : "";
+      lines.push(`- ${memo.date} ${memo.time} ${memo.text.replace(/\n/g, " ")}${tags}`);
+    }
+  }
+  lines.push("");
+  lines.push("## \u672A\u5B8C\u6210\u4E8B\u9879");
+  lines.push("");
+  if (pendingMemos.length === 0 && agentTasks.length === 0) {
+    lines.push("_\u6CA1\u6709\u672A\u5B8C\u6210\u4E8B\u9879\u3002_");
+  } else {
+    for (const memo of pendingMemos) lines.push(`- [ ] \u901F\u8BB0\uFF1A${memo.text.replace(/\n/g, " ")}`);
+    for (const memo of agentTasks) lines.push(`- [ ] Agent \u4EFB\u52A1\uFF1A${memo.text.replace(/\n/g, " ")}`);
+  }
+  lines.push("");
+  lines.push("## \u6211\u7684\u8BA4\u8BC6");
+  lines.push("");
+  lines.push("_\u5728\u8FD9\u91CC\u5199\u4E0B\u672C\u671F\u590D\u76D8\u3002_");
+  lines.push("");
+  lines.push("## \u4E0B\u4E00\u6B65\u884C\u52A8");
+  lines.push("");
+  lines.push("- [ ] ");
   lines.push("");
   lines.push("## \u672C\u671F\u603B\u89C8");
   lines.push("");
@@ -132,37 +173,11 @@ function buildWeeklyReview(store, anchor) {
     );
   }
   lines.push("");
-  lines.push("## \u672C\u671F\u901F\u8BB0");
-  lines.push("");
-  if (memos.length === 0) {
-    lines.push("_\u672C\u671F\u6CA1\u6709\u901F\u8BB0\u3002_");
-  } else {
-    for (const memo of memos) {
-      const tags = memo.tags.length ? ` ${memo.tags.map((tag) => `#${tag}`).join(" ")}` : "";
-      lines.push(`- ${memo.date} ${memo.time} ${memo.text.replace(/\n/g, " ")}${tags}`);
-    }
-  }
-  lines.push("");
-  lines.push("## \u503C\u5F97\u56DE\u770B");
-  lines.push("");
-  const best = keys.reduce((bestDay, day) => store.getDay(day).contribution > store.getDay(bestDay).contribution ? day : bestDay, keys[0]);
-  const clues = [];
-  if (store.getDay(best).contribution > 0) {
-    clues.push(`\u8D21\u732E\u6700\u9AD8\u7684\u4E00\u5929\u662F ${best}\uFF08${store.getDay(best).contribution} \u5206\uFF09\u3002`);
-  }
-  const pending = store.data.memos.filter((memo) => !memo.converted && !memo.archived).length;
-  if (pending > 0) clues.push(`\u8FD8\u6709 ${pending} \u6761\u901F\u8BB0\u5C1A\u672A\u8F6C\u5316\u3002`);
-  if (clues.length === 0) clues.push("\u672C\u671F\u8BB0\u5F55\u8F83\u5C11\uFF0C\u5148\u628A\u8BB0\u5F55\u4E60\u60EF\u4FDD\u6301\u4F4F\u3002");
-  for (const clue of clues) lines.push(`- ${clue}`);
-  lines.push("");
-  lines.push("## \u6211\u7684\u8BA4\u8BC6");
-  lines.push("");
-  lines.push("_\u5728\u8FD9\u91CC\u5199\u4E0B\u672C\u671F\u590D\u76D8\u3002_");
-  lines.push("");
-  lines.push("## \u4E0B\u4E00\u6B65\u884C\u52A8");
-  lines.push("");
-  lines.push("- [ ] ");
-  lines.push("");
+  const s = store.settings;
+  const capNote = s.contributionDailyCap > 0 ? `\uFF0C\u5355\u65E5\u5C01\u9876 ${s.contributionDailyCap}` : "";
+  lines.push(
+    `> \u53E3\u5F84\uFF1A\u8D21\u732E\u5206 = \u65B0\u5EFA\u7B14\u8BB0\xD7${s.weightNotesCreated} + \u7F16\u8F91\u4F1A\u8BDD\xD7${s.weightEdits} + \u5B8C\u6210\u4EFB\u52A1\xD7${s.weightTasks} + \u65B0\u589E\u8BCD\u6570/${s.wordsPerPoint} + \u4E13\u6CE8\u5206\u949F/${s.focusMinutesPerPoint}${capNote}\uFF1B\u672A\u8BB0\u5F55\u65E5\u671F\u4E0D\u89C6\u4F5C\u96F6\u3002`
+  );
   return lines.join("\n");
 }
 
@@ -515,6 +530,7 @@ function findSection(text, heading, index) {
   }
   return { start: chosen.line + 1, end, lines };
 }
+var AGENT_API_VERSION = 1;
 var ApiError = class extends Error {
   constructor(code, message, status = 400) {
     super(message);
@@ -660,6 +676,7 @@ var AgentApi = class {
   }
   /** 全文搜索，返回命中片段。 */
   async searchNotes(query, limit = 10) {
+    var _a2, _b;
     const needle = String(query != null ? query : "").trim().toLowerCase();
     if (!needle) return [];
     const results = [];
@@ -676,7 +693,49 @@ var AgentApi = class {
         title: file.basename,
         snippet: text.slice(start, end).replace(/\s+/g, " ").trim(),
         matchType: "exact",
-        matchSource: "body"
+        matchSource: "body",
+        kind: "note"
+      });
+    }
+    const cap = Math.max(1, Math.min(limit, 100));
+    for (const memo of this.plugin.store.data.memos) {
+      if (results.length >= cap) break;
+      if (!memo.text.toLowerCase().includes(needle)) continue;
+      results.push({
+        path: "",
+        title: `\u901F\u8BB0 ${memo.date} ${memo.time}`,
+        snippet: memo.text.slice(0, 220),
+        matchType: "exact",
+        matchSource: "memo",
+        kind: "memo"
+      });
+    }
+    for (const log of this.plugin.store.data.workLogs) {
+      if (results.length >= cap) break;
+      const haystack = `${log.task} ${log.summary} ${(_a2 = log.learnings) != null ? _a2 : ""}`.toLowerCase();
+      if (!haystack.includes(needle)) continue;
+      results.push({
+        path: "",
+        title: `\u5DE5\u4F5C\u65E5\u5FD7 ${log.date} ${log.time} \xB7 ${log.agent}`,
+        snippet: `${log.task} \u2014 ${log.summary}`.slice(0, 220),
+        matchType: "exact",
+        matchSource: "worklog",
+        kind: "worklog"
+      });
+    }
+    for (const file of this.vault.getMarkdownFiles()) {
+      if (results.length >= cap) break;
+      if (!this.isAllowedByMode(file.path) || this.hasDeniedTag(file)) continue;
+      const cache = this.plugin.app.metadataCache.getFileCache(file);
+      if (((_b = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _b.sediment_status) !== "draft") continue;
+      if (!file.basename.toLowerCase().includes(needle)) continue;
+      results.push({
+        path: file.path,
+        title: file.basename,
+        snippet: "\u5F85\u5BA1\u6838\u7684\u77E5\u8BC6\u8349\u7A3F",
+        matchType: "exact",
+        matchSource: "title",
+        kind: "draft"
       });
     }
     return results;
@@ -1348,7 +1407,7 @@ var AgentServer = class {
       api.setCallContext(`${request.method} ${url.pathname}`, agent);
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
-          this.json(response, 200, { ok: true, plugin: "sediment", version: this.plugin.manifest.version });
+          this.json(response, 200, { ok: true, plugin: "sediment", version: this.plugin.manifest.version, agentApiVersion: AGENT_API_VERSION });
           return;
         case "GET /notes":
           this.json(response, 200, api.listNotes(str(query.get("folder")), num(query.get("limit"), 50)));
@@ -1781,6 +1840,7 @@ var DEFAULT_SETTINGS = {
   artStyle: "lake",
   layoutDensity: "standard",
   reducedMotion: false,
+  hintsDismissed: false,
   agentWorkMode: "confirm",
   dailyWordGoal: 1e3,
   contributionDailyCap: 120,
@@ -3965,6 +4025,7 @@ var DashboardView = class extends import_obsidian14.ItemView {
     this.yearlyTab = "wheel";
     this.rhythmActiveOnly = true;
     this.foldersExpanded = false;
+    this.insightsExpanded = false;
     this.selected = null;
     this.posterMonth = (/* @__PURE__ */ new Date()).getMonth();
     this.bannerEl = null;
@@ -4113,6 +4174,24 @@ var DashboardView = class extends import_obsidian14.ItemView {
     (_b = bento.querySelector(".sd-quick-memo")) == null ? void 0 : _b.addClass("sd-bento-memo");
     (_c = bento.querySelector(".sd-tasks")) == null ? void 0 : _c.addClass("sd-bento-tasks");
     (_d = bento.querySelector(".sd-agent-feed")) == null ? void 0 : _d.addClass("sd-bento-agent");
+    this.renderHints(body);
+  }
+  renderHints(root) {
+    if (this.plugin.store.settings.hintsDismissed) return;
+    const card = root.createDiv({ cls: "sd-card sd-hints" });
+    card.createDiv({ cls: "sd-card-title", text: t("\u9996\u6B21\u4F7F\u7528\u63D0\u793A") });
+    const list = card.createDiv({ cls: "sd-hint-list" });
+    const hints = [
+      t("\u8D21\u732E\u5206\u662F\u52A0\u6743\u7EDF\u8BA1\uFF0C\u4E0D\u4EE3\u8868\u77E5\u8BC6\u8D28\u91CF\uFF1B\u53E3\u5F84\u53EF\u5728\u5468\u590D\u76D8\u5E95\u90E8\u67E5\u770B\u3002"),
+      t("Agent \u751F\u6210\u7684\u7B14\u8BB0\u4F1A\u6807\u4E3A\u8349\u7A3F\uFF0C\u5728\u300C\u667A\u80FD\u4F53\u5DE5\u574A\u300D\u91CC\u5BA1\u6838\u540E\u518D\u91C7\u7EB3\u3002"),
+      t("\u70ED\u529B\u56FE\u683C\u5B50\u53EF\u60AC\u505C\u67E5\u770B\u5F53\u5929\u660E\u7EC6\uFF0C\u4E5F\u53EF\u7528\u65B9\u5411\u952E\u79FB\u52A8\u3002")
+    ];
+    for (const hint of hints) list.createDiv({ cls: "sd-hint-item", text: hint });
+    card.createEl("button", { text: t("\u77E5\u9053\u4E86\uFF0C\u4E0D\u518D\u663E\u793A") }).onclick = () => {
+      this.plugin.store.settings.hintsDismissed = true;
+      void this.plugin.saveSettings();
+      this.render();
+    };
   }
   renderTodayCard(root) {
     const today = dateKey(/* @__PURE__ */ new Date());
@@ -4217,6 +4296,36 @@ var DashboardView = class extends import_obsidian14.ItemView {
       row.createEl("strong", { text: log.task });
     }
   }
+  renderInsightsSummary(root) {
+    const card = root.createDiv({ cls: "sd-card sd-insight-summary" });
+    const head = card.createDiv({ cls: "sd-card-head" });
+    head.createDiv({ cls: "sd-card-title", text: t("\u672C\u5468\u6458\u8981") });
+    head.createEl("button", {
+      text: this.insightsExpanded ? t("\u6536\u8D77\u8BE6\u7EC6\u56FE\u8868") : t("\u5C55\u5F00\u8BE6\u7EC6\u56FE\u8868")
+    }).onclick = () => {
+      this.insightsExpanded = !this.insightsExpanded;
+      this.render();
+    };
+    const store = this.plugin.store;
+    const week = lastNDays(7);
+    const contribution = week.reduce((sum, key) => sum + store.getDay(key).contribution, 0);
+    const words = week.reduce((sum, key) => sum + store.getDay(key).wordsAdded, 0);
+    const pending = store.data.memos.filter((memo) => !memo.converted && !memo.archived).length;
+    const tasks = store.data.memos.filter((memo) => memo.tags.includes("to-agent") && !memo.converted).length;
+    const grid = card.createDiv({ cls: "sd-status-grid" });
+    const item = (label, value) => {
+      const box = grid.createDiv({ cls: "sd-status-item" });
+      box.createDiv({ cls: "sd-mini-label", text: label });
+      box.createDiv({ cls: "sd-mini-value", text: value });
+    };
+    item(t("\u8FD1 7 \u5929\u8D21\u732E"), String(contribution));
+    item(t("\u8FD1 7 \u5929\u65B0\u589E\u8BCD"), String(words));
+    item(t("\u672A\u5904\u7406\u901F\u8BB0"), String(pending));
+    item(t("Agent \u5F85\u529E"), String(tasks));
+    if (!this.insightsExpanded) {
+      card.createDiv({ cls: "sd-card-sub", text: t("\u8BE6\u7EC6\u56FE\u8868\u3001\u5E74\u5EA6\u753B\u50CF\u4E0E\u4EBA\u673A\u70ED\u529B\u56FE\u5DF2\u6536\u8D77\uFF0C\u70B9\u51FB\u53F3\u4E0A\u89D2\u5C55\u5F00\u3002") });
+    }
+  }
   renderInsights(root) {
     const body = root.createDiv({ cls: "sd-body" });
     const subnav = body.createDiv({ cls: "sd-subnav" });
@@ -4235,11 +4344,15 @@ var DashboardView = class extends import_obsidian14.ItemView {
         return (_a2 = document.getElementById(id)) == null ? void 0 : _a2.scrollIntoView({ behavior: "smooth", block: "start" });
       };
     }
+    this.renderInsightsSummary(body);
     this.renderOverview(body);
     this.renderHeatmap(body, false);
-    const secondary = body.createDiv({ cls: "sd-secondary sd-insights-secondary" });
-    this.renderAnalytics(secondary);
-    this.renderYearly(secondary);
+    if (this.insightsExpanded) {
+      const secondary = body.createDiv({ cls: "sd-secondary sd-insights-secondary" });
+      this.renderAnalytics(secondary);
+      this.renderHeatmap(secondary, true);
+      this.renderYearly(secondary);
+    }
     this.renderReview(body);
     const footer = this.renderFooter(body);
     footer.createEl("button", { text: t("\u6708\u62A5") }).onclick = () => {
@@ -4254,7 +4367,6 @@ var DashboardView = class extends import_obsidian14.ItemView {
     this.renderWorkLogs(body);
     const secondary = body.createDiv({ cls: "sd-secondary sd-agent-secondary" });
     this.renderAgentStatus(secondary);
-    this.renderHeatmap(secondary, true);
     this.renderFooter(body);
   }
   renderAgentChanges(root) {
@@ -5187,6 +5299,7 @@ var MemoView = class extends import_obsidian15.ItemView {
     super(leaf);
     this.plugin = plugin;
     this.tab = "all";
+    this.showMoreTabs = false;
     this.filter = "";
     this.walkId = null;
     this.showArchived = false;
@@ -5226,23 +5339,44 @@ var MemoView = class extends import_obsidian15.ItemView {
     root.setAttribute("data-density", this.plugin.store.settings.layoutDensity);
     root.toggleClass("is-reduced-motion", this.plugin.store.settings.reducedMotion);
     const tabs = root.createDiv({ cls: "sd-memo-tabs" });
-    const options = [
-      ["all", t("\u5168\u90E8")],
-      ["review", t("\u56DE\u987E")],
-      ["walk", t("\u6F2B\u6B65")],
-      ["tags", t("\u6807\u7B7E")],
-      ["knowledge", t("\u6C89\u6DC0")]
-    ];
-    for (const [key, label] of options) {
-      const button = tabs.createEl("button", {
-        cls: `sd-memo-tab ${key === this.tab ? "is-active" : ""}`,
-        text: label,
-        attr: { role: "tab", "aria-selected": key === this.tab ? "true" : "false" }
-      });
-      button.onclick = () => {
-        this.tab = key;
-        this.render();
-      };
+    const primary = tabs.createEl("button", {
+      cls: `sd-memo-tab ${this.tab === "all" ? "is-active" : ""}`,
+      text: t("\u5168\u90E8"),
+      attr: { role: "tab", "aria-selected": this.tab === "all" ? "true" : "false" }
+    });
+    primary.onclick = () => {
+      this.tab = "all";
+      this.render();
+    };
+    const more = tabs.createEl("button", {
+      cls: `sd-memo-tab sd-memo-more ${this.showMoreTabs || this.tab !== "all" ? "is-active" : ""}`,
+      text: t("\u66F4\u591A"),
+      attr: { "aria-expanded": this.showMoreTabs ? "true" : "false" }
+    });
+    more.onclick = () => {
+      this.showMoreTabs = !this.showMoreTabs;
+      this.render();
+    };
+    if (this.showMoreTabs || this.tab !== "all") {
+      const secondary = root.createDiv({ cls: "sd-memo-subtabs" });
+      const options = [
+        ["review", t("\u56DE\u987E")],
+        ["walk", t("\u6F2B\u6B65")],
+        ["tags", t("\u6807\u7B7E")],
+        ["knowledge", t("\u6C89\u6DC0")]
+      ];
+      for (const [key, label] of options) {
+        const button = secondary.createEl("button", {
+          cls: `sd-memo-tab ${key === this.tab ? "is-active" : ""}`,
+          text: label,
+          attr: { role: "tab", "aria-selected": key === this.tab ? "true" : "false" }
+        });
+        button.onclick = () => {
+          this.tab = key;
+          this.showMoreTabs = true;
+          this.render();
+        };
+      }
     }
     if (this.tab === "all") this.renderAll(root);
     else if (this.tab === "review") this.renderReview(root);

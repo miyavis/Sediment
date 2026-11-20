@@ -13,6 +13,7 @@ type MemoTab = "all" | "review" | "walk" | "tags" | "knowledge";
 /** 右侧栏速记面板：输入、图片附件、搜索、回顾、漫步与标签树。 */
 export class MemoView extends ItemView {
   private tab: MemoTab = "all";
+  private showMoreTabs = false;
   private filter = "";
   private walkId: string | null = null;
   private showArchived = false;
@@ -61,23 +62,44 @@ export class MemoView extends ItemView {
     root.toggleClass("is-reduced-motion", this.plugin.store.settings.reducedMotion);
 
     const tabs = root.createDiv({ cls: "sd-memo-tabs" });
-    const options: Array<[MemoTab, string]> = [
-      ["all", t("全部")],
-      ["review", t("回顾")],
-      ["walk", t("漫步")],
-      ["tags", t("标签")],
-      ["knowledge", t("沉淀")],
-    ];
-    for (const [key, label] of options) {
-      const button = tabs.createEl("button", {
-        cls: `sd-memo-tab ${key === this.tab ? "is-active" : ""}`,
-        text: label,
-        attr: { role: "tab", "aria-selected": key === this.tab ? "true" : "false" },
-      });
-      button.onclick = () => {
-        this.tab = key;
-        this.render();
-      };
+    const primary = tabs.createEl("button", {
+      cls: `sd-memo-tab ${this.tab === "all" ? "is-active" : ""}`,
+      text: t("全部"),
+      attr: { role: "tab", "aria-selected": this.tab === "all" ? "true" : "false" },
+    });
+    primary.onclick = () => {
+      this.tab = "all";
+      this.render();
+    };
+    const more = tabs.createEl("button", {
+      cls: `sd-memo-tab sd-memo-more ${this.showMoreTabs || this.tab !== "all" ? "is-active" : ""}`,
+      text: t("更多"),
+      attr: { "aria-expanded": this.showMoreTabs ? "true" : "false" },
+    });
+    more.onclick = () => {
+      this.showMoreTabs = !this.showMoreTabs;
+      this.render();
+    };
+    if (this.showMoreTabs || this.tab !== "all") {
+      const secondary = root.createDiv({ cls: "sd-memo-subtabs" });
+      const options: Array<[MemoTab, string]> = [
+        ["review", t("回顾")],
+        ["walk", t("漫步")],
+        ["tags", t("标签")],
+        ["knowledge", t("沉淀")],
+      ];
+      for (const [key, label] of options) {
+        const button = secondary.createEl("button", {
+          cls: `sd-memo-tab ${key === this.tab ? "is-active" : ""}`,
+          text: label,
+          attr: { role: "tab", "aria-selected": key === this.tab ? "true" : "false" },
+        });
+        button.onclick = () => {
+          this.tab = key;
+          this.showMoreTabs = true;
+          this.render();
+        };
+      }
     }
 
     if (this.tab === "all") this.renderAll(root);

@@ -42,6 +42,7 @@ export class DashboardView extends ItemView {
   private yearlyTab: "wheel" | "fingerprint" | "moon" = "wheel";
   private rhythmActiveOnly = true;
   private foldersExpanded = false;
+  private insightsExpanded = false;
   private selected: string | null = null;
   private posterMonth = new Date().getMonth();
   private bannerEl: HTMLElement | null = null;
@@ -208,6 +209,25 @@ export class DashboardView extends ItemView {
     bento.querySelector(".sd-quick-memo")?.addClass("sd-bento-memo");
     bento.querySelector(".sd-tasks")?.addClass("sd-bento-tasks");
     bento.querySelector(".sd-agent-feed")?.addClass("sd-bento-agent");
+    this.renderHints(body);
+  }
+
+  private renderHints(root: HTMLElement): void {
+    if (this.plugin.store.settings.hintsDismissed) return;
+    const card = root.createDiv({ cls: "sd-card sd-hints" });
+    card.createDiv({ cls: "sd-card-title", text: t("首次使用提示") });
+    const list = card.createDiv({ cls: "sd-hint-list" });
+    const hints = [
+      t("贡献分是加权统计，不代表知识质量；口径可在周复盘底部查看。"),
+      t("Agent 生成的笔记会标为草稿，在「智能体工坊」里审核后再采纳。"),
+      t("热力图格子可悬停查看当天明细，也可用方向键移动。"),
+    ];
+    for (const hint of hints) list.createDiv({ cls: "sd-hint-item", text: hint });
+    card.createEl("button", { text: t("知道了，不再显示") }).onclick = () => {
+      this.plugin.store.settings.hintsDismissed = true;
+      void this.plugin.saveSettings();
+      this.render();
+    };
   }
 
   private renderTodayCard(root: HTMLElement): void {
@@ -311,6 +331,37 @@ export class DashboardView extends ItemView {
     }
   }
 
+  private renderInsightsSummary(root: HTMLElement): void {
+    const card = root.createDiv({ cls: "sd-card sd-insight-summary" });
+    const head = card.createDiv({ cls: "sd-card-head" });
+    head.createDiv({ cls: "sd-card-title", text: t("本周摘要") });
+    head.createEl("button", {
+      text: this.insightsExpanded ? t("收起详细图表") : t("展开详细图表"),
+    }).onclick = () => {
+      this.insightsExpanded = !this.insightsExpanded;
+      this.render();
+    };
+    const store = this.plugin.store;
+    const week = lastNDays(7);
+    const contribution = week.reduce((sum, key) => sum + store.getDay(key).contribution, 0);
+    const words = week.reduce((sum, key) => sum + store.getDay(key).wordsAdded, 0);
+    const pending = store.data.memos.filter((memo) => !memo.converted && !memo.archived).length;
+    const tasks = store.data.memos.filter((memo) => memo.tags.includes("to-agent") && !memo.converted).length;
+    const grid = card.createDiv({ cls: "sd-status-grid" });
+    const item = (label: string, value: string): void => {
+      const box = grid.createDiv({ cls: "sd-status-item" });
+      box.createDiv({ cls: "sd-mini-label", text: label });
+      box.createDiv({ cls: "sd-mini-value", text: value });
+    };
+    item(t("近 7 天贡献"), String(contribution));
+    item(t("近 7 天新增词"), String(words));
+    item(t("未处理速记"), String(pending));
+    item(t("Agent 待办"), String(tasks));
+    if (!this.insightsExpanded) {
+      card.createDiv({ cls: "sd-card-sub", text: t("详细图表、年度画像与人机热力图已收起，点击右上角展开。") });
+    }
+  }
+
   private renderInsights(root: HTMLElement): void {
     const body = root.createDiv({ cls: "sd-body" });
     const subnav = body.createDiv({ cls: "sd-subnav" });
@@ -326,11 +377,15 @@ export class DashboardView extends ItemView {
       const button = subnav.createEl("button", { text: label });
       button.onclick = () => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
+    this.renderInsightsSummary(body);
     this.renderOverview(body);
     this.renderHeatmap(body, false);
-    const secondary = body.createDiv({ cls: "sd-secondary sd-insights-secondary" });
-    this.renderAnalytics(secondary);
-    this.renderYearly(secondary);
+    if (this.insightsExpanded) {
+      const secondary = body.createDiv({ cls: "sd-secondary sd-insights-secondary" });
+      this.renderAnalytics(secondary);
+      this.renderHeatmap(secondary, true);
+      this.renderYearly(secondary);
+    }
     this.renderReview(body);
     const footer = this.renderFooter(body);
     footer.createEl("button", { text: t("月报") }).onclick = () => {
@@ -346,7 +401,6 @@ export class DashboardView extends ItemView {
     this.renderWorkLogs(body);
     const secondary = body.createDiv({ cls: "sd-secondary sd-agent-secondary" });
     this.renderAgentStatus(secondary);
-    this.renderHeatmap(secondary, true);
     this.renderFooter(body);
   }
 

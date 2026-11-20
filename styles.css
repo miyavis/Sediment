@@ -2032,6 +2032,37 @@ settings:
   min-height: 4px;
 }
 
+.sd-hint-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 10px;
+}
+
+.sd-hint-item {
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  border-left: 2px solid var(--interactive-accent);
+  border-radius: 6px;
+}
+
+.sd-insight-summary .sd-status-grid {
+  margin-top: 10px;
+}
+
+.sd-memo-subtabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+  padding: 4px;
+  background: var(--background-secondary);
+  border-radius: 999px;
+}
+
 /* ── P1：速记编辑 / 归档 / 删除 ───────────────────────── */
 .kp-memo-edit {
   width: 100%;

@@ -1,7 +1,7 @@
 import { Notice } from "obsidian";
 import type { IncomingMessage, ServerResponse } from "http";
 import type { SedimentPlugin } from "../main";
-import { ApiError } from "./api";
+import { AGENT_API_VERSION, ApiError } from "./api";
 
 type HttpServer = import("http").Server;
 
@@ -129,7 +129,7 @@ export class AgentServer {
 
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
-          this.json(response, 200, { ok: true, plugin: "sediment", version: this.plugin.manifest.version });
+          this.json(response, 200, { ok: true, plugin: "sediment", version: this.plugin.manifest.version, agentApiVersion: AGENT_API_VERSION });
           return;
         case "GET /notes":
           this.json(response, 200, api.listNotes(str(query.get("folder")), num(query.get("limit"), 50)));

@@ -2,6 +2,16 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [Unreleased]
+
+### 新增
+- 知识页摘要优先 + 详细图表折叠开关；人机双色热力图移入知识页
+- 周复盘重排为「线索—成果—行动—归档—详细数据」
+- 速记侧栏「全部 + 更多」次级入口，回顾/漫步/标签/沉淀收进更多菜单
+- 统一搜索入口：`search_notes` 同时检索笔记、速记、工作日志和草稿，并标注来源类型
+- 首次使用轻量上下文提示，可关闭
+- Agent API 版本声明：`AGENT_API_VERSION = 1`，`/health` 返回 `agentApiVersion`，README 写明兼容策略
+
 ## [0.9.0] - 2026-11-20
 
 ### 新增

@@ -11,7 +11,7 @@ const METRIC_ROWS: Array<[keyof DayRecord, string]> = [
   ["focusMinutes", "专注分钟"],
 ];
 
-/** 根据某个锚点日期，生成它所在自然周的 Markdown 复盘报告。 */
+/** 周复盘按「线索 — 行动 — 归档 — 详细数据」组织，先帮用户做决策。 */
 export function buildWeeklyReview(store: Store, anchor: Date): string {
   const weekStart = store.settings.weekStart;
   const start = startOfWeek(anchor, weekStart);
@@ -26,17 +26,67 @@ export function buildWeeklyReview(store: Store, anchor: Date): string {
   const memos = store.data.memos.filter(
     (memo) => memo.date >= keys[0] && memo.date <= keys[keys.length - 1]
   );
+  const pendingMemos = memos.filter((memo) => !memo.converted && !memo.archived);
+  const agentTasks = store.data.memos.filter(
+    (memo) => memo.tags.includes("to-agent") && !memo.converted
+  );
+  const best = keys.reduce(
+    (bestDay, day) =>
+      store.getDay(day).contribution > store.getDay(bestDay).contribution ? day : bestDay,
+    keys[0]
+  );
 
   const lines: string[] = [];
   lines.push(`# 工作复盘 ${dateKey(start)} ~ ${dateKey(end)}`);
   lines.push("");
-  const s = store.settings;
-  const capNote = s.contributionDailyCap > 0 ? `，单日封顶 ${s.contributionDailyCap}` : "";
-  lines.push(
-    `> 生成于 ${dateKey(new Date())}。口径：贡献分 = 新建笔记×${s.weightNotesCreated} + 编辑会话×${s.weightEdits} + 完成任务×${s.weightTasks} + 新增词数/${s.wordsPerPoint} + 专注分钟/${s.focusMinutesPerPoint}${capNote}；未记录日期不视作零。`
-  );
+
+  // 1. 线索：先给可核对的事实
+  lines.push("## 值得回看");
+  lines.push("");
+  const clues: string[] = [];
+  if (store.getDay(best).contribution > 0) {
+    clues.push(`贡献最高的一天是 ${best}（${store.getDay(best).contribution} 分）。`);
+  }
+  if (pendingMemos.length > 0) clues.push(`还有 ${pendingMemos.length} 条速记尚未转化。`);
+  if (agentTasks.length > 0) clues.push(`有 ${agentTasks.length} 条带 #to-agent 的待办等待处理。`);
+  if (clues.length === 0) clues.push("本期记录较少，先把记录习惯保持住。");
+  for (const clue of clues) lines.push(`- ${clue}`);
   lines.push("");
 
+  // 2. 成果与未完成事项
+  lines.push("## 本期成果");
+  lines.push("");
+  if (memos.length === 0) {
+    lines.push("_本期没有速记。_");
+  } else {
+    for (const memo of memos) {
+      const tags = memo.tags.length ? ` ${memo.tags.map((tag) => `#${tag}`).join(" ")}` : "";
+      lines.push(`- ${memo.date} ${memo.time} ${memo.text.replace(/\n/g, " ")}${tags}`);
+    }
+  }
+  lines.push("");
+
+  lines.push("## 未完成事项");
+  lines.push("");
+  if (pendingMemos.length === 0 && agentTasks.length === 0) {
+    lines.push("_没有未完成事项。_");
+  } else {
+    for (const memo of pendingMemos) lines.push(`- [ ] 速记：${memo.text.replace(/\n/g, " ")}`);
+    for (const memo of agentTasks) lines.push(`- [ ] Agent 任务：${memo.text.replace(/\n/g, " ")}`);
+  }
+  lines.push("");
+
+  // 3. 行动与归档
+  lines.push("## 我的认识");
+  lines.push("");
+  lines.push("_在这里写下本期复盘。_");
+  lines.push("");
+  lines.push("## 下一步行动");
+  lines.push("");
+  lines.push("- [ ] ");
+  lines.push("");
+
+  // 4. 详细数据与口径
   lines.push("## 本期总览");
   lines.push("");
   lines.push("| 指标 | 本期 | 上期 | 变化 |");
@@ -63,40 +113,10 @@ export function buildWeeklyReview(store: Store, anchor: Date): string {
   }
   lines.push("");
 
-  lines.push("## 本期速记");
-  lines.push("");
-  if (memos.length === 0) {
-    lines.push("_本期没有速记。_");
-  } else {
-    for (const memo of memos) {
-      const tags = memo.tags.length ? ` ${memo.tags.map((tag) => `#${tag}`).join(" ")}` : "";
-      lines.push(`- ${memo.date} ${memo.time} ${memo.text.replace(/\n/g, " ")}${tags}`);
-    }
-  }
-  lines.push("");
-
-  lines.push("## 值得回看");
-  lines.push("");
-  const best = keys.reduce((bestDay, day) =>
-    store.getDay(day).contribution > store.getDay(bestDay).contribution ? day : bestDay, keys[0]);
-  const clues: string[] = [];
-  if (store.getDay(best).contribution > 0) {
-    clues.push(`贡献最高的一天是 ${best}（${store.getDay(best).contribution} 分）。`);
-  }
-  const pending = store.data.memos.filter((memo) => !memo.converted && !memo.archived).length;
-  if (pending > 0) clues.push(`还有 ${pending} 条速记尚未转化。`);
-  if (clues.length === 0) clues.push("本期记录较少，先把记录习惯保持住。");
-  for (const clue of clues) lines.push(`- ${clue}`);
-  lines.push("");
-
-  lines.push("## 我的认识");
-  lines.push("");
-  lines.push("_在这里写下本期复盘。_");
-  lines.push("");
-  lines.push("## 下一步行动");
-  lines.push("");
-  lines.push("- [ ] ");
-  lines.push("");
-
+  const s = store.settings;
+  const capNote = s.contributionDailyCap > 0 ? `，单日封顶 ${s.contributionDailyCap}` : "";
+  lines.push(
+    `> 口径：贡献分 = 新建笔记×${s.weightNotesCreated} + 编辑会话×${s.weightEdits} + 完成任务×${s.weightTasks} + 新增词数/${s.wordsPerPoint} + 专注分钟/${s.focusMinutesPerPoint}${capNote}；未记录日期不视作零。`
+  );
   return lines.join("\n");
 }

@@ -18,8 +18,9 @@ export interface SearchResult {
   path: string;
   title: string;
   snippet: string;
-  matchType: "exact";
-  matchSource: "body";
+  matchType: "exact" | "semantic";
+  matchSource: "body" | "title" | "tag" | "memo" | "worklog";
+  kind?: "note" | "memo" | "worklog" | "draft";
 }
 
 export interface TodaySnapshot {
@@ -160,6 +161,9 @@ function findSection(
 }
 
 /** 带机器可读错误码的 API 异常，HTTP 层据此返回 4xx。 */
+/** 对外 Agent API 版本；兼容策略见 README「Agent 接入」。 */
+export const AGENT_API_VERSION = 1;
+
 export class ApiError extends Error {
   constructor(
     public code: string,
@@ -366,6 +370,49 @@ export class AgentApi {
         snippet: text.slice(start, end).replace(/\s+/g, " ").trim(),
         matchType: "exact",
         matchSource: "body",
+        kind: "note",
+      });
+    }
+
+    const cap = Math.max(1, Math.min(limit, 100));
+    for (const memo of this.plugin.store.data.memos) {
+      if (results.length >= cap) break;
+      if (!memo.text.toLowerCase().includes(needle)) continue;
+      results.push({
+        path: "",
+        title: `速记 ${memo.date} ${memo.time}`,
+        snippet: memo.text.slice(0, 220),
+        matchType: "exact",
+        matchSource: "memo",
+        kind: "memo",
+      });
+    }
+    for (const log of this.plugin.store.data.workLogs) {
+      if (results.length >= cap) break;
+      const haystack = `${log.task} ${log.summary} ${log.learnings ?? ""}`.toLowerCase();
+      if (!haystack.includes(needle)) continue;
+      results.push({
+        path: "",
+        title: `工作日志 ${log.date} ${log.time} · ${log.agent}`,
+        snippet: `${log.task} — ${log.summary}`.slice(0, 220),
+        matchType: "exact",
+        matchSource: "worklog",
+        kind: "worklog",
+      });
+    }
+    for (const file of this.vault.getMarkdownFiles()) {
+      if (results.length >= cap) break;
+      if (!this.isAllowedByMode(file.path) || this.hasDeniedTag(file)) continue;
+      const cache = this.plugin.app.metadataCache.getFileCache(file);
+      if (cache?.frontmatter?.sediment_status !== "draft") continue;
+      if (!file.basename.toLowerCase().includes(needle)) continue;
+      results.push({
+        path: file.path,
+        title: file.basename,
+        snippet: "待审核的知识草稿",
+        matchType: "exact",
+        matchSource: "title",
+        kind: "draft",
       });
     }
     return results;

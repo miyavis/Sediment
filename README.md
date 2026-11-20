@@ -160,6 +160,8 @@ OpenCode 示例：
 
 完整工具清单可通过 MCP `tools/list` 查询。
 
+**API 版本**：`AGENT_API_VERSION = 1`（`/health` 返回 `agentApiVersion`）。工具名或参数结构变更时递增该版本；同一版本内不会删除或重命名已有工具，客户端可按版本决定兼容策略。
+
 ## 数据与恢复
 
 - 主数据：`.obsidian/plugins/sediment/data.json`
