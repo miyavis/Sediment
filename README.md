@@ -39,8 +39,7 @@ Sediment 是一个本地优先的 Obsidian 插件，把知识工作统计、快�
 
 `.obsidian` 是 **vault 根目录下的隐藏文件夹**，不在插件仓库里。
 
-- Windows 资源管理器：查看 → 显示 → 勾选「隐藏的项目」；也可在地址栏直接粘贴：
-  `D:\project\Obsidian-doc\Miyavis\.obsidian\plugins\sediment`
+- Windows 资源管理器：查看 → 显示 → 勾选「隐藏的项目」；也可在地址栏粘贴 `<vault 路径>\.obsidian\plugins\sediment`（把 `<vault 路径>` 换成你的库根目录）
 - macOS Finder：`Cmd + Shift + .` 显示隐藏文件
 - Linux：文件管理器按 `Ctrl + H`，或终端执行 `ls -a`
 
@@ -126,7 +125,9 @@ mcp-server/index.mjs
 3. 使用“自动配置智能体客户端”，或复制配置 JSON。
 4. 重启对应客户端。
 
-OpenCode 示例：
+BRAT 安装时插件目录只有三件套，没有 `mcp-server/` 是正常的：点「一键配置智能体客户端」后，插件会把内嵌的桥接脚本自动写到 `<vault>/.obsidian/plugins/sediment/mcp-server/index.mjs`。也可以从整包 zip 里复制该文件。
+
+OpenCode 示例（把 `<vault>` 换成你的库根目录）：
 
 ```json
 {
@@ -134,7 +135,7 @@ OpenCode 示例：
   "mcp": {
     "sediment": {
       "type": "local",
-      "command": ["node", "D:/project/Obsidian_plugin/mcp-server/index.mjs"],
+      "command": ["node", "<vault>/.obsidian/plugins/sediment/mcp-server/index.mjs"],
       "environment": {
         "SEDIMENT_URL": "http://127.0.0.1:27123",
         "SEDIMENT_TOKEN": "设置里的令牌",

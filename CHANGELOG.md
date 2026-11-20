@@ -5,7 +5,7 @@
 ## [Unreleased]
 
 ### 文档
-- README 补充「如何找到 .obsidian 目录」与 zip 手工安装步骤
+- README 补充「如何找到 .obsidian 目录」与 zip 手工安装步骤，示例路径改为 `<vault>` 通用写法，并说明 BRAT 安装时桥接脚本由一键配置自动落盘
 
 ### 改进
 - 新增安装整包 `dist/sediment/`：包含 main.js、manifest.json、styles.css、mcp-server/index.mjs 与安装说明；Release 自动附加 `sediment-vX.Y.Z.zip`，下载解压即可复制
