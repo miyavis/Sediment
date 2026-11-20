@@ -3,6 +3,14 @@ import { spawnSync } from "node:child_process";
 const input = [
   JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
   JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
+  JSON.stringify({ jsonrpc: "2.0", id: 3, method: "ping", params: {} }),
+  JSON.stringify({ jsonrpc: "2.0", id: 4, method: "unknown/method", params: {} }),
+  JSON.stringify({
+    jsonrpc: "2.0",
+    id: 5,
+    method: "tools/call",
+    params: { name: "read_note", arguments: {} },
+  }),
   "",
 ].join("\n");
 
@@ -18,8 +26,34 @@ if (result.status !== 0) {
 const messages = result.stdout.trim().split("\n").map((line) => JSON.parse(line));
 const init = messages.find((message) => message.id === 1);
 const list = messages.find((message) => message.id === 2);
+const ping = messages.find((message) => message.id === 3);
+const unknown = messages.find((message) => message.id === 4);
+const missingArgument = messages.find((message) => message.id === 5);
 if (!init?.result || !list?.result?.tools) {
   console.error("MCP handshake failed:", result.stdout);
+  process.exit(1);
+}
+if (!ping?.result || unknown?.error?.code !== -32601) {
+  console.error("MCP lifecycle smoke failed:", result.stdout);
+  process.exit(1);
+}
+
+const requiredTools = [
+  "get_daily_context",
+  "get_active_context",
+  "patch_note",
+  "claim_agent_task",
+  "complete_agent_task",
+  "revert_agent_change",
+];
+const names = new Set(list.result.tools.map((tool) => tool.name));
+const missingTools = requiredTools.filter((name) => !names.has(name));
+if (missingTools.length > 0) {
+  console.error(`MCP tool inventory missing: ${missingTools.join(", ")}`);
+  process.exit(1);
+}
+if (!missingArgument?.result?.isError || !missingArgument.result.content?.[0]?.text?.includes("缺少必填参数")) {
+  console.error("MCP required-argument validation failed:", result.stdout);
   process.exit(1);
 }
 

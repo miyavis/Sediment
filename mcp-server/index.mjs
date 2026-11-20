@@ -386,6 +386,14 @@ async function call(path, params = {}, method = "GET") {
 }
 
 async function dispatch(name, args) {
+  const tool = TOOLS.find((candidate) => candidate.name === name);
+  if (!tool) throw new Error(`未知工具：${name}`);
+  const missing = (tool.inputSchema.required ?? []).filter(
+    (key) => args[key] === undefined || args[key] === null || args[key] === ""
+  );
+  if (missing.length > 0) {
+    throw new Error(`缺少必填参数：${missing.join(", ")}`);
+  }
   switch (name) {
     case "search_notes":
       return call("/search", { q: args.query ?? "", limit: args.limit ?? 10 });
@@ -511,7 +519,7 @@ async function handle(message) {
         result: {
           protocolVersion: "2024-11-05",
           capabilities: { tools: {} },
-          serverInfo: { name: "sediment", version: "0.8.7" },
+          serverInfo: { name: "sediment", version: "0.8.8" },
         },
       });
       break;

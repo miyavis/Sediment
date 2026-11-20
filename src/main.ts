@@ -34,6 +34,9 @@ export class SedimentPlugin extends Plugin {
   async onload(): Promise<void> {
     this.store = new Store(this);
     await this.store.load();
+    if (this.store.migrationWarning) {
+      new Notice(this.store.migrationWarning);
+    }
     setLocale(resolveLocale(this.store.settings.language));
     if (this.store.settings.lastSeenVersion !== this.manifest.version) {
       this.store.settings.lastSeenVersion = this.manifest.version;
@@ -220,6 +223,8 @@ export class SedimentPlugin extends Plugin {
 
   async onunload(): Promise<void> {
     if (this.serverRestartTimer !== null) window.clearTimeout(this.serverRestartTimer);
+    if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
+    this.tracker?.stop();
     await this.agentServer?.stop();
     delete (window as Window & { Sediment?: unknown }).Sediment;
     await this.store.save();

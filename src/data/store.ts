@@ -19,25 +19,58 @@ import { ensureFolder, normalizeFolder } from "../utils/vault";
 /** 包装 Obsidian 的 loadData/saveData，提供按天读写与防抖保存。 */
 export class Store {
   data: PulseData = DEFAULT_DATA;
+  migrationWarning: string | null = null;
+  private persistenceBlocked = false;
   private saveTimer: number | null = null;
   private lastBackupAt = 0;
 
   constructor(private plugin: Plugin) {}
 
+  private async preserveRecoveryCopy(raw: unknown): Promise<void> {
+    try {
+      const adapter = this.plugin.app?.vault?.adapter;
+      if (!adapter?.write) return;
+      await ensureFolder(this.plugin.app.vault, ".obsidian/plugins/sediment/recovery");
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      await adapter.write(
+        `.obsidian/plugins/sediment/recovery/data-${stamp}.json`,
+        JSON.stringify(raw, null, 2)
+      );
+    } catch {
+      // Recovery copy failure must not replace or overwrite the original data.
+    }
+  }
+
   async load(): Promise<void> {
     const raw = await this.plugin.loadData();
     const loaded = raw && typeof raw === "object" ? (raw as Partial<PulseData>) : {};
+    if (raw && typeof raw === "object") {
+      const version = (raw as Partial<PulseData>).version;
+      if (typeof version !== "number" || version !== 1) {
+        this.persistenceBlocked = true;
+        this.migrationWarning = typeof version === "number"
+          ? `不支持的数据版本 ${version}，已暂停写入以保护原始数据`
+          : "数据缺少有效版本号，已暂停写入以保护原始数据";
+        await this.preserveRecoveryCopy(raw);
+      }
+    } else if (raw != null) {
+      this.persistenceBlocked = true;
+      this.migrationWarning = "数据格式异常，已暂停写入以保护原始数据";
+      await this.preserveRecoveryCopy(raw);
+    }
     this.data = {
       version: loaded.version ?? 1,
-      days: loaded.days ?? {},
-      memos: loaded.memos ?? [],
-      workLogs: loaded.workLogs ?? [],
-      toolCalls: loaded.toolCalls ?? [],
-      snapshots: loaded.snapshots ?? [],
-      editSessions: loaded.editSessions ?? {},
-      focusSessions: loaded.focusSessions ?? [],
+      days: loaded.days && typeof loaded.days === "object" && !Array.isArray(loaded.days) ? loaded.days : {},
+      memos: Array.isArray(loaded.memos) ? loaded.memos : [],
+      workLogs: Array.isArray(loaded.workLogs) ? loaded.workLogs : [],
+      toolCalls: Array.isArray(loaded.toolCalls) ? loaded.toolCalls : [],
+      snapshots: Array.isArray(loaded.snapshots) ? loaded.snapshots : [],
+      editSessions: loaded.editSessions && typeof loaded.editSessions === "object" && !Array.isArray(loaded.editSessions)
+        ? loaded.editSessions
+        : {},
+      focusSessions: Array.isArray(loaded.focusSessions) ? loaded.focusSessions : [],
       pomodoro: loaded.pomodoro ?? null,
-      settings: { ...DEFAULT_SETTINGS, ...(loaded.settings ?? {}) },
+      settings: { ...DEFAULT_SETTINGS, ...(loaded.settings && typeof loaded.settings === "object" ? loaded.settings : {}) },
     };
     // 编辑会话去重表只保留最近两天，避免无限增长。
     const keepSince = dateKey(new Date(Date.now() - 86400000));
@@ -48,6 +81,12 @@ export class Store {
       const day = { ...createEmptyDay(), ...this.data.days[key] };
       day.hourlyWords = Array.from({ length: 24 }, (_, hour) => Number(day.hourlyWords?.[hour]) || 0);
       day.folderWords = day.folderWords ?? {};
+      day.wordsAdded = Math.max(0, Math.round(day.wordsAdded));
+      day.wordsRemoved = Math.max(0, Math.round(day.wordsRemoved));
+      day.edits = Math.max(0, Math.round(day.edits));
+      day.notesCreated = Math.max(0, Math.round(day.notesCreated));
+      day.tasksCompleted = Math.max(0, Math.round(day.tasksCompleted));
+      day.focusMinutes = Math.max(0, Math.round(day.focusMinutes));
       day.activeMinutes = Math.max(0, Math.round(day.activeMinutes));
       day.capturedWords = Math.max(0, Math.round(day.capturedWords));
       day.aiWordsAdded = Math.max(0, Math.round(day.aiWordsAdded));
@@ -65,6 +104,7 @@ export class Store {
   }
 
   async save(): Promise<void> {
+    if (this.persistenceBlocked) return;
     if (this.saveTimer !== null) {
       window.clearTimeout(this.saveTimer);
       this.saveTimer = null;
@@ -146,11 +186,13 @@ export class Store {
 
   addMemo(memo: MemoRecord): void {
     this.data.memos.unshift(memo);
+    if (this.data.memos.length > 2000) this.data.memos.length = 2000;
     this.scheduleSave();
   }
 
   addWorkLog(log: WorkLogRecord): void {
     this.data.workLogs.unshift(log);
+    if (this.data.workLogs.length > 500) this.data.workLogs.length = 500;
     this.scheduleSave();
   }
 
