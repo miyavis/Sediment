@@ -11,6 +11,9 @@ import {
   createEmptyDay,
   DEFAULT_SETTINGS,
   type DayRecord,
+  type FocusSessionRecord,
+  type MemoRecord,
+  type PersistedPomodoro,
   type PulseSettings,
 } from "../src/types";
 import {
@@ -27,7 +30,12 @@ import {
   localStamp,
   isSameLocalDay,
 } from "../src/utils/dates";
-import { countWords, countCheckedTasks, noteDateKey } from "../src/tracking/tracker";
+import { countWords, countCheckedTasks, noteDateKey, Tracker } from "../src/tracking/tracker";
+import { PomodoroManager } from "../src/features/pomodoro";
+import { MemoManager } from "../src/features/memo";
+import { buildWeeklyReview } from "../src/features/review";
+import SedimentPlugin from "../src/main";
+import { Notice, TFile, type Plugin } from "obsidian";
 import { normalizeFolder } from "../src/utils/vault";
 import { buildStatsCsv, buildExportJson, DEFAULT_EXPORT_OPTIONS } from "../src/features/export";
 import { Store } from "../src/data/store";
@@ -547,4 +555,370 @@ test("computeDiff：逐行标记新增与删除，未变化行保留", () => {
   assert.equal(lines.filter((line) => line.type === "add").length, 2);
   assert.equal(lines.find((line) => line.type === "remove")?.oldLine, "b");
   assert.ok(lines.some((line) => line.type === "add" && line.newLine === "d"));
+});
+
+// ---------------------------------------------------------------------------
+// Task 6：统计与特性正确性（可注入时钟 / Obsidian 桩的行为测试）
+// ---------------------------------------------------------------------------
+
+const newTFile = TFile as unknown as new (path: string) => TFile;
+const noticeMessages = (Notice as unknown as { messages: string[] }).messages;
+
+/** 手动推进的假时钟：驱动去抖与 Agent 抑制窗口，不依赖真实时间。 */
+function fakeClock(start: number) {
+  let now = start;
+  let nextId = 1;
+  const timers = new Map<number, { at: number; fn: () => void }>();
+  return {
+    now: () => now,
+    setTimeout(fn: () => void, ms: number): number {
+      const id = nextId++;
+      timers.set(id, { at: now + ms, fn });
+      return id;
+    },
+    clearTimeout(id: number): void {
+      timers.delete(id);
+    },
+    advance(ms: number): void {
+      const target = now + ms;
+      for (;;) {
+        let bestId = -1;
+        let best: { at: number; fn: () => void } | null = null;
+        for (const [id, timer] of timers) {
+          if (timer.at <= target && (best === null || timer.at < best.at)) {
+            best = timer;
+            bestId = id;
+          }
+        }
+        if (best === null) break;
+        timers.delete(bestId);
+        now = best.at;
+        best.fn();
+      }
+      now = target;
+    },
+  };
+}
+
+/** tracker 行为测试桩：假 vault + 假 store + 可注入时钟。 */
+function trackerHarness(initial: Record<string, string>) {
+  const clock = fakeClock(new Date(2026, 10, 20, 9, 0, 0).getTime());
+  const contents = new Map<string, string>(Object.entries(initial));
+  const files = new Map<string, TFile>();
+  const fileFor = (path: string): TFile => {
+    let file = files.get(path);
+    if (!file) {
+      file = new newTFile(path);
+      files.set(path, file);
+    }
+    return file;
+  };
+  const handlers = new Map<string, Array<(file: TFile) => void>>();
+  const vault = {
+    getMarkdownFiles: () => [...contents.keys()].map(fileFor),
+    cachedRead: async (file: TFile) => contents.get(file.path) ?? "",
+    getAbstractFileByPath: (path: string) => files.get(path) ?? null,
+    on: (name: string, cb: (file: TFile) => void) => {
+      const list = handlers.get(name) ?? [];
+      list.push(cb);
+      handlers.set(name, list);
+      return {};
+    },
+  };
+  const days: Record<string, DayRecord> = {};
+  const store = {
+    data: { editSessions: {} as Record<string, string[]> },
+    settings: settings(),
+    todayKey: () => dateKey(new Date(clock.now())),
+    updateDay: (key: string, mutate: (d: DayRecord) => void) => {
+      const d = (days[key] ??= createEmptyDay());
+      mutate(d);
+      return d;
+    },
+  };
+  const plugin = { app: { vault }, registerEvent: () => {} };
+  const tracker = new Tracker(plugin as unknown as Plugin, store as unknown as Store, clock);
+  const fire = (name: string, path: string): void => {
+    for (const cb of handlers.get(name) ?? []) cb(fileFor(path));
+  };
+  // 推进假时钟后冲刷微任务，等待 async 的 onModify/settle 完成。
+  const advance = async (ms: number): Promise<void> => {
+    clock.advance(ms);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  };
+  return { tracker, clock, contents, days, fire, advance };
+}
+
+test("tracker：Agent 抑制期内人的编辑不被吞，窗口结束按实际 diff 补计", async () => {
+  const h = trackerHarness({ "notes/a.md": "hello world" }); // 基线 2 词
+  await h.tracker.start();
+  const key = dateKey(new Date(h.clock.now()));
+
+  h.tracker.markAgentWrite("notes/a.md");
+  h.contents.set("notes/a.md", "hello world agent added three"); // Agent 写到 5 词
+  h.fire("modify", "notes/a.md");
+  await h.advance(200); // 去抖后处理 Agent 写入事件
+  assert.equal(h.days[key]?.wordsAdded ?? 0, 0); // Agent 写不计入 humanWrites
+
+  h.contents.set("notes/a.md", "hello world agent added three human edit"); // 窗口内人 +2 词
+  h.fire("modify", "notes/a.md");
+  await h.advance(200);
+  assert.equal(h.days[key]?.wordsAdded ?? 0, 0); // 抑制期内暂缓计分
+
+  await h.advance(10_000); // 窗口结束，按实际 diff 补计人的编辑
+  assert.equal(h.days[key].wordsAdded, 2); // 只补计人的 2 词，而非整段 5 词
+  assert.equal(h.days[key].edits, 1);
+});
+
+test("tracker：无基线文件只建基线，不把整篇内容误计为新增", async () => {
+  const h = trackerHarness({});
+  await h.tracker.start();
+  const key = dateKey(new Date(h.clock.now()));
+
+  h.contents.set("notes/new.md", "one two three four five"); // 5 词，无基线
+  h.fire("modify", "notes/new.md");
+  await h.advance(200);
+  assert.equal(h.days[key]?.wordsAdded ?? 0, 0); // 只建基线，不计分
+
+  h.contents.set("notes/new.md", "one two three four five six seven"); // +2 词
+  h.fire("modify", "notes/new.md");
+  await h.advance(200);
+  assert.equal(h.days[key].wordsAdded, 2); // 之后的真实新增正常计分
+});
+
+/** pomodoro 行为测试桩：可注入 clock 与 setInterval。 */
+function pomodoroHarness(
+  saved: PersistedPomodoro | null = null,
+  start = new Date(2026, 10, 20, 9, 0, 0).getTime()
+) {
+  let now = start;
+  let tickFn: () => void = () => {};
+  const days: Record<string, DayRecord> = {};
+  const sessions: FocusSessionRecord[] = [];
+  const store = {
+    data: { pomodoro: saved },
+    todayKey: () => dateKey(new Date(now)),
+    updateDay: (key: string, mutate: (d: DayRecord) => void) => {
+      const d = (days[key] ??= createEmptyDay());
+      mutate(d);
+      return d;
+    },
+    addFocusSession: (record: FocusSessionRecord) => {
+      sessions.unshift(record);
+    },
+    scheduleSave: () => {},
+  };
+  const plugin = {
+    store,
+    addStatusBarItem: () => ({ setText: () => {} }),
+    registerInterval: () => {},
+  };
+  const manager = new PomodoroManager(plugin as unknown as SedimentPlugin, {
+    now: () => now,
+    setInterval: (fn) => {
+      tickFn = fn;
+      return 0;
+    },
+  });
+  return {
+    manager,
+    store,
+    days,
+    sessions,
+    tick: () => tickFn(),
+    setNow: (value: number) => {
+      now = value;
+    },
+    getNow: () => now,
+  };
+}
+
+test("pomodoro：tick 按时间戳换算 remaining，暂停期间不流逝", () => {
+  const h = pomodoroHarness();
+  h.manager.start();
+  h.setNow(h.getNow() + 100_000); // 真实过去 100s，tick 只执行一次
+  h.tick();
+  assert.equal(h.manager.state().remaining, 25 * 60 - 100); // 不再每次 tick 只减 1s
+  h.manager.pause();
+  h.setNow(h.getNow() + 60_000);
+  h.tick();
+  assert.equal(h.manager.state().remaining, 25 * 60 - 100); // 暂停语义保持
+});
+
+test("pomodoro：跨天到期补记归属实际完成日期而非今天", () => {
+  const h = pomodoroHarness(null, new Date(2026, 10, 20, 23, 59, 0).getTime());
+  h.manager.start(); // 到期时刻 = 2026-11-21 00:24
+  h.setNow(new Date(2026, 10, 21, 0, 30, 0).getTime()); // tick 迟到，且已跨天
+  h.tick();
+  assert.equal(h.days["2026-11-21"]?.focusMinutes, 25);
+  assert.equal(h.days["2026-11-20"], undefined);
+  assert.equal(h.sessions[0].date, "2026-11-21");
+  assert.equal(h.manager.state().completed, 1);
+});
+
+test("pomodoro：检测到另一存活实例则禁用，心跳过期则正常接管", () => {
+  const now = new Date(2026, 10, 20, 9, 0, 0).getTime();
+  const saved: PersistedPomodoro = {
+    mode: "focus",
+    remaining: 100,
+    running: false,
+    completed: 0,
+    savedAt: now - 5000,
+    instanceId: "other-instance",
+    heartbeatAt: now - 5000, // 5s 前有心跳 → 存活
+  };
+  const h = pomodoroHarness(saved, now);
+  assert.equal(h.manager.state().disabled, true);
+  h.manager.start();
+  assert.equal(h.manager.state().running, false); // 禁用后不可启动
+  assert.equal(h.store.data.pomodoro?.instanceId, "other-instance"); // 不覆盖对方状态
+
+  const stale = pomodoroHarness({ ...saved, heartbeatAt: now - 120_000 }, now);
+  assert.equal(stale.manager.state().disabled, false); // 心跳过期 → 接管
+});
+
+/** memo 行为测试桩：内存 vault + 现有 Obsidian 桩。 */
+function memoHarness() {
+  const contents = new Map<string, string>();
+  const files = new Map<string, TFile>();
+  const fileFor = (path: string): TFile => {
+    let file = files.get(path);
+    if (!file) {
+      file = new newTFile(path);
+      files.set(path, file);
+    }
+    return file;
+  };
+  const vault = {
+    getAbstractFileByPath: (path: string) =>
+      contents.has(path) || files.has(path) ? fileFor(path) : null,
+    read: async (file: TFile) => contents.get(file.path) ?? "",
+    create: async (path: string, data: string) => {
+      contents.set(path, data);
+      return fileFor(path);
+    },
+    modify: async (file: TFile, data: string) => {
+      contents.set(file.path, data);
+    },
+    process: async (file: TFile, fn: (data: string) => string) => {
+      const next = fn(contents.get(file.path) ?? "");
+      contents.set(file.path, next);
+      return next;
+    },
+    createFolder: async (path: string) => {
+      fileFor(path);
+    },
+  };
+  const memos: MemoRecord[] = [];
+  const store = {
+    data: { memos },
+    settings: settings(),
+    addMemo: (memo: MemoRecord) => {
+      memos.unshift(memo);
+    },
+    scheduleSave: () => {},
+  };
+  const plugin = { app: { vault }, store };
+  const manager = new MemoManager(plugin as unknown as SedimentPlugin);
+  return { manager, contents, memos };
+}
+
+test("memo：id 锚点兜底——日记正文被手动改过后编辑仍同步且不留孤儿", async () => {
+  const h = memoHarness();
+  const memo = await h.manager.add("original line", ["a"]);
+  assert.ok(memo);
+  const path = `daily/${dateKey(new Date())}.md`;
+  const before = h.contents.get(path) ?? "";
+  assert.ok(before.includes(`%%memo:${memo.id}%%`)); // 写入时带行内 id 锚点
+
+  // 用户手动改了日记正文：旧文本匹配失配，id 锚点兜底
+  h.contents.set(path, before.replace("> original line", "> manually edited"));
+  const updated = await h.manager.edit(memo.id, "brand new text");
+  assert.equal(updated?.text, "brand new text");
+  const after = h.contents.get(path) ?? "";
+  assert.ok(after.includes("> brand new text"));
+  assert.ok(!after.includes("manually edited")); // 不留孤儿正文
+  assert.ok(!after.includes("> original line"));
+});
+
+test("memo：删除失配尽力按旧文本清理，彻底失配时明确提示", async () => {
+  const h = memoHarness();
+  const path = `daily/${dateKey(new Date())}.md`;
+
+  // 场景 1：锚点被手动删掉但正文还在 → 旧文本兜底清理成功
+  const legacy = await h.manager.add("legacy body");
+  assert.ok(legacy);
+  h.contents.set(
+    path,
+    (h.contents.get(path) ?? "").replace(` %%memo:${legacy.id}%%`, "")
+  );
+  assert.equal(await h.manager.remove(legacy.id), true);
+  assert.ok(!(h.contents.get(path) ?? "").includes("legacy body"));
+
+  // 场景 2：锚点与正文都被改掉 → 无法定位，删除记录但明确提示
+  const orphan = await h.manager.add("to be removed");
+  assert.ok(orphan);
+  h.contents.set(
+    path,
+    (h.contents.get(path) ?? "")
+      .replace(`%%memo:${orphan.id}%%`, "")
+      .replace("> to be removed", "> rewritten by hand")
+  );
+  noticeMessages.length = 0;
+  assert.equal(await h.manager.remove(orphan.id), true);
+  assert.equal(h.memos.length, 0);
+  assert.ok(noticeMessages.some((message) => message.includes("未找到日记中对应条目")));
+});
+
+test("main：generateReview 文件已含本周区间标题时去重跳过", async () => {
+  const store = {
+    settings: settings(),
+    data: { memos: [] as MemoRecord[] },
+    getDay: () => createEmptyDay(),
+  };
+  const markdown = buildWeeklyReview(store as unknown as Store, new Date());
+  const heading = markdown.split("\n", 1)[0];
+  const weekStart = startOfWeek(new Date(), store.settings.weekStart);
+  const path = `${normalizeFolder(store.settings.reviewFolder)}/复盘 ${dateKey(weekStart)}.md`;
+  const file = new newTFile(path);
+  let previousContent = `# 旧复盘\n\n${heading}\n\n正文`;
+  let modifyCalls = 0;
+  let opened: unknown = null;
+  const fakePlugin = {
+    store,
+    app: {
+      vault: {
+        getAbstractFileByPath: (p: string) => (p === path ? file : null),
+        createFolder: async () => {},
+        read: async () => previousContent,
+        modify: async () => {
+          modifyCalls += 1;
+        },
+        create: async () => {
+          throw new Error("不应新建文件");
+        },
+      },
+      workspace: {
+        getLeaf: () => ({
+          openFile: async (f: unknown) => {
+            opened = f;
+          },
+        }),
+      },
+    },
+  };
+  const generateReview = (
+    SedimentPlugin.prototype as unknown as { generateReview(this: unknown): Promise<void> }
+  ).generateReview;
+
+  noticeMessages.length = 0;
+  await generateReview.call(fakePlugin);
+  assert.equal(modifyCalls, 0); // 不再无限堆叠
+  assert.equal(opened, file); // 直接打开已有复盘
+  assert.ok(noticeMessages.includes("本周复盘已存在"));
+
+  // 不含本周标题（上周复盘）时仍正常追加
+  previousContent = "# 上周复盘\n\n旧内容";
+  await generateReview.call(fakePlugin);
+  assert.equal(modifyCalls, 1);
 });

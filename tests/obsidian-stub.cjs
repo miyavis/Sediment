@@ -19,8 +19,13 @@ class TFolder {
   }
 }
 class Notice {
-  constructor(_message) {}
-  setMessage() { return this; }
+  /** 测试可断言的通知消息记录（按出现顺序）。 */
+  static messages = [];
+  constructor(message) {
+    this.message = String(message);
+    Notice.messages.push(this.message);
+  }
+  setMessage(message) { this.message = String(message); return this; }
   hide() {}
 }
 class Component {
