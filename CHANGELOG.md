@@ -5,6 +5,9 @@
 ## [Unreleased]
 
 ### 改进
+- 新增安装整包 `dist/sediment/`：包含 main.js、manifest.json、styles.css、mcp-server/index.mjs 与安装说明；Release 自动附加 `sediment-vX.Y.Z.zip`，下载解压即可复制
+
+### 改进
 - 版本号统一到 `package.json` 单一源：`version-bump.mjs` 在构建时同步 lockfile、manifest、versions、MCP bridge 和 README 徽章；发版只改一处
 
 ## [0.9.1] - 2026-11-20

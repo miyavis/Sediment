@@ -5,7 +5,8 @@
   "main": "main.js",
   "scripts": {
     "dev": "node version-bump.mjs && node scripts/sync-changelog.mjs && node scripts/sync-bridge.mjs && node esbuild.config.mjs",
-    "build": "node version-bump.mjs && node scripts/sync-changelog.mjs && node scripts/sync-bridge.mjs && tsc --noEmit && node esbuild.config.mjs production",
+    "build": "node version-bump.mjs && node scripts/sync-changelog.mjs && node scripts/sync-bridge.mjs && tsc --noEmit && node esbuild.config.mjs production && node scripts/package.mjs",
+    "package": "node scripts/package.mjs",
     "sync-version": "node version-bump.mjs",
     "changelog": "node scripts/latest-changelog.mjs",
     "mcp": "node mcp-server/index.mjs",

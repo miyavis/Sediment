@@ -32,6 +32,9 @@ jobs:
       - name: Verify release versions and files
         run: node scripts/verify-release.mjs ${{ github.ref_name }}
 
+      - name: Package install folder
+        run: cd dist && zip -r ../sediment-${{ github.ref_name }}.zip sediment
+
       - name: Generate release notes from CHANGELOG.md
         run: node scripts/latest-changelog.mjs ${{ github.ref_name }} > RELEASE_NOTES.md
 
@@ -40,6 +43,7 @@ jobs:
         with:
           body_path: RELEASE_NOTES.md
           files: |
+            sediment-*.zip
             main.js
             manifest.json
             styles.css

@@ -1,0 +1,10 @@
+{
+	"id": "sediment",
+	"name": "Sediment",
+	"version": "0.9.1",
+	"minAppVersion": "1.6.0",
+	"description": "本地优先的知识工作看板与智能体知识沉淀插件。",
+	"author": "miyavis",
+	"authorUrl": "https://github.com/miyavis",
+	"isDesktopOnly": false
+}

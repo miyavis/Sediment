@@ -29,14 +29,20 @@ Sediment 是一个本地优先的 Obsidian 插件，把知识工作统计、快�
 
 ### 手动安装
 
-从 [Releases](https://github.com/miyavis/Sediment/releases) 下载：
+从 [Releases](https://github.com/miyavis/Sediment/releases) 下载 **整包 `sediment-vX.Y.Z.zip`**（推荐），解压后把 `sediment/` 整个目录复制到 vault 的 `.obsidian/plugins/` 即可。包内包含：
 
-- `main.js`
-- `manifest.json`
-- `styles.css`
-- 如需 MCP，额外下载 `mcp-server/index.mjs`
+```
+sediment/
+├── main.js
+├── manifest.json
+├── styles.css
+├── mcp-server/index.mjs   # Agent/MCP 接入用；不用 Agent 也可不复制
+└── 安装说明.md
+```
 
-放入 vault 的 `.obsidian/plugins/sediment/`，然后重新载入插件。
+如果只想下单个文件：`main.js`、`manifest.json`、`styles.css` 是插件必需；如需 MCP，再下载 `mcp-server/index.mjs`。放入 vault 的 `.obsidian/plugins/sediment/` 后重新载入插件。
+
+源码仓库里也有构建好的现成目录 [`dist/sediment`](./dist/sediment)，可以直接复制。
 
 首次打开插件时：
 
