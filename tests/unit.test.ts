@@ -35,6 +35,7 @@ import { ApiError, safeAgentPath } from "../src/agent/api";
 import { tokenizeSemanticText } from "../src/agent/semantic";
 import { idempotencyKey, redactAuditPath, redactSecrets } from "../src/agent/security";
 import { computeDiff } from "../src/ui/diff-modal";
+import { barChart, mean, referenceLines, ring } from "../src/utils/charts";
 
 const day = (partial: Partial<DayRecord> = {}): DayRecord => ({ ...createEmptyDay(), ...partial });
 const settings = (partial: Partial<PulseSettings> = {}): PulseSettings => ({
@@ -141,6 +142,28 @@ test("dates：isSameLocalDay 按本地日期判定", () => {
   const d = new Date(2026, 0, 1, 0, 30);
   assert.equal(isSameLocalDay(d.toISOString(), "2026-01-01"), true);
   assert.equal(isSameLocalDay(d.toISOString(), "2026-01-02"), false);
+});
+
+test("charts：mean 空数组返回 0，正常求均值", () => {
+  assert.equal(mean([]), 0);
+  assert.equal(mean([2, 4, 6]), 4);
+});
+
+test("charts：barChart 生成 SVG 且按值数量画柱", () => {
+  const svg = barChart([1, 2, 3]);
+  assert.match(svg, /<svg class="sd-chart"/);
+  assert.equal((svg.match(/<rect /g) ?? []).length, 3);
+});
+
+test("charts：referenceLines 过滤 value<=0 并输出标签", () => {
+  const svg = referenceLines([{ value: 5, label: "均值" }, { value: 0, label: "隐藏" }], 10, 100, 50, 5);
+  assert.match(svg, /均值/);
+  assert.doesNotMatch(svg, /隐藏/);
+});
+
+test("charts：ring 按 active/total 输出比例", () => {
+  assert.match(ring(3, 4), /class="sd-ring"/);
+  assert.match(ring(3, 4), />3</);
 });
 
 test("countWords：中文按字计", () => {

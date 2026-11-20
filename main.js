@@ -4397,6 +4397,94 @@ var PosterModal = class extends import_obsidian16.Modal {
   }
 };
 
+// src/utils/charts.ts
+function referenceLines(refs, max, width, height, pad) {
+  return refs.filter((ref) => ref.value > 0).map((ref) => {
+    var _a2;
+    const y = height - pad - Math.min(ref.value, max) / max * (height - pad * 2);
+    const stroke = (_a2 = ref.color) != null ? _a2 : "var(--text-muted)";
+    return `<line x1="${pad}" y1="${y.toFixed(1)}" x2="${width - pad}" y2="${y.toFixed(1)}" stroke="${stroke}" stroke-width="1" stroke-dasharray="4 4" vector-effect="non-scaling-stroke" opacity="0.75"/><text x="${width - pad - 2}" y="${Math.max(9, y - 3).toFixed(1)}" text-anchor="end" font-size="9" fill="${stroke}">${ref.label}</text>`;
+  }).join("");
+}
+function mean(values) {
+  if (values.length === 0) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+function barChart(values, color = "var(--interactive-accent)", refs = []) {
+  const width = 900;
+  const height = 120;
+  const pad = 4;
+  const max = Math.max(1, ...values, ...refs.map((ref) => ref.value));
+  const barWidth = (width - pad * 2) / Math.max(1, values.length);
+  const rects = values.map((value, index) => {
+    const h = value / max * (height - pad * 2);
+    return `<rect x="${(pad + index * barWidth).toFixed(1)}" y="${(height - pad - h).toFixed(1)}" width="${(barWidth * 0.72).toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${color}" opacity="${value > 0 ? 0.8 : 0.12}"/>`;
+  }).join("");
+  return `<svg class="sd-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${rects}${referenceLines(refs, max, width, height, pad)}</svg>`;
+}
+function multiLine(series, refs = []) {
+  const width = 900;
+  const height = 140;
+  const pad = 6;
+  const max = Math.max(1, ...series.flatMap((item) => item.values), ...refs.map((ref) => ref.value));
+  const lines = series.map((item) => {
+    const points = item.values.map((value, index) => {
+      const x = pad + index / Math.max(1, item.values.length - 1) * (width - pad * 2);
+      const y = height - pad - value / max * (height - pad * 2);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(" ");
+    return `<polyline points="${points}" fill="none" stroke="${item.color}" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+  }).join("");
+  return `<svg class="sd-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${lines}${referenceLines(refs, max, width, height, pad)}</svg>`;
+}
+function sparkline(values, refs = []) {
+  const width = 620;
+  const height = 96;
+  const pad = 10;
+  const max = Math.max(1, ...values, ...refs.map((ref) => ref.value));
+  const coordinates = values.map((value, index) => ({
+    x: pad + index / Math.max(1, values.length - 1) * (width - pad * 2),
+    y: height - pad - value / max * (height - pad * 2),
+    value
+  }));
+  const points = coordinates.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+  const dots = coordinates.filter((point) => point.value > 0).map(
+    (point) => `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="3" fill="var(--interactive-accent)" stroke="var(--background-primary)" stroke-width="1.5"/>`
+  ).join("");
+  const peakIndex = values.indexOf(max);
+  const peak = coordinates[peakIndex];
+  const peakLabel = peak && max > 0 ? `<text x="${peak.x.toFixed(1)}" y="${Math.max(10, peak.y - 10).toFixed(1)}" text-anchor="middle" font-size="10" fill="var(--text-normal)">${max}</text>` : "";
+  return `<svg class="sd-spark" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+<defs><linearGradient id="sd-spark-fill" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0%" stop-color="var(--interactive-accent)" stop-opacity="0.28"/>
+<stop offset="100%" stop-color="var(--interactive-accent)" stop-opacity="0"/>
+</linearGradient></defs>
+<polygon points="${pad},${height - pad} ${points} ${width - pad},${height - pad}" fill="url(#sd-spark-fill)"/>
+<polyline points="${points}" fill="none" stroke="var(--interactive-accent)" stroke-width="2" vector-effect="non-scaling-stroke"/>
+${referenceLines(refs, max, width, height, pad)}${dots}${peakLabel}</svg>`;
+}
+function ring(active, total) {
+  const radius = 26;
+  const circumference = 2 * Math.PI * radius;
+  const ratio = total > 0 ? active / total : 0;
+  return `<svg viewBox="0 0 68 68" class="sd-ring">
+<circle cx="34" cy="34" r="${radius}" fill="none" stroke="var(--background-modifier-border)" stroke-width="7"/>
+<circle cx="34" cy="34" r="${radius}" fill="none" stroke="var(--interactive-accent)" stroke-width="7"
+  stroke-dasharray="${(ratio * circumference).toFixed(1)} ${circumference.toFixed(1)}" transform="rotate(-90 34 34)"/>
+<text x="34" y="40" text-anchor="middle" font-size="15" fill="var(--text-normal)">${active}</text></svg>`;
+}
+function goalRing(value, goal) {
+  const radius = 18;
+  const circumference = 2 * Math.PI * radius;
+  const ratio = Math.min(1, value / Math.max(1, goal));
+  const overflow = value > goal;
+  return `<svg viewBox="0 0 46 46" class="sd-goal-svg${overflow ? " is-overflow" : ""}">
+<circle cx="23" cy="23" r="${radius}" fill="none" stroke="var(--background-modifier-border)" stroke-width="4"/>
+<circle cx="23" cy="23" r="${radius}" fill="none" stroke="var(--interactive-accent)" stroke-width="4" stroke-linecap="round"
+  stroke-dasharray="${(ratio * circumference).toFixed(1)} ${circumference.toFixed(1)}" transform="rotate(-90 23 23)"/>
+<text x="23" y="27" text-anchor="middle" font-size="11" fill="var(--text-normal)">${Math.round(ratio * 100)}%</text></svg>`;
+}
+
 // src/views/dashboard-view.ts
 var DASHBOARD_VIEW_TYPE = "sediment-dashboard";
 var TABS = [
@@ -4619,8 +4707,8 @@ var DashboardView = class extends import_obsidian17.ItemView {
     const head = card.createDiv({ cls: "sd-today-head" });
     head.createDiv({ cls: "sd-today-title", text: t("\u4ECA\u5929") });
     head.createDiv({ cls: "sd-pill", text: day.contribution > 0 ? tf("{n} \u5206", { n: day.contribution }) : t("\u8FD8\u6CA1\u5F00\u59CB") });
-    const goalRing = head.createDiv({ cls: "sd-goal-ring" });
-    goalRing.innerHTML = this.goalRing(day.wordsAdded, goal);
+    const goalRing2 = head.createDiv({ cls: "sd-goal-ring" });
+    goalRing2.innerHTML = goalRing(day.wordsAdded, goal);
     head.createEl("button", { cls: "sd-share-today", text: t("\u6218\u62A5\u56FE\u7247") }).onclick = () => {
       exportTodayReport({
         date: today,
@@ -5050,48 +5138,6 @@ ${body.trim()}
     if (subtitle) head.createDiv({ cls: "sd-card-sub", text: subtitle });
     return card;
   }
-  barChart(values, color = "var(--interactive-accent)", refs = []) {
-    const width = 900;
-    const height = 120;
-    const pad = 4;
-    const max = Math.max(1, ...values, ...refs.map((ref) => ref.value));
-    const barWidth = (width - pad * 2) / Math.max(1, values.length);
-    const rects = values.map((value, index) => {
-      const h = value / max * (height - pad * 2);
-      return `<rect x="${(pad + index * barWidth).toFixed(1)}" y="${(height - pad - h).toFixed(1)}" width="${(barWidth * 0.72).toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${color}" opacity="${value > 0 ? 0.8 : 0.12}"/>`;
-    }).join("");
-    const refLines = this.referenceLines(refs, max, width, height, pad);
-    return `<svg class="sd-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${rects}${refLines}</svg>`;
-  }
-  multiLine(series, refs = []) {
-    const width = 900;
-    const height = 140;
-    const pad = 6;
-    const max = Math.max(1, ...series.flatMap((item) => item.values), ...refs.map((ref) => ref.value));
-    const lines = series.map((item) => {
-      const points = item.values.map((value, index) => {
-        const x = pad + index / Math.max(1, item.values.length - 1) * (width - pad * 2);
-        const y = height - pad - value / max * (height - pad * 2);
-        return `${x.toFixed(1)},${y.toFixed(1)}`;
-      }).join(" ");
-      return `<polyline points="${points}" fill="none" stroke="${item.color}" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
-    }).join("");
-    const refLines = this.referenceLines(refs, max, width, height, pad);
-    return `<svg class="sd-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${lines}${refLines}</svg>`;
-  }
-  /** 数字参照线：均值/目标等水平虚线，右上角带数值标签。 */
-  referenceLines(refs, max, width, height, pad) {
-    return refs.filter((ref) => ref.value > 0).map((ref) => {
-      var _a2;
-      const y = height - pad - Math.min(ref.value, max) / max * (height - pad * 2);
-      const stroke = (_a2 = ref.color) != null ? _a2 : "var(--text-muted)";
-      return `<line x1="${pad}" y1="${y.toFixed(1)}" x2="${width - pad}" y2="${y.toFixed(1)}" stroke="${stroke}" stroke-width="1" stroke-dasharray="4 4" vector-effect="non-scaling-stroke" opacity="0.75"/><text x="${width - pad - 2}" y="${Math.max(9, y - 3).toFixed(1)}" text-anchor="end" font-size="9" fill="${stroke}">${ref.label}</text>`;
-    }).join("");
-  }
-  mean(values) {
-    if (values.length === 0) return 0;
-    return values.reduce((sum, value) => sum + value, 0) / values.length;
-  }
   currentStreak() {
     let streak = 0;
     let cursor = /* @__PURE__ */ new Date();
@@ -5181,72 +5227,24 @@ ${body.trim()}
     left.createDiv({ cls: "sd-metric-value", text: String(total) });
     left.createDiv({ cls: "sd-metric-hint", text: tf("{active} \u5929\u6709\u8BB0\u5F55 \xB7 \u65E5\u5747 {avg} \u5206", { active, avg: keys.length ? Math.round(total / keys.length) : 0 }) });
     const overviewValues = keys.map((key) => this.value(key));
-    const overviewMean = this.mean(overviewValues);
-    left.innerHTML += this.sparkline(
+    const overviewMean = mean(overviewValues);
+    left.innerHTML += sparkline(
       overviewValues,
       overviewMean > 0 ? [{ value: overviewMean, label: tf("\u5747\u503C {n}", { n: Math.round(overviewMean) }) }] : []
     );
     const right = grid.createDiv({ cls: "sd-overview-right" });
-    const mini = (label, value, hint, ring) => {
+    const mini = (label, value, hint, ring2) => {
       const item = right.createDiv({ cls: "sd-mini" });
       item.createDiv({ cls: "sd-mini-label", text: label });
       item.createDiv({ cls: "sd-mini-value", text: value });
       item.createDiv({ cls: "sd-mini-hint", text: hint });
-      if (ring) item.createDiv({ cls: "sd-mini-ring" }).innerHTML = ring;
+      if (ring2) item.createDiv({ cls: "sd-mini-ring" }).innerHTML = ring2;
     };
-    mini(t("\u6D3B\u8DC3\u5929\u6570"), `${active} / ${keys.length}`, t("\u6709\u8BB0\u5F55\u7684\u65E5\u5B50"), this.ring(active, keys.length));
+    mini(t("\u6D3B\u8DC3\u5929\u6570"), `${active} / ${keys.length}`, t("\u6709\u8BB0\u5F55\u7684\u65E5\u5B50"), ring(active, keys.length));
     mini(t("\u5F53\u524D\u8FDE\u7EED"), tf("{n} \u5929", { n: this.currentStreak() }), tf("\u6700\u957F {n} \u5929 \xB7 \u6309\u5168\u90E8\u5386\u53F2", { n: this.longestStreak() }));
     const investedMinutes = keys.reduce((sum, key) => sum + (this.plugin.store.getDay(key).activeMinutes + this.plugin.store.getDay(key).focusMinutes), 0);
     mini(t("\u6295\u5165\u65F6\u95F4"), tf("{n} \u5C0F\u65F6", { n: Math.round(investedMinutes / 60 * 10) / 10 }), t("\u4EA4\u4E92 / \u4E13\u6CE8"));
     mini(t("\u6700\u9AD8\u7684\u4E00\u5929"), this.value(best) > 0 ? String(this.value(best)) : "\u2014", best);
-  }
-  sparkline(values, refs = []) {
-    const width = 620;
-    const height = 96;
-    const pad = 10;
-    const max = Math.max(1, ...values, ...refs.map((ref) => ref.value));
-    const coordinates = values.map((value, index) => ({
-      x: pad + index / Math.max(1, values.length - 1) * (width - pad * 2),
-      y: height - pad - value / max * (height - pad * 2),
-      value
-    }));
-    const points = coordinates.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
-    const dots = coordinates.filter((point) => point.value > 0).map(
-      (point) => `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="3" fill="var(--interactive-accent)" stroke="var(--background-primary)" stroke-width="1.5"/>`
-    ).join("");
-    const peakIndex = values.indexOf(max);
-    const peak = coordinates[peakIndex];
-    const peakLabel = peak && max > 0 ? `<text x="${peak.x.toFixed(1)}" y="${Math.max(10, peak.y - 10).toFixed(1)}" text-anchor="middle" font-size="10" fill="var(--text-normal)">${max}</text>` : "";
-    const refLines = this.referenceLines(refs, max, width, height, pad);
-    return `<svg class="sd-spark" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
-<defs><linearGradient id="sd-spark-fill" x1="0" y1="0" x2="0" y2="1">
-<stop offset="0%" stop-color="var(--interactive-accent)" stop-opacity="0.28"/>
-<stop offset="100%" stop-color="var(--interactive-accent)" stop-opacity="0"/>
-</linearGradient></defs>
-<polygon points="${pad},${height - pad} ${points} ${width - pad},${height - pad}" fill="url(#sd-spark-fill)"/>
-<polyline points="${points}" fill="none" stroke="var(--interactive-accent)" stroke-width="2" vector-effect="non-scaling-stroke"/>
-${refLines}${dots}${peakLabel}</svg>`;
-  }
-  ring(active, total) {
-    const radius = 26;
-    const circumference = 2 * Math.PI * radius;
-    const ratio = total > 0 ? active / total : 0;
-    return `<svg viewBox="0 0 68 68" class="sd-ring">
-<circle cx="34" cy="34" r="${radius}" fill="none" stroke="var(--background-modifier-border)" stroke-width="7"/>
-<circle cx="34" cy="34" r="${radius}" fill="none" stroke="var(--interactive-accent)" stroke-width="7"
-  stroke-dasharray="${(ratio * circumference).toFixed(1)} ${circumference.toFixed(1)}" transform="rotate(-90 34 34)"/>
-<text x="34" y="40" text-anchor="middle" font-size="15" fill="var(--text-normal)">${active}</text></svg>`;
-  }
-  goalRing(value, goal) {
-    const radius = 18;
-    const circumference = 2 * Math.PI * radius;
-    const ratio = Math.min(1, value / Math.max(1, goal));
-    const overflow = value > goal;
-    return `<svg viewBox="0 0 46 46" class="sd-goal-svg${overflow ? " is-overflow" : ""}">
-<circle cx="23" cy="23" r="${radius}" fill="none" stroke="var(--background-modifier-border)" stroke-width="4"/>
-<circle cx="23" cy="23" r="${radius}" fill="none" stroke="var(--interactive-accent)" stroke-width="4" stroke-linecap="round"
-  stroke-dasharray="${(ratio * circumference).toFixed(1)} ${circumference.toFixed(1)}" transform="rotate(-90 23 23)"/>
-<text x="23" y="27" text-anchor="middle" font-size="11" fill="var(--text-normal)">${Math.round(ratio * 100)}%</text></svg>`;
   }
   renderHeatmap(root, dual) {
     var _a2;
@@ -5411,15 +5409,15 @@ ${refLines}${dots}${peakLabel}</svg>`;
       if (this.trendTab === "writing") {
         const writingValues = days.map((day) => day.wordsAdded);
         const goal = this.plugin.store.settings.dailyWordGoal || 0;
-        const writingMean = this.mean(writingValues);
+        const writingMean = mean(writingValues);
         const writingRefs = [];
         if (goal > 0) writingRefs.push({ value: goal, label: tf("\u76EE\u6807 {n}", { n: goal }), color: "var(--text-accent)" });
         if (writingMean > 0) writingRefs.push({ value: writingMean, label: tf("\u5747\u503C {n}", { n: Math.round(writingMean) }) });
-        trendContent.innerHTML += this.barChart(writingValues, "var(--interactive-accent)", writingRefs);
+        trendContent.innerHTML += barChart(writingValues, "var(--interactive-accent)", writingRefs);
       } else if (this.trendTab === "changes") {
         const addedValues = days.map((day) => day.wordsAdded);
-        const addedMean = this.mean(addedValues);
-        trendContent.innerHTML += this.multiLine(
+        const addedMean = mean(addedValues);
+        trendContent.innerHTML += multiLine(
           [
             { values: addedValues, color: "var(--interactive-accent)" },
             { values: days.map((day) => day.wordsRemoved), color: "var(--text-faint)" },
@@ -5429,8 +5427,8 @@ ${refLines}${dots}${peakLabel}</svg>`;
         );
       } else if (this.trendTab === "time") {
         const activeValues = days.map((day) => day.activeMinutes);
-        const activeMean = this.mean(activeValues);
-        trendContent.innerHTML += this.multiLine(
+        const activeMean = mean(activeValues);
+        trendContent.innerHTML += multiLine(
           [
             { values: activeValues, color: "var(--interactive-accent)" },
             { values: days.map((day) => day.focusMinutes), color: "var(--text-faint)" }
@@ -5501,8 +5499,8 @@ ${refLines}${dots}${peakLabel}</svg>`;
             return sum + ((_a3 = day.hourlyWords[hour]) != null ? _a3 : 0);
           }, 0)
         );
-        const hourlyMean = this.mean(hourly);
-        rhythm.createDiv({ cls: "sd-chart-slot" }).innerHTML = this.barChart(
+        const hourlyMean = mean(hourly);
+        rhythm.createDiv({ cls: "sd-chart-slot" }).innerHTML = barChart(
           hourly,
           "var(--interactive-accent)",
           hourlyMean > 0 ? [{ value: hourlyMean, label: tf("\u5747\u503C {n}", { n: Math.round(hourlyMean) }) }] : []
@@ -6318,10 +6316,10 @@ var SedimentPlugin = class extends import_obsidian19.Plugin {
       tasks: this.tasks,
       plugin: this
     };
-    this.addRibbonIcon("activity", t("Sediment\uFF1A\u770B\u677F"), () => {
+    this.addRibbonIcon(SEDIMENT_ICON_ID, t("Sediment\uFF1A\u770B\u677F"), () => {
       void this.activateView(DASHBOARD_VIEW_TYPE);
     });
-    this.addRibbonIcon("sticky-note", t("Sediment\uFF1A\u901F\u8BB0"), () => {
+    this.addRibbonIcon(SEDIMENT_ICON_ID, t("Sediment\uFF1A\u901F\u8BB0"), () => {
       void this.activateView(MEMO_VIEW_TYPE);
     });
     this.addCommand({

@@ -103,10 +103,10 @@ export class SedimentPlugin extends Plugin {
       plugin: this,
     };
 
-    this.addRibbonIcon("activity", t("Sediment：看板"), () => {
+    this.addRibbonIcon(SEDIMENT_ICON_ID, t("Sediment：看板"), () => {
       void this.activateView(DASHBOARD_VIEW_TYPE);
     });
-    this.addRibbonIcon("sticky-note", t("Sediment：速记"), () => {
+    this.addRibbonIcon(SEDIMENT_ICON_ID, t("Sediment：速记"), () => {
       void this.activateView(MEMO_VIEW_TYPE);
     });
 
