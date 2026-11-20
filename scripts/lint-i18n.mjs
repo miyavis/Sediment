@@ -197,6 +197,7 @@ function templateStaticParts(body) {
 export function findViolations(source, file = "<source>") {
   const stripped = stripComments(source);
   const lines = source.split("\n");
+  const strippedLines = stripped.split("\n");
   const violations = [];
   const callRe = /\bcreate(?:El|Div|Span)\s*\(/g;
   let match;
@@ -216,12 +217,15 @@ export function findViolations(source, file = "<source>") {
         const textToCheck = isTemplate ? templateStaticParts(lit[2]).join("") : lit[2];
         if (!CJK.test(textToCheck)) continue;
         const before = value.slice(0, lit.index);
-        // 直接作为 t("…") / tf("…", …) 的首参视为已翻译。
-        if (!isTemplate && /\btf?\(\s*$/.test(before)) continue;
+        // 直接作为 t("…") / tf("…", …) 的首参视为已翻译；模板字面量 tf(`中文 {n}`) 同样豁免。
+        if (/\btf?\(\s*$/.test(before)) continue;
         const absolute = openParen + 1 + valueStart + lit.index;
         const line = stripped.slice(0, absolute).split("\n").length;
-        const allowLine = (lines[line - 1] ?? "") + (lines[line - 2] ?? "");
-        if (allowLine.includes(ALLOW_MARKER)) continue;
+        // 白名单 marker 只在注释中生效：原文含 marker 且剥离注释后消失，才说明它写在注释里；
+        // 若 marker 落在字符串字面量内（剥离后仍在），不得自我放行。
+        const allowOriginal = (lines[line - 1] ?? "") + (lines[line - 2] ?? "");
+        const allowStripped = (strippedLines[line - 1] ?? "") + (strippedLines[line - 2] ?? "");
+        if (allowOriginal.includes(ALLOW_MARKER) && !allowStripped.includes(ALLOW_MARKER)) continue;
         violations.push({
           file,
           line,
@@ -271,6 +275,13 @@ function main() {
 }
 
 // 直接运行时执行扫描；被单测 import 时不自动运行。
-if (process.argv[1] && process.argv[1].replace(/\\/g, "/").endsWith("scripts/lint-i18n.mjs")) {
+// 用 resolve(argv[1]) 与本脚本规范路径（<仓库根>/scripts/lint-i18n.mjs）精确比对，
+// 取代 endsWith 后缀匹配：避免 my-scripts/lint-i18n.mjs 之类误触发，并消除 Windows 分隔符差异。
+// 注：esbuild 把本模块打进 CJS 单测包时 import.meta 会被置空，故不能用 import.meta.url 取自身路径。
+const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : "";
+const scriptPath = invokedPath
+  ? path.resolve(path.dirname(path.dirname(invokedPath)), "scripts", "lint-i18n.mjs")
+  : "";
+if (invokedPath && invokedPath === scriptPath) {
   main();
 }

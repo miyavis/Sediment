@@ -46,6 +46,8 @@ class Modal extends Component {
 }
 class PluginSettingTab extends Component {
   constructor(app, plugin) { super(); this.app = app; this.plugin = plugin; this.containerEl = {}; }
+  display() {}
+  hide() {}
 }
 class Setting {
   constructor() {}

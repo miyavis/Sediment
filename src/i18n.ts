@@ -64,7 +64,7 @@ const EN: Record<string, string> = {
   "扫描笔记健康度（孤儿/断链/久未更新）": "Scan note health (orphan / broken link / stale)",
   "导出数据（CSV/JSON，默认脱敏）": "Export data (CSV/JSON, sanitized by default)",
   "查看更新记录": "View changelog",
-  "切换看板顶部和底部的画风": "Cycle dashboard banner art style",
+  "切换看板画风": "Cycle dashboard art style",
   "周复盘已生成并打开": "Weekly review generated and opened",
   "本周复盘已存在": "This week's review already exists",
   "Sediment 已更新到 v{version}，可在「查看更新记录」中了解变化": "Sediment updated to v{version}; see “View changelog” for what's new",
@@ -122,7 +122,6 @@ const EN: Record<string, string> = {
   "分享图": "Share image",
   "转 Agent": "To Agent",
   "已加入 Agent 待办": "Added to Agent backlog",
-  "已复制，可粘贴到客户端": "Copied; paste into your client",
 
   // 页签 / 范围 / 指标
   "今日脉冲": "Today",
@@ -197,7 +196,6 @@ const EN: Record<string, string> = {
   "{active} 天有记录 · 日均 {avg} 分": "{active} days recorded · avg {avg} pts/day",
   "{n} 天": "{n} days",
   "最长 {n} 天 · 按全部历史": "Best {n} days · all history",
-  "0 小时": "0 hours",
   "逐步写入 {typed} 字 · 大段捕获 {captured} 字": "Typed {typed} words · pasted {captured} words",
   "{words} 字 · {percent}%": "{words} words · {percent}%",
   "展开其余 {n} 项": "Show {n} more",
@@ -234,12 +232,10 @@ const EN: Record<string, string> = {
   "写作变化": "Writing change",
   "时间投入": "Time invested",
   "写作来源": "Writing source",
-  "逐步写入 / 大段捕获": "Typed / pasted",
   "投入去向": "Where words go",
   "按目录统计（笔记 × 天）": "By folder (note × day)",
   "收起": "Collapse",
   "活跃时段": "Active hours",
-  "按小时的新增词数": "Words added by hour",
   "投入节律矩阵": "Rhythm matrix",
   "六项指标按天对齐": "Six metrics aligned by day",
   "仅活跃日期": "Active days only",
@@ -252,7 +248,6 @@ const EN: Record<string, string> = {
   "新笔记": "Notes",
   "任务": "Tasks",
   "年轮": "Year wheel",
-  "地平线 · 最近 60 天": "Horizon · last 60 days",
   "AI 新增词": "AI words",
 
   // 设置
@@ -383,7 +378,6 @@ const EN: Record<string, string> = {
   "包含速记正文": "Include memo text",
   "包含文件路径": "Include file paths",
   "导出": "Export",
-  "默认脱敏：不含速记正文与路径，也不含令牌。": "Sanitized by default: no memo text, paths, or token.",
   "标签（空格分隔）": "Tags (space separated)",
   "孤儿笔记＝无出链无反链；断链＝链接指向不存在的笔记；久未更新＝90 天以上。勾选后转为 Agent 任务，智能体整理完成会标记 #agent-done。": "Orphan = no outgoing or back links; broken link = target note missing; stale = untouched for 90+ days. Select to convert into Agent tasks; agents mark #agent-done when finished.",
   "没有发现健康问题，库很整洁。": "No health issues found; your vault is tidy.",
@@ -497,9 +491,7 @@ const EN: Record<string, string> = {
   "知识指纹": "Knowledge fingerprint",
   "每天一根色条": "One bar per day",
   "月相日历": "Moon-phase calendar",
-  "满月是高峰日，新月是休息日": "Full moon = peak day, new moon = rest day",
   "月报海报": "Monthly poster",
-  "点左右箭头切换月份": "Use the arrows to change month",
   "{year} 年": "{year}",
   "指纹": "Fingerprint",
   "月相": "Moon phases",
@@ -614,6 +606,20 @@ const EN: Record<string, string> = {
   "知道了，不再显示": "Got it, don't show again",
   "更多": "More",
   "匹配 {n} 条": "{n} matches",
+
+  // Task 10 第二轮：诊断上限提示 / 卸载失败明细 / Agent API 启动 Notice / 嵌入与战报画布文案
+  "还有更多：共 {total} 条，仅显示前 {shown} 条（诊断日志最多保留 {cap} 条）。": "More records: {total} total, showing the first {shown} (diagnostics keep at most {cap}).",
+  "当前环境不支持文件操作": "File operations are not supported in this environment",
+  "{name}：{detail}": "{name}: {detail}",
+  "桥接脚本：{detail}": "Bridge script: {detail}",
+  "Agent API 需要桌面版 Obsidian（移动端无 Node http）": "Agent API requires desktop Obsidian (no Node http on mobile)",
+  "Agent API 已启动：http://127.0.0.1:{port}": "Agent API started: http://127.0.0.1:{port}",
+  "Agent API 启动失败（端口 {port}）：{error}": "Agent API failed to start (port {port}): {error}",
+  "贡献 {c} 分 · 新增 {w} 字 · 新建 {n} 篇 · 速记 {m} 条": "Contrib {c} pts · {w} words added · {n} notes created · {m} memos",
+  "SEDIMENT · 速记": "SEDIMENT · Memo",
+  "SEDIMENT · 今日战报": "SEDIMENT · Today's report",
+  "连续 {streak} 天 / 最长 {longest} 天": "Streak {streak} days / best {longest} days",
+  "速记 {m} 条 · Agent 调用 {a} 次": "{m} memos · {a} agent calls",
 };
 
 /** 取当前语言的文案；英文未收录时回退中文源串。 */

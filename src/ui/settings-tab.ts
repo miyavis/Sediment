@@ -16,8 +16,17 @@ const WORK_MODE_LABELS: Record<string, string> = {
 };
 
 export class PulseSettingTab extends PluginSettingTab {
+  /** 统计权重/封顶输入的防抖定时器：设置页隐藏时统一清理，避免离开后仍触发重算与落盘。 */
+  private weightTimers = new Set<number>();
+
   constructor(app: App, private plugin: SedimentPlugin) {
     super(app, plugin);
+  }
+
+  hide(): void {
+    for (const id of this.weightTimers) window.clearTimeout(id);
+    this.weightTimers.clear();
+    super.hide();
   }
 
   display(): void {
@@ -466,14 +475,20 @@ export class PulseSettingTab extends PluginSettingTab {
             .setPlaceholder(String(fallback))
             .setValue(String(settings[key]))
             .onChange((value) => {
-              if (debounceTimer !== null) window.clearTimeout(debounceTimer);
-              debounceTimer = window.setTimeout(() => {
+              if (debounceTimer !== null) {
+                window.clearTimeout(debounceTimer);
+                this.weightTimers.delete(debounceTimer);
+              }
+              const id = window.setTimeout(() => {
+                this.weightTimers.delete(id);
                 debounceTimer = null;
                 const parsed = Number(value);
                 settings[key] = Number.isFinite(parsed) && parsed >= min ? parsed : fallback;
                 save();
                 recompute();
               }, 300);
+              debounceTimer = id;
+              this.weightTimers.add(id);
             })
         );
     };

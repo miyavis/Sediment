@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from "http";
 import type { SedimentPlugin } from "../main";
 import { AGENT_API_VERSION, ApiError } from "./api";
 import { redactAuditPath } from "./security";
-import { t } from "../i18n";
+import { t, tf } from "../i18n";
 import { logError } from "../utils/log-error";
 
 type HttpServer = import("http").Server;
@@ -58,7 +58,7 @@ export class AgentServer {
     if (!desired.enabled) return;
     const http = getHttp();
     if (!http) {
-      new Notice("Agent API 需要桌面版 Obsidian（移动端无 Node http）");
+      new Notice(t("Agent API 需要桌面版 Obsidian（移动端无 Node http）"));
       return;
     }
 
@@ -75,10 +75,10 @@ export class AgentServer {
       });
       this.server = server;
       this.running = desired;
-      new Notice(`Agent API 已启动：http://127.0.0.1:${desired.port}`);
+      new Notice(tf("Agent API 已启动：http://127.0.0.1:{port}", { port: desired.port }));
     } catch (error) {
       logError(this.plugin.store, "Agent API 启动失败", error);
-      new Notice(`Agent API 启动失败（端口 ${desired.port}）：${String(error)}`);
+      new Notice(tf("Agent API 启动失败（端口 {port}）：{error}", { port: desired.port, error: String(error) }));
       this.running = null;
       this.server = null;
     }

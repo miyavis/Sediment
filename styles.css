@@ -41,6 +41,8 @@ settings:
   --sediment-card-padding: 22px;
   --sediment-body-size: 13px;
   --sediment-cell-size: 15px;
+  /* 吸顶导航栏高度：子页签与今日操作栏的 sticky 偏移统一引用此变量，避免硬编码 53px 漂移。 */
+  --sediment-navbar-height: 53px;
 }
 
 .sd-dashboard {
@@ -115,13 +117,6 @@ settings:
 .sd-select {
   padding: 3px 6px;
   font-size: 12px;
-}
-
-.sd-summary {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 8px;
-  margin-bottom: 18px;
 }
 
 .sd-card {
@@ -266,12 +261,6 @@ settings:
   margin-bottom: 8px;
   font-size: 14px;
   font-weight: 600;
-}
-
-.sd-detail-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
-  gap: 6px;
 }
 
 .sd-detail-item {
@@ -580,7 +569,7 @@ settings:
 
 .sd-today-actions {
   position: sticky;
-  top: 53px;
+  top: var(--sediment-navbar-height);
   z-index: 19;
   display: flex;
   gap: 8px;
@@ -851,7 +840,6 @@ settings:
   border-radius: 8px;
 }
 
-.sd-analytics-list,
 .sd-year-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
@@ -2097,7 +2085,7 @@ settings:
 
 .sd-subnav {
   position: sticky;
-  top: 53px;
+  top: var(--sediment-navbar-height);
   z-index: 20;
   display: flex;
   flex-wrap: wrap;

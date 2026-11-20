@@ -237,7 +237,7 @@ export class SedimentPlugin extends Plugin {
     });
     this.addCommand({
       id: "cycle-art-style",
-      name: t("切换看板顶部和底部的画风"),
+      name: t("切换看板画风"),
       callback: () => {
         const styles = ["lake", "ink", "city"] as const;
         const current = this.store.settings.artStyle;

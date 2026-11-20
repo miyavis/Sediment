@@ -1,5 +1,6 @@
 import type { SedimentPlugin } from "../main";
 import { detectAgents, type AgentTarget } from "../agent/setup";
+import { t, tf } from "../i18n";
 
 interface FsModule {
   existsSync(path: string): boolean;
@@ -88,14 +89,14 @@ export function uninstallMcp(
   let clients = 0;
   let bridge = false;
 
-  if (!fs) return { clients, bridge, failures: ["当前环境不支持文件操作"] };
+  if (!fs) return { clients, bridge, failures: [t("当前环境不支持文件操作")] };
   const state = listMcpInstallations(plugin);
   for (const target of detectAgents()) {
     if (!selectedClientIds.includes(target.id)) continue;
     try {
       if (removeFromClient(target, fs)) clients += 1;
     } catch (error) {
-      failures.push(`${target.name}：${error instanceof Error ? error.message : String(error)}`);
+      failures.push(tf("{name}：{detail}", { name: target.name, detail: error instanceof Error ? error.message : String(error) }));
     }
   }
 
@@ -107,7 +108,7 @@ export function uninstallMcp(
       fs.rmSync(dir, { recursive: true, force: true });
       bridge = true;
     } catch (error) {
-      failures.push(`桥接脚本：${error instanceof Error ? error.message : String(error)}`);
+      failures.push(tf("桥接脚本：{detail}", { detail: error instanceof Error ? error.message : String(error) }));
     }
   }
   return { clients, bridge, failures };

@@ -675,7 +675,7 @@ export function renderYearly(view: DashboardView, root: HTMLElement): void {
       }).join("");
       return `<text x="0" y="${month * 20 + 11}" font-size="9" fill="var(--text-faint)">${month + 1}</text>${bars}`;
     }).join("");
-    card.createDiv({ cls: "sd-chart-slot" }).innerHTML = `<svg viewBox="0 0 420 248" class="sd-fingerprint">${fingerprintSvg}</svg>`;
+    card.createDiv({ cls: "sd-chart-slot" }).innerHTML = `<svg viewBox="0 0 420 248" class="sd-fingerprint" role="img" aria-label="${escapeAttr(`${t("知识指纹")} · ${t("每天一根色条")}`)}">${fingerprintSvg}</svg>`;
     return;
   }
 

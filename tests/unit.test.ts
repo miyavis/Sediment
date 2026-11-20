@@ -41,6 +41,7 @@ import SedimentPlugin from "../src/main";
 import { normalizeFolder } from "../src/utils/vault";
 import { TaskManager } from "../src/features/tasks";
 import { buildStatsCsv, buildExportJson, DEFAULT_EXPORT_OPTIONS } from "../src/features/export";
+import { todayLine } from "../src/features/embed";
 import { Store } from "../src/data/store";
 import { AgentApi, ApiError, safeAgentPath } from "../src/agent/api";
 import { SemanticIndex, tokenizeSemanticText } from "../src/agent/semantic";
@@ -50,7 +51,7 @@ import { computeDiff } from "../src/ui/diff-modal";
 import { barChart, escapeAttr, goalRing, mean, multiLine, referenceLines, ring, sparkline } from "../src/utils/charts";
 import { aggregateStrata, listMonths, recentStrataRange } from "../src/utils/strata";
 import { logError } from "../src/utils/log-error";
-import { getLocale, localeFromPersisted, setLocale } from "../src/i18n";
+import { getLocale, localeFromPersisted, setLocale, tf } from "../src/i18n";
 import { findViolations, stripComments } from "../scripts/lint-i18n.mjs";
 import {
   inferCategory,
@@ -1986,6 +1987,20 @@ test("lint-i18n：i18n-lint-allow 白名单（同行或上一行注释）放行"
   assert.equal(findViolations('el.createDiv({ text: "中文" });').length, 1);
 });
 
+test("lint-i18n C1：tf(`模板`) / t(`模板`) 首参模板字面量豁免，裸模板仍算违规", () => {
+  assert.equal(findViolations("el.createDiv({ text: tf(`中文 {n}`, { n }) });").length, 0);
+  assert.equal(findViolations("el.createDiv({ text: t(`中文`) });").length, 0);
+  // 未被 t()/tf() 包裹的模板静态中文仍须被抓到。
+  assert.equal(findViolations("el.createSpan({ text: `+${n} 行` });").length, 1);
+});
+
+test("lint-i18n C1：白名单 marker 落在字符串字面量内不得自我放行", () => {
+  // marker 写进 text 字符串本身（而非注释）——剥离注释后仍在，不能豁免。
+  assert.equal(findViolations('el.createDiv({ text: "中文 i18n-lint-allow" });').length, 1);
+  // 同行既有注释 marker 又有字符串 marker 时，以注释为准放行。
+  assert.equal(findViolations('el.createDiv({ text: "中文" }); // i18n-lint-allow').length, 0);
+});
+
 test("lint-i18n：违规行号定位准确（多行源码）", () => {
   const source = 'const a = 1;\n// 注释\nel.createDiv({\n  text: "中文",\n});';
   const violations = findViolations(source);
@@ -2460,4 +2475,41 @@ test("第 5 项：MCP 桥接源——令牌走 Authorization 头、缺令牌报�
 test("B3：escapeAttr 导出复用——& < > 双引号全量转义", () => {
   assert.equal(escapeAttr('a&b<c>d"e'), "a&amp;b&lt;c&gt;d&quot;e");
   assert.equal(escapeAttr(""), "");
+});
+
+// ---------------------------------------------------------------------------
+// Task 10 第二轮：清理 / 文档 / 工具（C2 嵌入文案、C3 EN 月份补零）
+// ---------------------------------------------------------------------------
+
+test("C2：embed.todayLine 中英文走 tf()，EN 不再泄漏中文", async () => {
+  const { vault } = fakeVault();
+  const { plugin } = fakePluginWith(vault, null);
+  const store = new Store(plugin);
+  await store.load();
+  const key = dateKey(new Date());
+  store.data.days[key] = day({ contribution: 12, wordsAdded: 340, notesCreated: 2 });
+  store.data.memos = [{ date: key } as unknown as MemoRecord];
+  const prev = getLocale();
+  try {
+    setLocale("zh");
+    assert.equal(todayLine(store), "贡献 12 分 · 新增 340 字 · 新建 2 篇 · 速记 1 条");
+    setLocale("en");
+    assert.equal(todayLine(store), "Contrib 12 pts · 340 words added · 2 notes created · 1 memos");
+  } finally {
+    setLocale(prev);
+  }
+});
+
+test("C3：EN 月份模板 {year}-{month} 配合补零月份输出 ISO 年月", () => {
+  const prev = getLocale();
+  try {
+    setLocale("en");
+    // 海报标题调用方现在传补零月份字符串，EN 渲染为 2026-01 而非 2026-1。
+    assert.equal(tf("{year} 年 {month} 月", { year: 2026, month: "01" }), "2026-01");
+    assert.equal(tf("{year} 年 {month} 月", { year: 2026, month: "12" }), "2026-12");
+    setLocale("zh");
+    assert.equal(tf("{year} 年 {month} 月", { year: 2026, month: "01" }), "2026 年 01 月");
+  } finally {
+    setLocale(prev);
+  }
 });

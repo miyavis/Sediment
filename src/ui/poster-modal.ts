@@ -5,11 +5,12 @@ import { t, tf } from "../i18n";
 /** 月报海报：从看板常驻卡片改为按需弹窗，左右切换月份，可导出 PNG。 */
 export class PosterModal extends Modal {
   private month: number;
-  private readonly year = new Date().getFullYear();
+  private year: number;
 
   constructor(app: App, private store: Store, month: number) {
     super(app);
     this.month = month;
+    this.year = new Date().getFullYear();
   }
 
   onOpen(): void {
@@ -29,15 +30,25 @@ export class PosterModal extends Modal {
     const prev = head.createEl("button", { text: "‹" });
     const title = head.createDiv({
       cls: "sd-poster-title",
-      text: tf("{year} 年 {month} 月", { year: this.year, month: this.month + 1 }),
+      // 月份补零：EN 模板 "{year}-{month}" 需要 ISO 式 01…12，中文 likewise 显示 01 月。
+      text: tf("{year} 年 {month} 月", { year: this.year, month: String(this.month + 1).padStart(2, "0") }),
     });
     const next = head.createEl("button", { text: "›" });
+    // 跨年循环：1 月往前回到上一年 12 月，12 月往后进入下一年 1 月。
     prev.onclick = () => {
-      this.month = (this.month + 11) % 12;
+      this.month -= 1;
+      if (this.month < 0) {
+        this.month = 11;
+        this.year -= 1;
+      }
       this.renderPoster();
     };
     next.onclick = () => {
-      this.month = (this.month + 1) % 12;
+      this.month += 1;
+      if (this.month > 11) {
+        this.month = 0;
+        this.year += 1;
+      }
       this.renderPoster();
     };
 

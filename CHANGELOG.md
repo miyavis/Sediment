@@ -5,10 +5,10 @@
 ## [0.9.7] - 2026-11-20
 
 ### 改进（代码结构）
-- 看板主视图按页签拆分：`views/dashboard/sections/` 下 today / insights / agent 三个渲染模块，主视图从 ~1300 行降到 ~410 行，仅保留生命周期与共享辅助方法
+- 看板主视图按页签拆分：`views/dashboard/sections/` 下 today / insights / agent 三个渲染模块，主视图从 ~1300 行降到 523 行，仅保留生命周期与共享辅助方法
 - 抽出纯 SVG 图表函数到 `utils/charts.ts`，看板不再内联生成图表逻辑
 - 抽出 Agent 访问策略纯规则到 `agent/access.ts`（黑名单/白名单/操作权限/分类推断），可单测
-- `main.ts` 的 14 个命令注册抽成 `registerCommands()`，`onload` 更清晰
+- `main.ts` 的 16 个命令注册抽成 `registerCommands()`，`onload` 更清晰
 - 统一生成文件策略：`changelog.ts` 与 `bridge-source.ts` 均由构建生成并加入 `.gitignore`
 
 ### 修复

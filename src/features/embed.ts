@@ -1,6 +1,7 @@
 import type { Store } from "../data/store";
 import type { MetricKey } from "../types";
 import { addDays, dateKey } from "../utils/dates";
+import { t, tf } from "../i18n";
 
 function startOfWeek(date: Date, weekStart: 0 | 1): Date {
   const copy = new Date(date);
@@ -82,7 +83,12 @@ ${rects}</svg>`;
 export function todayLine(store: Store): string {
   const day = store.getDay(dateKey(new Date()));
   const memos = store.data.memos.filter((memo) => memo.date === dateKey(new Date())).length;
-  return `贡献 ${day.contribution} 分 · 新增 ${day.wordsAdded} 字 · 新建 ${day.notesCreated} 篇 · 速记 ${memos} 条`;
+  return tf("贡献 {c} 分 · 新增 {w} 字 · 新建 {n} 篇 · 速记 {m} 条", {
+    c: day.contribution,
+    w: day.wordsAdded,
+    n: day.notesCreated,
+    m: memos,
+  });
 }
 
 export interface TodayReportData {
@@ -139,7 +145,7 @@ export function exportMemoCard(
   ctx.strokeRect(24, 24, canvas.width - 48, canvas.height - 48);
   ctx.fillStyle = palette.accent;
   ctx.font = "600 20px sans-serif";
-  ctx.fillText("SEDIMENT · 速记", 56, 76);
+  ctx.fillText(t("SEDIMENT · 速记"), 56, 76);
   ctx.fillStyle = palette.ink;
   ctx.font = "14px sans-serif";
   ctx.fillText(`${memo.date} ${memo.time}`, 56, 108);
@@ -168,19 +174,19 @@ export function exportTodayReport(data: TodayReportData): void {
   ctx.fillRect(0, 0, canvas.width, 180);
   ctx.fillStyle = "#ffffff";
   ctx.font = "600 26px sans-serif";
-  ctx.fillText("SEDIMENT · 今日战报", 60, 70);
+  ctx.fillText(t("SEDIMENT · 今日战报"), 60, 70);
   ctx.font = "18px sans-serif";
   ctx.fillText(data.date, 60, 110);
   ctx.fillStyle = "#20344d";
   ctx.font = "bold 96px sans-serif";
   ctx.fillText(String(data.contribution), 60, 320);
   ctx.font = "20px sans-serif";
-  ctx.fillText("贡献分", 60, 356);
+  ctx.fillText(t("贡献分"), 60, 356);
   ctx.font = "24px sans-serif";
   const lines = [
-    `新增 ${data.words} 字`,
-    `连续 ${data.streak} 天 / 最长 ${data.longest} 天`,
-    `速记 ${data.memos} 条 · Agent 调用 ${data.agentCalls} 次`,
+    tf("新增 {n} 字", { n: data.words }),
+    tf("连续 {streak} 天 / 最长 {longest} 天", { streak: data.streak, longest: data.longest }),
+    tf("速记 {m} 条 · Agent 调用 {a} 次", { m: data.memos, a: data.agentCalls }),
   ];
   lines.forEach((line, index) => ctx.fillText(line, 60, 420 + index * 40));
   download(canvas, `sediment-today-${data.date}.png`);

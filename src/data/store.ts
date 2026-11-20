@@ -20,6 +20,9 @@ import { dateKey } from "../utils/dates";
 import { ensureFolder, normalizeFolder } from "../utils/vault";
 import { logError } from "../utils/log-error";
 
+/** 诊断日志保留上限：超出后丢弃最旧记录。诊断弹窗按此上限提示「还有更多」。 */
+export const DIAGNOSTICS_CAP = 300;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
@@ -82,7 +85,7 @@ export class Store {
     if (!this.data.settings?.diagnosticsEnabled) return;
     this.data.diagnostics ??= [];
     this.data.diagnostics.unshift({ time: new Date().toISOString(), category, message, detail });
-    if (this.data.diagnostics.length > 300) this.data.diagnostics.length = 300;
+    if (this.data.diagnostics.length > DIAGNOSTICS_CAP) this.data.diagnostics.length = DIAGNOSTICS_CAP;
     if (schedule) this.scheduleSave(2000);
   }
 
@@ -258,6 +261,9 @@ export class Store {
     // 备份目录为库根目录（或空串）时只备份不清理，避免误删用户自有的 data-*.json 文件。
     if (!folder) return 1;
     const keep = Math.max(1, this.data.settings.backupKeep);
+    // 计数滞后说明：vault.getFiles() 读的是元数据缓存，可能尚未收录刚 adapter.write 的新快照，
+    // 于是本轮 slice(keep) 少删一份，磁盘短暂保留 keep+1 份；下一次备份缓存追上后即收敛回 keep。
+    // 这是「宁可多留一份、绝不误删」的有意取舍，不做激进的 keep-1 预扣（缓存若已收录反而会少留）。
     const backups = this.plugin.app.vault
       .getFiles()
       .filter((file) => file.extension === "json" && file.basename.startsWith("data-") &&

@@ -34,4 +34,18 @@ if (!changelog.includes(`## [${manifest.version}]`)) {
   process.exit(1);
 }
 
+// README 版本徽章（shields.io 格式 version-vX.Y.Z）须与 manifest 版本一致。
+const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
+if (!readme.includes(`version-v${manifest.version}`)) {
+  console.error(`README 版本徽章缺少 version-v${manifest.version}（与 manifest 版本不一致）`);
+  process.exit(1);
+}
+
+// versions.json 须含当前版本键（Obsidian 据此匹配最低 App 版本）。
+const versionsMap = JSON.parse(fs.readFileSync(path.join(root, "versions.json"), "utf8"));
+if (!Object.prototype.hasOwnProperty.call(versionsMap, manifest.version)) {
+  console.error(`versions.json 缺少版本键 ${manifest.version}`);
+  process.exit(1);
+}
+
 console.log(`Release ${manifest.version} verified`);
