@@ -2,6 +2,7 @@ import { ItemView, MarkdownRenderer, Notice, TFile, type WorkspaceLeaf } from "o
 import type { SedimentPlugin } from "../main";
 import { ChangelogModal } from "../ui/changelog-modal";
 import { DiffModal } from "../ui/diff-modal";
+import { DraftPreviewModal } from "../ui/draft-preview-modal";
 import { PosterModal } from "../ui/poster-modal";
 import { listBackups, readBackup, restoreBackup } from "../features/audit";
 import { buildWeeklyReview } from "../features/review";
@@ -448,7 +449,13 @@ export class DashboardView extends ItemView {
               this.plugin.app,
               `${file.basename} · ${t("变更对比")}`,
               readBackup(this.plugin, backups[0].name),
-              current
+              current,
+              () => {
+                void restoreBackup(this.plugin, file, backups[0].name).then(() => {
+                  new Notice(t("已采用备份，本次 Agent 修改已撤销"));
+                  this.render();
+                });
+              }
             ).open();
           });
         };
@@ -557,6 +564,17 @@ export class DashboardView extends ItemView {
   private renderDrafts(root: HTMLElement): void {
     const card = root.createDiv({ cls: "sd-card" });
     card.createDiv({ cls: "sd-card-title", text: t("AI 沉淀审核") });
+    const modeLabels: Record<string, string> = {
+      readonly: t("只读"),
+      draft: t("草稿"),
+      confirm: t("确认后写入"),
+      auto: t("自动执行"),
+    };
+    card.createDiv({
+      cls: "sd-card-sub",
+      text: t("当前工作模式：") + (modeLabels[this.plugin.store.settings.agentWorkMode] ?? "confirm") +
+        t("。草稿需手动审核；设为「自动执行」可跳过确认，但高风险操作仍会要求确认。"),
+    });
     const drafts: TFile[] = [];
     for (const file of this.plugin.app.vault.getMarkdownFiles()) {
       const cache = this.plugin.app.metadataCache.getFileCache(file);
@@ -575,6 +593,11 @@ export class DashboardView extends ItemView {
       const category = String(cache?.frontmatter?.category ?? t("未分类"));
       item.createDiv({ cls: "sd-card-sub", text: `${category} · ${file.path}` });
       const actions = item.createDiv({ cls: "sd-draft-actions" });
+      actions.createEl("button", { text: t("查看原文") }).onclick = () => {
+        void this.plugin.app.vault.read(file).then((content) => {
+          new DraftPreviewModal(this.plugin.app, file.basename, content).open();
+        });
+      };
       actions.createEl("button", { text: t("采纳并归档") }).onclick = () => {
         void this.plugin.agentApi.updateFrontmatter(file.path, { sediment_status: "accepted" }).then(() => {
           new Notice(t("已采纳"));

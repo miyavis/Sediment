@@ -31,6 +31,7 @@ import { Store } from "../src/data/store";
 import { ApiError, safeAgentPath } from "../src/agent/api";
 import { tokenizeSemanticText } from "../src/agent/semantic";
 import { idempotencyKey, redactAuditPath, redactSecrets } from "../src/agent/security";
+import { computeDiff } from "../src/ui/diff-modal";
 
 const day = (partial: Partial<DayRecord> = {}): DayRecord => ({ ...createEmptyDay(), ...partial });
 const settings = (partial: Partial<PulseSettings> = {}): PulseSettings => ({
@@ -450,4 +451,13 @@ test("Store.load：大批量历史数据规范化且不重复计数", async () =
   assert.equal(normalized.hourlyWords.length, 24);
   assert.deepEqual(normalized.folderWords, {});
   assert.notEqual(normalized.contribution, 999);
+});
+
+test("computeDiff：逐行标记新增与删除，未变化行保留", () => {
+  const lines = computeDiff("a\nb\nc", "a\nx\nc\nd");
+  assert.equal(lines.filter((line) => line.type === "same").length, 2);
+  assert.equal(lines.filter((line) => line.type === "remove").length, 1);
+  assert.equal(lines.filter((line) => line.type === "add").length, 2);
+  assert.equal(lines.find((line) => line.type === "remove")?.oldLine, "b");
+  assert.ok(lines.some((line) => line.type === "add" && line.newLine === "d"));
 });
