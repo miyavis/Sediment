@@ -1,6 +1,7 @@
 import { Notice, TFile } from "obsidian";
 import type { SedimentPlugin } from "../main";
 import type { MemoRecord } from "../types";
+import { t } from "../i18n";
 import { dailyNotePath, dateKey, hhmm, parseKey } from "../utils/dates";
 import { ensureFolder, normalizeFolder } from "../utils/vault";
 
@@ -33,7 +34,7 @@ export class MemoManager {
 
     this.store.addMemo(memo);
     await this.appendToDailyNote(memo);
-    new Notice("速记已记录");
+    new Notice(t("速记已记录"));
     return memo;
   }
 
@@ -76,26 +77,35 @@ export class MemoManager {
     const tagStr = memo.tags.length
       ? ` ${memo.tags.map((tag) => `#${tag.replace(/^#/, "")}`).join(" ")}`
       : "";
-    return `> [!memo] ${memo.time}${tagStr}`;
+    // 行内 id 锚点（Obsidian 注释，阅读视图不可见）：正文被手动改过也能定位。
+    return `> [!memo] ${memo.time}${tagStr} %%memo:${memo.id}%%`;
   }
 
   /**
    * 在日记文本中定位某条速记的 Callout 行区间 [start, end)。
-   * 用「时间 + 正文首行」双重匹配，避免误改同一分钟的另一条速记。
+   * 优先按行内 id 锚点匹配；旧数据没有锚点时回退「时间 + 正文首行」双重匹配，
+   * 避免误改同一分钟的另一条速记。
    */
   private findCalloutRange(
     lines: string[],
     memo: MemoRecord,
     textOverride?: string
   ): { start: number; end: number } | null {
+    const anchor = `%%memo:${memo.id}%%`;
+    const rangeAt = (i: number): { start: number; end: number } => {
+      let end = i + 1;
+      while (end < lines.length && lines[end].startsWith(">")) end += 1;
+      return { start: i, end };
+    };
+    for (let i = 0; i < lines.length; i += 1) {
+      if (lines[i].startsWith("> [!memo]") && lines[i].includes(anchor)) return rangeAt(i);
+    }
     const firstLine = `> ${(textOverride ?? memo.text).split("\n")[0]}`;
     const headerPrefix = `> [!memo] ${memo.time}`;
     for (let i = 0; i < lines.length; i += 1) {
       if (!lines[i].startsWith(headerPrefix)) continue;
       if (lines[i + 1] !== firstLine) continue;
-      let end = i + 1;
-      while (end < lines.length && lines[end].startsWith(">")) end += 1;
-      return { start: i, end };
+      return rangeAt(i);
     }
     return null;
   }
@@ -113,18 +123,21 @@ export class MemoManager {
     });
   }
 
-  /** 重写或删除日记里的 Callout。nextText 为 null 表示删除整块。 */
+  /** 重写或删除日记里的 Callout。nextText 为 null 表示删除整块。返回是否匹配成功。 */
   private async updateCallout(
     memo: MemoRecord,
     nextText: string | null,
     oldText?: string
-  ): Promise<void> {
+  ): Promise<boolean> {
     const file = this.plugin.app.vault.getAbstractFileByPath(this.dailyNotePath(memo.date));
-    if (!(file instanceof TFile)) return;
+    if (!(file instanceof TFile)) return false;
+    let found = false;
     await this.plugin.app.vault.process(file, (data) => {
       const lines = data.split("\n");
+      // 先匹配后改：定位失败时原文不动，由调用方提示失配。
       const range = this.findCalloutRange(lines, memo, oldText);
       if (!range) return data;
+      found = true;
       if (nextText === null) {
         let start = range.start;
         let end = range.end;
@@ -138,32 +151,37 @@ export class MemoManager {
       }
       return lines.join("\n");
     });
+    return found;
   }
 
-  /** 编辑速记正文（可选同时改标签），双写同步日记 Callout。 */
+  /** 编辑速记正文（可选同时改标签），双写同步日记 Callout；失配时明确提示。 */
   async edit(id: string, text: string, tags?: string[]): Promise<MemoRecord | null> {
     const memo = this.store.data.memos.find((item) => item.id === id);
     if (!memo) return null;
     const clean = text.trim();
     if (!clean) return null;
     const oldText = memo.text;
+    const nextTags = tags
+      ? tags.map((tag) => tag.replace(/^#/, "")).filter(Boolean)
+      : memo.tags;
+    // 先用旧正文/id 锚点定位并改写 Callout，再更新记录。
+    const synced = await this.updateCallout({ ...memo, tags: nextTags }, clean, oldText);
     memo.text = clean;
-    if (tags) memo.tags = tags.map((tag) => tag.replace(/^#/, "")).filter(Boolean);
-    await this.updateCallout(memo, clean, oldText);
+    memo.tags = nextTags;
     this.store.scheduleSave();
-    new Notice("速记已更新");
+    new Notice(synced ? t("速记已更新") : t("未找到日记中对应条目，速记已更新但日记未同步"));
     return memo;
   }
 
-  /** 删除速记：data.json 与日记 Callout 一起移除。 */
+  /** 删除速记：data.json 与日记 Callout 一起移除；失配时尽力按旧文本清理并提示。 */
   async remove(id: string): Promise<boolean> {
     const index = this.store.data.memos.findIndex((item) => item.id === id);
     if (index < 0) return false;
     const memo = this.store.data.memos[index];
-    await this.updateCallout(memo, null);
+    const synced = await this.updateCallout(memo, null);
     this.store.data.memos.splice(index, 1);
     this.store.scheduleSave();
-    new Notice("速记已删除");
+    new Notice(synced ? t("速记已删除") : t("未找到日记中对应条目，仅删除了速记记录"));
     return true;
   }
 

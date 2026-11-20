@@ -8,6 +8,19 @@ interface FileBaseline {
   tasks: number;
 }
 
+/** 可注入时钟：测试用假时钟驱动去抖与 Agent 抑制窗口。 */
+export interface TrackerClock {
+  now(): number;
+  setTimeout(fn: () => void, ms: number): number;
+  clearTimeout(id: number): void;
+}
+
+const defaultClock: TrackerClock = {
+  now: () => Date.now(),
+  setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+  clearTimeout: (id) => window.clearTimeout(id),
+};
+
 /** 中文按字、英文按词计数。 */
 export function countWords(text: string): number {
   const cjk = (text.match(/[\u3400-\u9fff]/g) ?? []).length;
@@ -45,20 +58,43 @@ export function noteDateKey(text: string, fallback: Date): string {
 const AGENT_WRITE_WINDOW_MS = 10_000;
 
 /**
+ * 抑制期内的待结算状态：人类基线冻结，Agent 写入事件到达时记录 Agent 快照，
+ * 窗口结束后按「最终内容 − Agent 快照」的实际 diff 补计人的编辑。
+ */
+interface PendingAgentWrite {
+  /** Agent 事件尚未到达时使用的兜底基线（冻结的人类基线）。 */
+  frozen: FileBaseline | undefined;
+  /** Agent 自身写入事件对应的快照；窗口内人类编辑相对它计 diff。 */
+  agentSnap: FileBaseline | null;
+  /** 是否仍在等待 Agent 写入本身触发的 vault 事件。 */
+  expectEvent: boolean;
+  endsAt: number;
+  timer: number;
+}
+
+/**
  * 监听 vault 变化，把写作行为折算成当天指标。
  * 这是一个精简实现：不做原插件那种逐行差异指纹，但足以稳定反映新增词、新笔记和任务勾选。
- * Agent 经 API 写入的内容只计 aiWordsAdded，不重复计入人类指标。
+ * Agent 经 API 写入的内容只计 aiWordsAdded，不重复计入人类指标；
+ * 抑制期内人的编辑不会被吞——基线暂缓更新，窗口结束按实际 diff 补计。
  */
 export class Tracker {
   private baseline = new Map<string, FileBaseline>();
   private countedSessions = new Set<string>();
   private activeBuckets = new Set<string>();
   private agentWrites = new Map<string, number>();
+  private pendingAgent = new Map<string, PendingAgentWrite>();
   private modifyTimers = new Map<string, number>();
-  private startedAt = Date.now();
+  private startedAt: number;
   private ready = false;
 
-  constructor(private plugin: Plugin, private store: Store) {}
+  constructor(
+    private plugin: Plugin,
+    private store: Store,
+    private clock: TrackerClock = defaultClock
+  ) {
+    this.startedAt = this.clock.now();
+  }
 
   async start(): Promise<void> {
     const vault = this.plugin.app.vault;
@@ -86,8 +122,9 @@ export class Tracker {
       vault.on("delete", (file) => {
         this.baseline.delete(file.path);
         const timer = this.modifyTimers.get(file.path);
-        if (timer !== undefined) window.clearTimeout(timer);
+        if (timer !== undefined) this.clock.clearTimeout(timer);
         this.modifyTimers.delete(file.path);
+        this.clearPendingAgent(file.path);
       })
     );
     this.plugin.registerEvent(
@@ -99,7 +136,7 @@ export class Tracker {
         }
         const timer = this.modifyTimers.get(oldPath);
         if (timer !== undefined) {
-          window.clearTimeout(timer);
+          this.clock.clearTimeout(timer);
           this.modifyTimers.delete(oldPath);
         }
         const agentAt = this.agentWrites.get(oldPath);
@@ -107,22 +144,39 @@ export class Tracker {
           this.agentWrites.delete(oldPath);
           this.agentWrites.set(file.path, agentAt);
         }
+        const pending = this.pendingAgent.get(oldPath);
+        if (pending) {
+          this.pendingAgent.delete(oldPath);
+          this.clock.clearTimeout(pending.timer);
+          const remaining = Math.max(0, pending.endsAt - this.clock.now());
+          pending.timer = this.clock.setTimeout(() => void this.settleAgentWindow(file.path), remaining);
+          this.pendingAgent.set(file.path, pending);
+        }
       })
     );
 
     this.ready = true;
   }
 
-  /** 停用插件时清理未执行的去抖修改任务。 */
+  /** 停用插件时清理未执行的去抖修改任务与待结算的 Agent 窗口。 */
   stop(): void {
-    for (const timer of this.modifyTimers.values()) window.clearTimeout(timer);
+    for (const timer of this.modifyTimers.values()) this.clock.clearTimeout(timer);
     this.modifyTimers.clear();
+    for (const path of [...this.pendingAgent.keys()]) this.clearPendingAgent(path);
+  }
+
+  private clearPendingAgent(path: string): void {
+    const pending = this.pendingAgent.get(path);
+    if (!pending) return;
+    this.clock.clearTimeout(pending.timer);
+    this.pendingAgent.delete(path);
+    this.agentWrites.delete(path);
   }
 
   private scheduleModify(file: TFile): void {
     const previous = this.modifyTimers.get(file.path);
-    if (previous !== undefined) window.clearTimeout(previous);
-    const timer = window.setTimeout(() => {
+    if (previous !== undefined) this.clock.clearTimeout(previous);
+    const timer = this.clock.setTimeout(() => {
       this.modifyTimers.delete(file.path);
       void this.onModify(file);
     }, 120);
@@ -131,16 +185,59 @@ export class Tracker {
 
   /** Agent API 写入前调用：标记来源，随后触发的 vault 事件不计入人类统计。 */
   markAgentWrite(path: string): void {
-    const now = Date.now();
+    const now = this.clock.now();
     this.agentWrites.set(path, now);
     for (const [key, at] of this.agentWrites) {
       if (now - at > AGENT_WRITE_WINDOW_MS * 6) this.agentWrites.delete(key);
     }
+    const existing = this.pendingAgent.get(path);
+    if (existing) {
+      // 窗口内又一次 Agent 写入：重新等待它的写入事件并顺延窗口。
+      existing.expectEvent = true;
+      existing.endsAt = now + AGENT_WRITE_WINDOW_MS;
+      this.clock.clearTimeout(existing.timer);
+      existing.timer = this.clock.setTimeout(() => void this.settleAgentWindow(path), AGENT_WRITE_WINDOW_MS);
+      return;
+    }
+    this.pendingAgent.set(path, {
+      frozen: this.baseline.get(path),
+      agentSnap: null,
+      expectEvent: true,
+      endsAt: now + AGENT_WRITE_WINDOW_MS,
+      timer: this.clock.setTimeout(() => void this.settleAgentWindow(path), AGENT_WRITE_WINDOW_MS),
+    });
   }
 
   private isAgentWrite(path: string): boolean {
     const at = this.agentWrites.get(path);
-    return at !== undefined && Date.now() - at <= AGENT_WRITE_WINDOW_MS;
+    return at !== undefined && this.clock.now() - at <= AGENT_WRITE_WINDOW_MS;
+  }
+
+  /**
+   * 抑制窗口结束：按实际 diff 补计窗口内人的编辑。
+   * 基准优先取 Agent 写入事件的快照（Agent 的词不计入人类统计）；
+   * Agent 事件未到达（如写入前抛错）时回退冻结的人类基线，人的编辑照常补计。
+   */
+  private async settleAgentWindow(path: string): Promise<void> {
+    const pending = this.pendingAgent.get(path);
+    if (!pending) return;
+    this.pendingAgent.delete(path);
+    this.clock.clearTimeout(pending.timer);
+    this.agentWrites.delete(path);
+    const file = this.plugin.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) {
+      this.baseline.delete(path);
+      return;
+    }
+    const final = await this.snapshot(file);
+    const base = pending.agentSnap ?? pending.frozen ?? final;
+    this.baseline.set(path, final);
+    if (!file.path.endsWith(".md") || this.isExcluded(file.path)) return;
+    const added = Math.max(0, final.words - base.words);
+    const removed = Math.max(0, base.words - final.words);
+    const tasks = Math.max(0, final.tasks - base.tasks);
+    if (added === 0 && removed === 0 && tasks === 0) return;
+    this.countEdit(file, added, removed, tasks);
   }
 
   private async snapshot(file: TFile): Promise<FileBaseline> {
@@ -185,9 +282,16 @@ export class Tracker {
     const snap = { words: countWords(text), tasks: countCheckedTasks(text) };
     this.baseline.set(file.path, snap);
     // Agent 新建的笔记只计 aiWordsAdded（由 API 侧记录），这里只更新基线。
-    if (this.isAgentWrite(file.path)) return;
+    if (this.isAgentWrite(file.path)) {
+      const pending = this.pendingAgent.get(file.path);
+      if (pending) {
+        pending.agentSnap = snap;
+        pending.expectEvent = false;
+      }
+      return;
+    }
     if (snap.words > 0) {
-      const hour = new Date().getHours();
+      const hour = new Date(this.clock.now()).getHours();
       const folder = file.parent?.path ?? "/";
       const dayKey = noteDateKey(text, new Date(file.stat.ctime));
       const words = this.capWords(snap.words);
@@ -206,17 +310,36 @@ export class Tracker {
   private async onModify(file: TFile): Promise<void> {
     if (!this.ready || !file.path.endsWith(".md") || this.isExcluded(file.path)) return;
     const snap = await this.snapshot(file);
-    const prev = this.baseline.get(file.path) ?? { words: 0, tasks: 0 };
-    // 无论是否计入统计都要更新基线，否则 Agent 写入的词会在下次人类编辑时被误计。
+
+    const pending = this.pendingAgent.get(file.path);
+    if (pending) {
+      if (this.clock.now() < pending.endsAt) {
+        // 抑制期内暂缓基线更新：Agent 自身事件记为基准快照，
+        // 人的编辑留到窗口结束按实际 diff 补计，不再被吞。
+        if (pending.expectEvent) {
+          pending.agentSnap = snap;
+          pending.expectEvent = false;
+        }
+        return;
+      }
+      await this.settleAgentWindow(file.path);
+    }
+
+    const prev = this.baseline.get(file.path);
     this.baseline.set(file.path, snap);
-    if (this.isAgentWrite(file.path)) return;
+    // 无基线的文件只建立基线，不按 {0,0} 把整篇内容误计为新增。
+    if (!prev) return;
 
     const added = Math.max(0, snap.words - prev.words);
     const removed = Math.max(0, prev.words - snap.words);
     const tasks = Math.max(0, snap.tasks - prev.tasks);
     if (added === 0 && removed === 0 && tasks === 0) return;
+    this.countEdit(file, added, removed, tasks);
+  }
 
-    const hour = new Date().getHours();
+  /** 把一次人类编辑 diff 计入当天指标。 */
+  private countEdit(file: TFile, added: number, removed: number, tasks: number): void {
+    const hour = new Date(this.clock.now()).getHours();
     const folder = file.parent?.path ?? "/";
     const counted = this.capWords(added);
     const captured = counted >= 200 ? counted : 0;
@@ -234,7 +357,7 @@ export class Tracker {
 
   /** 按 5 分钟桶估算交互活跃时间。 */
   private markActive(): void {
-    const now = new Date();
+    const now = new Date(this.clock.now());
     const bucket = `${dateKey(now)}|${now.getHours()}:${Math.floor(now.getMinutes() / 5)}`;
     if (this.activeBuckets.has(bucket)) return;
     this.activeBuckets.add(bucket);
@@ -246,7 +369,7 @@ export class Tracker {
   /** 同一文件同一天最多记一次有效编辑会话，避免连续键入刷分；去重表持久化。 */
   private markSession(path: string): void {
     if (!this.store.settings.trackEdits) return;
-    const today = dateKey(new Date());
+    const today = dateKey(new Date(this.clock.now()));
     const key = `${today}|${path}`;
     if (this.countedSessions.has(key)) return;
     this.countedSessions.add(key);

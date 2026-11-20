@@ -371,6 +371,13 @@ export class SedimentPlugin extends Plugin {
     let file: TFile;
     if (existing instanceof TFile) {
       const previous = await this.app.vault.read(existing);
+      // 周复盘去重：文件已含本周区间标题则不再追加，直接打开已有复盘。
+      const weekHeading = markdown.split("\n", 1)[0];
+      if (previous.includes(weekHeading)) {
+        await this.app.workspace.getLeaf(true).openFile(existing);
+        new Notice(t("本周复盘已存在"));
+        return;
+      }
       await this.app.vault.modify(existing, `${previous.trimEnd()}\n\n---\n\n${markdown}`);
       file = existing;
     } else {

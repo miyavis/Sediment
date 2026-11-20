@@ -206,13 +206,21 @@ export interface FocusSessionRecord {
   source: "measured" | "estimated";
 }
 
-/** 番茄钟持久化状态：重启后按 savedAt 推算剩余时间。 */
+/** 番茄钟持久化状态：运行中按 startedAt/startRemaining 时间戳推算剩余时间。 */
 export interface PersistedPomodoro {
   mode: "focus" | "short" | "long";
   remaining: number;
   running: boolean;
   completed: number;
   savedAt: number;
+  /** 本段运行的起点（epoch ms）；暂停时为 null。旧数据可能缺失，回退 savedAt。 */
+  startedAt?: number | null;
+  /** 本段运行开始时的剩余秒数，配合 startedAt 做无漂移换算。 */
+  startRemaining?: number;
+  /** 写入方实例标识，用于多开 Obsidian 时的单实例检测。 */
+  instanceId?: string;
+  /** 最近一次心跳时间（epoch ms），心跳新鲜视为另一实例存活。 */
+  heartbeatAt?: number;
 }
 
 export interface PulseData {

@@ -19,10 +19,13 @@ class TFolder {
   }
 }
 class Notice {
-  /** 记录构造过的提示文案，供单测断言 Notice 行为。 */
+  /** 测试可断言的通知消息记录（按出现顺序）。 */
   static messages = [];
-  constructor(message) { Notice.messages.push(String(message)); }
-  setMessage() { return this; }
+  constructor(message) {
+    this.message = String(message);
+    Notice.messages.push(this.message);
+  }
+  setMessage(message) { this.message = String(message); return this; }
   hide() {}
 }
 class Component {
