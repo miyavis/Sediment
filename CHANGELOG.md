@@ -2,7 +2,7 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
-## [Unreleased]
+## [0.9.7] - 2026-11-20
 
 ### 改进（代码结构）
 - 看板主视图按页签拆分：`views/dashboard/sections/` 下 today / insights / agent 三个渲染模块，主视图从 ~1300 行降到 ~410 行，仅保留生命周期与共享辅助方法
