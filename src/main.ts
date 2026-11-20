@@ -110,6 +110,12 @@ export class SedimentPlugin extends Plugin {
       void this.activateView(MEMO_VIEW_TYPE);
     });
 
+    this.registerCommands();
+    this.addSettingTab(new PulseSettingTab(this.app, this));
+  }
+
+  /** 集中注册全部命令，避免 onload 过长。 */
+  private registerCommands(): void {
     this.addCommand({
       id: "open-dashboard",
       name: t("打开知识脉冲看板"),
@@ -228,8 +234,6 @@ export class SedimentPlugin extends Plugin {
         this.refreshViews();
       },
     });
-
-    this.addSettingTab(new PulseSettingTab(this.app, this));
   }
 
   private serverRestartTimer: number | null = null;

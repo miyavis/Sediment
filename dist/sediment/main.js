@@ -6322,6 +6322,11 @@ var SedimentPlugin = class extends import_obsidian19.Plugin {
     this.addRibbonIcon(SEDIMENT_ICON_ID, t("Sediment\uFF1A\u901F\u8BB0"), () => {
       void this.activateView(MEMO_VIEW_TYPE);
     });
+    this.registerCommands();
+    this.addSettingTab(new PulseSettingTab(this.app, this));
+  }
+  /** 集中注册全部命令，避免 onload 过长。 */
+  registerCommands() {
     this.addCommand({
       id: "open-dashboard",
       name: t("\u6253\u5F00\u77E5\u8BC6\u8109\u51B2\u770B\u677F"),
@@ -6434,7 +6439,6 @@ var SedimentPlugin = class extends import_obsidian19.Plugin {
         this.refreshViews();
       }
     });
-    this.addSettingTab(new PulseSettingTab(this.app, this));
   }
   async onunload() {
     var _a2, _b;
