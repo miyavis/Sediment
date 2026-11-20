@@ -410,12 +410,14 @@ export class DashboardView extends ItemView {
     card.createDiv({ cls: "sd-card-title", text: t("Agent 变更审查") });
     const seen = new Set<string>();
     const calls = this.plugin.store.data.toolCalls
+      .filter((call) => call.tool.startsWith("POST "))
       .filter((call) => {
         if (!call.path || seen.has(call.path)) return false;
         seen.add(call.path);
         return true;
       })
       .filter((call) => /\.(md|json)$/.test(call.path))
+      .filter((call) => !this.plugin.store.data.reviewedChanges[`${call.time}|${call.path}`])
       .slice(0, 8);
 
     if (calls.length === 0) {
@@ -452,9 +454,15 @@ export class DashboardView extends ItemView {
               current,
               () => {
                 void restoreBackup(this.plugin, file, backups[0].name).then(() => {
+                  this.plugin.store.reviewChange(`${call.time}|${call.path}`, "reverted");
                   new Notice(t("已采用备份，本次 Agent 修改已撤销"));
                   this.render();
                 });
+              },
+              () => {
+                this.plugin.store.reviewChange(`${call.time}|${call.path}`, "kept");
+                new Notice(t("已标记为保留当前版本，本次变更不再待审"));
+                this.render();
               }
             ).open();
           });
@@ -462,6 +470,7 @@ export class DashboardView extends ItemView {
         actions.createEl("button", { text: t("恢复") }).onclick = () => {
           if (!window.confirm(t("确认恢复这个 Agent 修改快照？当前笔记内容会被替换。"))) return;
           void restoreBackup(this.plugin, file, backups[0].name).then(() => {
+            this.plugin.store.reviewChange(`${call.time}|${call.path}`, "reverted");
             new Notice(t("已恢复到最近备份"));
             this.render();
           });

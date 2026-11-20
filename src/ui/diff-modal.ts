@@ -62,7 +62,8 @@ export class DiffModal extends Modal {
     private titleText: string,
     private before: string,
     private after: string,
-    private onRestore?: () => void
+    private onRestore?: () => void,
+    private onKeep?: () => void
   ) {
     super(app);
   }
@@ -90,7 +91,10 @@ export class DiffModal extends Modal {
         this.close();
       };
     }
-    actions.createEl("button", { cls: "mod-cta", text: "保留当前并关闭" }).onclick = () => this.close();
+    actions.createEl("button", { cls: "mod-cta", text: "保留当前并关闭" }).onclick = () => {
+      this.onKeep?.();
+      this.close();
+    };
   }
 
   private column(grid: HTMLElement, title: string, side: "old" | "new"): HTMLElement {

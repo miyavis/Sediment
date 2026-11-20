@@ -80,6 +80,10 @@ export class Store {
       workLogs: Array.isArray(loaded.workLogs) ? loaded.workLogs : [],
       toolCalls: Array.isArray(loaded.toolCalls) ? loaded.toolCalls : [],
       snapshots: Array.isArray(loaded.snapshots) ? loaded.snapshots : [],
+      reviewedChanges:
+        loaded.reviewedChanges && typeof loaded.reviewedChanges === "object" && !Array.isArray(loaded.reviewedChanges)
+          ? (loaded.reviewedChanges as Record<string, "kept" | "reverted">)
+          : {},
       diagnostics: Array.isArray(loaded.diagnostics) ? loaded.diagnostics : [],
       editSessions: loaded.editSessions && typeof loaded.editSessions === "object" && !Array.isArray(loaded.editSessions)
         ? loaded.editSessions
@@ -225,6 +229,12 @@ export class Store {
     this.data.toolCalls.unshift(record);
     if (this.data.toolCalls.length > 500) this.data.toolCalls.length = 500;
     this.scheduleSave(2000);
+  }
+
+  reviewChange(key: string, decision: "kept" | "reverted"): void {
+    this.data.reviewedChanges[key] = decision;
+    this.logDiagnostic("storage", `Agent 变更已审查：${decision}`, key);
+    this.scheduleSave();
   }
 
   addSnapshot(record: SnapshotRecord): void {

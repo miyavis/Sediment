@@ -200,6 +200,8 @@ export interface PulseData {
   workLogs: WorkLogRecord[];
   toolCalls: ToolCallRecord[];
   snapshots: SnapshotRecord[];
+  /** 已审查的 Agent 变更：key -> kept | reverted */
+  reviewedChanges: Record<string, "kept" | "reverted">;
   diagnostics: DiagnosticRecord[];
   /** 已计过编辑会话的 日期→文件路径 列表，重启后不重复计分 */
   editSessions: Record<string, string[]>;
@@ -312,6 +314,7 @@ export const DEFAULT_DATA: PulseData = {
   workLogs: [],
   toolCalls: [],
   snapshots: [],
+  reviewedChanges: {},
   diagnostics: [],
   editSessions: {},
   focusSessions: [],
