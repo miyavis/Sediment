@@ -8,6 +8,7 @@ import { restoreBackup } from "../features/audit";
 import type { DayRecord, MemoRecord, PendingWriteRecord, WorkLogRecord } from "../types";
 import { addDays, dailyNotePath, dateKey, hhmm, lastNDays, parseKey } from "../utils/dates";
 import { ensureFolder, normalizeFolder } from "../utils/vault";
+import { logError } from "../utils/log-error";
 import { t, tf } from "../i18n";
 import {
   inferCategory,
@@ -305,6 +306,8 @@ export class AgentApi {
       });
       return id;
     } catch (error) {
+      // 快照失败不阻断写入，但不再静默：记控制台与诊断，供真实环境排查。
+      logError(this.plugin.store, "写入前快照创建失败", error);
       return "";
     }
   }
@@ -646,8 +649,13 @@ export class AgentApi {
     sourceLine?: number,
     bypassConfirm = false
   ): Promise<WithPending<MemoRecord | null>> {
+    // A1 收口：速记经 memos.add -> appendToDailyNote 落到当天日记，
+    // 日记目标路径必须与其他写路径同款过门禁（黑名单/白名单/操作开关）。
+    // 采纳重放（bypassConfirm=true）同样过门禁；人用 UI 直接走 plugin.memos.add，不经此面。
+    const daily = dailyNotePath(this.plugin.store.settings, new Date());
+    const dailyExists = this.vault.getAbstractFileByPath(daily) instanceof TFile;
+    this.assertPathAllowed(daily, dailyExists ? "patch" : "create");
     if (!bypassConfirm && this.isConfirmMode()) {
-      const daily = dailyNotePath(this.plugin.store.settings, new Date());
       const tagStr = tags.length ? `\n标签：${tags.map((tag) => `#${String(tag).replace(/^#/, "")}`).join(" ")}` : "";
       return this.holdForConfirm(
         "add_memo",
@@ -1053,14 +1061,15 @@ export class AgentApi {
     const safe = safeAgentPath(path);
     this.assertPathAllowed(safe, "read");
     // delegate 内部经 memos.add -> appendToDailyNote 直接写当天日记：
-    // 必须与 addMemo 同款过写权限门禁（堵 readonly 旁路），confirm 档走挂起。
-    this.assertOperation("create");
+    // 日记目标路径必须过完整门禁（操作开关 + 黑名单 + 白名单），堵 readonly/越权旁路。
+    const daily = dailyNotePath(this.plugin.store.settings, new Date());
+    const dailyExists = this.vault.getAbstractFileByPath(daily) instanceof TFile;
+    this.assertPathAllowed(daily, dailyExists ? "patch" : "create");
     if (!bypassConfirm && this.isConfirmMode()) {
       // 人用看板调用面传 bypassConfirm=true 直接生效；Agent 面（HTTP/MCP）默认挂起。
       const tasks = await this.plugin.tasks.list("all");
       const task = tasks.find((item) => item.path === safe && item.line === line);
-      if (!task) throw new Error(`找不到待办：${safe}:${line}`);
-      const daily = dailyNotePath(this.plugin.store.settings, new Date());
+      if (!task) throw new ApiError("NOT_FOUND", tf("找不到待办：{path}:{line}", { path: safe, line }), 404);
       return this.holdForConfirm(
         "delegate_task",
         daily,

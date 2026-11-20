@@ -677,6 +677,13 @@ async function restoreBackup(plugin, file, name) {
   await plugin.app.vault.process(file, () => content);
 }
 
+// src/utils/log-error.ts
+function logError(sink, scope, error, category = "storage") {
+  console.error(`Sediment: ${scope}`, error);
+  const detail = error instanceof Error ? error.message : String(error);
+  sink == null ? void 0 : sink.logDiagnostic(category, scope, detail, false);
+}
+
 // src/i18n.ts
 var locale = "zh";
 function setLocale(next) {
@@ -738,6 +745,14 @@ var EN = {
   "\u5907\u4EFD\u6587\u4EF6\u540D\u4E0D\u5408\u6CD5": "Invalid backup file name",
   "\u5907\u4EFD\u4E0D\u5B58\u5728\u6216\u5DF2\u88AB\u6E05\u7406\uFF1A{name}": "Backup missing or already cleaned up: {name}",
   "\u5907\u4EFD\u5185\u5BB9\u635F\u574F\uFF0C\u65E0\u6CD5\u6062\u590D\uFF1A{name}": "Backup content is corrupted and cannot be restored: {name}",
+  // Task 10 第一轮加固：传输路 / 门禁 / 恢复语义 / UI 提示
+  "\u8BF7\u6C42\u4F53\u8FC7\u5927\uFF08\u4E0A\u9650 1MB\uFF09": "Request body too large (1MB limit)",
+  "\u975E\u6CD5\u7684\u8BF7\u6C42 URL": "Invalid request URL",
+  "\u5185\u90E8\u9519\u8BEF\uFF0C\u8BE6\u60C5\u89C1\u63D2\u4EF6\u8BCA\u65AD\u65E5\u5FD7": "Internal error; see the plugin diagnostics log for details",
+  "\u627E\u4E0D\u5230\u5F85\u529E\uFF1A{path}:{line}": "Task not found: {path}:{line}",
+  "\u5DF2\u4ECE {name} \u6062\u590D\uFF08\u6B64\u524D\u65E0\u6570\u636E\uFF0C\u65E0\u9700\u6062\u590D\u526F\u672C\uFF09": "Restored from {name} (no previous data; recovery copy not needed)",
+  "\u4FDD\u7559\u4EFD\u6570\u9700\u4E3A\u6B63\u6574\u6570\uFF0C\u5DF2\u56DE\u9000\u4E3A 10": "Keep count must be a positive integer; reset to 10",
+  "\u5C55\u5F00": "Expand",
   "\u6CA1\u6709\u9057\u7559\u5F85\u529E": "No pending tasks",
   "\u5237\u65B0": "Refresh",
   "\u5168\u90E8": "All",
@@ -1456,6 +1471,7 @@ var AgentApi = class {
       });
       return id;
     } catch (error) {
+      logError(this.plugin.store, "\u5199\u5165\u524D\u5FEB\u7167\u521B\u5EFA\u5931\u8D25", error);
       return "";
     }
   }
@@ -1752,8 +1768,10 @@ ${content}`);
   }
   /** 记一条速记，写入当天日记。confirm 档挂起为待审写入（预览为条目摘要）。 */
   async addMemo(text, tags = [], sourcePath, sourceLine, bypassConfirm = false) {
+    const daily = dailyNotePath(this.plugin.store.settings, /* @__PURE__ */ new Date());
+    const dailyExists = this.vault.getAbstractFileByPath(daily) instanceof import_obsidian3.TFile;
+    this.assertPathAllowed(daily, dailyExists ? "patch" : "create");
     if (!bypassConfirm && this.isConfirmMode()) {
-      const daily = dailyNotePath(this.plugin.store.settings, /* @__PURE__ */ new Date());
       const tagStr = tags.length ? `
 \u6807\u7B7E\uFF1A${tags.map((tag) => `#${String(tag).replace(/^#/, "")}`).join(" ")}` : "";
       return this.holdForConfirm(
@@ -2058,12 +2076,13 @@ ${content}
   async delegateTask(path, line, bypassConfirm = false) {
     const safe = safeAgentPath(path);
     this.assertPathAllowed(safe, "read");
-    this.assertOperation("create");
+    const daily = dailyNotePath(this.plugin.store.settings, /* @__PURE__ */ new Date());
+    const dailyExists = this.vault.getAbstractFileByPath(daily) instanceof import_obsidian3.TFile;
+    this.assertPathAllowed(daily, dailyExists ? "patch" : "create");
     if (!bypassConfirm && this.isConfirmMode()) {
       const tasks = await this.plugin.tasks.list("all");
       const task = tasks.find((item) => item.path === safe && item.line === line);
-      if (!task) throw new Error(`\u627E\u4E0D\u5230\u5F85\u529E\uFF1A${safe}:${line}`);
-      const daily = dailyNotePath(this.plugin.store.settings, /* @__PURE__ */ new Date());
+      if (!task) throw new ApiError("NOT_FOUND", tf("\u627E\u4E0D\u5230\u5F85\u529E\uFF1A{path}:{line}", { path: safe, line }), 404);
       return this.holdForConfirm(
         "delegate_task",
         daily,
@@ -2400,6 +2419,7 @@ var AgentServer = class {
       this.running = desired;
       new import_obsidian4.Notice(`Agent API \u5DF2\u542F\u52A8\uFF1Ahttp://127.0.0.1:${desired.port}`);
     } catch (error) {
+      logError(this.plugin.store, "Agent API \u542F\u52A8\u5931\u8D25", error);
       new import_obsidian4.Notice(`Agent API \u542F\u52A8\u5931\u8D25\uFF08\u7AEF\u53E3 ${desired.port}\uFF09\uFF1A${String(error)}`);
       this.running = null;
       this.server = null;
@@ -2421,11 +2441,17 @@ var AgentServer = class {
   async readBody(request) {
     const chunks = [];
     let size = 0;
+    let oversized = false;
     for await (const chunk of request) {
       size += chunk.length;
-      if (size > 1024 * 1024) throw new Error("\u8BF7\u6C42\u4F53\u8FC7\u5927\uFF08\u4E0A\u9650 1MB\uFF09");
-      chunks.push(chunk);
+      if (size > 1024 * 1024) {
+        oversized = true;
+        chunks.length = 0;
+        continue;
+      }
+      if (!oversized) chunks.push(chunk);
     }
+    if (oversized) throw new ApiError("PAYLOAD_TOO_LARGE", t("\u8BF7\u6C42\u4F53\u8FC7\u5927\uFF08\u4E0A\u9650 1MB\uFF09"), 413);
     if (chunks.length === 0) return {};
     let parsed;
     try {
@@ -2439,16 +2465,21 @@ var AgentServer = class {
     return parsed;
   }
   async handle(request, response) {
-    var _a2, _b, _c, _d, _e, _f;
-    const url = new URL((_a2 = request.url) != null ? _a2 : "/", "http://127.0.0.1");
-    const headerToken = String((_b = request.headers.authorization) != null ? _b : "").replace(/^Bearer\s+/i, "");
-    const supplied = (_c = url.searchParams.get("token")) != null ? _c : headerToken;
+    var _a2, _b, _c, _d, _e;
+    let url;
+    try {
+      url = new URL((_a2 = request.url) != null ? _a2 : "/", "http://127.0.0.1");
+    } catch (e) {
+      this.json(response, 400, { error: t("\u975E\u6CD5\u7684\u8BF7\u6C42 URL"), code: "INVALID_URL" });
+      return;
+    }
+    const supplied = String((_b = request.headers.authorization) != null ? _b : "").replace(/^Bearer\s+/i, "");
     const expected = this.plugin.store.settings.agentServerToken;
     if (!expected || !tokensMatch(supplied, expected)) {
       this.plugin.store.logDiagnostic(
         "security",
         "\u672C\u5730 API \u9274\u6743\u5931\u8D25",
-        `source=${(_d = request.socket.remoteAddress) != null ? _d : "unknown"} path=${redactAuditPath(url.pathname)}`
+        `source=${(_c = request.socket.remoteAddress) != null ? _c : "unknown"} path=${redactAuditPath(url.pathname)}`
       );
       this.json(response, 401, { error: "unauthorized" });
       return;
@@ -2462,7 +2493,7 @@ var AgentServer = class {
         const parsed = Number(value);
         return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
       };
-      const agent = str(query.get("agent"), "") || String((_e = request.headers["x-agent"]) != null ? _e : "");
+      const agent = str(query.get("agent"), "") || String((_d = request.headers["x-agent"]) != null ? _d : "");
       const loggedPath = (typeof body.path === "string" ? body.path : "") || str(query.get("path"), "");
       api.logToolCall(`${request.method} ${url.pathname}`, agent, redactAuditPath(loggedPath));
       api.setCallContext(`${request.method} ${url.pathname}`, agent);
@@ -2618,7 +2649,7 @@ var AgentServer = class {
             200,
             await api.updateFrontmatter(
               str(body.path),
-              (_f = body.updates) != null ? _f : {},
+              (_e = body.updates) != null ? _e : {},
               str(body.ifMatch) || void 0
             )
           );
@@ -2653,10 +2684,27 @@ var AgentServer = class {
         this.json(response, error.status, { error: error.message, code: error.code });
         return;
       }
-      this.json(response, 500, { error: error instanceof Error ? error.message : String(error) });
+      logError(this.plugin.store, "\u672C\u5730 API \u8BF7\u6C42\u5904\u7406\u5931\u8D25", error);
+      this.json(response, 500, { error: sanitizeServerError(error), code: "INTERNAL" });
     }
   }
 };
+var SAFE_ERROR_PREFIXES = [
+  "\u7B14\u8BB0\u5DF2\u5B58\u5728\uFF1A",
+  "\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A",
+  "\u7248\u672C\u51B2\u7A81\uFF1A",
+  "\u627E\u4E0D\u5230\u5F85\u529E\uFF1A",
+  "\u901F\u8BB0\u4E0D\u5B58\u5728\uFF1A",
+  "\u8BBF\u95EE\u88AB\u62D2\u7EDD\uFF1A",
+  "frontmatter \u672A\u95ED\u5408"
+];
+function sanitizeServerError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (SAFE_ERROR_PREFIXES.some((prefix) => message.startsWith(prefix)) || /^速记 \S+ 不是待办任务$/.test(message)) {
+    return message;
+  }
+  return t("\u5185\u90E8\u9519\u8BEF\uFF0C\u8BE6\u60C5\u89C1\u63D2\u4EF6\u8BCA\u65AD\u65E5\u5FD7");
+}
 
 // src/agent/semantic.ts
 var STOP_WORDS = /* @__PURE__ */ new Set([
@@ -2998,6 +3046,8 @@ var Store = class {
     this.persistenceBlocked = false;
     this.saveTimer = null;
     this.lastBackupAt = 0;
+    /** 保存失败 Notice 节流：持续失败时 60s 内同类只弹一次，避免刷屏。 */
+    this.lastSaveNoticeAt = 0;
   }
   /** 记录可在真实环境查看的诊断事件；默认同时安排一次保存。 */
   logDiagnostic(category, message, detail, schedule = true) {
@@ -3018,7 +3068,8 @@ var Store = class {
       const path = `.obsidian/plugins/sediment/recovery/data-${stamp}.json`;
       await adapter.write(path, JSON.stringify(raw, null, 2));
       return path;
-    } catch (e) {
+    } catch (error) {
+      logError(this, "\u6062\u590D\u526F\u672C\u521B\u5EFA\u5931\u8D25", error);
       return "";
     }
   }
@@ -3037,7 +3088,7 @@ var Store = class {
           loaded.version = 1;
           migratedVersion = true;
         } catch (error) {
-          console.error("Sediment: \u6570\u636E\u7248\u672C\u53F7\u5199\u56DE\u5931\u8D25", error);
+          logError(this, "\u6570\u636E\u7248\u672C\u53F7\u5199\u56DE\u5931\u8D25", error, "migration");
           this.persistenceBlocked = true;
           this.migrationWarning = t("\u6570\u636E\u7248\u672C\u53F7\u8FC1\u79FB\u5931\u8D25\uFF0C\u5DF2\u6682\u505C\u5199\u5165\u4EE5\u4FDD\u62A4\u539F\u59CB\u6570\u636E");
           recoveryPath = await this.preserveRecoveryCopy(raw);
@@ -3068,9 +3119,10 @@ var Store = class {
       snapshots: Array.isArray(loaded.snapshots) ? loaded.snapshots : [],
       reviewedChanges: loaded.reviewedChanges && typeof loaded.reviewedChanges === "object" && !Array.isArray(loaded.reviewedChanges) ? loaded.reviewedChanges : {},
       // 旧版 data.json 没有该字段时默认空数组，保证升级兼容。
-      // 缺 request.kind 的畸形条目会让 approvePendingWrite 抛裸 TypeError，迁移时一并过滤。
+      // 缺 request.kind 或 request.args 形状异常的畸形条目会让 approvePendingWrite
+      // 抛裸 TypeError（HTTP 500），迁移时一并过滤。
       pendingWrites: Array.isArray(loaded.pendingWrites) ? loaded.pendingWrites.filter(
-        (item) => item && typeof item === "object" && typeof item.id === "string" && typeof item.path === "string" && item.request && typeof item.request.kind === "string"
+        (item) => item && typeof item === "object" && typeof item.id === "string" && typeof item.path === "string" && item.request && typeof item.request === "object" && typeof item.request.kind === "string" && isRecord(item.request.args)
       ) : [],
       diagnostics: Array.isArray(loaded.diagnostics) ? loaded.diagnostics : [],
       editSessions: loaded.editSessions && typeof loaded.editSessions === "object" && !Array.isArray(loaded.editSessions) ? loaded.editSessions : {},
@@ -3129,12 +3181,16 @@ var Store = class {
     try {
       await this.plugin.saveData(this.data);
     } catch (error) {
-      console.error("Sediment: \u4FDD\u5B58 data.json \u5931\u8D25", error);
-      new import_obsidian5.Notice(t("\u6570\u636E\u4FDD\u5B58\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u78C1\u76D8\u7A7A\u95F4\u6216\u6587\u4EF6\u6743\u9650"));
+      logError(this, "\u4FDD\u5B58 data.json \u5931\u8D25", error);
+      const now = Date.now();
+      if (now - this.lastSaveNoticeAt >= 6e4) {
+        this.lastSaveNoticeAt = now;
+        new import_obsidian5.Notice(t("\u6570\u636E\u4FDD\u5B58\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u78C1\u76D8\u7A7A\u95F4\u6216\u6587\u4EF6\u6743\u9650"));
+      }
       return;
     }
     void this.backupData().catch((error) => {
-      console.error("Sediment: \u81EA\u52A8\u5907\u4EFD\u5931\u8D25", error);
+      logError(this, "\u81EA\u52A8\u5907\u4EFD\u5931\u8D25", error);
     });
   }
   /** 把 data.json 快照写入库内普通文件夹，按设置保留最近若干份。失败向调用方抛错。 */
@@ -3162,7 +3218,9 @@ var Store = class {
   }
   /**
    * 从备份恢复 data.json：先把当前 data.json 存为恢复副本，再写回备份内容并重载内存态。
-   * 返回恢复副本路径（创建失败时为空串）。文件名非法（含路径穿越）或备份损坏时抛错。
+   * 返回 { recoveryPath, recovery }：recovery 区分副本已保存 / 无当前数据 / 副本写入失败，
+   * 全新安装（无 data.json）不再被误报为「恢复副本创建失败」。
+   * 文件名非法（含路径穿越）或备份损坏时抛错。
    */
   async restoreDataBackup(name) {
     if (!/^data-[A-Za-z0-9._-]+\.json$/.test(name) || name.includes("..")) {
@@ -3185,13 +3243,18 @@ var Store = class {
       throw new Error(tf("\u5907\u4EFD\u5185\u5BB9\u635F\u574F\uFF0C\u65E0\u6CD5\u6062\u590D\uFF1A{name}", { name }));
     }
     const currentRaw = await this.plugin.loadData();
-    const recoveryPath = currentRaw != null ? await this.preserveRecoveryCopy(currentRaw) : "";
+    let recoveryPath = "";
+    let recovery = "none";
+    if (currentRaw != null) {
+      recoveryPath = await this.preserveRecoveryCopy(currentRaw);
+      recovery = recoveryPath ? "saved" : "failed";
+    }
     await this.plugin.saveData({ ...candidate, version: 1 });
     this.persistenceBlocked = false;
     this.migrationWarning = null;
     this.recoveryCopyPath = null;
     await this.load();
-    return recoveryPath;
+    return { recoveryPath, recovery };
   }
   /** 写入是否因数据保护被暂停（恢复 UI 可据此提示）。 */
   get isPersistenceBlocked() {
@@ -3850,6 +3913,12 @@ var QuickMemoModal = class extends import_obsidian8.Modal {
     area.addEventListener("input", () => {
       this.text = area.value;
     });
+    area.addEventListener("keydown", (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+        event.preventDefault();
+        this.doSubmit();
+      }
+    });
     const tagRow = contentEl.createDiv({ cls: "sd-modal-tags" });
     tagRow.createSpan({ text: t("\u6807\u7B7E\uFF08\u7A7A\u683C\u5206\u9694\uFF09") });
     const tagInput = tagRow.createEl("input", { type: "text", placeholder: t("\u7075\u611F \u9605\u8BFB") });
@@ -3860,13 +3929,18 @@ var QuickMemoModal = class extends import_obsidian8.Modal {
     const cancel = actions.createEl("button", { text: t("\u53D6\u6D88") });
     cancel.onclick = () => this.close();
     const save = actions.createEl("button", { cls: "mod-cta", text: t("\u4FDD\u5B58") });
-    save.onclick = () => {
-      if (!this.text.trim()) return;
-      const tags = this.tags.split(/\s+/).map((tag) => tag.replace(/^#/, "")).filter(Boolean);
-      this.onSubmit(this.text, tags);
-      this.close();
-    };
+    save.onclick = () => this.doSubmit();
     area.focus();
+  }
+  /** 空文本不静默丢弃：明确提示未保存，弹窗保持打开。 */
+  doSubmit() {
+    if (!this.text.trim()) {
+      new import_obsidian8.Notice(t("\u5185\u5BB9\u4E3A\u7A7A\uFF0C\u672A\u4FDD\u5B58"));
+      return;
+    }
+    const tags = this.tags.split(/\s+/).map((tag) => tag.replace(/^#/, "")).filter(Boolean);
+    this.onSubmit(this.text, tags);
+    this.close();
   }
   onClose() {
     this.contentEl.empty();
@@ -4211,7 +4285,7 @@ var DiagnosticsModal = class extends import_obsidian11.Modal {
 var import_obsidian12 = require("obsidian");
 
 // src/agent/bridge-source.ts
-var BRIDGE_SOURCE = '#!/usr/bin/env node\r\n/**\r\n * Sediment MCP stdio bridge.\r\n * \u66B4\u9732\u4EFB\u52A1\u578B\u5DE5\u5177\u548C\u53EA\u8BFB\u5DE5\u4F5C\u533A\u805A\u5408\u5165\u53E3\uFF1B\u65E7\u7EC6\u7C92\u5EA6\u5DE5\u5177\u540D\u4E0D\u518D\u4FDD\u7559\u3002\r\n */\r\n\r\nimport process from "node:process";\r\nimport http from "node:http";\r\nimport https from "node:https";\r\n\r\nconst BASE = process.env.SEDIMENT_URL || "http://127.0.0.1:27123";\r\nconst TOKEN = process.env.SEDIMENT_TOKEN || "";\r\n\r\nconst TOOLS = [\r\n  {\r\n    name: "get_daily_context",\r\n    description: "\u83B7\u53D6\u4ECA\u65E5\u72B6\u6001\u3001\u6700\u8FD1\u5DE5\u4F5C\u65E5\u5FD7\u3001\u901F\u8BB0\u3001\u7B14\u8BB0\u548C Agent \u5F85\u529E\u3002",\r\n    inputSchema: { type: "object", properties: { days: { type: "number", description: "\u56DE\u6EAF\u5929\u6570\uFF0C\u9ED8\u8BA4 7" } } },\r\n  },\r\n  {\r\n    name: "get_active_context",\r\n    description: "\u83B7\u53D6\u5F53\u524D\u7B14\u8BB0\u3001\u9009\u4E2D\u6587\u672C\u3001\u5149\u6807\u884C\u548C\u5149\u6807\u6BB5\u843D\u3002",\r\n    inputSchema: { type: "object", properties: {} },\r\n  },\r\n  {\r\n    name: "search_notes",\r\n    description: "\u5168\u6587\u6216\u672C\u5730\u8BED\u4E49\u68C0\u7D22\u7B14\u8BB0\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        query: { type: "string" },\r\n        limit: { type: "number", description: "\u6700\u591A\u8FD4\u56DE\u6761\u6570\uFF0C\u9ED8\u8BA4 10" },\r\n        mode: { type: "string", enum: ["text", "semantic"], description: "\u9ED8\u8BA4 text" },\r\n      },\r\n      required: ["query"],\r\n    },\r\n  },\r\n  {\r\n    name: "list_notes",\r\n    description: "\u5217\u51FA\u7B14\u8BB0\uFF0C\u53EF\u6309\u6587\u4EF6\u5939\u8FC7\u6EE4\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        folder: { type: "string" },\r\n        limit: { type: "number", description: "\u6700\u591A\u8FD4\u56DE\u6761\u6570\uFF0C\u9ED8\u8BA4 50" },\r\n      },\r\n    },\r\n  },\r\n  {\r\n    name: "read_note",\r\n    description: "\u8BFB\u53D6\u6307\u5B9A\u7B14\u8BB0\u5168\u6587\u6216\u53EA\u8BFB\u5143\u6570\u636E\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        path: { type: "string" },\r\n        metadataOnly: { type: "boolean", description: "\u53EA\u8FD4\u56DE frontmatter\u3001\u6807\u7B7E\u3001\u6807\u9898\u5927\u7EB2\u548C\u94FE\u63A5" },\r\n      },\r\n      required: ["path"],\r\n    },\r\n  },\r\n  {\r\n    name: "write_note",\r\n    description: "\u7EDF\u4E00\u5199\u5165\u7B14\u8BB0\uFF1Acreate\u3001append \u6216 overwrite\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        path: { type: "string" },\r\n        content: { type: "string" },\r\n        action: { type: "string", enum: ["create", "append", "overwrite"], description: "\u9ED8\u8BA4 create" },\r\n      },\r\n      required: ["path", "content"],\r\n    },\r\n  },\r\n  {\r\n    name: "patch_note",\r\n    description: "\u6309\u6807\u9898\u6216\u6587\u672C\u7247\u6BB5\u5C40\u90E8\u4FEE\u6539\uFF0C\u652F\u6301\u9884\u89C8\u3001\u7248\u672C\u51B2\u7A81\u548C\u5FEB\u7167\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        path: { type: "string" },\r\n        heading: { type: "string" },\r\n        find: { type: "string" },\r\n        content: { type: "string" },\r\n        mode: { type: "string", enum: ["replace", "append", "prepend"] },\r\n        operation: {\r\n          type: "string",\r\n          enum: ["append_under_heading", "prepend_under_heading", "replace_block", "update_frontmatter"],\r\n        },\r\n        index: { type: "number" },\r\n        ifMatch: { type: "string" },\r\n        expectedMtime: { type: "number" },\r\n        dryRun: { type: "boolean" },\r\n      },\r\n      required: ["path", "content"],\r\n    },\r\n  },\r\n  {\r\n    name: "add_memo",\r\n    description: "\u8BB0\u4E00\u6761\u901F\u8BB0\uFF0C\u53EF\u5173\u8054\u5F85\u529E\u6765\u6E90\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        text: { type: "string" },\r\n        tags: { type: "array", items: { type: "string" } },\r\n        sourcePath: { type: "string" },\r\n        sourceLine: { type: "number" },\r\n      },\r\n      required: ["text"],\r\n    },\r\n  },\r\n  {\r\n    name: "add_knowledge",\r\n    description: "\u6C89\u6DC0\u77E5\u8BC6\u7B14\u8BB0\u3001\u5206\u7C7B\u3001\u6807\u7B7E\u548C\u5173\u8054\u6765\u6E90\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        title: { type: "string" },\r\n        content: { type: "string" },\r\n        category: { type: "string" },\r\n        folder: { type: "string" },\r\n        tags: { type: "array", items: { type: "string" } },\r\n        agent: { type: "string" },\r\n        source: { type: "string" },\r\n        links: { type: "array", items: { type: "string" } },\r\n      },\r\n      required: ["title", "content"],\r\n    },\r\n  },\r\n  {\r\n    name: "record_work_log",\r\n    description: "\u8BB0\u5F55 Agent \u5DE5\u4F5C\u65E5\u5FD7\u3001\u51B3\u7B56\u3001\u6D89\u53CA\u6587\u4EF6\u3001\u5B66\u4E60\u548C\u5F85\u786E\u8BA4\u4E8B\u9879\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        agent: { type: "string" },\r\n        task: { type: "string" },\r\n        summary: { type: "string" },\r\n        decisions: { type: "string" },\r\n        learnings: { type: "string" },\r\n        openQuestions: { type: "string" },\r\n        files: { type: "array", items: { type: "string" } },\r\n        tags: { type: "array", items: { type: "string" } },\r\n      },\r\n      required: ["task", "summary"],\r\n    },\r\n  },\r\n  {\r\n    name: "manage_tasks",\r\n    description: "\u7EDF\u4E00\u7BA1\u7406\u4EFB\u52A1\uFF1Alist\u3001complete\u3001delegate\u3001snapshot\u3001claim \u6216 complete_agent\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        action: { type: "string", enum: ["list", "complete", "delegate", "snapshot", "claim", "complete_agent"] },\r\n        scope: { type: "string", enum: ["today", "overdue", "all", "agent"] },\r\n        id: { type: "string" },\r\n        path: { type: "string" },\r\n        line: { type: "number" },\r\n        resultPath: { type: "string" },\r\n      },\r\n      required: ["action"],\r\n    },\r\n  },\r\n  {\r\n    name: "get_workspace_state",\r\n    description: "\u6309\u9700\u805A\u5408\u53EA\u8BFB\u9AD8\u7EA7\u72B6\u6001\uFF1A\u7EDF\u8BA1\u3001\u56FE\u8C31\u3001\u756A\u8304\u949F\u3001\u5468\u590D\u76D8\u3001\u8C03\u7528\u6D3B\u52A8\u3001\u5DE5\u4F5C\u65E5\u5FD7\u6216\u5206\u7C7B\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        sections: {\r\n          type: "array",\r\n          items: {\r\n            type: "string",\r\n            enum: ["stats", "graph", "pomodoro", "weekly_review", "tool_activity", "work_logs", "categories"],\r\n          },\r\n          description: "\u7559\u7A7A\u65F6\u8FD4\u56DE today\u3001stats\u3001pomodoro\u3001work_logs\u3001categories \u548C tool_activity",\r\n        },\r\n        path: { type: "string", description: "graph section \u4F7F\u7528\u7684\u7B14\u8BB0\u8DEF\u5F84" },\r\n        types: { type: "string", description: "graph \u7C7B\u578B\uFF0C\u9ED8\u8BA4 outgoing,backlinks,tags" },\r\n        days: { type: "number", description: "stats/work_logs \u56DE\u6EAF\u5929\u6570" },\r\n        date: { type: "string", description: "weekly_review \u951A\u5B9A\u65E5\u671F YYYY-MM-DD" },\r\n        limit: { type: "number", description: "tool_activity \u6216 work_logs \u6570\u91CF\u4E0A\u9650" },\r\n      },\r\n    },\r\n  },\r\n  {\r\n    name: "manage_changes",\r\n    description: "\u7EDF\u4E00\u5BA1\u67E5 Agent \u4FEE\u6539\uFF1Alist \u6216 revert\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        action: { type: "string", enum: ["list", "revert"] },\r\n        snapshotId: { type: "string" },\r\n        limit: { type: "number" },\r\n      },\r\n      required: ["action"],\r\n    },\r\n  },\r\n];\r\n\r\nfunction request(url, method, payload) {\r\n  return new Promise((resolve, reject) => {\r\n    const transport = url.protocol === "https:" ? https : http;\r\n    const body = payload === undefined ? null : JSON.stringify(payload);\r\n    const headers = body\r\n      ? { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) }\r\n      : {};\r\n    const req = transport.request(url, { method, headers }, (res) => {\r\n      let raw = "";\r\n      res.setEncoding("utf8");\r\n      res.on("data", (chunk) => { raw += chunk; });\r\n      res.on("end", () => {\r\n        let data;\r\n        try { data = JSON.parse(raw); } catch { data = raw; }\r\n        if (res.statusCode >= 200 && res.statusCode < 300) resolve(data);\r\n        else reject(new Error(data?.error || `HTTP ${res.statusCode}`));\r\n      });\r\n    });\r\n    req.on("error", reject);\r\n    if (body) req.write(body);\r\n    req.end();\r\n  });\r\n}\r\n\r\nasync function call(path, params = {}, method = "GET") {\r\n  const url = new URL(path, BASE);\r\n  url.searchParams.set("token", TOKEN);\r\n  url.searchParams.set("agent", process.env.AGENT_NAME || "");\r\n  if (method === "POST") return request(url, method, params);\r\n  for (const [key, value] of Object.entries(params)) {\r\n    if (value !== undefined && value !== null) url.searchParams.set(key, String(value));\r\n  }\r\n  return request(url, method, undefined);\r\n}\r\n\r\nasync function dispatch(name, args) {\r\n  const tool = TOOLS.find((candidate) => candidate.name === name);\r\n  if (!tool) throw new Error(`\u672A\u77E5\u5DE5\u5177\uFF1A${name}`);\r\n  const missing = (tool.inputSchema.required ?? []).filter(\r\n    (key) => args[key] === undefined || args[key] === null || args[key] === ""\r\n  );\r\n  if (missing.length > 0) throw new Error(`\u7F3A\u5C11\u5FC5\u586B\u53C2\u6570\uFF1A${missing.join(", ")}`);\r\n\r\n  switch (name) {\r\n    case "get_daily_context":\r\n      return call("/context", { days: args.days ?? 7 });\r\n    case "get_active_context":\r\n      return call("/active-context");\r\n    case "search_notes":\r\n      return call(args.mode === "semantic" ? "/semantic-search" : "/search", {\r\n        q: args.query ?? "",\r\n        query: args.query ?? "",\r\n        limit: args.limit ?? 10,\r\n      });\r\n    case "list_notes":\r\n      return call("/notes", { folder: args.folder ?? "", limit: args.limit ?? 50 });\r\n    case "read_note":\r\n      return args.metadataOnly\r\n        ? call("/note-metadata", { path: args.path })\r\n        : call("/note", { path: args.path });\r\n    case "write_note":\r\n      return call("/note", { path: args.path, content: args.content, mode: args.action ?? "create" }, "POST");\r\n    case "patch_note":\r\n      return call("/patch-note", {\r\n        path: args.path,\r\n        heading: args.heading ?? "",\r\n        find: args.find ?? "",\r\n        content: args.content,\r\n        mode: args.mode ?? "replace",\r\n        operation: args.operation ?? "",\r\n        index: args.index,\r\n        ifMatch: args.ifMatch ?? "",\r\n        expectedMtime: args.expectedMtime,\r\n        dryRun: args.dryRun === true,\r\n      }, "POST");\r\n    case "add_memo":\r\n      return call("/memo", {\r\n        text: args.text,\r\n        tags: args.tags ?? [],\r\n        sourcePath: args.sourcePath ?? "",\r\n        sourceLine: args.sourceLine ?? 0,\r\n      }, "POST");\r\n    case "add_knowledge":\r\n      return call("/knowledge", {\r\n        title: args.title,\r\n        content: args.content,\r\n        category: args.category ?? "",\r\n        folder: args.folder ?? "",\r\n        tags: args.tags ?? [],\r\n        agent: args.agent ?? "",\r\n        source: args.source ?? "",\r\n        links: args.links ?? [],\r\n      }, "POST");\r\n    case "record_work_log":\r\n      return call("/worklog", {\r\n        agent: args.agent ?? "",\r\n        task: args.task,\r\n        summary: args.summary,\r\n        decisions: args.decisions ?? "",\r\n        learnings: args.learnings ?? "",\r\n        openQuestions: args.openQuestions ?? "",\r\n        files: args.files ?? [],\r\n        tags: args.tags ?? [],\r\n      }, "POST");\r\n    case "manage_tasks":\r\n      switch (args.action) {\r\n        case "list": return call("/tasks", { scope: args.scope ?? "all" });\r\n        case "complete": return call("/tasks/complete", { path: args.path, line: args.line }, "POST");\r\n        case "delegate": return call("/tasks/delegate", { path: args.path, line: args.line }, "POST");\r\n        case "snapshot": return call("/tasks/snapshot", {}, "POST");\r\n        case "claim": return call("/agent-task/claim", { id: args.id }, "POST");\r\n        case "complete_agent":\r\n          return call("/agent-task/complete", { id: args.id, resultPath: args.resultPath ?? "" }, "POST");\r\n      }\r\n      throw new Error("manage_tasks.action \u65E0\u6548");\r\n    case "get_workspace_state":\r\n      {\r\n        const allowed = new Set(["stats", "graph", "pomodoro", "weekly_review", "tool_activity", "work_logs", "categories"]);\r\n        const requested = Array.isArray(args.sections)\r\n          ? args.sections.filter((section) => allowed.has(section))\r\n          : ["stats", "pomodoro", "tool_activity", "work_logs", "categories"];\r\n        const sections = [...new Set(requested)];\r\n        const state = {};\r\n        const reads = [];\r\n\r\n        if (sections.includes("stats")) {\r\n          reads.push(call("/stats", { days: args.days ?? 30 }).then((value) => { state.stats = value; }));\r\n        }\r\n        if (sections.includes("graph")) {\r\n          if (!args.path) {\r\n            state.graph = { skipped: true, reason: "graph \u9700\u8981 path \u53C2\u6570" };\r\n          } else {\r\n            reads.push(call("/graph", { path: args.path, types: args.types ?? "outgoing,backlinks,tags" })\r\n              .then((value) => { state.graph = value; }));\r\n          }\r\n        }\r\n        if (sections.includes("pomodoro")) {\r\n          reads.push(call("/pomodoro").then((value) => { state.pomodoro = value; }));\r\n        }\r\n        if (sections.includes("weekly_review")) {\r\n          reads.push(call("/review", { date: args.date ?? "" })\r\n            .then((value) => { state.weeklyReview = value; }));\r\n        }\r\n        if (sections.includes("tool_activity")) {\r\n          reads.push(call("/activity").then((value) => { state.toolActivity = value; }));\r\n        }\r\n        if (sections.includes("work_logs")) {\r\n          reads.push(call("/worklogs", { days: args.days ?? 7 })\r\n            .then((value) => { state.workLogs = value; }));\r\n        }\r\n        if (sections.includes("categories")) {\r\n          reads.push(call("/categories").then((value) => { state.categories = value; }));\r\n        }\r\n\r\n        await Promise.all(reads);\r\n        return state;\r\n      }\r\n    case "manage_changes":\r\n      if (args.action === "list") return call("/agent/audit", { limit: args.limit ?? 20 });\r\n      if (args.action === "revert") return call("/agent/revert", { snapshotId: args.snapshotId }, "POST");\r\n      throw new Error("manage_changes.action \u65E0\u6548");\r\n  }\r\n}\r\n\r\nfunction send(message) {\r\n  process.stdout.write(JSON.stringify(message) + "\\n");\r\n}\r\n\r\nasync function handle(message) {\r\n  if (message.id === undefined) return;\r\n  const { id, method, params } = message;\r\n  switch (method) {\r\n    case "initialize":\r\n      send({\r\n        jsonrpc: "2.0",\r\n        id,\r\n        result: {\r\n          protocolVersion: "2024-11-05",\r\n          capabilities: { tools: {} },\r\n          serverInfo: { name: "sediment", version: "0.9.7" },\r\n        },\r\n      });\r\n      break;\r\n    case "tools/list":\r\n      send({ jsonrpc: "2.0", id, result: { tools: TOOLS } });\r\n      break;\r\n    case "tools/call":\r\n      try {\r\n        const data = await dispatch(params?.name, params?.arguments ?? {});\r\n        send({\r\n          jsonrpc: "2.0",\r\n          id,\r\n          result: {\r\n            content: [{ type: "text", text: typeof data === "string" ? data : JSON.stringify(data, null, 2) }],\r\n          },\r\n        });\r\n      } catch (error) {\r\n        send({\r\n          jsonrpc: "2.0",\r\n          id,\r\n          result: { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true },\r\n        });\r\n      }\r\n      break;\r\n    case "ping":\r\n      send({ jsonrpc: "2.0", id, result: {} });\r\n      break;\r\n    default:\r\n      send({ jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${method}` } });\r\n  }\r\n}\r\n\r\nlet buffer = "";\r\nprocess.stdin.setEncoding("utf8");\r\nprocess.stdin.on("data", (chunk) => {\r\n  buffer += chunk;\r\n  let index;\r\n  while ((index = buffer.indexOf("\\n")) >= 0) {\r\n    const line = buffer.slice(0, index).trim();\r\n    buffer = buffer.slice(index + 1);\r\n    if (!line) continue;\r\n    try {\r\n      void handle(JSON.parse(line));\r\n    } catch {}\r\n  }\r\n});\r\n';
+var BRIDGE_SOURCE = '#!/usr/bin/env node\r\n/**\r\n * Sediment MCP stdio bridge.\r\n * \u66B4\u9732\u4EFB\u52A1\u578B\u5DE5\u5177\u548C\u53EA\u8BFB\u5DE5\u4F5C\u533A\u805A\u5408\u5165\u53E3\uFF1B\u65E7\u7EC6\u7C92\u5EA6\u5DE5\u5177\u540D\u4E0D\u518D\u4FDD\u7559\u3002\r\n */\r\n\r\nimport process from "node:process";\r\nimport http from "node:http";\r\nimport https from "node:https";\r\n\r\nconst BASE = process.env.SEDIMENT_URL || "http://127.0.0.1:27123";\r\nconst TOKEN = process.env.SEDIMENT_TOKEN || "";\r\n\r\n/** HTTP \u8BF7\u6C42\u8D85\u65F6\u4E0E\u54CD\u5E94\u4F53/stdin \u7F13\u51B2\u4E0A\u9650\uFF0C\u9632\u6B62\u6302\u6B7B\u4E0E\u65E0\u754C\u5185\u5B58\u589E\u957F\u3002 */\r\nconst REQUEST_TIMEOUT_MS = 30_000;\r\nconst MAX_RESPONSE_CHARS = 8 * 1024 * 1024;\r\nconst MAX_STDIN_BUFFER_CHARS = 1024 * 1024;\r\n\r\nconst TOOLS = [\r\n  {\r\n    name: "get_daily_context",\r\n    description: "\u83B7\u53D6\u4ECA\u65E5\u72B6\u6001\u3001\u6700\u8FD1\u5DE5\u4F5C\u65E5\u5FD7\u3001\u901F\u8BB0\u3001\u7B14\u8BB0\u548C Agent \u5F85\u529E\u3002",\r\n    inputSchema: { type: "object", properties: { days: { type: "number", description: "\u56DE\u6EAF\u5929\u6570\uFF0C\u9ED8\u8BA4 7" } } },\r\n  },\r\n  {\r\n    name: "get_active_context",\r\n    description: "\u83B7\u53D6\u5F53\u524D\u7B14\u8BB0\u3001\u9009\u4E2D\u6587\u672C\u3001\u5149\u6807\u884C\u548C\u5149\u6807\u6BB5\u843D\u3002",\r\n    inputSchema: { type: "object", properties: {} },\r\n  },\r\n  {\r\n    name: "search_notes",\r\n    description: "\u5168\u6587\u6216\u672C\u5730\u8BED\u4E49\u68C0\u7D22\u7B14\u8BB0\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        query: { type: "string" },\r\n        limit: { type: "number", description: "\u6700\u591A\u8FD4\u56DE\u6761\u6570\uFF0C\u9ED8\u8BA4 10" },\r\n        mode: { type: "string", enum: ["text", "semantic"], description: "\u9ED8\u8BA4 text" },\r\n      },\r\n      required: ["query"],\r\n    },\r\n  },\r\n  {\r\n    name: "list_notes",\r\n    description: "\u5217\u51FA\u7B14\u8BB0\uFF0C\u53EF\u6309\u6587\u4EF6\u5939\u8FC7\u6EE4\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        folder: { type: "string" },\r\n        limit: { type: "number", description: "\u6700\u591A\u8FD4\u56DE\u6761\u6570\uFF0C\u9ED8\u8BA4 50" },\r\n      },\r\n    },\r\n  },\r\n  {\r\n    name: "read_note",\r\n    description: "\u8BFB\u53D6\u6307\u5B9A\u7B14\u8BB0\u5168\u6587\u6216\u53EA\u8BFB\u5143\u6570\u636E\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        path: { type: "string" },\r\n        metadataOnly: { type: "boolean", description: "\u53EA\u8FD4\u56DE frontmatter\u3001\u6807\u7B7E\u3001\u6807\u9898\u5927\u7EB2\u548C\u94FE\u63A5" },\r\n      },\r\n      required: ["path"],\r\n    },\r\n  },\r\n  {\r\n    name: "write_note",\r\n    description: "\u7EDF\u4E00\u5199\u5165\u7B14\u8BB0\uFF1Acreate\u3001append \u6216 overwrite\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        path: { type: "string" },\r\n        content: { type: "string" },\r\n        action: { type: "string", enum: ["create", "append", "overwrite"], description: "\u9ED8\u8BA4 create" },\r\n      },\r\n      required: ["path", "content"],\r\n    },\r\n  },\r\n  {\r\n    name: "patch_note",\r\n    description: "\u6309\u6807\u9898\u6216\u6587\u672C\u7247\u6BB5\u5C40\u90E8\u4FEE\u6539\uFF0C\u652F\u6301\u9884\u89C8\u3001\u7248\u672C\u51B2\u7A81\u548C\u5FEB\u7167\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        path: { type: "string" },\r\n        heading: { type: "string" },\r\n        find: { type: "string" },\r\n        content: { type: "string" },\r\n        mode: { type: "string", enum: ["replace", "append", "prepend"] },\r\n        operation: {\r\n          type: "string",\r\n          enum: ["append_under_heading", "prepend_under_heading", "replace_block", "update_frontmatter"],\r\n        },\r\n        index: { type: "number" },\r\n        ifMatch: { type: "string" },\r\n        expectedMtime: { type: "number" },\r\n        dryRun: { type: "boolean" },\r\n      },\r\n      required: ["path", "content"],\r\n    },\r\n  },\r\n  {\r\n    name: "add_memo",\r\n    description: "\u8BB0\u4E00\u6761\u901F\u8BB0\uFF0C\u53EF\u5173\u8054\u5F85\u529E\u6765\u6E90\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        text: { type: "string" },\r\n        tags: { type: "array", items: { type: "string" } },\r\n        sourcePath: { type: "string" },\r\n        sourceLine: { type: "number" },\r\n      },\r\n      required: ["text"],\r\n    },\r\n  },\r\n  {\r\n    name: "add_knowledge",\r\n    description: "\u6C89\u6DC0\u77E5\u8BC6\u7B14\u8BB0\u3001\u5206\u7C7B\u3001\u6807\u7B7E\u548C\u5173\u8054\u6765\u6E90\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        title: { type: "string" },\r\n        content: { type: "string" },\r\n        category: { type: "string" },\r\n        folder: { type: "string" },\r\n        tags: { type: "array", items: { type: "string" } },\r\n        agent: { type: "string" },\r\n        source: { type: "string" },\r\n        links: { type: "array", items: { type: "string" } },\r\n      },\r\n      required: ["title", "content"],\r\n    },\r\n  },\r\n  {\r\n    name: "record_work_log",\r\n    description: "\u8BB0\u5F55 Agent \u5DE5\u4F5C\u65E5\u5FD7\u3001\u51B3\u7B56\u3001\u6D89\u53CA\u6587\u4EF6\u3001\u5B66\u4E60\u548C\u5F85\u786E\u8BA4\u4E8B\u9879\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        agent: { type: "string" },\r\n        task: { type: "string" },\r\n        summary: { type: "string" },\r\n        decisions: { type: "string" },\r\n        learnings: { type: "string" },\r\n        openQuestions: { type: "string" },\r\n        files: { type: "array", items: { type: "string" } },\r\n        tags: { type: "array", items: { type: "string" } },\r\n      },\r\n      required: ["task", "summary"],\r\n    },\r\n  },\r\n  {\r\n    name: "manage_tasks",\r\n    description: "\u7EDF\u4E00\u7BA1\u7406\u4EFB\u52A1\uFF1Alist\u3001complete\u3001delegate\u3001snapshot\u3001claim \u6216 complete_agent\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        action: { type: "string", enum: ["list", "complete", "delegate", "snapshot", "claim", "complete_agent"] },\r\n        scope: { type: "string", enum: ["today", "overdue", "all", "agent"] },\r\n        id: { type: "string" },\r\n        path: { type: "string" },\r\n        line: { type: "number" },\r\n        resultPath: { type: "string" },\r\n      },\r\n      required: ["action"],\r\n    },\r\n  },\r\n  {\r\n    name: "get_workspace_state",\r\n    description: "\u6309\u9700\u805A\u5408\u53EA\u8BFB\u9AD8\u7EA7\u72B6\u6001\uFF1A\u7EDF\u8BA1\u3001\u56FE\u8C31\u3001\u756A\u8304\u949F\u3001\u5468\u590D\u76D8\u3001\u8C03\u7528\u6D3B\u52A8\u3001\u5DE5\u4F5C\u65E5\u5FD7\u6216\u5206\u7C7B\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        sections: {\r\n          type: "array",\r\n          items: {\r\n            type: "string",\r\n            enum: ["stats", "graph", "pomodoro", "weekly_review", "tool_activity", "work_logs", "categories"],\r\n          },\r\n          description: "\u7559\u7A7A\u65F6\u8FD4\u56DE today\u3001stats\u3001pomodoro\u3001work_logs\u3001categories \u548C tool_activity",\r\n        },\r\n        path: { type: "string", description: "graph section \u4F7F\u7528\u7684\u7B14\u8BB0\u8DEF\u5F84" },\r\n        types: { type: "string", description: "graph \u7C7B\u578B\uFF0C\u9ED8\u8BA4 outgoing,backlinks,tags" },\r\n        days: { type: "number", description: "stats/work_logs \u56DE\u6EAF\u5929\u6570" },\r\n        date: { type: "string", description: "weekly_review \u951A\u5B9A\u65E5\u671F YYYY-MM-DD" },\r\n        limit: { type: "number", description: "tool_activity \u6216 work_logs \u6570\u91CF\u4E0A\u9650" },\r\n      },\r\n    },\r\n  },\r\n  {\r\n    name: "manage_changes",\r\n    description: "\u7EDF\u4E00\u5BA1\u67E5 Agent \u4FEE\u6539\uFF1Alist \u6216 revert\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        action: { type: "string", enum: ["list", "revert"] },\r\n        snapshotId: { type: "string" },\r\n        limit: { type: "number" },\r\n      },\r\n      required: ["action"],\r\n    },\r\n  },\r\n];\r\n\r\nfunction request(url, method, payload, extraHeaders = {}) {\r\n  return new Promise((resolve, reject) => {\r\n    const transport = url.protocol === "https:" ? https : http;\r\n    const body = payload === undefined ? null : JSON.stringify(payload);\r\n    const headers = { ...extraHeaders };\r\n    if (body) {\r\n      headers["Content-Type"] = "application/json";\r\n      headers["Content-Length"] = Buffer.byteLength(body);\r\n    }\r\n    const req = transport.request(url, { method, headers }, (res) => {\r\n      let raw = "";\r\n      let oversized = false;\r\n      res.setEncoding("utf8");\r\n      res.on("data", (chunk) => {\r\n        raw += chunk;\r\n        if (raw.length > MAX_RESPONSE_CHARS) {\r\n          oversized = true;\r\n          req.destroy(new Error(`\u54CD\u5E94\u4F53\u8FC7\u5927\uFF08\u4E0A\u9650 ${MAX_RESPONSE_CHARS} \u5B57\u7B26\uFF09`));\r\n        }\r\n      });\r\n      res.on("end", () => {\r\n        if (oversized) return;\r\n        let data;\r\n        try { data = JSON.parse(raw); } catch { data = raw; }\r\n        if (res.statusCode >= 200 && res.statusCode < 300) resolve(data);\r\n        else reject(new Error(data?.error || `HTTP ${res.statusCode}`));\r\n      });\r\n    });\r\n    req.setTimeout(REQUEST_TIMEOUT_MS, () => {\r\n      req.destroy(new Error(`\u8BF7\u6C42\u8D85\u65F6\uFF08${REQUEST_TIMEOUT_MS / 1000}s\uFF09\uFF1A${url.pathname}`));\r\n    });\r\n    req.on("error", reject);\r\n    if (body) req.write(body);\r\n    req.end();\r\n  });\r\n}\r\n\r\nasync function call(path, params = {}, method = "GET") {\r\n  // \u4EE4\u724C\u7F3A\u5931\u4E0E\u4EE4\u724C\u9519\u8BEF\u5206\u5F00\u63D0\u793A\uFF1A\u7F3A\u5931\u662F\u914D\u7F6E\u95EE\u9898\uFF0C401 \u624D\u662F\u4EE4\u724C\u4E0D\u5339\u914D\u3002\r\n  if (!TOKEN) {\r\n    throw new Error("\u7F3A\u5C11\u4EE4\u724C\uFF1A\u8BF7\u8BBE\u7F6E SEDIMENT_TOKEN \u73AF\u5883\u53D8\u91CF\uFF08\u63D2\u4EF6\u8BBE\u7F6E \u2192 Agent \u63A5\u5165\u53EF\u590D\u5236\uFF09");\r\n  }\r\n  const url = new URL(path, BASE);\r\n  url.searchParams.set("agent", process.env.AGENT_NAME || "");\r\n  // \u4EE4\u724C\u53EA\u8D70 Authorization \u5934\uFF0C\u4E0D\u518D\u653E\u67E5\u8BE2\u4E32\uFF08\u4F1A\u843D\u5165\u65E5\u5FD7/\u4EE3\u7406\u7F13\u5B58\uFF09\u3002\r\n  const headers = { Authorization: `Bearer ${TOKEN}` };\r\n  if (method === "POST") return request(url, method, params, headers);\r\n  for (const [key, value] of Object.entries(params)) {\r\n    if (value !== undefined && value !== null) url.searchParams.set(key, String(value));\r\n  }\r\n  return request(url, method, undefined, headers);\r\n}\r\n\r\nasync function dispatch(name, args) {\r\n  const tool = TOOLS.find((candidate) => candidate.name === name);\r\n  if (!tool) throw new Error(`\u672A\u77E5\u5DE5\u5177\uFF1A${name}`);\r\n  const missing = (tool.inputSchema.required ?? []).filter(\r\n    (key) => args[key] === undefined || args[key] === null || args[key] === ""\r\n  );\r\n  if (missing.length > 0) throw new Error(`\u7F3A\u5C11\u5FC5\u586B\u53C2\u6570\uFF1A${missing.join(", ")}`);\r\n\r\n  switch (name) {\r\n    case "get_daily_context":\r\n      return call("/context", { days: args.days ?? 7 });\r\n    case "get_active_context":\r\n      return call("/active-context");\r\n    case "search_notes":\r\n      return call(args.mode === "semantic" ? "/semantic-search" : "/search", {\r\n        q: args.query ?? "",\r\n        query: args.query ?? "",\r\n        limit: args.limit ?? 10,\r\n      });\r\n    case "list_notes":\r\n      return call("/notes", { folder: args.folder ?? "", limit: args.limit ?? 50 });\r\n    case "read_note":\r\n      return args.metadataOnly\r\n        ? call("/note-metadata", { path: args.path })\r\n        : call("/note", { path: args.path });\r\n    case "write_note":\r\n      return call("/note", { path: args.path, content: args.content, mode: args.action ?? "create" }, "POST");\r\n    case "patch_note":\r\n      return call("/patch-note", {\r\n        path: args.path,\r\n        heading: args.heading ?? "",\r\n        find: args.find ?? "",\r\n        content: args.content,\r\n        mode: args.mode ?? "replace",\r\n        operation: args.operation ?? "",\r\n        index: args.index,\r\n        ifMatch: args.ifMatch ?? "",\r\n        expectedMtime: args.expectedMtime,\r\n        dryRun: args.dryRun === true,\r\n      }, "POST");\r\n    case "add_memo":\r\n      return call("/memo", {\r\n        text: args.text,\r\n        tags: args.tags ?? [],\r\n        sourcePath: args.sourcePath ?? "",\r\n        sourceLine: args.sourceLine ?? 0,\r\n      }, "POST");\r\n    case "add_knowledge":\r\n      return call("/knowledge", {\r\n        title: args.title,\r\n        content: args.content,\r\n        category: args.category ?? "",\r\n        folder: args.folder ?? "",\r\n        tags: args.tags ?? [],\r\n        agent: args.agent ?? "",\r\n        source: args.source ?? "",\r\n        links: args.links ?? [],\r\n      }, "POST");\r\n    case "record_work_log":\r\n      return call("/worklog", {\r\n        agent: args.agent ?? "",\r\n        task: args.task,\r\n        summary: args.summary,\r\n        decisions: args.decisions ?? "",\r\n        learnings: args.learnings ?? "",\r\n        openQuestions: args.openQuestions ?? "",\r\n        files: args.files ?? [],\r\n        tags: args.tags ?? [],\r\n      }, "POST");\r\n    case "manage_tasks":\r\n      switch (args.action) {\r\n        case "list": return call("/tasks", { scope: args.scope ?? "all" });\r\n        case "complete": return call("/tasks/complete", { path: args.path, line: args.line }, "POST");\r\n        case "delegate": return call("/tasks/delegate", { path: args.path, line: args.line }, "POST");\r\n        case "snapshot": return call("/tasks/snapshot", {}, "POST");\r\n        case "claim": return call("/agent-task/claim", { id: args.id }, "POST");\r\n        case "complete_agent":\r\n          return call("/agent-task/complete", { id: args.id, resultPath: args.resultPath ?? "" }, "POST");\r\n      }\r\n      throw new Error("manage_tasks.action \u65E0\u6548");\r\n    case "get_workspace_state":\r\n      {\r\n        const allowed = new Set(["stats", "graph", "pomodoro", "weekly_review", "tool_activity", "work_logs", "categories"]);\r\n        const requested = Array.isArray(args.sections)\r\n          ? args.sections.filter((section) => allowed.has(section))\r\n          : ["stats", "pomodoro", "tool_activity", "work_logs", "categories"];\r\n        const sections = [...new Set(requested)];\r\n        const state = {};\r\n        const reads = [];\r\n\r\n        if (sections.includes("stats")) {\r\n          reads.push(call("/stats", { days: args.days ?? 30 }).then((value) => { state.stats = value; }));\r\n        }\r\n        if (sections.includes("graph")) {\r\n          if (!args.path) {\r\n            state.graph = { skipped: true, reason: "graph \u9700\u8981 path \u53C2\u6570" };\r\n          } else {\r\n            reads.push(call("/graph", { path: args.path, types: args.types ?? "outgoing,backlinks,tags" })\r\n              .then((value) => { state.graph = value; }));\r\n          }\r\n        }\r\n        if (sections.includes("pomodoro")) {\r\n          reads.push(call("/pomodoro").then((value) => { state.pomodoro = value; }));\r\n        }\r\n        if (sections.includes("weekly_review")) {\r\n          reads.push(call("/review", { date: args.date ?? "" })\r\n            .then((value) => { state.weeklyReview = value; }));\r\n        }\r\n        if (sections.includes("tool_activity")) {\r\n          reads.push(call("/activity").then((value) => { state.toolActivity = value; }));\r\n        }\r\n        if (sections.includes("work_logs")) {\r\n          reads.push(call("/worklogs", { days: args.days ?? 7 })\r\n            .then((value) => { state.workLogs = value; }));\r\n        }\r\n        if (sections.includes("categories")) {\r\n          reads.push(call("/categories").then((value) => { state.categories = value; }));\r\n        }\r\n\r\n        await Promise.all(reads);\r\n        return state;\r\n      }\r\n    case "manage_changes":\r\n      if (args.action === "list") return call("/agent/audit", { limit: args.limit ?? 20 });\r\n      if (args.action === "revert") return call("/agent/revert", { snapshotId: args.snapshotId }, "POST");\r\n      throw new Error("manage_changes.action \u65E0\u6548");\r\n  }\r\n}\r\n\r\nfunction send(message) {\r\n  process.stdout.write(JSON.stringify(message) + "\\n");\r\n}\r\n\r\nasync function handle(message) {\r\n  if (message.id === undefined) return;\r\n  const { id, method, params } = message;\r\n  switch (method) {\r\n    case "initialize":\r\n      send({\r\n        jsonrpc: "2.0",\r\n        id,\r\n        result: {\r\n          protocolVersion: "2024-11-05",\r\n          capabilities: { tools: {} },\r\n          serverInfo: { name: "sediment", version: "0.9.7" },\r\n        },\r\n      });\r\n      break;\r\n    case "tools/list":\r\n      send({ jsonrpc: "2.0", id, result: { tools: TOOLS } });\r\n      break;\r\n    case "tools/call":\r\n      try {\r\n        const data = await dispatch(params?.name, params?.arguments ?? {});\r\n        send({\r\n          jsonrpc: "2.0",\r\n          id,\r\n          result: {\r\n            content: [{ type: "text", text: typeof data === "string" ? data : JSON.stringify(data, null, 2) }],\r\n          },\r\n        });\r\n      } catch (error) {\r\n        send({\r\n          jsonrpc: "2.0",\r\n          id,\r\n          result: { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true },\r\n        });\r\n      }\r\n      break;\r\n    case "ping":\r\n      send({ jsonrpc: "2.0", id, result: {} });\r\n      break;\r\n    default:\r\n      send({ jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${method}` } });\r\n  }\r\n}\r\n\r\nlet buffer = "";\r\nprocess.stdin.setEncoding("utf8");\r\nprocess.stdin.on("data", (chunk) => {\r\n  buffer += chunk;\r\n  if (buffer.length > MAX_STDIN_BUFFER_CHARS) {\r\n    process.stderr.write("sediment-mcp: stdin \u7F13\u51B2\u8D85\u8FC7 1MB \u4E0A\u9650\uFF0C\u65AD\u5F00\u8FDE\u63A5\\n");\r\n    process.exit(1);\r\n  }\r\n  let index;\r\n  while ((index = buffer.indexOf("\\n")) >= 0) {\r\n    const line = buffer.slice(0, index).trim();\r\n    buffer = buffer.slice(index + 1);\r\n    if (!line) continue;\r\n    let message;\r\n    try {\r\n      message = JSON.parse(line);\r\n    } catch (error) {\r\n      // \u7578\u5F62 JSON \u8BF4\u660E\u6D41\u5DF2\u4E0D\u53EF\u4FE1\uFF1A\u8BB0\u8BCA\u65AD\uFF08stderr\uFF09\u540E\u65AD\u5F00\uFF0C\u4E0D\u518D\u9759\u9ED8\u541E\u6389\u3002\r\n      process.stderr.write(`sediment-mcp: \u7578\u5F62 JSON \u8F93\u5165\uFF0C\u65AD\u5F00\u8FDE\u63A5\uFF1A${error.message}\\n`);\r\n      process.exit(1);\r\n    }\r\n    void handle(message);\r\n  }\r\n});\r\n';
 
 // src/agent/setup.ts
 function nodeModule(name) {
@@ -4798,7 +4872,9 @@ var PulseSettingTab = class extends import_obsidian13.PluginSettingTab {
     new import_obsidian13.Setting(containerEl).setName(t("\u4FDD\u7559\u5907\u4EFD\u4EFD\u6570")).addText(
       (text) => text.setPlaceholder("10").setValue(String(settings.backupKeep)).onChange((value) => {
         const count = Number(value);
-        settings.backupKeep = Number.isInteger(count) && count > 0 ? count : 10;
+        const valid = Number.isInteger(count) && count > 0;
+        settings.backupKeep = valid ? count : 10;
+        if (!valid) new import_obsidian13.Notice(t("\u4FDD\u7559\u4EFD\u6570\u9700\u4E3A\u6B63\u6574\u6570\uFF0C\u5DF2\u56DE\u9000\u4E3A 10"));
         save();
       })
     );
@@ -5014,14 +5090,16 @@ var PosterModal = class extends import_obsidian15.Modal {
     canvas.height = 1200;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.fillStyle = "#f4f7fb";
+    const css = getComputedStyle(document.body);
+    const themeColor = (name, fallback) => css.getPropertyValue(name).trim() || fallback;
+    ctx.fillStyle = themeColor("--background-primary", "#f4f7fb");
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = "#2f6fb2";
+    ctx.fillStyle = themeColor("--interactive-accent", "#2f6fb2");
     ctx.fillRect(0, 0, canvas.width, 260);
-    ctx.fillStyle = "#ffffff";
+    ctx.fillStyle = themeColor("--text-on-accent", "#ffffff");
     ctx.font = "bold 64px sans-serif";
     ctx.fillText(title, 60, 130);
-    ctx.fillStyle = "#20344d";
+    ctx.fillStyle = themeColor("--text-normal", "#20344d");
     ctx.font = "bold 120px sans-serif";
     ctx.fillText(String(total), 60, 470);
     ctx.font = "32px sans-serif";
@@ -5497,11 +5575,13 @@ function renderDataRecovery(view, root) {
     const actions = row.createDiv({ cls: "sd-audit-actions" });
     actions.createEl("button", { text: t("\u6062\u590D") }).onclick = () => {
       if (!window.confirm(t("\u786E\u8BA4\u4ECE\u8BE5\u5FEB\u7167\u6062\u590D\u7EDF\u8BA1\u6570\u636E\uFF1F\u5F53\u524D\u6570\u636E\u4F1A\u5148\u53E6\u5B58\u4E3A\u6062\u590D\u526F\u672C\uFF0C\u6062\u590D\u540E\u770B\u677F\u7ACB\u5373\u91CD\u8F7D\u3002"))) return;
-      void view.plugin.store.restoreDataBackup(backup.name).then((recoveryPath) => {
-        if (recoveryPath === "") {
+      void view.plugin.store.restoreDataBackup(backup.name).then((result) => {
+        if (result.recovery === "failed") {
           new import_obsidian18.Notice(t("\u6062\u590D\u526F\u672C\u521B\u5EFA\u5931\u8D25\uFF1A\u5907\u4EFD\u5DF2\u6062\u590D\uFF0C\u4F46\u5F53\u524D\u6570\u636E\u672A\u80FD\u53E6\u5B58\u526F\u672C\u3002\u8BF7\u7ACB\u5373\u624B\u52A8\u5907\u4EFD data.json\uFF0C\u907F\u514D\u518D\u6B21\u6062\u590D\u65F6\u65E0\u6CD5\u56DE\u9000\u3002"), 15e3);
+        } else if (result.recovery === "none") {
+          new import_obsidian18.Notice(tf("\u5DF2\u4ECE {name} \u6062\u590D\uFF08\u6B64\u524D\u65E0\u6570\u636E\uFF0C\u65E0\u9700\u6062\u590D\u526F\u672C\uFF09", { name: backup.name }));
         } else {
-          new import_obsidian18.Notice(tf("\u5DF2\u4ECE {name} \u6062\u590D\uFF0C\u6062\u590D\u526F\u672C\uFF1A{path}", { name: backup.name, path: recoveryPath }));
+          new import_obsidian18.Notice(tf("\u5DF2\u4ECE {name} \u6062\u590D\uFF0C\u6062\u590D\u526F\u672C\uFF1A{path}", { name: backup.name, path: result.recoveryPath }));
         }
         view.plugin.refreshViews();
       }).catch((error) => {
@@ -5639,6 +5719,7 @@ function goalRing(value, goal, ariaLabel) {
 
 // src/utils/strata.ts
 var MONTH_KEY = /^\d{4}-(0[1-9]|1[0-2])$/;
+var DAY_KEY = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 function positive(value) {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? n : 0;
@@ -5672,24 +5753,19 @@ function recentStrataRange(n, now = /* @__PURE__ */ new Date()) {
   };
 }
 function aggregateStrata(source, range) {
-  var _a2, _b;
+  var _a2;
   const months = listMonths(range);
   const buckets = new Map(
     months.map((month) => [month, { month, human: 0, agent: 0, tasks: 0, focus: 0 }])
   );
   for (const [key, day] of Object.entries((_a2 = source.days) != null ? _a2 : {})) {
+    if (!DAY_KEY.test(key)) continue;
     const bucket = buckets.get(key.slice(0, 7));
     if (!bucket || !day) continue;
     bucket.human += positive(day.wordsAdded);
     bucket.agent += positive(day.aiWordsAdded);
     bucket.tasks += positive(day.tasksCompleted);
-  }
-  for (const session of (_b = source.focusSessions) != null ? _b : []) {
-    if (!session || typeof session.date !== "string") continue;
-    if (session.mode === "short" || session.mode === "long") continue;
-    const bucket = buckets.get(session.date.slice(0, 7));
-    if (!bucket) continue;
-    bucket.focus += positive(session.minutes);
+    bucket.focus += positive(day.focusMinutes);
   }
   return months.map((month) => buckets.get(month));
 }
@@ -5729,7 +5805,7 @@ function renderInsights(view, root) {
     renderHeatmap(view, folded);
   } else if (view.insightsSection === "overview") {
     renderInsightsSummary(view, content);
-    renderOverview(view, content);
+    if (view.insightsExpanded) renderOverview(view, content);
   } else if (view.insightsSection === "trend") {
     renderAnalytics(view, content, "trend");
   } else if (view.insightsSection === "folders") {
@@ -5842,7 +5918,7 @@ function renderStrata(view, root) {
   view.hideHeatTooltip();
   const store = view.plugin.store;
   const months = aggregateStrata(
-    { days: store.data.days, focusSessions: store.data.focusSessions },
+    { days: store.data.days },
     recentStrataRange(STRATA_MONTHS)
   );
   const card = root.createDiv({ cls: "sd-card sd-strata", attr: { id: "sd-strata" } });
@@ -5895,14 +5971,16 @@ function renderStrata(view, root) {
     return `<text x="${x.toFixed(1)}" y="${height - 6}" text-anchor="middle" font-size="9" fill="var(--text-faint)">${text}</text>`;
   }).join("");
   const hits = months.map(
-    (_month, index) => `<rect class="sd-strata-hit" data-index="${index}" x="${(labelW + index * colW).toFixed(1)}" y="${topPad}" width="${colW.toFixed(1)}" height="${bandsH}"/>`
+    (month, index) => `<rect class="sd-strata-hit" data-index="${index}" x="${(labelW + index * colW).toFixed(1)}" y="${topPad}" width="${colW.toFixed(1)}" height="${bandsH}" tabindex="0" role="img" aria-label="${escapeAttr(
+      `${month.month} \xB7 ${tf("\u4EBA\u5199 {human} \u5B57 \xB7 AI \u5199 {agent} \u5B57", { human: month.human, agent: month.agent })} \xB7 ${tf("\u5B8C\u6210\u4EFB\u52A1 {tasks} \u4E2A \xB7 \u4E13\u6CE8 {focus} \u5206\u949F", { tasks: month.tasks, focus: month.focus })}`
+    )}"/>`
   ).join("");
   const ariaLabel = tf("\u5730\u5C42\u5256\u9762\uFF1A{months} \u4E2A\u6708\uFF0C\u4EBA\u5199 {human} \u5B57\uFF0CAI \u5199 {agent} \u5B57\uFF0C\u5B8C\u6210\u4EFB\u52A1 {tasks} \u4E2A\uFF0C\u4E13\u6CE8 {focus} \u5206\u949F", {
     months: months.length,
     ...totals
   });
   const slot = card.createDiv({ cls: "sd-strata-slot" });
-  slot.innerHTML = `<svg class="sd-strata-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${ariaLabel.replace(/"/g, "&quot;")}">${bands}${monthLabels}${hits}</svg>`;
+  slot.innerHTML = `<svg class="sd-strata-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeAttr(ariaLabel)}">${bands}${monthLabels}${hits}</svg>`;
   const showTip = (event, month) => {
     view.hideHeatTooltip();
     const tip = document.createElement("div");
@@ -5920,6 +5998,11 @@ function renderStrata(view, root) {
     el.addEventListener("mouseenter", (event) => showTip(event, month));
     el.addEventListener("mousemove", (event) => view.moveHeatTooltip(event));
     el.addEventListener("mouseleave", () => view.hideHeatTooltip());
+    el.addEventListener("focus", () => {
+      const box = el.getBoundingClientRect();
+      showTip({ clientX: box.left + box.width / 2, clientY: box.top }, month);
+    });
+    el.addEventListener("blur", () => view.hideHeatTooltip());
   });
   renderChartLegend(card, STRATA_LAYERS.map((layer) => ({ color: layer.color, label: t(layer.label) })));
   card.createDiv({ cls: "sd-card-sub sd-strata-hint", text: t("\u5C42\u539A\u6309\u5F53\u6708\u91CF\u5F52\u4E00\uFF0C\u8D8A\u4E45\u8FDC\u7684\u6708\u4EFD\u8272\u6CFD\u8D8A\u6C89\u3002") });
@@ -6766,12 +6849,20 @@ var DashboardView = class extends import_obsidian20.ItemView {
         });
         const actions = row.createDiv({ cls: "sd-task-actions" });
         if (task.path) {
-          actions.createEl("button", { text: t("\u5B8C\u6210") }).onclick = () => {
-            if (!window.confirm(t("\u786E\u8BA4\u5C06\u6B64\u5F85\u529E\u6807\u8BB0\u4E3A\u5B8C\u6210\uFF1F"))) return;
+          const complete = actions.createEl("button", { text: t("\u5B8C\u6210") });
+          complete.onclick = () => {
+            complete.disabled = true;
+            if (!window.confirm(t("\u786E\u8BA4\u5C06\u6B64\u5F85\u529E\u6807\u8BB0\u4E3A\u5B8C\u6210\uFF1F"))) {
+              complete.disabled = false;
+              return;
+            }
             void this.plugin.tasks.complete(task.path, task.line).then(() => {
               new import_obsidian20.Notice(t("\u5F85\u529E\u5DF2\u5B8C\u6210"));
               this.render();
-            }).catch((error) => new import_obsidian20.Notice(error instanceof Error ? error.message : t("\u64CD\u4F5C\u5931\u8D25")));
+            }).catch((error) => {
+              complete.disabled = false;
+              new import_obsidian20.Notice(error instanceof Error ? error.message : t("\u64CD\u4F5C\u5931\u8D25"));
+            });
           };
         } else if (task.memoId) {
           actions.createEl("button", { text: t("\u8BA4\u9886") }).onclick = () => {
@@ -6780,12 +6871,20 @@ var DashboardView = class extends import_obsidian20.ItemView {
               this.render();
             }).catch((error) => new import_obsidian20.Notice(error instanceof Error ? error.message : t("\u64CD\u4F5C\u5931\u8D25")));
           };
-          actions.createEl("button", { text: t("\u5B8C\u6210") }).onclick = () => {
-            if (!window.confirm(t("\u786E\u8BA4\u5B8C\u6210\u6B64 Agent \u5F85\u529E\uFF1F"))) return;
+          const complete = actions.createEl("button", { text: t("\u5B8C\u6210") });
+          complete.onclick = () => {
+            complete.disabled = true;
+            if (!window.confirm(t("\u786E\u8BA4\u5B8C\u6210\u6B64 Agent \u5F85\u529E\uFF1F"))) {
+              complete.disabled = false;
+              return;
+            }
             void this.plugin.agentApi.completeAgentTask(task.memoId).then(() => {
               new import_obsidian20.Notice(t("Agent \u5F85\u529E\u5DF2\u5B8C\u6210"));
               this.render();
-            }).catch((error) => new import_obsidian20.Notice(error instanceof Error ? error.message : t("\u64CD\u4F5C\u5931\u8D25")));
+            }).catch((error) => {
+              complete.disabled = false;
+              new import_obsidian20.Notice(error instanceof Error ? error.message : t("\u64CD\u4F5C\u5931\u8D25"));
+            });
           };
         }
       }
@@ -6806,7 +6905,7 @@ var DashboardView = class extends import_obsidian20.ItemView {
     const changelog = footer.createEl("button", { text: t("\u66F4\u65B0\u8BB0\u5F55") });
     changelog.onclick = () => new ChangelogModal(this.plugin.app).open();
     const styleButton = footer.createEl("button", { text: t("\u6362\u753B\u98CE") });
-    styleButton.onclick = () => this.cycleArtStyle();
+    styleButton.onclick = (event) => this.showArtStyleMenu(event);
     if (this.tab === "insights") {
       footer.createEl("button", { text: t("\u6708\u62A5") }).onclick = () => {
         new PosterModal(this.plugin.app, this.plugin.store, this.posterMonth).open();
@@ -6895,12 +6994,24 @@ ${celestial}
     const mode = state.mode === "focus" ? t("\u756A\u8304") : state.mode === "short" ? t("\u77ED\u4F11") : t("\u957F\u4F11");
     button.textContent = `${state.running ? "\u23F8" : "\u25B6"} ${mode} ${minutes}:${seconds}`;
   }
-  cycleArtStyle() {
-    const styles = ["lake", "ink", "city"];
-    const current = this.plugin.store.settings.artStyle;
-    this.plugin.store.settings.artStyle = styles[(styles.indexOf(current) + 1) % styles.length];
-    void this.plugin.saveSettings();
-    this.render();
+  /** 画风直选菜单：一步选中目标画风，替代旧的循环切换。 */
+  showArtStyleMenu(event) {
+    const styles = [
+      { key: "lake", label: t("\u50CF\u7D20\u6E56\u9762") },
+      { key: "ink", label: t("\u6C34\u58A8\u5C71\u6C34") },
+      { key: "city", label: t("\u50CF\u7D20\u57CE\u5E02") }
+    ];
+    const menu = new import_obsidian20.Menu();
+    for (const style of styles) {
+      menu.addItem((item) => {
+        item.setTitle(style.label).setChecked(this.plugin.store.settings.artStyle === style.key).onClick(() => {
+          this.plugin.store.settings.artStyle = style.key;
+          void this.plugin.saveSettings();
+          this.render();
+        });
+      });
+    }
+    menu.showAtMouseEvent(event);
   }
 };
 
@@ -7152,6 +7263,14 @@ var MemoView = class extends import_obsidian21.ItemView {
       text: memo.archived ? t("\u5DF2\u5F52\u6863") : memo.converted ? t("\u5DF2\u6C89\u6DC0") : memo.tags.includes("to-agent") ? t("\u5DF2\u59D4\u6D3E Agent") : t("\u672A\u5904\u7406")
     });
     const textEl = card.createDiv({ cls: "sd-memo-text", text: memo.text });
+    if (memo.text.length > 240 || memo.text.split("\n").length > 6) {
+      const toggle = card.createEl("button", { cls: "sd-memo-expand", text: t("\u5C55\u5F00") });
+      toggle.onclick = () => {
+        const expanded = !textEl.hasClass("is-expanded");
+        textEl.toggleClass("is-expanded", expanded);
+        toggle.textContent = expanded ? t("\u6536\u8D77") : t("\u5C55\u5F00");
+      };
+    }
     if (memo.tags.length > 0) {
       const tags = card.createDiv({ cls: "sd-memo-tags" });
       for (const tag of memo.tags) {

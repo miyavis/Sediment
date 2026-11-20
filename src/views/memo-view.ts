@@ -291,6 +291,15 @@ export class MemoView extends ItemView {
             : t("未处理"),
     });
     const textEl = card.createDiv({ cls: "sd-memo-text", text: memo.text });
+    // 长文本按行数钳制（CSS line-clamp），提供展开/收起，避免长速记撑爆列表。
+    if (memo.text.length > 240 || memo.text.split("\n").length > 6) {
+      const toggle = card.createEl("button", { cls: "sd-memo-expand", text: t("展开") });
+      toggle.onclick = () => {
+        const expanded = !textEl.hasClass("is-expanded");
+        textEl.toggleClass("is-expanded", expanded);
+        toggle.textContent = expanded ? t("收起") : t("展开");
+      };
+    }
     if (memo.tags.length > 0) {
       const tags = card.createDiv({ cls: "sd-memo-tags" });
       for (const tag of memo.tags) {

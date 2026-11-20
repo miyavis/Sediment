@@ -3,6 +3,8 @@ import type { IncomingMessage, ServerResponse } from "http";
 import type { SedimentPlugin } from "../main";
 import { AGENT_API_VERSION, ApiError } from "./api";
 import { redactAuditPath } from "./security";
+import { t } from "../i18n";
+import { logError } from "../utils/log-error";
 
 type HttpServer = import("http").Server;
 
@@ -75,6 +77,7 @@ export class AgentServer {
       this.running = desired;
       new Notice(`Agent API 已启动：http://127.0.0.1:${desired.port}`);
     } catch (error) {
+      logError(this.plugin.store, "Agent API 启动失败", error);
       new Notice(`Agent API 启动失败（端口 ${desired.port}）：${String(error)}`);
       this.running = null;
       this.server = null;
@@ -100,11 +103,19 @@ export class AgentServer {
   private async readBody(request: IncomingMessage): Promise<Record<string, unknown>> {
     const chunks: Buffer[] = [];
     let size = 0;
+    let oversized = false;
+    // 注意：不能在 for await 内直接 throw——异步迭代器 return() 会销毁请求流，
+    // 413 响应将随连接一起被重置。超限后停止缓冲但继续排空上传，再抛错。
     for await (const chunk of request) {
       size += (chunk as Buffer).length;
-      if (size > 1024 * 1024) throw new Error("请求体过大（上限 1MB）");
-      chunks.push(chunk as Buffer);
+      if (size > 1024 * 1024) {
+        oversized = true;
+        chunks.length = 0;
+        continue;
+      }
+      if (!oversized) chunks.push(chunk as Buffer);
     }
+    if (oversized) throw new ApiError("PAYLOAD_TOO_LARGE", t("请求体过大（上限 1MB）"), 413);
     if (chunks.length === 0) return {};
     let parsed: unknown;
     try {
@@ -119,9 +130,15 @@ export class AgentServer {
   }
 
   private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
-    const url = new URL(request.url ?? "/", "http://127.0.0.1");
-    const headerToken = String(request.headers.authorization ?? "").replace(/^Bearer\s+/i, "");
-    const supplied = url.searchParams.get("token") ?? headerToken;
+    let url: URL;
+    try {
+      url = new URL(request.url ?? "/", "http://127.0.0.1");
+    } catch {
+      this.json(response, 400, { error: t("非法的请求 URL"), code: "INVALID_URL" });
+      return;
+    }
+    // 令牌只走 Authorization 头：?token= 查询串会落入日志/代理缓存，已移除支持。
+    const supplied = String(request.headers.authorization ?? "").replace(/^Bearer\s+/i, "");
     const expected = this.plugin.store.settings.agentServerToken;
     if (!expected || !tokensMatch(supplied, expected)) {
       this.plugin.store.logDiagnostic(
@@ -343,7 +360,31 @@ export class AgentServer {
         this.json(response, error.status, { error: error.message, code: error.code });
         return;
       }
-      this.json(response, 500, { error: error instanceof Error ? error.message : String(error) });
+      logError(this.plugin.store, "本地 API 请求处理失败", error);
+      this.json(response, 500, { error: sanitizeServerError(error), code: "INTERNAL" });
     }
   }
+}
+
+/** 已知可安全回显的业务错误前缀；其余 500 消息一律脱敏，避免泄露内部路径/堆栈。 */
+const SAFE_ERROR_PREFIXES = [
+  "笔记已存在：",
+  "笔记不存在：",
+  "版本冲突：",
+  "找不到待办：",
+  "速记不存在：",
+  "访问被拒绝：",
+  "frontmatter 未闭合",
+];
+
+/** 500 响应消息白名单：只透传已知业务错误文案，其余统一为通用提示。 */
+export function sanitizeServerError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (
+    SAFE_ERROR_PREFIXES.some((prefix) => message.startsWith(prefix)) ||
+    /^速记 \S+ 不是待办任务$/.test(message)
+  ) {
+    return message;
+  }
+  return t("内部错误，详情见插件诊断日志");
 }

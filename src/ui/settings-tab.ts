@@ -428,7 +428,10 @@ export class PulseSettingTab extends PluginSettingTab {
           .setValue(String(settings.backupKeep))
           .onChange((value) => {
             const count = Number(value);
-            settings.backupKeep = Number.isInteger(count) && count > 0 ? count : 10;
+            const valid = Number.isInteger(count) && count > 0;
+            settings.backupKeep = valid ? count : 10;
+            // 静默回退会让用户误以为输入已生效：非法输入明确提示。
+            if (!valid) new Notice(t("保留份数需为正整数，已回退为 10"));
             save();
           })
       );

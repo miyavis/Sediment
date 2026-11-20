@@ -18,6 +18,7 @@ import {
 import { t, tf } from "../i18n";
 import { dateKey } from "../utils/dates";
 import { ensureFolder, normalizeFolder } from "../utils/vault";
+import { logError } from "../utils/log-error";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -49,6 +50,14 @@ export interface DataBackupInfo {
   size: number;
 }
 
+/** restoreDataBackup 的结果：区分「副本已保存 / 无当前数据 / 副本写入失败」。 */
+export interface RestoreBackupResult {
+  /** 恢复副本路径；未创建副本时为空串。 */
+  recoveryPath: string;
+  /** saved=副本已写入；none=全新安装无当前数据可备份；failed=副本写入失败。 */
+  recovery: "saved" | "none" | "failed";
+}
+
 /** 包装 Obsidian 的 loadData/saveData，提供按天读写与防抖保存。 */
 export class Store {
   data: PulseData = DEFAULT_DATA;
@@ -58,6 +67,8 @@ export class Store {
   private persistenceBlocked = false;
   private saveTimer: number | null = null;
   private lastBackupAt = 0;
+  /** 保存失败 Notice 节流：持续失败时 60s 内同类只弹一次，避免刷屏。 */
+  private lastSaveNoticeAt = 0;
 
   constructor(private plugin: Plugin) {}
 
@@ -84,7 +95,8 @@ export class Store {
       const path = `.obsidian/plugins/sediment/recovery/data-${stamp}.json`;
       await adapter.write(path, JSON.stringify(raw, null, 2));
       return path;
-    } catch {
+    } catch (error) {
+      logError(this, "恢复副本创建失败", error);
       return "";
     }
   }
@@ -104,7 +116,7 @@ export class Store {
           loaded.version = 1;
           migratedVersion = true;
         } catch (error) {
-          console.error("Sediment: 数据版本号写回失败", error);
+          logError(this, "数据版本号写回失败", error, "migration");
           this.persistenceBlocked = true;
           this.migrationWarning = t("数据版本号迁移失败，已暂停写入以保护原始数据");
           recoveryPath = await this.preserveRecoveryCopy(raw);
@@ -141,7 +153,8 @@ export class Store {
           ? (loaded.reviewedChanges as Record<string, "kept" | "reverted">)
           : {},
       // 旧版 data.json 没有该字段时默认空数组，保证升级兼容。
-      // 缺 request.kind 的畸形条目会让 approvePendingWrite 抛裸 TypeError，迁移时一并过滤。
+      // 缺 request.kind 或 request.args 形状异常的畸形条目会让 approvePendingWrite
+      // 抛裸 TypeError（HTTP 500），迁移时一并过滤。
       pendingWrites: Array.isArray(loaded.pendingWrites)
         ? (loaded.pendingWrites as PendingWriteRecord[]).filter(
             (item) =>
@@ -150,7 +163,9 @@ export class Store {
               typeof item.id === "string" &&
               typeof item.path === "string" &&
               item.request &&
-              typeof item.request.kind === "string"
+              typeof item.request === "object" &&
+              typeof item.request.kind === "string" &&
+              isRecord(item.request.args)
           )
         : [],
       diagnostics: Array.isArray(loaded.diagnostics) ? loaded.diagnostics : [],
@@ -213,12 +228,16 @@ export class Store {
     try {
       await this.plugin.saveData(this.data);
     } catch (error) {
-      console.error("Sediment: 保存 data.json 失败", error);
-      new Notice(t("数据保存失败，请检查磁盘空间或文件权限"));
+      logError(this, "保存 data.json 失败", error);
+      const now = Date.now();
+      if (now - this.lastSaveNoticeAt >= 60_000) {
+        this.lastSaveNoticeAt = now;
+        new Notice(t("数据保存失败，请检查磁盘空间或文件权限"));
+      }
       return;
     }
     void this.backupData().catch((error) => {
-      console.error("Sediment: 自动备份失败", error);
+      logError(this, "自动备份失败", error);
     });
   }
 
@@ -263,9 +282,11 @@ export class Store {
 
   /**
    * 从备份恢复 data.json：先把当前 data.json 存为恢复副本，再写回备份内容并重载内存态。
-   * 返回恢复副本路径（创建失败时为空串）。文件名非法（含路径穿越）或备份损坏时抛错。
+   * 返回 { recoveryPath, recovery }：recovery 区分副本已保存 / 无当前数据 / 副本写入失败，
+   * 全新安装（无 data.json）不再被误报为「恢复副本创建失败」。
+   * 文件名非法（含路径穿越）或备份损坏时抛错。
    */
-  async restoreDataBackup(name: string): Promise<string> {
+  async restoreDataBackup(name: string): Promise<RestoreBackupResult> {
     if (!/^data-[A-Za-z0-9._-]+\.json$/.test(name) || name.includes("..")) {
       throw new Error(t("备份文件名不合法"));
     }
@@ -288,13 +309,18 @@ export class Store {
     }
     // 恢复前保留当前 data.json，恢复错了也能回退。
     const currentRaw = await this.plugin.loadData();
-    const recoveryPath = currentRaw != null ? await this.preserveRecoveryCopy(currentRaw) : "";
+    let recoveryPath = "";
+    let recovery: RestoreBackupResult["recovery"] = "none";
+    if (currentRaw != null) {
+      recoveryPath = await this.preserveRecoveryCopy(currentRaw);
+      recovery = recoveryPath ? "saved" : "failed";
+    }
     await this.plugin.saveData({ ...candidate, version: 1 });
     this.persistenceBlocked = false;
     this.migrationWarning = null;
     this.recoveryCopyPath = null;
     await this.load();
-    return recoveryPath;
+    return { recoveryPath, recovery };
   }
 
   /** 写入是否因数据保护被暂停（恢复 UI 可据此提示）。 */

@@ -11,6 +11,11 @@ import https from "node:https";
 const BASE = process.env.SEDIMENT_URL || "http://127.0.0.1:27123";
 const TOKEN = process.env.SEDIMENT_TOKEN || "";
 
+/** HTTP 请求超时与响应体/stdin 缓冲上限，防止挂死与无界内存增长。 */
+const REQUEST_TIMEOUT_MS = 30_000;
+const MAX_RESPONSE_CHARS = 8 * 1024 * 1024;
+const MAX_STDIN_BUFFER_CHARS = 1024 * 1024;
+
 const TOOLS = [
   {
     name: "get_daily_context",
@@ -197,23 +202,36 @@ const TOOLS = [
   },
 ];
 
-function request(url, method, payload) {
+function request(url, method, payload, extraHeaders = {}) {
   return new Promise((resolve, reject) => {
     const transport = url.protocol === "https:" ? https : http;
     const body = payload === undefined ? null : JSON.stringify(payload);
-    const headers = body
-      ? { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) }
-      : {};
+    const headers = { ...extraHeaders };
+    if (body) {
+      headers["Content-Type"] = "application/json";
+      headers["Content-Length"] = Buffer.byteLength(body);
+    }
     const req = transport.request(url, { method, headers }, (res) => {
       let raw = "";
+      let oversized = false;
       res.setEncoding("utf8");
-      res.on("data", (chunk) => { raw += chunk; });
+      res.on("data", (chunk) => {
+        raw += chunk;
+        if (raw.length > MAX_RESPONSE_CHARS) {
+          oversized = true;
+          req.destroy(new Error(`响应体过大（上限 ${MAX_RESPONSE_CHARS} 字符）`));
+        }
+      });
       res.on("end", () => {
+        if (oversized) return;
         let data;
         try { data = JSON.parse(raw); } catch { data = raw; }
         if (res.statusCode >= 200 && res.statusCode < 300) resolve(data);
         else reject(new Error(data?.error || `HTTP ${res.statusCode}`));
       });
+    });
+    req.setTimeout(REQUEST_TIMEOUT_MS, () => {
+      req.destroy(new Error(`请求超时（${REQUEST_TIMEOUT_MS / 1000}s）：${url.pathname}`));
     });
     req.on("error", reject);
     if (body) req.write(body);
@@ -222,14 +240,19 @@ function request(url, method, payload) {
 }
 
 async function call(path, params = {}, method = "GET") {
+  // 令牌缺失与令牌错误分开提示：缺失是配置问题，401 才是令牌不匹配。
+  if (!TOKEN) {
+    throw new Error("缺少令牌：请设置 SEDIMENT_TOKEN 环境变量（插件设置 → Agent 接入可复制）");
+  }
   const url = new URL(path, BASE);
-  url.searchParams.set("token", TOKEN);
   url.searchParams.set("agent", process.env.AGENT_NAME || "");
-  if (method === "POST") return request(url, method, params);
+  // 令牌只走 Authorization 头，不再放查询串（会落入日志/代理缓存）。
+  const headers = { Authorization: `Bearer ${TOKEN}` };
+  if (method === "POST") return request(url, method, params, headers);
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
   }
-  return request(url, method, undefined);
+  return request(url, method, undefined, headers);
 }
 
 async function dispatch(name, args) {
@@ -413,13 +436,23 @@ let buffer = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (chunk) => {
   buffer += chunk;
+  if (buffer.length > MAX_STDIN_BUFFER_CHARS) {
+    process.stderr.write("sediment-mcp: stdin 缓冲超过 1MB 上限，断开连接\n");
+    process.exit(1);
+  }
   let index;
   while ((index = buffer.indexOf("\n")) >= 0) {
     const line = buffer.slice(0, index).trim();
     buffer = buffer.slice(index + 1);
     if (!line) continue;
+    let message;
     try {
-      void handle(JSON.parse(line));
-    } catch {}
+      message = JSON.parse(line);
+    } catch (error) {
+      // 畸形 JSON 说明流已不可信：记诊断（stderr）后断开，不再静默吞掉。
+      process.stderr.write(`sediment-mcp: 畸形 JSON 输入，断开连接：${error.message}\n`);
+      process.exit(1);
+    }
+    void handle(message);
   }
 });

@@ -160,15 +160,6 @@ export function renderAgentChanges(view: DashboardView, root: HTMLElement): void
   }
 }
 
-export async function openTaskSource(view: DashboardView, path?: string, line?: number): Promise<void> {
-  if (!path) return;
-  await view.plugin.app.workspace.openLinkText(path, "", false);
-  if (line) {
-    const editor = view.plugin.app.workspace.activeEditor?.editor;
-    editor?.setCursor({ line: Math.max(0, line - 1), ch: 0 });
-  }
-}
-
 export function renderAgentStatus(view: DashboardView, root: HTMLElement): void {
   const card = root.createDiv({ cls: "sd-card" });
   card.createDiv({ cls: "sd-card-title", text: t("连接与调用状态") });
@@ -280,7 +271,8 @@ export async function mergeDraft(view: DashboardView, file: TFile): Promise<void
 }
 
 /** 数据快照恢复：列出 data.json 备份并一键恢复（Task 5 API）。
- *  恢复是重操作：先二次确认；恢复副本创建失败（返回 ""）必须显著告警，不得静默当成功。 */
+ *  恢复是重操作：先二次确认；恢复副本写入失败（recovery="failed"）必须显著告警，
+ *  全新安装无当前数据（recovery="none"）则正常提示，不误报失败。 */
 export function renderDataRecovery(view: DashboardView, root: HTMLElement): void {
   const card = root.createDiv({ cls: "sd-card" });
   card.createDiv({ cls: "sd-card-title", text: t("数据快照恢复") });
@@ -312,12 +304,15 @@ export function renderDataRecovery(view: DashboardView, root: HTMLElement): void
     const actions = row.createDiv({ cls: "sd-audit-actions" });
     actions.createEl("button", { text: t("恢复") }).onclick = () => {
       if (!window.confirm(t("确认从该快照恢复统计数据？当前数据会先另存为恢复副本，恢复后看板立即重载。"))) return;
-      void view.plugin.store.restoreDataBackup(backup.name).then((recoveryPath) => {
-        if (recoveryPath === "") {
+      void view.plugin.store.restoreDataBackup(backup.name).then((result) => {
+        if (result.recovery === "failed") {
           // 恢复副本创建失败：备份已写回但失去回退保险，必须显著告警。
           new Notice(t("恢复副本创建失败：备份已恢复，但当前数据未能另存副本。请立即手动备份 data.json，避免再次恢复时无法回退。"), 15_000);
+        } else if (result.recovery === "none") {
+          // 全新安装没有当前数据可备份：无需恢复副本，不是失败。
+          new Notice(tf("已从 {name} 恢复（此前无数据，无需恢复副本）", { name: backup.name }));
         } else {
-          new Notice(tf("已从 {name} 恢复，恢复副本：{path}", { name: backup.name, path: recoveryPath }));
+          new Notice(tf("已从 {name} 恢复，恢复副本：{path}", { name: backup.name, path: result.recoveryPath }));
         }
         view.plugin.refreshViews();
       }).catch((error) => {

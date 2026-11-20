@@ -1,4 +1,4 @@
-import { ItemView, Notice, Platform, type WorkspaceLeaf } from "obsidian";
+import { ItemView, Menu, Notice, Platform, type WorkspaceLeaf } from "obsidian";
 import type { SedimentPlugin } from "../main";
 import { ChangelogModal } from "../ui/changelog-modal";
 import { PosterModal } from "../ui/poster-modal";
@@ -345,12 +345,21 @@ export class DashboardView extends ItemView {
         });
         const actions = row.createDiv({ cls: "sd-task-actions" });
         if (task.path) {
-          actions.createEl("button", { text: t("完成") }).onclick = () => {
-            if (!window.confirm(t("确认将此待办标记为完成？"))) return;
+          const complete = actions.createEl("button", { text: t("完成") });
+          complete.onclick = () => {
+            // confirm 弹窗与落盘期间禁用按钮，防双击重复完成。
+            complete.disabled = true;
+            if (!window.confirm(t("确认将此待办标记为完成？"))) {
+              complete.disabled = false;
+              return;
+            }
             void this.plugin.tasks.complete(task.path, task.line).then(() => {
               new Notice(t("待办已完成"));
               this.render();
-            }).catch((error) => new Notice(error instanceof Error ? error.message : t("操作失败")));
+            }).catch((error) => {
+              complete.disabled = false;
+              new Notice(error instanceof Error ? error.message : t("操作失败"));
+            });
           };
         } else if (task.memoId) {
           actions.createEl("button", { text: t("认领") }).onclick = () => {
@@ -359,12 +368,20 @@ export class DashboardView extends ItemView {
               this.render();
             }).catch((error) => new Notice(error instanceof Error ? error.message : t("操作失败")));
           };
-          actions.createEl("button", { text: t("完成") }).onclick = () => {
-            if (!window.confirm(t("确认完成此 Agent 待办？"))) return;
+          const complete = actions.createEl("button", { text: t("完成") });
+          complete.onclick = () => {
+            complete.disabled = true;
+            if (!window.confirm(t("确认完成此 Agent 待办？"))) {
+              complete.disabled = false;
+              return;
+            }
             void this.plugin.agentApi.completeAgentTask(task.memoId!).then(() => {
               new Notice(t("Agent 待办已完成"));
               this.render();
-            }).catch((error) => new Notice(error instanceof Error ? error.message : t("操作失败")));
+            }).catch((error) => {
+              complete.disabled = false;
+              new Notice(error instanceof Error ? error.message : t("操作失败"));
+            });
           };
         }
       }
@@ -386,7 +403,7 @@ export class DashboardView extends ItemView {
     const changelog = footer.createEl("button", { text: t("更新记录") });
     changelog.onclick = () => new ChangelogModal(this.plugin.app).open();
     const styleButton = footer.createEl("button", { text: t("换画风") });
-    styleButton.onclick = () => this.cycleArtStyle();
+    styleButton.onclick = (event) => this.showArtStyleMenu(event);
     // 月报入口原在 insights section 内追加到页脚；页脚上移后按页签在此统一挂载。
     if (this.tab === "insights") {
       footer.createEl("button", { text: t("月报") }).onclick = () => {
@@ -481,11 +498,26 @@ ${celestial}
     button.textContent = `${state.running ? "⏸" : "▶"} ${mode} ${minutes}:${seconds}`;
   }
 
-  cycleArtStyle(): void {
-    const styles = ["lake", "ink", "city"] as const;
-    const current = this.plugin.store.settings.artStyle;
-    this.plugin.store.settings.artStyle = styles[(styles.indexOf(current) + 1) % styles.length];
-    void this.plugin.saveSettings();
-    this.render();
+  /** 画风直选菜单：一步选中目标画风，替代旧的循环切换。 */
+  showArtStyleMenu(event: MouseEvent): void {
+    const styles = [
+      { key: "lake", label: t("像素湖面") },
+      { key: "ink", label: t("水墨山水") },
+      { key: "city", label: t("像素城市") },
+    ] as const;
+    const menu = new Menu();
+    for (const style of styles) {
+      menu.addItem((item) => {
+        item
+          .setTitle(style.label)
+          .setChecked(this.plugin.store.settings.artStyle === style.key)
+          .onClick(() => {
+            this.plugin.store.settings.artStyle = style.key;
+            void this.plugin.saveSettings();
+            this.render();
+          });
+      });
+    }
+    menu.showAtMouseEvent(event);
   }
 }

@@ -4,6 +4,7 @@ import { buildWeeklyReview } from "../../../features/review";
 import { addDays, dateKey, lastNDays, parseKey } from "../../../utils/dates";
 import {
   barChart as barChartSvg,
+  escapeAttr,
   mean,
   multiLine as multiLineSvg,
   ring as ringSvg,
@@ -53,7 +54,8 @@ export function renderInsights(view: DashboardView, root: HTMLElement): void {
     renderHeatmap(view, folded);
   } else if (view.insightsSection === "overview") {
     renderInsightsSummary(view, content);
-    renderOverview(view, content);
+    // insightsExpanded 真实控制详细概览的展开/收起（默认收起，与摘要卡提示文案一致）。
+    if (view.insightsExpanded) renderOverview(view, content);
   } else if (view.insightsSection === "trend") {
     renderAnalytics(view, content, "trend");
   } else if (view.insightsSection === "folders") {
@@ -182,7 +184,7 @@ export function renderStrata(view: DashboardView, root: HTMLElement): void {
   view.hideHeatTooltip();
   const store = view.plugin.store;
   const months = aggregateStrata(
-    { days: store.data.days, focusSessions: store.data.focusSessions },
+    { days: store.data.days },
     recentStrataRange(STRATA_MONTHS)
   );
   const card = root.createDiv({ cls: "sd-card sd-strata", attr: { id: "sd-strata" } });
@@ -246,8 +248,10 @@ export function renderStrata(view: DashboardView, root: HTMLElement): void {
 
   const hits = months
     .map(
-      (_month, index) =>
-        `<rect class="sd-strata-hit" data-index="${index}" x="${(labelW + index * colW).toFixed(1)}" y="${topPad}" width="${colW.toFixed(1)}" height="${bandsH}"/>`
+      (month, index) =>
+        `<rect class="sd-strata-hit" data-index="${index}" x="${(labelW + index * colW).toFixed(1)}" y="${topPad}" width="${colW.toFixed(1)}" height="${bandsH}" tabindex="0" role="img" aria-label="${escapeAttr(
+          `${month.month} · ${tf("人写 {human} 字 · AI 写 {agent} 字", { human: month.human, agent: month.agent })} · ${tf("完成任务 {tasks} 个 · 专注 {focus} 分钟", { tasks: month.tasks, focus: month.focus })}`
+        )}"/>`
     )
     .join("");
 
@@ -256,7 +260,7 @@ export function renderStrata(view: DashboardView, root: HTMLElement): void {
     ...totals,
   });
   const slot = card.createDiv({ cls: "sd-strata-slot" });
-  slot.innerHTML = `<svg class="sd-strata-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${ariaLabel.replace(/"/g, "&quot;")}">${bands}${monthLabels}${hits}</svg>`;
+  slot.innerHTML = `<svg class="sd-strata-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeAttr(ariaLabel)}">${bands}${monthLabels}${hits}</svg>`;
 
   const showTip = (event: MouseEvent, month: StrataMonth): void => {
     view.hideHeatTooltip();
@@ -275,6 +279,12 @@ export function renderStrata(view: DashboardView, root: HTMLElement): void {
     el.addEventListener("mouseenter", (event) => showTip(event as MouseEvent, month));
     el.addEventListener("mousemove", (event) => view.moveHeatTooltip(event as MouseEvent));
     el.addEventListener("mouseleave", () => view.hideHeatTooltip());
+    // 键盘可达：Tab 聚焦月份列时按矩形位置显示同款明细，失焦收起。
+    el.addEventListener("focus", () => {
+      const box = el.getBoundingClientRect();
+      showTip({ clientX: box.left + box.width / 2, clientY: box.top } as MouseEvent, month);
+    });
+    el.addEventListener("blur", () => view.hideHeatTooltip());
   });
 
   // 读屏信息已由 SVG aria-label 汇总，图例仅供视觉对照（renderChartLegend 内置 aria-hidden）。

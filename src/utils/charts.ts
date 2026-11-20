@@ -9,7 +9,8 @@ export type ChartRef = { value: number; label: string; color?: string };
 /** 折线系列；label 可选，传入后进入 aria-label 汇总，调用方可据此渲染 DOM 图例。 */
 export type LineSeries = { values: number[]; color: string; label?: string };
 
-function escapeAttr(value: string): string {
+/** SVG 属性值转义：& < > " 全量替换，供本模块与剖面视图共用。 */
+export function escapeAttr(value: string): string {
   return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

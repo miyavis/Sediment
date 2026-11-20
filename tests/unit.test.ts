@@ -4,6 +4,7 @@ import { Notice, TFile, type Plugin } from "obsidian";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import net from "node:net";
 import { spawnSync } from "node:child_process";
 import { resolveBridgePath } from "../src/agent/setup";
 import { BRIDGE_SOURCE } from "../src/agent/bridge-source";
@@ -43,11 +44,12 @@ import { buildStatsCsv, buildExportJson, DEFAULT_EXPORT_OPTIONS } from "../src/f
 import { Store } from "../src/data/store";
 import { AgentApi, ApiError, safeAgentPath } from "../src/agent/api";
 import { SemanticIndex, tokenizeSemanticText } from "../src/agent/semantic";
-import { tokensMatch } from "../src/agent/server";
+import { AgentServer, sanitizeServerError, tokensMatch } from "../src/agent/server";
 import { idempotencyKey, redactAuditPath, redactSecrets } from "../src/agent/security";
 import { computeDiff } from "../src/ui/diff-modal";
-import { barChart, goalRing, mean, multiLine, referenceLines, ring, sparkline } from "../src/utils/charts";
+import { barChart, escapeAttr, goalRing, mean, multiLine, referenceLines, ring, sparkline } from "../src/utils/charts";
 import { aggregateStrata, listMonths, recentStrataRange } from "../src/utils/strata";
+import { logError } from "../src/utils/log-error";
 import { getLocale, localeFromPersisted, setLocale } from "../src/i18n";
 import { findViolations, stripComments } from "../scripts/lint-i18n.mjs";
 import {
@@ -701,10 +703,11 @@ test("Store.restoreDataBackup：恢复备份、保留当前数据副本并重载
   await store.load();
   assert.equal(store.isPersistenceBlocked, true);
 
-  const recoveryPath = await store.restoreDataBackup(backupName);
+  const result = await store.restoreDataBackup(backupName);
 
-  assert.ok(recoveryPath.startsWith(".obsidian/plugins/sediment/recovery/data-"));
-  const copy = written.find(([p]) => p === recoveryPath);
+  assert.equal(result.recovery, "saved");
+  assert.ok(result.recoveryPath.startsWith(".obsidian/plugins/sediment/recovery/data-"));
+  const copy = written.find(([p]) => p === result.recoveryPath);
   assert.deepEqual(JSON.parse(copy![1]), { version: 99, days: {} });
   assert.equal(store.isPersistenceBlocked, false);
   assert.equal(store.migrationWarning, null);
@@ -982,7 +985,7 @@ test("H6：completeTask 受 patch 与黑名单门禁约束", async () => {
   assert.ok(ok.calls.complete.length === 1 && (ok.calls.complete[0][0] as string) === "公开/a.md");
 });
 
-test("H6：delegateTask 需要 read 权限且受白名单约束", async () => {
+test("H6：delegateTask 需要 read 权限且受白名单约束（含日记目标路径）", async () => {
   const { api, calls } = fakeAgentPlugin({
     agentAccessMode: "allowlist",
     agentAllowedFolders: "知识",
@@ -993,8 +996,21 @@ test("H6：delegateTask 需要 read 权限且受白名单约束", async () => {
     return e.code === "FORBIDDEN";
   });
   assert.equal(calls.delegate.length, 0);
-  await assert.doesNotReject(api.delegateTask("知识/a.md", 2));
-  assert.equal(calls.delegate.length, 1);
+  // A1 收口：源笔记在白名单内也不够——delegate 落盘目标是当天日记，
+  // 白名单不含日记目录时同样拒绝（旧行为只查源路径，属越权旁路）。
+  await assert.rejects(api.delegateTask("知识/a.md", 2), (error) => {
+    const e = asApiError(error);
+    return e.code === "FORBIDDEN" && /daily/.test(e.message);
+  });
+  assert.equal(calls.delegate.length, 0);
+
+  const ok = fakeAgentPlugin({
+    agentAccessMode: "allowlist",
+    agentAllowedFolders: "知识, daily",
+    agentAllowRead: true,
+  });
+  await assert.doesNotReject(ok.api.delegateTask("知识/a.md", 2));
+  assert.equal(ok.calls.delegate.length, 1);
 });
 
 test("H6：snapshotTasks 写当天日记前过 patch 门禁", async () => {
@@ -2085,18 +2101,14 @@ test("Store.load：zh 预读顺序下迁移警告仍为中文", async () => {
 
 // ── Task 9：月度地层聚合（纯函数） ──
 
-test("aggregateStrata：正常聚合——四类贡献按月求和", () => {
+test("aggregateStrata：正常聚合——四类贡献按月求和（focus 取 days.focusMinutes）", () => {
   const source = {
     days: {
-      "2026-01-05": day({ wordsAdded: 100, aiWordsAdded: 40, tasksCompleted: 2 }),
+      "2026-01-05": day({ wordsAdded: 100, aiWordsAdded: 40, tasksCompleted: 2, focusMinutes: 25 }),
       "2026-01-20": day({ wordsAdded: 50, aiWordsAdded: 10, tasksCompleted: 1 }),
-      "2026-02-03": day({ wordsAdded: 70, tasksCompleted: 3 }),
+      "2026-02-03": day({ wordsAdded: 70, tasksCompleted: 3, focusMinutes: 25 }),
+      "2026-02-10": day({ focusMinutes: 25 }),
     },
-    focusSessions: [
-      { date: "2026-01-06", time: "10:00", mode: "focus", minutes: 25, source: "measured" },
-      { date: "2026-02-03", time: "09:00", mode: "focus", minutes: 25, source: "measured" },
-      { date: "2026-02-10", time: "09:00", mode: "focus", minutes: 25, source: "estimated" },
-    ] as FocusSessionRecord[],
   };
   assert.deepEqual(aggregateStrata(source, { from: "2026-01", to: "2026-02" }), [
     { month: "2026-01", human: 150, agent: 50, tasks: 3, focus: 25 },
@@ -2105,7 +2117,7 @@ test("aggregateStrata：正常聚合——四类贡献按月求和", () => {
 });
 
 test("aggregateStrata：空数据——范围内每月输出全 0，缺 source 字段不抛错", () => {
-  assert.deepEqual(aggregateStrata({ days: {}, focusSessions: [] }, { from: "2026-03", to: "2026-05" }), [
+  assert.deepEqual(aggregateStrata({ days: {} }, { from: "2026-03", to: "2026-05" }), [
     { month: "2026-03", human: 0, agent: 0, tasks: 0, focus: 0 },
     { month: "2026-04", human: 0, agent: 0, tasks: 0, focus: 0 },
     { month: "2026-05", human: 0, agent: 0, tasks: 0, focus: 0 },
@@ -2118,16 +2130,12 @@ test("aggregateStrata：空数据——范围内每月输出全 0，缺 source �
 test("aggregateStrata：跨月/跨年边界——月末月初归各自月份，范围外数据忽略", () => {
   const source = {
     days: {
-      "2025-12-31": day({ wordsAdded: 10, tasksCompleted: 1 }),
-      "2026-01-01": day({ wordsAdded: 20, aiWordsAdded: 5 }),
+      "2025-12-31": day({ wordsAdded: 10, tasksCompleted: 1, focusMinutes: 25 }),
+      "2026-01-01": day({ wordsAdded: 20, aiWordsAdded: 5, focusMinutes: 50 }),
+      "2026-02-15": day({ focusMinutes: 25 }),
       "2025-10-01": day({ wordsAdded: 999 }),
       "2026-03-01": day({ wordsAdded: 888 }),
     },
-    focusSessions: [
-      { date: "2025-12-31", mode: "focus", minutes: 25 },
-      { date: "2026-01-01", mode: "focus", minutes: 50 },
-      { date: "2026-02-15", mode: "focus", minutes: 25 },
-    ],
   };
   const result = aggregateStrata(source, { from: "2025-11", to: "2026-02" });
   assert.deepEqual(result.map((m) => m.month), ["2025-11", "2025-12", "2026-01", "2026-02"]);
@@ -2137,39 +2145,40 @@ test("aggregateStrata：跨月/跨年边界——月末月初归各自月份，�
   assert.deepEqual(result[3], { month: "2026-02", human: 0, agent: 0, tasks: 0, focus: 25 });
 });
 
-test("aggregateStrata：缺字段/脏数据——null、NaN、负数、非法键一律按 0 或跳过", () => {
+test("aggregateStrata：缺字段/脏数据——null、NaN、负数、非法日键一律按 0 或跳过", () => {
   const source = {
     days: {
-      "2026-01-01": { wordsAdded: 30 },
+      "2026-01-01": { wordsAdded: 30, focusMinutes: Number.NaN },
       "2026-01-02": null,
-      "2026-01-03": { wordsAdded: Number.NaN, aiWordsAdded: -5, tasksCompleted: "2" as unknown as number },
-      "2026-01-04": { wordsAdded: 10, aiWordsAdded: undefined, tasksCompleted: undefined },
+      "2026-01-03": { wordsAdded: Number.NaN, aiWordsAdded: -5, tasksCompleted: "2" as unknown as number, focusMinutes: -25 },
+      "2026-01-04": { wordsAdded: 10, aiWordsAdded: undefined, tasksCompleted: undefined, focusMinutes: undefined },
       "not-a-date": { wordsAdded: 100 },
+      // B2：完整 YYYY-MM-DD 校验——月/日越界或不补零的键不得按月前缀混入归桶。
+      "2026-1-05": { wordsAdded: 100, focusMinutes: 100 },
+      "2026-01-5": { wordsAdded: 100, focusMinutes: 100 },
+      "2026-01-00": { wordsAdded: 100, focusMinutes: 100 },
+      "2026-01-32": { wordsAdded: 100, focusMinutes: 100 },
+      "2026-13-01": { wordsAdded: 100, focusMinutes: 100 },
+      "2026-00-01": { wordsAdded: 100, focusMinutes: 100 },
     },
-    focusSessions: [
-      { date: "2026-01-05" },
-      { minutes: 25 },
-      null,
-      { date: "2026-01-06", minutes: Number.NaN },
-      { date: "2026-01-07", minutes: -25 },
-    ],
   };
   assert.deepEqual(aggregateStrata(source, { from: "2026-01", to: "2026-01" }), [
     { month: "2026-01", human: 40, agent: 0, tasks: 2, focus: 0 },
   ]);
 });
 
-test("aggregateStrata：focusSessions 只计专注——short/long 休息排除，缺 mode 旧记录按专注计", () => {
+test("aggregateStrata：focus 层以 days.focusMinutes 为口径——不受 focusSessions 500 条截断影响", () => {
+  // 重度用户场景：focusSessions 列表只保留最近 500 条（store.addFocusSession 截断），
+  // 早期月份会话已被丢弃，但 days.focusMinutes 与番茄钟落账同源、永不截断。
   const source = {
-    focusSessions: [
-      { date: "2026-01-01", mode: "focus", minutes: 25 },
-      { date: "2026-01-01", mode: "short", minutes: 5 },
-      { date: "2026-01-01", mode: "long", minutes: 15 },
-      { date: "2026-01-02", minutes: 25 },
-    ],
+    days: {
+      "2026-01-01": day({ focusMinutes: 25 }),
+      "2026-01-02": day({ focusMinutes: 50 }),
+      "2026-01-03": day({ focusMinutes: 0 }),
+    },
   };
   const [jan] = aggregateStrata(source, { from: "2026-01", to: "2026-01" });
-  assert.equal(jan.focus, 50);
+  assert.equal(jan.focus, 75, "focus 层必须等于 days.focusMinutes 之和，而非（可能截断的）会话列表");
 });
 
 test("listMonths：非法格式或 reversed 范围返回空；单月范围含两端", () => {
@@ -2191,10 +2200,264 @@ test("recentStrataRange：最近 n 个月含当月，跨年正确，n<1 兜底 1
 
 test("aggregateStrata：纯函数——不修改输入数据", () => {
   const source = {
-    days: { "2026-01-01": day({ wordsAdded: 10 }) },
-    focusSessions: [{ date: "2026-01-01", mode: "focus" as const, minutes: 25 }],
+    days: { "2026-01-01": day({ wordsAdded: 10, focusMinutes: 25 }) },
   };
   const snapshot = JSON.stringify(source);
   aggregateStrata(source, { from: "2026-01", to: "2026-02" });
   assert.equal(JSON.stringify(source), snapshot);
+});
+
+// ── Task 10 第一轮：代码加固 ─────────────────────────────────────────────
+
+test("A1：addMemo/delegateTask 的日记目标路径过完整门禁（黑名单/白名单/confirm 前置）", async () => {
+  // auto 档 + 黑名单 daily：速记与转 Agent 都必须 403，且不产生任何副作用。
+  const denied = fakeAgentPlugin({ deniedFolders: "daily" }, { data: { memos: [] } });
+  await assert.rejects(denied.api.addMemo("灵感", []), (error) => {
+    const apiError = asApiError(error);
+    assert.equal(apiError.code, "FORBIDDEN");
+    assert.match(apiError.message, /daily/);
+    return true;
+  });
+  await assert.rejects(denied.api.delegateTask("notes/a.md", 2), (error) => asApiError(error).code === "FORBIDDEN");
+  assert.equal(denied.calls.delegate.length, 0, "越权不得触达 tasks.delegate");
+
+  // 白名单不含 daily：fail-closed，同样 403。
+  const allowlist = fakeAgentPlugin({ agentAccessMode: "allowlist", agentAllowedFolders: "知识", agentAllowRead: true });
+  await assert.rejects(allowlist.api.addMemo("灵感", []), (error) => asApiError(error).code === "FORBIDDEN");
+
+  // confirm 档：门禁先于挂起，越权不产生待审项。
+  const confirm = fakeConfirmPlugin({ agentWorkMode: "confirm", deniedFolders: "daily" });
+  await assert.rejects(confirm.api.addMemo("灵感", []), (error) => asApiError(error).code === "FORBIDDEN");
+  assert.equal(confirm.pendingWrites.length, 0, "越权速记不得转挂起");
+
+  // 默认设置（daily 可写）不受影响：confirm 挂起、bypass 直通。
+  const ok = fakeConfirmPlugin({ agentWorkMode: "confirm" });
+  const held = (await ok.api.addMemo("灵感一条", ["idea"])) as HoldResult;
+  assert.ok(pendingIdOf(held));
+  const direct = fakeAgentPlugin({}, { plugin: { memos: { add: async () => ({ id: "m1" }) } } });
+  await assert.doesNotReject(direct.api.addMemo("灵感", [], undefined, undefined, true));
+});
+
+test("A1：confirm 采纳重放同样过门禁——挂起后收紧黑名单则采纳被拒且保留待审项", async () => {
+  const ctx = fakeConfirmPlugin({ agentWorkMode: "confirm" });
+  const held = (await ctx.api.addMemo("灵感一条", [])) as HoldResult;
+  const id = pendingIdOf(held);
+  // 挂起之后用户收紧权限：重放必须按当前设置重新校验，而不是信任挂起时的快照。
+  ctx.store.settings.deniedFolders = "daily";
+  await assert.rejects(ctx.api.approvePendingWrite(id), (error) => asApiError(error).code === "FORBIDDEN");
+  assert.equal(ctx.pendingWrites.length, 1, "重放失败不得丢弃待审项");
+  assert.equal(ctx.store.data.memos.length, 0, "重放被拒不得落盘");
+});
+
+test("A2：delegateTask 目标行不存在返回 404 NOT_FOUND；load 过滤 args 畸形的 pendingWrites", async () => {
+  const ctx = fakeConfirmPlugin({ agentWorkMode: "confirm" }, { "notes/a.md": "- [ ] 真实任务\n" });
+  await assert.rejects(ctx.api.delegateTask("notes/a.md", 99), (error) => {
+    const apiError = asApiError(error);
+    assert.equal(apiError.code, "NOT_FOUND");
+    assert.equal(apiError.status, 404);
+    assert.match(apiError.message, /找不到待办：notes\/a\.md:99/);
+    return true;
+  });
+  assert.equal(ctx.pendingWrites.length, 0, "404 不得转挂起");
+
+  // 迁移过滤：args 非对象（null/字符串/数组/缺失）的条目会让采纳重放抛裸 TypeError，load 时剔除。
+  const valid = {
+    id: "ok-1", path: "notes/a.md", tool: "write_note",
+    request: { kind: "write_note", args: { path: "notes/a.md", content: "x", mode: "create" } },
+  };
+  const raw = {
+    version: 1,
+    pendingWrites: [
+      valid,
+      { ...valid, id: "bad-null", request: { kind: "write_note", args: null } },
+      { ...valid, id: "bad-str", request: { kind: "write_note", args: "oops" } },
+      { ...valid, id: "bad-missing", request: { kind: "write_note" } },
+      { ...valid, id: "bad-array", request: { kind: "write_note", args: [1] } },
+      "not-an-object",
+    ],
+  };
+  const { vault } = fakeVault();
+  const { plugin } = fakePluginWith(vault, raw);
+  const store = new Store(plugin);
+  await store.load();
+  assert.deepEqual(store.data.pendingWrites.map((item) => item.id), ["ok-1"]);
+});
+
+test("A3：restoreDataBackup 三态语义——此前无数据 none / 副本写失败 failed 不静默", async () => {
+  const backupName = "data-2026-11-19-0800.json";
+  const backupContent = JSON.stringify({ version: 1, days: { "2026-11-19": { wordsAdded: 42 } }, memos: [] });
+
+  // 全新安装（loadData 为 null）：无需恢复副本，明确返回 none 而非歧义空串。
+  const fresh = fakeVault([{ path: `sediment-backup/${backupName}`, mtime: 200, size: backupContent.length }]);
+  fresh.written.push([`sediment-backup/${backupName}`, backupContent]);
+  const freshCtx = fakePluginWith(fresh.vault, null);
+  const freshStore = new Store(freshCtx.plugin);
+  await freshStore.load();
+  const none = await freshStore.restoreDataBackup(backupName);
+  assert.deepEqual(none, { recoveryPath: "", recovery: "none" });
+  assert.equal(freshStore.getDay("2026-11-19").wordsAdded, 42, "none 分支仍须完成恢复");
+
+  // 副本写失败：恢复继续，但必须显式标记 failed 并留下诊断（不静默吞错）。
+  const failing = fakeVault([{ path: `sediment-backup/${backupName}`, mtime: 200, size: backupContent.length }]);
+  failing.written.push([`sediment-backup/${backupName}`, backupContent]);
+  const failCtx = fakePluginWith(failing.vault, { version: 1, days: {} });
+  const failStore = new Store(failCtx.plugin);
+  await failStore.load();
+  failing.vault.adapter.write = async () => { throw new Error("permission denied"); };
+  // 恢复完成后 load() 会以备份内容重建 diagnostics，故用 spy 断言失败当时已记录。
+  const diagnosticCalls: string[] = [];
+  const originalLog = failStore.logDiagnostic.bind(failStore);
+  failStore.logDiagnostic = (category: string, message: string, detail?: string, schedule?: boolean) => {
+    diagnosticCalls.push(message);
+    originalLog(category, message, detail, schedule);
+  };
+  const originalError = console.error;
+  let logged = 0;
+  console.error = () => { logged += 1; };
+  let failed: Awaited<ReturnType<Store["restoreDataBackup"]>>;
+  try {
+    failed = await failStore.restoreDataBackup(backupName);
+  } finally {
+    console.error = originalError;
+  }
+  assert.equal(failed!.recovery, "failed");
+  assert.equal(failed!.recoveryPath, "");
+  assert.ok(logged > 0, "副本失败必须 console.error");
+  assert.ok(diagnosticCalls.some((m) => m.includes("恢复副本创建失败")), "副本失败必须进诊断列表");
+  assert.equal(failStore.getDay("2026-11-19").wordsAdded, 42, "failed 分支仍须完成恢复");
+});
+
+test("A4：保存持续失败时 Notice 60 秒节流，console 与诊断每次都记", async () => {
+  const { vault } = fakeVault();
+  const plugin = {
+    loadData: async () => null,
+    saveData: async () => { throw new Error("disk full"); },
+    app: { vault },
+  } as unknown as Parameters<typeof Store>[0];
+  const store = new Store(plugin);
+  await store.load();
+  noticeMessages.length = 0;
+  const originalError = console.error;
+  let logged = 0;
+  console.error = () => { logged += 1; };
+  try {
+    await store.save();
+    await store.save();
+    await store.save();
+  } finally {
+    console.error = originalError;
+  }
+  assert.equal(logged, 3, "每次失败都要 console.error + 诊断");
+  assert.equal(store.data.diagnostics.filter((d) => d.message.includes("保存 data.json 失败")).length, 3);
+  assert.equal(noticeMessages.filter((m) => m.includes("数据保存失败")).length, 1, "60 秒窗口内只弹一次 Notice");
+});
+
+test("第 7 项：logError——console.error + 诊断 sink（不触发调度保存），sink 缺失不抛", () => {
+  const records: Array<{ category: string; message: string; detail?: string; schedule?: boolean }> = [];
+  const sink = {
+    logDiagnostic: (category: string, message: string, detail?: string, schedule?: boolean) => {
+      records.push({ category, message, detail, schedule });
+    },
+  };
+  const originalError = console.error;
+  let logged = 0;
+  console.error = () => { logged += 1; };
+  try {
+    logError(sink, "保存失败", new Error("disk full"), "storage");
+    logError(null, "启动早期错误", "boom");
+    logError(undefined, "启动早期错误 2", new Error("x"), "migration");
+  } finally {
+    console.error = originalError;
+  }
+  assert.equal(logged, 3);
+  assert.equal(records.length, 1);
+  assert.equal(records[0].category, "storage");
+  assert.equal(records[0].message, "保存失败");
+  assert.equal(records[0].detail, "disk full");
+  assert.equal(records[0].schedule, false, "失败路径不得再触发调度保存，避免保存风暴");
+});
+
+test("第 5 项：sanitizeServerError——业务错误白名单透传，内部错误脱敏", () => {
+  assert.equal(sanitizeServerError(new Error("笔记已存在：a.md")), "笔记已存在：a.md");
+  assert.equal(sanitizeServerError(new Error("版本冲突：a.md 已被修改")), "版本冲突：a.md 已被修改");
+  assert.equal(sanitizeServerError(new Error("访问被拒绝：daily/x.md")), "访问被拒绝：daily/x.md");
+  assert.equal(sanitizeServerError(new Error("速记 m1 不是待办任务")), "速记 m1 不是待办任务");
+  const masked = sanitizeServerError(new Error("ENOENT: /home/user/secret/data.json"));
+  assert.ok(!masked.includes("/home/user"), "内部错误不得泄漏路径等细节");
+  assert.match(masked, /内部错误/);
+  assert.match(sanitizeServerError("裸字符串错误"), /内部错误/);
+});
+
+/** 原生 socket 发一条 HTTP 请求并收完整响应（Connection: close 保证 end 触发）。 */
+function rawHttp(port: number, payload: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const socket = net.connect(port, "127.0.0.1", () => socket.write(payload));
+    let data = "";
+    socket.on("data", (chunk) => { data += String(chunk); });
+    socket.on("end", () => resolve(data));
+    socket.on("error", reject);
+    socket.setTimeout(5000, () => socket.destroy(new Error("raw http timeout")));
+  });
+}
+
+test("第 5 项：AgentServer HTTP 契约——仅 Authorization 头鉴权、?token= 失效、413、400 非法 URL", async () => {
+  const port = 28653;
+  const diagnostics: Array<{ category: string; message: string }> = [];
+  const plugin = {
+    store: {
+      settings: { agentServerEnabled: true, agentServerPort: port, agentServerToken: "unit-token" },
+      logDiagnostic: (category: string, message: string) => { diagnostics.push({ category, message }); },
+    },
+    agentApi: { logToolCall: () => {}, setCallContext: () => {} },
+    manifest: { version: "0.9.7" },
+  } as unknown as ConstructorParameters<typeof AgentServer>[0];
+  const server = new AgentServer(plugin);
+  await server.applySettings();
+  try {
+    const host = "Host: 127.0.0.1\r\nConnection: close\r\n";
+    // 无令牌 → 401，并记安全诊断。
+    const noToken = await rawHttp(port, `GET /health HTTP/1.1\r\n${host}\r\n`);
+    assert.match(noToken, /^HTTP\/1\.1 401/);
+    assert.ok(diagnostics.some((d) => d.category === "security" && d.message.includes("鉴权失败")));
+
+    // ?token= 查询串已移除：即使值正确也 401（避免令牌落入日志/代理缓存）。
+    const queryToken = await rawHttp(port, `GET /health?token=unit-token HTTP/1.1\r\n${host}\r\n`);
+    assert.match(queryToken, /^HTTP\/1\.1 401/);
+
+    // Authorization: Bearer 头 → 200。
+    const headerToken = await rawHttp(port, `GET /health HTTP/1.1\r\n${host}Authorization: Bearer unit-token\r\n\r\n`);
+    assert.match(headerToken, /^HTTP\/1\.1 200/);
+    assert.match(headerToken, /"ok":true/);
+
+    // 非法请求 URL → 400 INVALID_URL，而不是未捕获异常断连。
+    const badUrl = await rawHttp(port, `GET //[bad HTTP/1.1\r\n${host}\r\n`);
+    assert.match(badUrl, /^HTTP\/1\.1 400/);
+    assert.match(badUrl, /INVALID_URL/);
+
+    // 超过 1MB 的请求体 → 413 PAYLOAD_TOO_LARGE。
+    const body = JSON.stringify({ path: "a.md", content: "x".repeat(1_100_000) });
+    const tooLarge = await rawHttp(
+      port,
+      `POST /note HTTP/1.1\r\n${host}Authorization: Bearer unit-token\r\nContent-Type: application/json\r\nContent-Length: ${body.length}\r\n\r\n${body}`
+    );
+    assert.match(tooLarge, /^HTTP\/1\.1 413/);
+    assert.match(tooLarge, /PAYLOAD_TOO_LARGE/);
+  } finally {
+    await server.stop();
+  }
+});
+
+test("第 5 项：MCP 桥接源——令牌走 Authorization 头、缺令牌报错、超时与缓冲上限齐备", () => {
+  assert.ok(BRIDGE_SOURCE.includes("Authorization: `Bearer ${TOKEN}`"), "令牌必须走 Authorization 头");
+  assert.ok(!BRIDGE_SOURCE.includes('searchParams.set("token"'), "不得再把令牌拼进查询串");
+  assert.ok(BRIDGE_SOURCE.includes("缺少令牌"), "缺 SEDIMENT_TOKEN 必须显式报错而非静默匿名请求");
+  assert.ok(BRIDGE_SOURCE.includes("REQUEST_TIMEOUT_MS"), "HTTP 请求必须有超时");
+  assert.ok(BRIDGE_SOURCE.includes("MAX_RESPONSE_CHARS"), "响应体必须有大小上限");
+  assert.ok(BRIDGE_SOURCE.includes("MAX_STDIN_BUFFER_CHARS"), "stdin 缓冲必须有上限");
+  assert.ok(BRIDGE_SOURCE.includes("畸形 JSON"), "畸形 JSON 输入必须显式报错");
+});
+
+test("B3：escapeAttr 导出复用——& < > 双引号全量转义", () => {
+  assert.equal(escapeAttr('a&b<c>d"e'), "a&amp;b&lt;c&gt;d&quot;e");
+  assert.equal(escapeAttr(""), "");
 });
