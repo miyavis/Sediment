@@ -422,11 +422,15 @@ settings:
   .kp-memo-view[data-density="compact"] .kp-memo-form {
     margin-bottom: 8px;
   }
+}
 
-  .sd-dashboard[data-density="compact"] .sd-insights-secondary,
-  .sd-dashboard[data-density="compact"] .sd-agent-secondary {
-    display: none;
-  }
+.sd-dashboard[data-density="compact"] .sd-insights-secondary,
+.sd-dashboard[data-density="compact"] .sd-agent-secondary {
+  display: none;
+}
+
+.sd-secondary > .sd-card:last-child {
+  margin-bottom: 0;
 }
 
 /* ── Sediment 完整主视图 ───────────────────────────── */
@@ -1462,7 +1466,7 @@ settings:
   }
 }
 
-.sd-body > .sd-card {
+.sd-body .sd-card {
   animation: sd-enter 0.5s var(--sd-ease) both;
 }
 
@@ -1472,7 +1476,7 @@ settings:
 .sd-body > .sd-card:nth-child(5) { animation-delay: 0.16s; }
 
 @media (prefers-reduced-motion: reduce) {
-  .sd-body > .sd-card {
+  .sd-body .sd-card {
     animation: none;
   }
 }

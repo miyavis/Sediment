@@ -4237,8 +4237,9 @@ var DashboardView = class extends import_obsidian14.ItemView {
     }
     this.renderOverview(body);
     this.renderHeatmap(body, false);
-    this.renderAnalytics(body);
-    this.renderYearly(body);
+    const secondary = body.createDiv({ cls: "sd-secondary sd-insights-secondary" });
+    this.renderAnalytics(secondary);
+    this.renderYearly(secondary);
     this.renderReview(body);
     const footer = this.renderFooter(body);
     footer.createEl("button", { text: t("\u6708\u62A5") }).onclick = () => {
@@ -4251,8 +4252,9 @@ var DashboardView = class extends import_obsidian14.ItemView {
     this.renderTasksCard(body);
     this.renderAgentChanges(body);
     this.renderWorkLogs(body);
-    this.renderAgentStatus(body);
-    this.renderHeatmap(body, true);
+    const secondary = body.createDiv({ cls: "sd-secondary sd-agent-secondary" });
+    this.renderAgentStatus(secondary);
+    this.renderHeatmap(secondary, true);
     this.renderFooter(body);
   }
   renderAgentChanges(root) {
