@@ -9,6 +9,7 @@ import { buildWeeklyReview } from "../features/review";
 import { exportTodayReport } from "../features/embed";
 import { METRICS, type MetricKey } from "../types";
 import { addDays, dateKey, isSameLocalDay, lastNDays, localHHmm, localStamp, parseKey } from "../utils/dates";
+import { SEDIMENT_ICON_ID, SEDIMENT_LOGO_SVG } from "../ui/logo";
 import { t, tf } from "../i18n";
 
 export const DASHBOARD_VIEW_TYPE = "sediment-dashboard";
@@ -69,7 +70,7 @@ export class DashboardView extends ItemView {
   }
 
   getIcon(): string {
-    return "activity";
+    return SEDIMENT_ICON_ID;
   }
 
   async onOpen(): Promise<void> {
@@ -102,9 +103,9 @@ export class DashboardView extends ItemView {
     else this.renderAgentHub(root);
     this.lastRenderedTab = this.tab;
 
-    // 同页签刷新保留滚动位置。用户若主动滚动，则取消这次恢复，避免和滚动动画打架。
+    // 同页签刷新保留滚动位置；切换页签则回到顶部。用户若主动滚动，取消这次恢复。
     this.hasRendered = true;
-    if (sameTab && scroller) {
+    if (scroller) {
       const token = ++this.scrollRestoreToken;
       window.requestAnimationFrame(() => {
         if (token !== this.scrollRestoreToken) return;
@@ -169,7 +170,9 @@ export class DashboardView extends ItemView {
     this.bannerEl = banner;
 
     const bar = root.createDiv({ cls: "sd-navbar" });
-    bar.createDiv({ cls: "sd-brand", text: "SEDIMENT" });
+    const brand = bar.createDiv({ cls: "sd-brand" });
+    brand.insertAdjacentHTML("afterbegin", SEDIMENT_LOGO_SVG);
+    brand.createSpan({ text: "SEDIMENT" });
     const tabs = bar.createDiv({ cls: "sd-tabs" });
     for (const [key, label] of TABS) {
       const button = tabs.createEl("button", {

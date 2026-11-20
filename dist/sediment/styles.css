@@ -464,20 +464,27 @@ settings:
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin-top: -56px;
   padding: 8px 28px;
   background: var(--background-primary);
   border-bottom: 1px solid var(--background-modifier-border);
 }
 
 .sd-brand {
-  padding: 9px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 7px;
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.18em;
   color: #ffffff;
   background: rgba(22, 38, 62, 0.42);
   border-radius: 9px;
+}
+
+.sd-brand svg {
+  display: block;
+  flex: none;
 }
 
 .sd-tabs,
@@ -2252,11 +2259,18 @@ settings:
   text-decoration-color: var(--text-faint);
 }
 
+.sd-memo-count {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 .sd-archive-toggle {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  margin-left: 8px;
+  margin: 6px 0 0 8px;
   font-size: 11px;
   color: var(--text-muted);
   cursor: pointer;

@@ -3,6 +3,7 @@ import type { SedimentPlugin } from "../main";
 import { exportMemoCard } from "../features/embed";
 import type { MemoRecord } from "../types";
 import { addDays, dateKey } from "../utils/dates";
+import { SEDIMENT_ICON_ID } from "../ui/logo";
 import { ensureFolder, normalizeFolder } from "../utils/vault";
 import { t, tf } from "../i18n";
 
@@ -31,7 +32,7 @@ export class MemoView extends ItemView {
   }
 
   getIcon(): string {
-    return "sticky-note";
+    return SEDIMENT_ICON_ID;
   }
 
   async onOpen(): Promise<void> {
@@ -175,6 +176,7 @@ export class MemoView extends ItemView {
       this.filter = filterInput.value.trim().toLowerCase();
       this.renderList(root);
     });
+    filterRow.createSpan({ cls: "sd-memo-count" });
     const archiveLabel = filterRow.createEl("label", { cls: "sd-archive-toggle" });
     const archiveBox = archiveLabel.createEl("input", { type: "checkbox" });
     archiveBox.checked = this.showArchived;
@@ -239,8 +241,13 @@ export class MemoView extends ItemView {
   }
 
   private renderList(root: HTMLElement): void {
-    root.querySelector(".sd-memo-list")?.remove();
-    const list = root.createDiv({ cls: "sd-memo-list" });
+    // 在同级锚点处替换列表，而不是每次都追加到容器末尾——
+    // 否则输入搜索词时结果会跳到知识/上下文区下面，看起来像「搜索没效果」。
+    const existing = root.querySelector(".sd-memo-list");
+    const list = document.createElement("div");
+    list.className = "sd-memo-list";
+    if (existing) existing.replaceWith(list);
+    else root.appendChild(list);
     let memos = this.plugin.store.data.memos.slice();
     if (!this.showArchived) memos = memos.filter((memo) => !memo.archived);
     if (this.filter) {
@@ -252,6 +259,8 @@ export class MemoView extends ItemView {
           memo.date.includes(term)
       );
     }
+    const countEl = root.querySelector(".sd-memo-count");
+    if (countEl) countEl.setText(tf("匹配 {n} 条", { n: memos.length }));
     if (memos.length === 0) {
       list.createDiv({ cls: "sd-empty", text: t("还没有速记，或没有匹配的速记。") });
       return;

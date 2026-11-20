@@ -1,4 +1,4 @@
-import { Notice, Plugin, TFile, WorkspaceSidedock, type WorkspaceLeaf, type WorkspaceParent } from "obsidian";
+import { addIcon, Notice, Plugin, TFile, WorkspaceSidedock, type WorkspaceLeaf, type WorkspaceParent } from "obsidian";
 import { AgentApi, generateToken } from "./agent/api";
 import { AgentServer } from "./agent/server";
 import { SemanticIndex } from "./agent/semantic";
@@ -16,6 +16,7 @@ import { DiagnosticsModal } from "./ui/diagnostics-modal";
 import { McpUninstallModal } from "./ui/mcp-uninstall-modal";
 import { PulseSettingTab } from "./ui/settings-tab";
 import { ChangelogModal } from "./ui/changelog-modal";
+import { SEDIMENT_ICON_ID, SEDIMENT_ICON_SVG } from "./ui/logo";
 import { normalizeFolder, ensureFolder } from "./utils/vault";
 import { addDays, dateKey, isSameLocalDay, parseKey, startOfWeek } from "./utils/dates";
 import { DashboardView, DASHBOARD_VIEW_TYPE } from "./views/dashboard-view";
@@ -34,6 +35,7 @@ export class SedimentPlugin extends Plugin {
   semantic!: SemanticIndex;
 
   async onload(): Promise<void> {
+    addIcon(SEDIMENT_ICON_ID, SEDIMENT_ICON_SVG);
     this.store = new Store(this);
     await this.store.load();
     if (this.store.migrationWarning) {
