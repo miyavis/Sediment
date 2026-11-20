@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { Notice } from "obsidian";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -443,6 +444,273 @@ test("Store.load：缺少版本或格式异常暂停写入", async () => {
     assert.ok(store.migrationWarning);
     assert.equal(saveCalls, 0);
   }
+});
+
+// ---------- 存储层可靠性（Task 5） ----------
+
+/** 构造带 adapter/getFiles/trash 的假 vault，记录写入与删除。 */
+function fakeVault(files: Array<{ path: string; mtime?: number; size?: number }> = []) {
+  const written: Array<[string, string]> = [];
+  const trashed: string[] = [];
+  const folders = new Set<string>();
+  const tfiles = files.map((f) => {
+    const name = f.path.split("/").pop() ?? "";
+    return {
+      path: f.path,
+      name,
+      basename: name.replace(/\.[^.]+$/, ""),
+      extension: name.includes(".") ? name.split(".").pop() ?? "" : "",
+      stat: { ctime: 0, mtime: f.mtime ?? 0, size: f.size ?? 0 },
+    };
+  });
+  const vault = {
+    adapter: {
+      write: async (path: string, content: string) => { written.push([path, content]); },
+      read: async (path: string) => {
+        const hit = written.find(([p]) => p === path);
+        if (!hit) throw new Error(`no such file: ${path}`);
+        return hit[1];
+      },
+    },
+    getFiles: () => tfiles,
+    getAbstractFileByPath: (path: string) =>
+      tfiles.find((f) => f.path === path) ?? (folders.has(path) ? { path } : null),
+    createFolder: async (path: string) => { folders.add(path); },
+    trash: async (file: { path: string }) => { trashed.push(file.path); },
+  };
+  return { vault, written, trashed };
+}
+
+function fakePluginWith(vault: ReturnType<typeof fakeVault>["vault"], raw: unknown) {
+  let current = raw;
+  const saved: unknown[] = [];
+  const plugin = {
+    loadData: async () => current,
+    saveData: async (data: unknown) => { saved.push(data); current = data; },
+    app: { vault },
+  };
+  return { plugin: plugin as unknown as Parameters<typeof Store>[0], saved };
+}
+
+test("Store.load：结构性损坏保留恢复副本并阻塞写入", async () => {
+  const raw = { version: 1, days: [], memos: "not-an-array", workLogs: [{ id: "x" }] };
+  const { vault, written } = fakeVault();
+  const { plugin, saved } = fakePluginWith(vault, raw);
+  const store = new Store(plugin);
+
+  await store.load();
+  await store.save();
+
+  assert.match(store.migrationWarning ?? "", /数据结构损坏/);
+  assert.match(store.migrationWarning ?? "", /days/);
+  assert.match(store.migrationWarning ?? "", /memos/);
+  assert.equal(store.isPersistenceBlocked, true);
+  assert.equal(saved.length, 0);
+  // 恢复副本落在插件 recovery 目录，内容保留原始数据。
+  assert.ok(store.recoveryCopyPath?.startsWith(".obsidian/plugins/sediment/recovery/data-"));
+  const copy = written.find(([p]) => p === store.recoveryCopyPath);
+  assert.ok(copy);
+  assert.deepEqual(JSON.parse(copy[1]), raw);
+  // 损坏字段不再静默重置：内存态仍可供只读展示。
+  assert.deepEqual(store.data.days, {});
+  assert.deepEqual(store.data.memos, []);
+});
+
+test("Store.load：无版本号且形状符合 v1 时自动迁移写回", async () => {
+  const raw = { days: { "2026-11-20": { wordsAdded: 100 } }, memos: [] };
+  const { vault } = fakeVault();
+  const { plugin, saved } = fakePluginWith(vault, raw);
+  const store = new Store(plugin);
+
+  await store.load();
+
+  assert.equal(store.migrationWarning, null);
+  assert.equal(store.isPersistenceBlocked, false);
+  assert.equal(saved.length, 1);
+  assert.equal((saved[0] as { version: number }).version, 1);
+  assert.equal(store.data.version, 1);
+  assert.equal(store.getDay("2026-11-20").wordsAdded, 100);
+  await store.save();
+  assert.equal(saved.length, 2);
+});
+
+test("Store.load：版本号写回失败时阻塞写入并保留恢复副本", async () => {
+  const raw = { days: {}, memos: [] };
+  const { vault, written } = fakeVault();
+  const plugin = {
+    loadData: async () => raw,
+    saveData: async () => { throw new Error("disk full"); },
+    app: { vault },
+  } as unknown as Parameters<typeof Store>[0];
+  const store = new Store(plugin);
+
+  await store.load();
+  await store.save();
+
+  assert.equal(store.isPersistenceBlocked, true);
+  assert.match(store.migrationWarning ?? "", /迁移失败/);
+  assert.ok(written.some(([p]) => p.startsWith(".obsidian/plugins/sediment/recovery/")));
+});
+
+test("Store.backupData：库根目录只备份不清理", async () => {
+  const { vault, written, trashed } = fakeVault([
+    { path: "data-user-notes.json", mtime: 1 },
+    { path: "data-2020-01-01-0000.json", mtime: 2 },
+  ]);
+  const { plugin } = fakePluginWith(vault, null);
+  const store = new Store(plugin);
+  await store.load();
+  store.data.settings.backupFolder = "";
+  store.data.settings.backupKeep = 1;
+
+  const count = await store.backupData(true);
+
+  assert.equal(count, 1);
+  assert.equal(written.length, 1);
+  assert.match(written[0][0], /^data-\d{4}-\d{2}-\d{2}-\d{4}\.json$/);
+  assert.equal(trashed.length, 0);
+});
+
+test("Store.backupData：正常目录按保留份数清理，不误删目录外文件", async () => {
+  const { vault, trashed } = fakeVault([
+    { path: "sediment-backup/data-2026-11-18-0800.json", mtime: 1 },
+    { path: "sediment-backup/data-2026-11-19-0800.json", mtime: 2 },
+    { path: "sediment-backup/data-2026-11-20-0800.json", mtime: 3 },
+    { path: "data-root.json", mtime: 0 },
+    { path: "sediment-backup/sub/data-nested.json", mtime: 0 },
+  ]);
+  const { plugin } = fakePluginWith(vault, null);
+  const store = new Store(plugin);
+  await store.load();
+  store.data.settings.backupKeep = 2;
+
+  const count = await store.backupData(true);
+
+  assert.equal(count, 1);
+  // 新备份不在 getFiles 列表里，列表中最旧的一份被清理。
+  assert.deepEqual(trashed, ["sediment-backup/data-2026-11-18-0800.json"]);
+});
+
+test("Store.backupData：写入失败抛错且不占用节流窗口", async () => {
+  const { vault } = fakeVault();
+  const { plugin } = fakePluginWith(vault, null);
+  const store = new Store(plugin);
+  await store.load();
+  const originalWrite = vault.adapter.write;
+  vault.adapter.write = async () => { throw new Error("permission denied"); };
+
+  await assert.rejects(() => store.backupData(true), /permission denied/);
+
+  vault.adapter.write = originalWrite;
+  // 失败未更新 lastBackupAt：不带 force 也能立即重试成功。
+  assert.equal(await store.backupData(), 1);
+});
+
+test("Store.save：保存失败弹 Notice 并记录错误，不向调用方抛错", async () => {
+  const { vault } = fakeVault();
+  const plugin = {
+    loadData: async () => null,
+    saveData: async () => { throw new Error("disk full"); },
+    app: { vault },
+  } as unknown as Parameters<typeof Store>[0];
+  const store = new Store(plugin);
+  await store.load();
+  const messages = (Notice as unknown as { messages: string[] }).messages;
+  messages.length = 0;
+  const originalError = console.error;
+  let logged = 0;
+  console.error = () => { logged += 1; };
+  try {
+    await store.save();
+  } finally {
+    console.error = originalError;
+  }
+  assert.ok(logged > 0);
+  assert.ok(messages.some((m) => m.includes("数据保存失败")));
+});
+
+test("Store.listDataBackups：只列备份目录内 data 快照，按时间倒序", async () => {
+  const { vault } = fakeVault([
+    { path: "sediment-backup/data-2026-11-19-0800.json", mtime: 200, size: 20 },
+    { path: "sediment-backup/data-2026-11-20-0800.json", mtime: 300, size: 30 },
+    { path: "sediment-backup/notes.json", mtime: 400, size: 5 },
+    { path: "sediment-backup/sub/data-nested.json", mtime: 500, size: 5 },
+    { path: "data-root.json", mtime: 600, size: 5 },
+    { path: "sediment-backup/data-2026-11-18-0800.md", mtime: 700, size: 5 },
+  ]);
+  const { plugin } = fakePluginWith(vault, null);
+  const store = new Store(plugin);
+  await store.load();
+
+  const backups = store.listDataBackups();
+
+  assert.deepEqual(backups, [
+    { name: "data-2026-11-20-0800.json", savedAt: 300, size: 30 },
+    { name: "data-2026-11-19-0800.json", savedAt: 200, size: 20 },
+  ]);
+});
+
+test("Store.restoreDataBackup：恢复备份、保留当前数据副本并重载内存态", async () => {
+  const backupName = "data-2026-11-19-0800.json";
+  const backupContent = JSON.stringify({
+    version: 1,
+    days: { "2026-11-19": { wordsAdded: 100 } },
+    memos: [],
+  });
+  const { vault, written } = fakeVault([
+    { path: `sediment-backup/${backupName}`, mtime: 200, size: backupContent.length },
+  ]);
+  written.push([`sediment-backup/${backupName}`, backupContent]);
+  // 当前数据版本异常 → 阻塞；恢复后应解除。
+  const { plugin, saved } = fakePluginWith(vault, { version: 99, days: {} });
+  const store = new Store(plugin);
+  await store.load();
+  assert.equal(store.isPersistenceBlocked, true);
+
+  const recoveryPath = await store.restoreDataBackup(backupName);
+
+  assert.ok(recoveryPath.startsWith(".obsidian/plugins/sediment/recovery/data-"));
+  const copy = written.find(([p]) => p === recoveryPath);
+  assert.deepEqual(JSON.parse(copy![1]), { version: 99, days: {} });
+  assert.equal(store.isPersistenceBlocked, false);
+  assert.equal(store.migrationWarning, null);
+  assert.equal(store.getDay("2026-11-19").wordsAdded, 100);
+  assert.equal((saved[saved.length - 1] as { version: number }).version, 1);
+  await store.save();
+  assert.equal(store.isPersistenceBlocked, false);
+});
+
+test("Store.restoreDataBackup：拒绝路径穿越与不存在的备份", async () => {
+  const { vault } = fakeVault();
+  const { plugin, saved } = fakePluginWith(vault, null);
+  const store = new Store(plugin);
+  await store.load();
+
+  for (const name of ["../evil.json", "sub/data-x.json", "..\\evil.json", "data-..%2f.json", "evil.json"]) {
+    await assert.rejects(() => store.restoreDataBackup(name), /备份文件名不合法/);
+  }
+  await assert.rejects(
+    () => store.restoreDataBackup("data-1999-01-01-0000.json"),
+    /备份不存在或已被清理/
+  );
+  assert.equal(saved.length, 0);
+});
+
+test("Store.restoreDataBackup：备份内容损坏时拒绝恢复", async () => {
+  const backupName = "data-2026-11-19-0800.json";
+  const { vault, written } = fakeVault([
+    { path: `sediment-backup/${backupName}`, mtime: 200, size: 10 },
+  ]);
+  const { plugin, saved } = fakePluginWith(vault, null);
+  const store = new Store(plugin);
+  await store.load();
+
+  written.push([`sediment-backup/${backupName}`, JSON.stringify({ version: 1, days: [] })]);
+  await assert.rejects(() => store.restoreDataBackup(backupName), /备份内容损坏/);
+  written.length = 0;
+  written.push([`sediment-backup/${backupName}`, "{not json"]);
+  await assert.rejects(() => store.restoreDataBackup(backupName), /备份内容损坏/);
+  assert.equal(saved.length, 0);
 });
 
 test("Agent 安全路径：拒绝穿越、系统目录和非 Markdown", () => {

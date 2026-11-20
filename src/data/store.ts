@@ -1,4 +1,4 @@
-import type { Plugin } from "obsidian";
+import { Notice, type Plugin } from "obsidian";
 import {
   computeContribution,
   createEmptyDay,
@@ -15,13 +15,46 @@ import {
   type ToolCallRecord,
   type WorkLogRecord,
 } from "../types";
+import { t, tf } from "../i18n";
 import { dateKey } from "../utils/dates";
 import { ensureFolder, normalizeFolder } from "../utils/vault";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+/** 字段存在但类型/形状异常视为结构损坏；缺失或 null 走默认值补齐，不算损坏。 */
+function corruptFields(loaded: Partial<PulseData>): string[] {
+  const recordKeys = ["days", "reviewedChanges", "editSessions", "settings", "pomodoro"] as const;
+  const arrayKeys = ["memos", "workLogs", "toolCalls", "snapshots", "diagnostics", "focusSessions"] as const;
+  const corrupt: string[] = [];
+  for (const key of recordKeys) {
+    const value = loaded[key];
+    if (value != null && !isRecord(value)) corrupt.push(key);
+  }
+  for (const key of arrayKeys) {
+    const value = loaded[key];
+    if (value != null && !Array.isArray(value)) corrupt.push(key);
+  }
+  return corrupt;
+}
+
+/** data.json 备份条目（供恢复 UI 使用）。 */
+export interface DataBackupInfo {
+  /** 备份文件名（不含目录），如 data-2026-11-20-0830.json */
+  name: string;
+  /** 备份写入时间（毫秒时间戳，取文件 mtime） */
+  savedAt: number;
+  /** 文件字节数 */
+  size: number;
+}
 
 /** 包装 Obsidian 的 loadData/saveData，提供按天读写与防抖保存。 */
 export class Store {
   data: PulseData = DEFAULT_DATA;
   migrationWarning: string | null = null;
+  /** 最近一次 load/restore 保留的恢复副本路径（阻塞写入时供 Notice 展示）。 */
+  recoveryCopyPath: string | null = null;
   private persistenceBlocked = false;
   private saveTimer: number | null = null;
   private lastBackupAt = 0;
@@ -58,22 +91,44 @@ export class Store {
 
   async load(): Promise<void> {
     const raw = await this.plugin.loadData();
-    const loaded = raw && typeof raw === "object" ? (raw as Partial<PulseData>) : {};
+    const loaded = isRecord(raw) ? (raw as Partial<PulseData>) : {};
     let recoveryPath = "";
-    if (raw && typeof raw === "object") {
-      const version = (raw as Partial<PulseData>).version;
-      if (typeof version !== "number" || version !== 1) {
+    let migratedVersion = false;
+    if (isRecord(raw)) {
+      const version = loaded.version;
+      const corrupt = corruptFields(loaded);
+      if (version === undefined && corrupt.length === 0) {
+        // 旧数据无版本号：形状符合 v1 时补齐 version 并写回，失败才阻塞。
+        try {
+          await this.plugin.saveData({ ...raw, version: 1 });
+          loaded.version = 1;
+          migratedVersion = true;
+        } catch (error) {
+          console.error("Sediment: 数据版本号写回失败", error);
+          this.persistenceBlocked = true;
+          this.migrationWarning = t("数据版本号迁移失败，已暂停写入以保护原始数据");
+          recoveryPath = await this.preserveRecoveryCopy(raw);
+        }
+      } else if (typeof version !== "number" || version !== 1) {
         this.persistenceBlocked = true;
         this.migrationWarning = typeof version === "number"
-          ? `不支持的数据版本 ${version}，已暂停写入以保护原始数据`
-          : "数据缺少有效版本号，已暂停写入以保护原始数据";
+          ? tf("不支持的数据版本 {version}，已暂停写入以保护原始数据", { version })
+          : t("数据缺少有效版本号，已暂停写入以保护原始数据");
+        recoveryPath = await this.preserveRecoveryCopy(raw);
+      } else if (corrupt.length > 0) {
+        // 结构性损坏与版本守卫走同一条保护路径：保留恢复副本并阻塞写入。
+        this.persistenceBlocked = true;
+        this.migrationWarning = tf("数据结构损坏（{fields}），已暂停写入以保护原始数据", {
+          fields: corrupt.join(", "),
+        });
         recoveryPath = await this.preserveRecoveryCopy(raw);
       }
     } else if (raw != null) {
       this.persistenceBlocked = true;
-      this.migrationWarning = "数据格式异常，已暂停写入以保护原始数据";
+      this.migrationWarning = t("数据格式异常，已暂停写入以保护原始数据");
       recoveryPath = await this.preserveRecoveryCopy(raw);
     }
+    this.recoveryCopyPath = recoveryPath || null;
     this.data = {
       version: loaded.version ?? 1,
       days: loaded.days && typeof loaded.days === "object" && !Array.isArray(loaded.days) ? loaded.days : {},
@@ -106,11 +161,14 @@ export class Store {
       pomodoro: loaded.pomodoro ?? null,
       settings: { ...DEFAULT_SETTINGS, ...(loaded.settings && typeof loaded.settings === "object" ? loaded.settings : {}) },
     };
+    if (migratedVersion) {
+      this.logDiagnostic("migration", "已自动补齐数据版本号 v1", undefined, false);
+    }
     if (this.migrationWarning) {
       this.logDiagnostic(
         "migration",
         this.migrationWarning,
-        recoveryPath ? `恢复副本：${recoveryPath}` : "恢复副本创建失败",
+        recoveryPath ? tf("恢复副本：{path}", { path: recoveryPath }) : t("恢复副本创建失败"),
         false
       );
     }
@@ -152,36 +210,96 @@ export class Store {
       window.clearTimeout(this.saveTimer);
       this.saveTimer = null;
     }
-    await this.plugin.saveData(this.data);
-    void this.backupData();
+    try {
+      await this.plugin.saveData(this.data);
+    } catch (error) {
+      console.error("Sediment: 保存 data.json 失败", error);
+      new Notice(t("数据保存失败，请检查磁盘空间或文件权限"));
+      return;
+    }
+    void this.backupData().catch((error) => {
+      console.error("Sediment: 自动备份失败", error);
+    });
   }
 
-  /** 把 data.json 快照写入库内普通文件夹，按设置保留最近若干份。 */
+  /** 把 data.json 快照写入库内普通文件夹，按设置保留最近若干份。失败向调用方抛错。 */
   async backupData(force = false): Promise<number> {
     if (!this.data.settings.backupEnabled && !force) return 0;
     const now = Date.now();
     if (!force && now - this.lastBackupAt < 3_600_000) return 0;
+
+    const folder = normalizeFolder(this.data.settings.backupFolder);
+    await ensureFolder(this.plugin.app.vault, folder);
+    const date = new Date();
+    const stamp = `${dateKey(date)}-${String(date.getHours()).padStart(2, "0")}${String(date.getMinutes()).padStart(2, "0")}`;
+    const path = folder ? `${folder}/data-${stamp}.json` : `data-${stamp}.json`;
+    await this.plugin.app.vault.adapter.write(path, JSON.stringify(this.data, null, 2));
     this.lastBackupAt = now;
 
-    const folder = normalizeFolder(this.data.settings.backupFolder || "sediment-backup");
-    try {
-      await ensureFolder(this.plugin.app.vault, folder);
-      const date = new Date();
-      const stamp = `${dateKey(date)}-${String(date.getHours()).padStart(2, "0")}${String(date.getMinutes()).padStart(2, "0")}`;
-      const path = folder ? `${folder}/data-${stamp}.json` : `data-${stamp}.json`;
-      await this.plugin.app.vault.adapter.write(path, JSON.stringify(this.data, null, 2));
+    // 备份目录为库根目录（或空串）时只备份不清理，避免误删用户自有的 data-*.json 文件。
+    if (!folder) return 1;
+    const keep = Math.max(1, this.data.settings.backupKeep);
+    const backups = this.plugin.app.vault
+      .getFiles()
+      .filter((file) => file.extension === "json" && file.basename.startsWith("data-") &&
+        file.path.startsWith(`${folder}/`) && !file.path.slice(folder.length + 1).includes("/"))
+      .sort((a, b) => b.stat.mtime - a.stat.mtime);
+    for (const old of backups.slice(keep)) await this.plugin.app.vault.trash(old, false);
+    return 1;
+  }
 
-      const keep = Math.max(1, this.data.settings.backupKeep);
-      const backups = this.plugin.app.vault
-        .getFiles()
-        .filter((file) => file.extension === "json" && file.basename.startsWith("data-") &&
-          (!folder || file.path.startsWith(`${folder}/`)))
-        .sort((a, b) => b.stat.mtime - a.stat.mtime);
-      for (const old of backups.slice(keep)) await this.plugin.app.vault.trash(old, false);
-      return 1;
-    } catch (error) {
-      return 0;
+  /** 列出备份目录中的 data.json 快照，按时间倒序（供恢复 UI 使用）。 */
+  listDataBackups(): DataBackupInfo[] {
+    const folder = normalizeFolder(this.data.settings.backupFolder);
+    return this.plugin.app.vault
+      .getFiles()
+      .filter((file) => file.extension === "json" && file.basename.startsWith("data-") &&
+        (folder
+          ? file.path.startsWith(`${folder}/`) && !file.path.slice(folder.length + 1).includes("/")
+          : !file.path.includes("/")))
+      .map((file) => ({ name: file.name, savedAt: file.stat.mtime, size: file.stat.size }))
+      .sort((a, b) => b.savedAt - a.savedAt);
+  }
+
+  /**
+   * 从备份恢复 data.json：先把当前 data.json 存为恢复副本，再写回备份内容并重载内存态。
+   * 返回恢复副本路径（创建失败时为空串）。文件名非法（含路径穿越）或备份损坏时抛错。
+   */
+  async restoreDataBackup(name: string): Promise<string> {
+    if (!/^data-[A-Za-z0-9._-]+\.json$/.test(name) || name.includes("..")) {
+      throw new Error(t("备份文件名不合法"));
     }
+    const folder = normalizeFolder(this.data.settings.backupFolder);
+    const path = folder ? `${folder}/${name}` : name;
+    if (!this.plugin.app.vault.getAbstractFileByPath(path)) {
+      throw new Error(tf("备份不存在或已被清理：{name}", { name }));
+    }
+    const content = await this.plugin.app.vault.adapter.read(path);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(content);
+    } catch {
+      throw new Error(tf("备份内容损坏，无法恢复：{name}", { name }));
+    }
+    const candidate = parsed as Partial<PulseData>;
+    if (!isRecord(parsed) || corruptFields(candidate).length > 0 ||
+      (candidate.version != null && candidate.version !== 1)) {
+      throw new Error(tf("备份内容损坏，无法恢复：{name}", { name }));
+    }
+    // 恢复前保留当前 data.json，恢复错了也能回退。
+    const currentRaw = await this.plugin.loadData();
+    const recoveryPath = currentRaw != null ? await this.preserveRecoveryCopy(currentRaw) : "";
+    await this.plugin.saveData({ ...candidate, version: 1 });
+    this.persistenceBlocked = false;
+    this.migrationWarning = null;
+    this.recoveryCopyPath = null;
+    await this.load();
+    return recoveryPath;
+  }
+
+  /** 写入是否因数据保护被暂停（恢复 UI 可据此提示）。 */
+  get isPersistenceBlocked(): boolean {
+    return this.persistenceBlocked;
   }
 
   scheduleSave(delay = 800): void {

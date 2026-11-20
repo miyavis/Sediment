@@ -40,7 +40,12 @@ export class SedimentPlugin extends Plugin {
     this.store = new Store(this);
     await this.store.load();
     if (this.store.migrationWarning) {
-      new Notice(this.store.migrationWarning);
+      // 写入被阻塞时启动阶段提示一次，并告知恢复副本位置。
+      new Notice(
+        this.store.recoveryCopyPath
+          ? `${this.store.migrationWarning}\n${tf("恢复副本：{path}", { path: this.store.recoveryCopyPath })}`
+          : this.store.migrationWarning
+      );
     }
     setLocale(resolveLocale(this.store.settings.language));
     if (this.store.settings.lastSeenVersion !== this.manifest.version) {
@@ -179,6 +184,9 @@ export class SedimentPlugin extends Plugin {
       callback: () =>
         void this.store.backupData(true).then((count) => {
           new Notice(count > 0 ? t("数据已备份到库内") : t("备份失败，请检查设置中的备份目录"));
+        }).catch((error) => {
+          console.error("Sediment: 备份失败", error);
+          new Notice(t("备份失败，请检查设置中的备份目录"));
         }),
     });
     this.addCommand({
