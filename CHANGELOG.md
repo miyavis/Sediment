@@ -2,7 +2,10 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
-## [Unreleased]
+## [0.9.3] - 2026-11-20
+
+### 修复
+- 操作后整页重绘导致的滚动抖动：重绘时保存/延迟恢复滚动位置，并在同一页签的软刷新中关闭卡片入场动画
 
 ### 改进
 - 新增 `npm run release:prepare -- X.Y.Z`：自动定稿 CHANGELOG 版本标题并更新 package.json 版本源；CI 打 tag 时也会自动执行

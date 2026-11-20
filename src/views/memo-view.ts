@@ -54,8 +54,15 @@ export class MemoView extends ItemView {
     this.renderContext(root);
   }
 
+  private findScroller(): HTMLElement | null {
+    return (this.containerEl.closest(".view-content") as HTMLElement | null) ??
+      (this.containerEl.parentElement as HTMLElement | null);
+  }
+
   render(): void {
     const root = this.contentEl;
+    const scroller = this.findScroller();
+    const scrollTop = scroller?.scrollTop ?? 0;
     root.empty();
     root.addClass("sd-memo-view");
     root.setAttribute("data-density", this.plugin.store.settings.layoutDensity);
@@ -107,6 +114,12 @@ export class MemoView extends ItemView {
     else if (this.tab === "walk") this.renderWalk(root);
     else if (this.tab === "tags") this.renderTags(root);
     else this.renderKnowledge(root);
+
+    if (scroller) {
+      window.requestAnimationFrame(() => {
+        scroller.scrollTop = scrollTop;
+      });
+    }
   }
 
   private renderAll(root: HTMLElement): void {

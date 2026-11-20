@@ -50,6 +50,7 @@ export class DashboardView extends ItemView {
   private heatTooltip: HTMLElement | null = null;
   private unsubscribePomodoro: (() => void) | null = null;
   private lastRenderedTab: TabKey | null = null;
+  private hasRendered = false;
   private pendingFocusDate: string | null = null;
 
   constructor(leaf: WorkspaceLeaf, private plugin: SedimentPlugin) {
@@ -82,11 +83,13 @@ export class DashboardView extends ItemView {
 
   render(): void {
     const root = this.contentEl;
-    const scroller = this.scrollParent(root);
+    const rerender = this.hasRendered;
+    const scroller = this.scrollParent(root) ?? this.fallbackScroller();
     const sameTab = this.lastRenderedTab === this.tab;
     const scrollTop = sameTab && scroller ? scroller.scrollTop : 0;
     root.empty();
     root.addClass("sd-dashboard");
+    root.toggleClass("is-rerender", rerender);
     root.setAttribute("data-density", this.plugin.store.settings.layoutDensity);
     root.toggleClass("is-reduced-motion", this.plugin.store.settings.reducedMotion);
     root.setAttribute("data-tab", this.tab);
@@ -97,8 +100,16 @@ export class DashboardView extends ItemView {
     else this.renderAgentHub(root);
     this.lastRenderedTab = this.tab;
 
-    // 同页签刷新保留滚动位置，避免软刷新把用户弹回顶部。
-    if (scroller) scroller.scrollTop = scrollTop;
+    // 同页签刷新保留滚动位置。等布局稳定后再恢复，避免异步卡片把锚点顶偏。
+    this.hasRendered = true;
+    if (sameTab && scroller) {
+      window.requestAnimationFrame(() => {
+        scroller.scrollTop = scrollTop;
+        window.requestAnimationFrame(() => {
+          scroller.scrollTop = scrollTop;
+        });
+      });
+    }
     if (this.pendingFocusDate) {
       const target = root.querySelector(
         `.sd-cell[data-date="${this.pendingFocusDate}"]`
@@ -792,6 +803,11 @@ export class DashboardView extends ItemView {
     if (!this.heatTooltip) return;
     this.heatTooltip.style.left = `${event.clientX + 14}px`;
     this.heatTooltip.style.top = `${event.clientY + 14}px`;
+  }
+
+  private fallbackScroller(): HTMLElement | null {
+    return (this.containerEl.closest(".view-content") as HTMLElement | null) ??
+      (this.containerEl.parentElement as HTMLElement | null);
   }
 
   private hideHeatTooltip(): void {
