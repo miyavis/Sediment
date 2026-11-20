@@ -384,6 +384,55 @@ test("resolveBridgePath：库内缺失时自动落盘嵌入式桥接并可握手
   }
 });
 
+test("resolveBridgePath：库内旧版桥接被刷新为嵌入源码（协议升级自愈）", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sediment-bridge-stale-"));
+  try {
+    const fakePlugin = {
+      app: {
+        vault: {
+          configDir: ".obsidian",
+          adapter: { getFullPath: (p: string) => path.join(tmp, p) },
+        },
+      },
+    };
+    const asPlugin = fakePlugin as unknown as Parameters<typeof resolveBridgePath>[0];
+    const vaultBridge = path.join(tmp, ".obsidian", "plugins", "sediment", "mcp-server", "index.mjs");
+    fs.mkdirSync(path.dirname(vaultBridge), { recursive: true });
+    const stale = '// 旧版桥接：url.searchParams.set("token", TOKEN)\n';
+    fs.writeFileSync(vaultBridge, stale, "utf8");
+    // 场景 1：无 target，库内已有旧桥接 → 必须刷新而不是原样复用
+    const bridge = resolveBridgePath(asPlugin);
+    assert.equal(bridge, vaultBridge);
+    assert.equal(fs.readFileSync(vaultBridge, "utf8"), BRIDGE_SOURCE, "库内旧桥接应被重写为嵌入源码");
+    // 场景 2：客户端配置已引用库内桥接（正斜杠写法）→ 同样刷新
+    fs.writeFileSync(vaultBridge, stale, "utf8");
+    const cfgPath = path.join(tmp, "client.json");
+    fs.writeFileSync(
+      cfgPath,
+      JSON.stringify({ mcpServers: { sediment: { command: "node", args: [vaultBridge.replace(/\\/g, "/")] } } }),
+      "utf8"
+    );
+    const target = { id: "x", name: "X", configPath: cfgPath, rootKey: "mcpServers" as const, envKey: "env" as const };
+    const bridge2 = resolveBridgePath(asPlugin, target);
+    assert.ok(bridge2.length > 0);
+    assert.equal(fs.readFileSync(vaultBridge, "utf8"), BRIDGE_SOURCE, "配置引用的库内旧桥接也应被刷新");
+    // 场景 3：配置引用库外路径（用户自有文件）→ 复用且不覆盖
+    const external = path.join(tmp, "elsewhere", "index.mjs");
+    fs.mkdirSync(path.dirname(external), { recursive: true });
+    fs.writeFileSync(external, "// user-managed bridge\n", "utf8");
+    fs.writeFileSync(
+      cfgPath,
+      JSON.stringify({ mcpServers: { sediment: { command: "node", args: [external] } } }),
+      "utf8"
+    );
+    const bridge3 = resolveBridgePath(asPlugin, target);
+    assert.equal(bridge3, external);
+    assert.equal(fs.readFileSync(external, "utf8"), "// user-managed bridge\n", "库外用户文件不得被覆盖");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test("Store.load：缺失字段补默认值并规范化历史数据", async () => {
   const loadedData = {
     version: 1,

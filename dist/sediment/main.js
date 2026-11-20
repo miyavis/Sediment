@@ -4371,30 +4371,35 @@ function resolveBridgePath(plugin, target) {
   var _a2, _b, _c;
   const fs = nodeModule("fs");
   if (!fs) return "";
+  const adapter = plugin.app.vault.adapter;
+  const vaultBridge = adapter.getFullPath ? adapter.getFullPath(`${plugin.app.vault.configDir}/plugins/sediment/mcp-server/index.mjs`) : "";
+  const samePath = (a, b) => a.replace(/\\/g, "/").toLowerCase() === b.replace(/\\/g, "/").toLowerCase();
+  const syncVaultBridge = () => {
+    if (!vaultBridge) return "";
+    try {
+      if (fs.existsSync(vaultBridge) && fs.readFileSync(vaultBridge, "utf8") === BRIDGE_SOURCE) return vaultBridge;
+      const sep = Math.max(vaultBridge.lastIndexOf("/"), vaultBridge.lastIndexOf("\\"));
+      if (sep > 0) fs.mkdirSync(vaultBridge.slice(0, sep), { recursive: true });
+      fs.writeFileSync(vaultBridge, BRIDGE_SOURCE, "utf8");
+      return fs.existsSync(vaultBridge) ? vaultBridge : "";
+    } catch (error) {
+      return "";
+    }
+  };
   if (target) {
     try {
       const data = readJson(fs.readFileSync(target.configPath, "utf8"));
       const root = (_a2 = data[target.rootKey]) != null ? _a2 : {};
       const args = (_c = (_b = root.sediment) == null ? void 0 : _b.args) != null ? _c : [];
       const existing = args.find((arg) => arg.endsWith("index.mjs") && fs.existsSync(arg));
-      if (existing) return existing;
+      if (existing) {
+        if (vaultBridge && samePath(existing, vaultBridge)) return syncVaultBridge();
+        return existing;
+      }
     } catch (error) {
     }
   }
-  const adapter = plugin.app.vault.adapter;
-  if (!adapter.getFullPath) return "";
-  const vaultBridge = adapter.getFullPath(
-    `${plugin.app.vault.configDir}/plugins/sediment/mcp-server/index.mjs`
-  );
-  if (fs.existsSync(vaultBridge)) return vaultBridge;
-  try {
-    const sep = Math.max(vaultBridge.lastIndexOf("/"), vaultBridge.lastIndexOf("\\"));
-    if (sep > 0) fs.mkdirSync(vaultBridge.slice(0, sep), { recursive: true });
-    fs.writeFileSync(vaultBridge, BRIDGE_SOURCE, "utf8");
-    return fs.existsSync(vaultBridge) ? vaultBridge : "";
-  } catch (error) {
-    return "";
-  }
+  return syncVaultBridge();
 }
 function buildEntry(plugin, target, bridge) {
   const url = `http://127.0.0.1:${plugin.store.settings.agentServerPort}`;

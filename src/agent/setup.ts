@@ -75,37 +75,47 @@ export function isAgentConfigured(target: AgentTarget): boolean {
   }
 }
 
-/** 优先复用配置里已有的桥接路径，否则找插件目录；缺失时用嵌入源码落盘。 */
+/** 优先复用配置里已有的桥接路径，否则找插件目录；库内副本始终与嵌入源码保持同步。 */
 export function resolveBridgePath(plugin: SedimentPlugin, target?: AgentTarget): string {
   const fs = nodeModule<FsModule>("fs");
   if (!fs) return "";
+  const adapter = plugin.app.vault.adapter as unknown as { getFullPath?: (path: string) => string };
+  const vaultBridge = adapter.getFullPath
+    ? adapter.getFullPath(`${plugin.app.vault.configDir}/plugins/sediment/mcp-server/index.mjs`)
+    : "";
+  const samePath = (a: string, b: string): boolean =>
+    a.replace(/\\/g, "/").toLowerCase() === b.replace(/\\/g, "/").toLowerCase();
+  // 库内桥接是插件自有文件：缺失或与嵌入源码不一致（如旧版仍走 ?token= 查询串）时重写。
+  // 协议升级后若原样复用旧桥接，服务端只认 Bearer 头会全部 401，一键配置表现为"不生效"。
+  // Obsidian 只安装 main.js/manifest.json/styles.css 三件套，桥接脚本不会随插件落盘，由此处补写。
+  const syncVaultBridge = (): string => {
+    if (!vaultBridge) return "";
+    try {
+      if (fs.existsSync(vaultBridge) && fs.readFileSync(vaultBridge, "utf8") === BRIDGE_SOURCE) return vaultBridge;
+      const sep = Math.max(vaultBridge.lastIndexOf("/"), vaultBridge.lastIndexOf("\\"));
+      if (sep > 0) fs.mkdirSync(vaultBridge.slice(0, sep), { recursive: true });
+      fs.writeFileSync(vaultBridge, BRIDGE_SOURCE, "utf8");
+      return fs.existsSync(vaultBridge) ? vaultBridge : "";
+    } catch (error) {
+      return "";
+    }
+  };
   if (target) {
     try {
       const data = readJson(fs.readFileSync(target.configPath, "utf8"));
       const root = (data[target.rootKey] ?? {}) as Record<string, { args?: string[] }>;
       const args = root.sediment?.args ?? [];
       const existing = args.find((arg) => arg.endsWith("index.mjs") && fs.existsSync(arg));
-      if (existing) return existing;
+      if (existing) {
+        // 引用的正是库内副本时先同步；库外路径属用户自有文件，不覆盖。
+        if (vaultBridge && samePath(existing, vaultBridge)) return syncVaultBridge();
+        return existing;
+      }
     } catch (error) {
       // 沿用默认探测
     }
   }
-  const adapter = plugin.app.vault.adapter as unknown as { getFullPath?: (path: string) => string };
-  if (!adapter.getFullPath) return "";
-  const vaultBridge = adapter.getFullPath(
-    `${plugin.app.vault.configDir}/plugins/sediment/mcp-server/index.mjs`
-  );
-  if (fs.existsSync(vaultBridge)) return vaultBridge;
-  // Obsidian 只安装 main.js/manifest.json/styles.css 三件套，桥接脚本不会随插件落盘。
-  // 这里用构建时嵌入的源码补写，保证一键配置产出的路径真实可用；写失败则返回空串让调用方报错。
-  try {
-    const sep = Math.max(vaultBridge.lastIndexOf("/"), vaultBridge.lastIndexOf("\\"));
-    if (sep > 0) fs.mkdirSync(vaultBridge.slice(0, sep), { recursive: true });
-    fs.writeFileSync(vaultBridge, BRIDGE_SOURCE, "utf8");
-    return fs.existsSync(vaultBridge) ? vaultBridge : "";
-  } catch (error) {
-    return "";
-  }
+  return syncVaultBridge();
 }
 
 function buildEntry(plugin: SedimentPlugin, target: AgentTarget, bridge: string): Record<string, unknown> {
