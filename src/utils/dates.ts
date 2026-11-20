@@ -1,5 +1,7 @@
 /** 纯本地日期工具，不依赖任何第三方库。 */
 
+import { normalizeFolder } from "./vault";
+
 export function dateKey(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -52,6 +54,19 @@ export function formatDailyNoteName(format: string, d: Date): string {
     .replace(/YYYY/g, String(d.getFullYear()))
     .replace(/MM/g, String(d.getMonth() + 1).padStart(2, "0"))
     .replace(/DD/g, String(d.getDate()).padStart(2, "0"));
+}
+
+/**
+ * 日记笔记的库内路径：目录 + 文件名格式的唯一口径。
+ * 门禁校验与实际落盘必须传同一个 date 实例，避免跨午夜竞态。
+ */
+export function dailyNotePath(
+  settings: { dailyNoteFolder: string; dailyNoteFormat: string },
+  date: Date
+): string {
+  const folder = normalizeFolder(settings.dailyNoteFolder);
+  const name = formatDailyNoteName(settings.dailyNoteFormat || "YYYY-MM-DD", date);
+  return folder ? `${folder}/${name}.md` : `${name}.md`;
 }
 
 export function hhmm(d: Date): string {

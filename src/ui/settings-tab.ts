@@ -199,7 +199,7 @@ export class PulseSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName(t("Agent 工作模式"))
-      .setDesc(t("选择只读、草稿、确认后写入或自动执行；实际权限仍受下方开关约束。"))
+      .setDesc(t("选择只读、草稿、确认后写入或自动执行；「确认后写入」档下 Agent 的写操作会挂起为待审项，在看板「待审写入」中采纳后才落盘。实际权限仍受下方开关约束。"))
       .addDropdown((dropdown) =>
         dropdown
           .addOption("readonly", t("只读"))

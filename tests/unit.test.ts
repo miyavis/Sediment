@@ -22,6 +22,7 @@ import {
   lastNDays,
   eachDay,
   formatDailyNoteName,
+  dailyNotePath,
   hhmm,
   localHHmm,
   localStamp,
@@ -29,6 +30,8 @@ import {
 } from "../src/utils/dates";
 import { countWords, countCheckedTasks, noteDateKey } from "../src/tracking/tracker";
 import { normalizeFolder } from "../src/utils/vault";
+import { TFile } from "obsidian";
+import { TaskManager } from "../src/features/tasks";
 import { buildStatsCsv, buildExportJson, DEFAULT_EXPORT_OPTIONS } from "../src/features/export";
 import { Store } from "../src/data/store";
 import { AgentApi, ApiError, safeAgentPath } from "../src/agent/api";
@@ -556,9 +559,10 @@ test("computeDiff：逐行标记新增与删除，未变化行保留", () => {
 // 权限统一门禁（v0.9.7 评审修复 H6/H7/M1/M3 + 令牌恒定时间比较）
 // ---------------------------------------------------------------------------
 
-/** 构造只够跑门禁路径的假 SedimentPlugin（拒绝分支不触碰 vault）。 */
+/** 构造只够跑门禁路径的假 SedimentPlugin（拒绝分支不触碰 vault）。
+ * 这些用例验证权限层，默认钉在 auto 档（无 confirm 挂起，通过即直接落盘）。 */
 function fakeAgentPlugin(partial: Partial<PulseSettings> = {}, extra: Record<string, unknown> = {}) {
-  const s = settings(partial);
+  const s = settings({ agentWorkMode: "auto", ...partial });
   const calls: Record<string, unknown[]> = { complete: [], delegate: [], snapshot: [] };
   const plugin = {
     store: {
@@ -755,7 +759,7 @@ test("M1：addKnowledge 非法 category 回退默认分类并说明", async () =
   const created: Array<{ path: string; content: string }> = [];
   const plugin = {
     store: {
-      settings: settings({}),
+      settings: settings({ agentWorkMode: "auto" }),
       data: { snapshots: [] },
       logDiagnostic: () => {},
       updateDay: () => {},
@@ -791,4 +795,302 @@ test("令牌比较：SHA-256 定长 + timingSafeEqual，长度不等不抛异常
   assert.equal(tokensMatch("secret-token", "secret-tokeX"), false);
   assert.equal(tokensMatch("short", "much-longer-token"), false);
   assert.equal(tokensMatch("", ""), true);
+});
+
+// ---------------------------------------------------------------------------
+// confirm 工作模式真实现（Task 4）+ Task 3 移交验收项
+// ---------------------------------------------------------------------------
+
+type HoldResult = { path?: string; pending?: true; pendingId?: string; message?: string; count?: number };
+
+/** 内存版 vault：足够跑通 writeNote/patchNote/frontmatter/日记类落盘与读路径。 */
+function memoryVault(files: Record<string, string> = {}) {
+  const store = new Map(Object.entries(files));
+  const asFile = (p: string) => new TFile(p);
+  const vault = {
+    getMarkdownFiles: () => Array.from(store.keys(), asFile),
+    getAbstractFileByPath: (p: string) => (store.has(p) ? asFile(p) : null),
+    read: async (f: { path: string }) => store.get(f.path) ?? "",
+    cachedRead: async (f: { path: string }) => store.get(f.path) ?? "",
+    create: async (p: string, c: string) => {
+      store.set(p, c);
+      return asFile(p);
+    },
+    createFolder: async () => {},
+    modify: async (f: { path: string }, c: string) => {
+      store.set(f.path, c);
+    },
+    process: async (f: { path: string }, cb: (data: string) => string) => {
+      store.set(f.path, cb(store.get(f.path) ?? ""));
+    },
+    trash: async () => {},
+    adapter: {},
+    configDir: ".obsidian",
+  };
+  return { store, vault };
+}
+
+/** 带完整 pendingWrites 挂起面与真实 TaskManager 的假插件。 */
+function fakeConfirmPlugin(partial: Partial<PulseSettings> = {}, files: Record<string, string> = {}) {
+  const s = settings(partial);
+  const pendingWrites: Array<Record<string, any>> = [];
+  const diagnostics: Array<{ category: string; message: string; detail?: string }> = [];
+  const { store: fileStore, vault } = memoryVault(files);
+  const store: Record<string, any> = {
+    settings: s,
+    data: { snapshots: [], memos: [], workLogs: [], toolCalls: [], days: {}, pendingWrites },
+    logDiagnostic: (category: string, message: string, detail?: string) => {
+      diagnostics.push({ category, message, detail });
+    },
+    updateDay: () => {},
+    scheduleSave: () => {},
+    todayKey: () => dateKey(new Date()),
+    addPendingWrite: (record: Record<string, any>) => {
+      pendingWrites.unshift(record);
+    },
+    removePendingWrite: (id: string) => {
+      const index = pendingWrites.findIndex((item) => item.id === id);
+      return index < 0 ? undefined : pendingWrites.splice(index, 1)[0];
+    },
+    addWorkLog: (record: Record<string, any>) => {
+      store.data.workLogs.unshift(record);
+    },
+  };
+  const memos = {
+    add: async (text: string, tags: string[] = []) => {
+      const memo = {
+        id: `memo-${store.data.memos.length + 1}`, date: dateKey(new Date()),
+        time: "00:00", text, tags, converted: false,
+      };
+      store.data.memos.push(memo);
+      return memo;
+    },
+    syncTags: async () => {},
+  };
+  const plugin: Record<string, any> = {
+    store,
+    app: { vault, metadataCache: { getFileCache: () => undefined, resolvedLinks: {} }, workspace: {} },
+    tracker: { markAgentWrite: () => {} },
+    memos,
+    semantic: { search: async () => [] },
+  };
+  plugin.tasks = new TaskManager(plugin as never);
+  return { api: new AgentApi(plugin as never), tasks: plugin.tasks as TaskManager, store, pendingWrites, diagnostics, files: fileStore };
+}
+
+const pendingIdOf = (result: HoldResult): string => {
+  assert.ok(result.pending, `应挂起为待审：${JSON.stringify(result)}`);
+  assert.ok(result.pendingId);
+  return result.pendingId;
+};
+
+test("confirm 档：writeNote 挂起不落盘；采纳落盘、驳回丢弃、门禁先于挂起", async () => {
+  const ctx = fakeConfirmPlugin({ agentWorkMode: "confirm" });
+  const held = (await ctx.api.writeNote("notes/a.md", "agent 内容", "create")) as HoldResult;
+  const id = pendingIdOf(held);
+  assert.match(held.message ?? "", /confirm 模式下写入已挂起待审/);
+  assert.equal(ctx.files.has("notes/a.md"), false, "挂起期间不得落盘");
+  assert.equal(ctx.pendingWrites.length, 1);
+  assert.equal(ctx.pendingWrites[0].tool, "write_note");
+  assert.equal(ctx.pendingWrites[0].after, "agent 内容");
+  assert.deepEqual(ctx.pendingWrites[0].request.args.path, "notes/a.md");
+
+  await ctx.api.approvePendingWrite(id);
+  assert.equal(ctx.files.get("notes/a.md"), "agent 内容", "采纳后按原请求真正落盘");
+  assert.equal(ctx.pendingWrites.length, 0);
+  assert.ok(ctx.diagnostics.some((d) => /采纳并落盘/.test(d.message)));
+
+  const second = (await ctx.api.writeNote("notes/b.md", "x", "create")) as HoldResult;
+  ctx.api.rejectPendingWrite(pendingIdOf(second));
+  assert.equal(ctx.files.has("notes/b.md"), false);
+  assert.equal(ctx.pendingWrites.length, 0);
+  assert.ok(ctx.diagnostics.some((d) => d.category === "security" && /驳回并丢弃/.test(d.message)));
+
+  assert.throws(() => ctx.api.rejectPendingWrite("nope"), (error) => asApiError(error).code === "NOT_FOUND");
+  await assert.rejects(ctx.api.approvePendingWrite("nope"), (error) => asApiError(error).code === "NOT_FOUND");
+
+  // 顺序契约：权限检查 → confirm 拦截。黑名单目录直接 403，不产生挂起项。
+  const denied = fakeConfirmPlugin({ agentWorkMode: "confirm", deniedFolders: "notes" });
+  await assert.rejects(denied.api.writeNote("notes/c.md", "x"), (error) => asApiError(error).code === "FORBIDDEN");
+  assert.equal(denied.pendingWrites.length, 0, "越权写入不得转挂起");
+});
+
+test("confirm 档：patchNote 挂起并保留 before/after 预览，采纳后写入", async () => {
+  const ctx = fakeConfirmPlugin({ agentWorkMode: "confirm" }, { "notes/a.md": "line1\nline2\n" });
+  const res = (await ctx.api.patchNote({ path: "notes/a.md", find: "line1", content: "LINE-A" })) as HoldResult & {
+    diffSummary?: unknown;
+  };
+  const id = pendingIdOf(res);
+  assert.equal(ctx.files.get("notes/a.md"), "line1\nline2\n", "挂起期间原文不动");
+  assert.equal(ctx.pendingWrites[0].before, "line1\nline2\n");
+  assert.equal(ctx.pendingWrites[0].after, "LINE-A\nline2\n");
+  assert.ok(res.diffSummary, "返回值仍带 diffSummary 等旧字段");
+
+  await ctx.api.approvePendingWrite(id);
+  assert.equal(ctx.files.get("notes/a.md"), "LINE-A\nline2\n");
+
+  // dryRun 不挂起：它本来就不落盘。
+  const dry = (await ctx.api.patchNote({ path: "notes/a.md", find: "LINE-A", content: "z", dryRun: true })) as HoldResult;
+  assert.equal(dry.pending, undefined);
+  assert.equal(ctx.pendingWrites.length, 0);
+});
+
+test("confirm 档：只读路径（read/list/search/context）不受挂起影响", async () => {
+  const ctx = fakeConfirmPlugin({ agentWorkMode: "confirm" }, { "notes/a.md": "内容甲" });
+  const read = await ctx.api.readNote("notes/a.md");
+  assert.equal(read.content, "内容甲");
+  assert.equal(ctx.api.listNotes("", 10).length, 1);
+  const hits = await ctx.api.searchNotes("内容");
+  assert.equal(hits.length, 1);
+  const tasks = await ctx.api.listTasks("all");
+  assert.ok(Array.isArray(tasks));
+  assert.equal(ctx.pendingWrites.length, 0, "读操作一律不挂起");
+});
+
+test("工作模式四档矩阵：readonly 拒写 / draft 直写草稿 / confirm 挂起 / auto 直写", async () => {
+  // 各档开关取 settings-tab onChange 的真实组合
+  const flags = {
+    readonly: { agentAllowRead: true, agentAllowCreate: false, agentAllowPatch: false, agentAllowOverwrite: false },
+    draft: { agentAllowRead: true, agentAllowCreate: true, agentAllowPatch: false, agentAllowOverwrite: false },
+    confirm: { agentAllowRead: true, agentAllowCreate: true, agentAllowPatch: true, agentAllowOverwrite: true },
+    auto: { agentAllowRead: true, agentAllowCreate: true, agentAllowPatch: true, agentAllowOverwrite: true },
+  } as const;
+
+  const ro = fakeConfirmPlugin({ agentWorkMode: "readonly", ...flags.readonly });
+  await assert.rejects(ro.api.writeNote("a.md", "x"), (error) => {
+    const e = asApiError(error);
+    return e.code === "OPERATION_DENIED" && /readonly 模式拒绝写入/.test(e.message);
+  });
+  assert.equal(ro.files.size, 0);
+  assert.equal(ro.api.listNotes("", 10).length, 0, "只读档读取不受影响");
+
+  const draft = fakeConfirmPlugin({ agentWorkMode: "draft", ...flags.draft });
+  const draftRes = (await draft.api.writeNote("knowledge/d.md", "草稿")) as HoldResult;
+  assert.equal(draftRes.pending, undefined, "draft 档写入直接落盘（草稿流），不挂起");
+  assert.equal(draft.files.get("knowledge/d.md"), "草稿");
+  await assert.rejects(draft.api.patchNote({ path: "knowledge/d.md", find: "草稿", content: "y" }), (error) => asApiError(error).code === "OPERATION_DENIED");
+
+  const confirm = fakeConfirmPlugin({ agentWorkMode: "confirm", ...flags.confirm });
+  const heldRes = (await confirm.api.writeNote("b.md", "x")) as HoldResult;
+  assert.ok(heldRes.pending);
+  assert.equal(confirm.files.has("b.md"), false);
+
+  const auto = fakeConfirmPlugin({ agentWorkMode: "auto", ...flags.auto });
+  const autoRes = (await auto.api.writeNote("c.md", "x")) as HoldResult;
+  assert.equal(autoRes.pending, undefined);
+  assert.equal(auto.files.get("c.md"), "x");
+  assert.equal(auto.pendingWrites.length, 0, "auto 档不产生挂起项");
+});
+
+test("confirm 档：速记 / 工作日志 / 勾选待办挂起，采纳走真实落盘函数", async () => {
+  const ctx = fakeConfirmPlugin({ agentWorkMode: "confirm" }, { "daily/2020-01-01.md": "- [ ] 写测试\n" });
+
+  const memoRes = (await ctx.api.addMemo("灵感一条", ["idea"])) as HoldResult;
+  const memoId = pendingIdOf(memoRes);
+  assert.equal(ctx.store.data.memos.length, 0, "挂起期间速记不入库");
+  assert.equal(ctx.pendingWrites.find((r) => r.tool === "add_memo")?.path, dailyNotePath(ctx.store.settings, new Date()));
+
+  const logRes = (await ctx.api.recordWorkLog({ task: "t", summary: "s" })) as HoldResult;
+  const logId = pendingIdOf(logRes);
+  const logPath = `agent-logs/${dateKey(new Date())}.md`;
+  assert.equal(ctx.files.has(logPath), false, "挂起期间不建工作日志");
+  assert.ok(String(ctx.pendingWrites.find((r) => r.tool === "record_work_log")?.after).includes("**完成了什么**"));
+
+  const completeRes = (await ctx.api.completeTask("daily/2020-01-01.md", 1)) as HoldResult;
+  const completeId = pendingIdOf(completeRes);
+  const completeRec = ctx.pendingWrites.find((r) => r.tool === "complete_task");
+  assert.equal(completeRec?.before, "- [ ] 写测试\n");
+  assert.equal(completeRec?.after, "- [x] 写测试\n", "预览与 TaskManager.complete 共用 toggleCheckboxLine");
+
+  await ctx.api.approvePendingWrite(completeId);
+  assert.equal(ctx.files.get("daily/2020-01-01.md"), "- [x] 写测试\n");
+  await ctx.api.approvePendingWrite(memoId);
+  assert.equal(ctx.store.data.memos.length, 1);
+  await ctx.api.approvePendingWrite(logId);
+  assert.ok(String(ctx.files.get(logPath)).includes("**完成了什么**"));
+  assert.equal(ctx.pendingWrites.length, 0);
+});
+
+test("pendingWrites：旧 data.json 缺字段默认空数组，往返保存不丢", async () => {
+  // 迁移兼容：缺字段 → 空数组
+  let saved: Record<string, any> | null = null;
+  const plugin1 = {
+    loadData: async () => ({ version: 1 }),
+    saveData: async (data: Record<string, any>) => {
+      saved = JSON.parse(JSON.stringify(data));
+    },
+  } as unknown as Parameters<typeof Store>[0];
+  const store1 = new Store(plugin1);
+  store1.scheduleSave = () => {};
+  await store1.load();
+  assert.deepEqual(store1.data.pendingWrites, []);
+
+  const record = {
+    id: "pw-1", time: "2026-11-20T00:00:00.000Z", tool: "write_note", agent: "qoder",
+    path: "notes/a.md", request: { kind: "write_note", args: { path: "notes/a.md", content: "x", mode: "create" } },
+    before: "", after: "x",
+  };
+  store1.addPendingWrite({ ...record });
+  assert.equal(store1.data.pendingWrites.length, 1);
+  await store1.save();
+  assert.ok(saved);
+  assert.deepEqual((saved as Record<string, any>).pendingWrites, [record]);
+
+  // 往返：重启加载后挂起项保留（设计意图：跨重启待审），坏条目被过滤
+  const plugin2 = {
+    loadData: async () => ({ version: 1, pendingWrites: ["坏数据", record] }),
+    saveData: async () => {},
+  } as unknown as Parameters<typeof Store>[0];
+  const store2 = new Store(plugin2);
+  store2.scheduleSave = () => {};
+  await store2.load();
+  assert.equal(store2.data.pendingWrites.length, 1);
+  assert.equal(store2.data.pendingWrites[0].id, "pw-1");
+  assert.equal(store2.removePendingWrite("pw-1")?.path, "notes/a.md");
+  assert.equal(store2.data.pendingWrites.length, 0);
+});
+
+test("移交项 2：dailyNotePath 统一三处路径口径", () => {
+  assert.equal(dailyNotePath({ dailyNoteFolder: "/daily/", dailyNoteFormat: "YYYY-MM-DD" }, new Date(2026, 0, 5)), "daily/2026-01-05.md");
+  assert.equal(dailyNotePath({ dailyNoteFolder: "", dailyNoteFormat: "YYYY年MM月DD日" }, new Date(2026, 10, 19)), "2026年11月19日.md");
+  assert.equal(dailyNotePath({ dailyNoteFolder: "d", dailyNoteFormat: "" }, new Date(2026, 0, 5)), "d/2026-01-05.md", "空格式回退 YYYY-MM-DD");
+  assert.equal(dailyNotePath({ dailyNoteFolder: "daily", dailyNoteFormat: "YYYY/MM/DD" }, new Date(2026, 0, 5)), "daily/2026/01/05.md");
+});
+
+test("移交项 1：越权目录待办不进入 Agent listTasks / snapshotTasks，人用 UI 不过滤", async () => {
+  const files = {
+    "daily/2020-01-01.md": "- [ ] 公开待办\n",
+    "私有/2020-01-01.md": "- [ ] 私密待办\n",
+  };
+  const ctx = fakeConfirmPlugin({ agentWorkMode: "auto", deniedFolders: "私有" }, files);
+
+  const human = await ctx.tasks.list("overdue");
+  assert.ok(human.some((item) => item.text === "私密待办"), "人用 UI 调用面保持不过滤");
+
+  const agent = await ctx.api.listTasks("overdue");
+  assert.ok(agent.some((item) => item.text === "公开待办"));
+  assert.ok(!agent.some((item) => item.text === "私密待办"), "黑名单目录待办不得泄露给 Agent");
+
+  const res = (await ctx.api.snapshotTasks()) as HoldResult & { count: number };
+  assert.equal(res.count, 1);
+  const dailyPath = dailyNotePath(ctx.store.settings, new Date());
+  const written = ctx.files.get(dailyPath) ?? "";
+  assert.ok(written.includes("公开待办"));
+  assert.ok(!written.includes("私密待办"), "snapshot 源侧同样过滤");
+});
+
+test("confirm 档：snapshotTasks 预览同样只数可访问待办", async () => {
+  const files = {
+    "daily/2020-01-01.md": "- [ ] 公开待办\n",
+    "私有/2020-01-01.md": "- [ ] 私密待办\n",
+  };
+  const ctx = fakeConfirmPlugin({ agentWorkMode: "confirm", deniedFolders: "私有" }, files);
+  const res = (await ctx.api.snapshotTasks()) as HoldResult;
+  const id = pendingIdOf(res);
+  assert.match(String(ctx.pendingWrites[0].after), /将 1 条遗留待办写入/, "挂起预览不含越权待办");
+  assert.ok(!String(ctx.pendingWrites[0].after).includes("私密待办"));
+  await ctx.api.approvePendingWrite(id);
+  const written = ctx.files.get(dailyNotePath(ctx.store.settings, new Date())) ?? "";
+  assert.ok(written.includes("公开待办"));
+  assert.ok(!written.includes("私密待办"));
 });

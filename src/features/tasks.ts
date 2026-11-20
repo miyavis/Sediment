@@ -1,6 +1,6 @@
 import { TFile } from "obsidian";
 import type { SedimentPlugin } from "../main";
-import { dateKey } from "../utils/dates";
+import { dailyNotePath, dateKey } from "../utils/dates";
 import { ensureFolder, normalizeFolder } from "../utils/vault";
 
 export interface TaskItem {
@@ -15,7 +15,17 @@ export interface TaskItem {
   memoId?: string;
 }
 
+/** 待办读源的访问约束：Agent 调用面传入谓词过滤越权路径，人用 UI 不传即不过滤。 */
+export interface TaskReadOptions {
+  accessible?: (path: string) => boolean;
+}
+
 const CHECKBOX = /^(\s*[-*+]\s+)\[([ xX])\]\s+(.*)$/;
+
+/** 把一行复选框置为已勾选（供落盘与待审预览共用，避免两份实现漂移）。 */
+export function toggleCheckboxLine(line: string): string {
+  return line.replace(CHECKBOX, (_full, prefix: string, _state: string, text: string) => `${prefix}[x] ${text}`);
+}
 
 /** 扫描 vault 里的 Obsidian 原生待办，不另存一份数据。 */
 export class TaskManager {
@@ -27,7 +37,7 @@ export class TaskManager {
     return dateKey(new Date(file.stat.ctime));
   }
 
-  async list(scope: "today" | "overdue" | "all" | "agent" = "all"): Promise<TaskItem[]> {
+  async list(scope: "today" | "overdue" | "all" | "agent" = "all", opts: TaskReadOptions = {}): Promise<TaskItem[]> {
     if (scope === "agent") {
       return this.plugin.store.data.memos
         .filter((memo) => memo.tags.includes("to-agent") && !memo.converted && !memo.archived)
@@ -45,6 +55,7 @@ export class TaskManager {
     const today = dateKey(new Date());
     const result: TaskItem[] = [];
     for (const file of this.plugin.app.vault.getMarkdownFiles()) {
+      if (opts.accessible && !opts.accessible(file.path)) continue;
       const text = await this.plugin.app.vault.cachedRead(file);
       const date = this.dateOf(file);
       const lines = text.split("\n");
@@ -73,9 +84,7 @@ export class TaskManager {
       const lines = data.split("\n");
       const index = line - 1;
       if (index < 0 || index >= lines.length) throw new Error(`行号超出范围：${line}`);
-      lines[index] = lines[index].replace(CHECKBOX, (_full, prefix: string, state: string, text: string) =>
-        `${prefix}[x] ${text}`
-      );
+      lines[index] = toggleCheckboxLine(lines[index]);
       return lines.join("\n");
     });
   }
@@ -93,18 +102,16 @@ export class TaskManager {
   }
 
   /** 按需把遗留待办写入当天日记，不默认执行。 */
-  async snapshot(): Promise<number> {
-    const overdue = (await this.list("overdue")).filter((item) => !item.checked);
+  async snapshot(opts: TaskReadOptions & { date?: Date } = {}): Promise<number> {
+    const overdue = (await this.list("overdue", opts)).filter((item) => !item.checked);
     if (overdue.length === 0) return 0;
 
+    // 落盘路径走 dailyNotePath 统一口径；调用方传同一 date 实例即可与门禁校验一致。
     const settings = this.plugin.store.settings;
     const folder = normalizeFolder(settings.dailyNoteFolder);
-    const today = dateKey(new Date());
-    const name = settings.dailyNoteFormat
-      .replace(/YYYY/g, String(new Date().getFullYear()))
-      .replace(/MM/g, String(new Date().getMonth() + 1).padStart(2, "0"))
-      .replace(/DD/g, String(new Date().getDate()).padStart(2, "0"));
-    const path = folder ? `${folder}/${name}.md` : `${name}.md`;
+    const date = opts.date ?? new Date();
+    const today = dateKey(date);
+    const path = dailyNotePath(settings, date);
     await ensureFolder(this.plugin.app.vault, folder);
     const existing = this.plugin.app.vault.getAbstractFileByPath(path);
     const file =

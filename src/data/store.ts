@@ -8,6 +8,7 @@ import {
   type DiagnosticRecord,
   type FocusSessionRecord,
   type MemoRecord,
+  type PendingWriteRecord,
   type PulseData,
   type PulseSettings,
   type SnapshotRecord,
@@ -84,6 +85,12 @@ export class Store {
         loaded.reviewedChanges && typeof loaded.reviewedChanges === "object" && !Array.isArray(loaded.reviewedChanges)
           ? (loaded.reviewedChanges as Record<string, "kept" | "reverted">)
           : {},
+      // 旧版 data.json 没有该字段时默认空数组，保证升级兼容。
+      pendingWrites: Array.isArray(loaded.pendingWrites)
+        ? (loaded.pendingWrites as PendingWriteRecord[]).filter(
+            (item) => item && typeof item === "object" && typeof item.id === "string" && typeof item.path === "string"
+          )
+        : [],
       diagnostics: Array.isArray(loaded.diagnostics) ? loaded.diagnostics : [],
       editSessions: loaded.editSessions && typeof loaded.editSessions === "object" && !Array.isArray(loaded.editSessions)
         ? loaded.editSessions
@@ -235,6 +242,22 @@ export class Store {
     this.data.reviewedChanges[key] = decision;
     this.logDiagnostic("storage", `Agent 变更已审查：${decision}`, key);
     this.scheduleSave();
+  }
+
+  /** 挂起一条 confirm 模式的待审写入；超出上限时丢弃最旧的条目。 */
+  addPendingWrite(record: PendingWriteRecord): void {
+    this.data.pendingWrites.unshift(record);
+    if (this.data.pendingWrites.length > 100) this.data.pendingWrites.length = 100;
+    this.scheduleSave(2000);
+  }
+
+  /** 按 id 移除挂起项并返回被移除的记录（找不到返回 undefined）。 */
+  removePendingWrite(id: string): PendingWriteRecord | undefined {
+    const index = this.data.pendingWrites.findIndex((item) => item.id === id);
+    if (index < 0) return undefined;
+    const [removed] = this.data.pendingWrites.splice(index, 1);
+    this.scheduleSave(2000);
+    return removed;
   }
 
   addSnapshot(record: SnapshotRecord): void {

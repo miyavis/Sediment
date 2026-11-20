@@ -60,6 +60,28 @@ export interface SnapshotRecord {
   agent: string;
 }
 
+/**
+ * confirm 工作模式下被挂起、等待人工审查的 Agent 写入。
+ * request 保存原请求，采纳时按原路径重放真正的落盘函数；
+ * before/after 仅用于 DiffModal 预览（条目式写入的 after 为摘要文本）。
+ */
+export interface PendingWriteRecord {
+  id: string;
+  /** 挂起时刻（ISO） */
+  time: string;
+  /** 逻辑工具名，如 write_note / patch_note / add_knowledge */
+  tool: string;
+  agent: string;
+  /** 目标文件路径（库内相对路径） */
+  path: string;
+  /** 采纳重放所需的原请求 */
+  request: { kind: string; args: Record<string, unknown> };
+  /** 预览：挂起时的目标内容（新建或条目式写入为空串） */
+  before: string;
+  /** 预览：采纳后的内容或操作摘要 */
+  after: string;
+}
+
 export interface MemoRecord {
   id: string;
   date: string; // YYYY-MM-DD
@@ -202,6 +224,8 @@ export interface PulseData {
   snapshots: SnapshotRecord[];
   /** 已审查的 Agent 变更：key -> kept | reverted */
   reviewedChanges: Record<string, "kept" | "reverted">;
+  /** confirm 模式下挂起待审的 Agent 写入，采纳/驳回后移除；重启后保留 */
+  pendingWrites: PendingWriteRecord[];
   diagnostics: DiagnosticRecord[];
   /** 已计过编辑会话的 日期→文件路径 列表，重启后不重复计分 */
   editSessions: Record<string, string[]>;
@@ -315,6 +339,7 @@ export const DEFAULT_DATA: PulseData = {
   toolCalls: [],
   snapshots: [],
   reviewedChanges: {},
+  pendingWrites: [],
   diagnostics: [],
   editSessions: {},
   focusSessions: [],

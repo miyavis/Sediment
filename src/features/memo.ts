@@ -1,7 +1,7 @@
 import { Notice, TFile } from "obsidian";
 import type { SedimentPlugin } from "../main";
 import type { MemoRecord } from "../types";
-import { dateKey, formatDailyNoteName, hhmm, parseKey } from "../utils/dates";
+import { dailyNotePath, dateKey, hhmm, parseKey } from "../utils/dates";
 import { ensureFolder, normalizeFolder } from "../utils/vault";
 
 /** flomo 式速记：回车即记，写入当天日记的速记段落。 */
@@ -38,12 +38,7 @@ export class MemoManager {
   }
 
   private dailyNotePath(date: string): string {
-    const folder = normalizeFolder(this.store.settings.dailyNoteFolder);
-    const fileName = formatDailyNoteName(
-      this.store.settings.dailyNoteFormat || "YYYY-MM-DD",
-      parseKey(date)
-    );
-    return folder ? `${folder}/${fileName}.md` : `${fileName}.md`;
+    return dailyNotePath(this.store.settings, parseKey(date));
   }
 
   private async appendToDailyNote(memo: MemoRecord): Promise<void> {

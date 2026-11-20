@@ -31,7 +31,27 @@ module.exports = __toCommonJS(main_exports);
 var import_obsidian21 = require("obsidian");
 
 // src/agent/api.ts
-var import_obsidian2 = require("obsidian");
+var import_obsidian3 = require("obsidian");
+
+// src/utils/vault.ts
+function normalizeFolder(path) {
+  return path.trim().replace(/^\/+|\/+$/g, "").replace(/\/+/g, "/");
+}
+async function ensureFolder(vault, path) {
+  const folder = normalizeFolder(path);
+  if (!folder) return;
+  let current = "";
+  for (const part of folder.split("/")) {
+    current = current ? `${current}/${part}` : part;
+    if (!vault.getAbstractFileByPath(current)) {
+      try {
+        await vault.createFolder(current);
+      } catch (error) {
+        if (!vault.getAbstractFileByPath(current)) throw error;
+      }
+    }
+  }
+}
 
 // src/utils/dates.ts
 function dateKey(d) {
@@ -73,6 +93,11 @@ function lastNDays(n, end = /* @__PURE__ */ new Date()) {
 }
 function formatDailyNoteName(format, d) {
   return format.replace(/YYYY/g, String(d.getFullYear())).replace(/MM/g, String(d.getMonth() + 1).padStart(2, "0")).replace(/DD/g, String(d.getDate()).padStart(2, "0"));
+}
+function dailyNotePath(settings, date) {
+  const folder = normalizeFolder(settings.dailyNoteFolder);
+  const name = formatDailyNoteName(settings.dailyNoteFormat || "YYYY-MM-DD", date);
+  return folder ? `${folder}/${name}.md` : `${name}.md`;
 }
 function hhmm(d) {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
@@ -197,30 +222,114 @@ function buildWeeklyReview(store, anchor) {
   return lines.join("\n");
 }
 
-// src/tracking/tracker.ts
+// src/features/tasks.ts
 var import_obsidian = require("obsidian");
-
-// src/utils/vault.ts
-function normalizeFolder(path) {
-  return path.trim().replace(/^\/+|\/+$/g, "").replace(/\/+/g, "/");
+var CHECKBOX = /^(\s*[-*+]\s+)\[([ xX])\]\s+(.*)$/;
+function toggleCheckboxLine(line) {
+  return line.replace(CHECKBOX, (_full, prefix, _state, text) => `${prefix}[x] ${text}`);
 }
-async function ensureFolder(vault, path) {
-  const folder = normalizeFolder(path);
-  if (!folder) return;
-  let current = "";
-  for (const part of folder.split("/")) {
-    current = current ? `${current}/${part}` : part;
-    if (!vault.getAbstractFileByPath(current)) {
-      try {
-        await vault.createFolder(current);
-      } catch (error) {
-        if (!vault.getAbstractFileByPath(current)) throw error;
+var TaskManager = class {
+  constructor(plugin) {
+    this.plugin = plugin;
+  }
+  dateOf(file) {
+    const match = file.path.match(/(\d{4}-\d{2}-\d{2})/);
+    if (match) return match[1];
+    return dateKey(new Date(file.stat.ctime));
+  }
+  async list(scope = "all", opts = {}) {
+    if (scope === "agent") {
+      return this.plugin.store.data.memos.filter((memo) => memo.tags.includes("to-agent") && !memo.converted && !memo.archived).map((memo) => ({
+        path: "",
+        line: 0,
+        text: memo.text,
+        date: memo.date,
+        checked: false,
+        sourcePath: memo.sourcePath,
+        sourceLine: memo.sourceLine,
+        memoId: memo.id
+      }));
+    }
+    const today = dateKey(/* @__PURE__ */ new Date());
+    const result = [];
+    for (const file of this.plugin.app.vault.getMarkdownFiles()) {
+      if (opts.accessible && !opts.accessible(file.path)) continue;
+      const text = await this.plugin.app.vault.cachedRead(file);
+      const date = this.dateOf(file);
+      const lines = text.split("\n");
+      for (let index = 0; index < lines.length; index += 1) {
+        const match = lines[index].match(CHECKBOX);
+        if (!match) continue;
+        const checked = match[2].toLowerCase() === "x";
+        if (scope === "today" && date !== today) continue;
+        if (scope === "overdue" && (checked || date >= today)) continue;
+        result.push({
+          path: file.path,
+          line: index + 1,
+          text: match[3].trim(),
+          date,
+          checked
+        });
       }
     }
+    return result;
   }
-}
+  async complete(path, line) {
+    const file = this.plugin.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof import_obsidian.TFile)) throw new Error(`\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${path}`);
+    await this.plugin.app.vault.process(file, (data) => {
+      const lines = data.split("\n");
+      const index = line - 1;
+      if (index < 0 || index >= lines.length) throw new Error(`\u884C\u53F7\u8D85\u51FA\u8303\u56F4\uFF1A${line}`);
+      lines[index] = toggleCheckboxLine(lines[index]);
+      return lines.join("\n");
+    });
+  }
+  async delegate(path, line) {
+    const tasks = await this.list("all");
+    const task = tasks.find((item) => item.path === path && item.line === line);
+    if (!task) throw new Error(`\u627E\u4E0D\u5230\u5F85\u529E\uFF1A${path}:${line}`);
+    const memo = await this.plugin.memos.add(task.text, ["to-agent"], {
+      path: task.path,
+      line: task.line
+    });
+    if (!memo) throw new Error("\u521B\u5EFA Agent \u4EFB\u52A1\u5931\u8D25");
+    return memo.id;
+  }
+  /** 按需把遗留待办写入当天日记，不默认执行。 */
+  async snapshot(opts = {}) {
+    var _a2, _b;
+    const overdue = (await this.list("overdue", opts)).filter((item) => !item.checked);
+    if (overdue.length === 0) return 0;
+    const settings = this.plugin.store.settings;
+    const folder = normalizeFolder(settings.dailyNoteFolder);
+    const date = (_a2 = opts.date) != null ? _a2 : /* @__PURE__ */ new Date();
+    const today = dateKey(date);
+    const path = dailyNotePath(settings, date);
+    await ensureFolder(this.plugin.app.vault, folder);
+    const existing = this.plugin.app.vault.getAbstractFileByPath(path);
+    const file = existing instanceof import_obsidian.TFile ? existing : await this.plugin.app.vault.create(path, `# ${today}
+
+`);
+    const grouped = /* @__PURE__ */ new Map();
+    for (const task of overdue) {
+      const group = (_b = grouped.get(task.date)) != null ? _b : [];
+      group.push(`- [ ] ${task.text}\uFF08\u6765\u81EA \`${task.path}\`\uFF09`);
+      grouped.set(task.date, group);
+    }
+    const lines = [`## \u9057\u7559\u5F85\u529E \xB7 ${today}`, ""];
+    for (const [date2, items] of grouped) {
+      lines.push(`### ${date2}`, ...items, "");
+    }
+    await this.plugin.app.vault.process(file, (data) => `${data.trimEnd()}
+
+${lines.join("\n")}`);
+    return overdue.length;
+  }
+};
 
 // src/tracking/tracker.ts
+var import_obsidian2 = require("obsidian");
 function countWords(text) {
   var _a2, _b;
   const cjk = ((_a2 = text.match(/[\u3400-\u9fff]/g)) != null ? _a2 : []).length;
@@ -270,12 +379,12 @@ var Tracker = class {
     }
     this.plugin.registerEvent(
       vault.on("create", (file) => {
-        if (file instanceof import_obsidian.TFile) void this.onCreate(file);
+        if (file instanceof import_obsidian2.TFile) void this.onCreate(file);
       })
     );
     this.plugin.registerEvent(
       vault.on("modify", (file) => {
-        if (file instanceof import_obsidian.TFile) this.scheduleModify(file);
+        if (file instanceof import_obsidian2.TFile) this.scheduleModify(file);
       })
     );
     this.plugin.registerEvent(
@@ -705,7 +814,7 @@ var EN = {
   "\u9017\u53F7\u5206\u9694\uFF1B\u5E26\u8FD9\u4E9B\u6807\u7B7E\u7684\u7B14\u8BB0\u5BF9 Agent \u4E0D\u53EF\u8BFB\u3002": "Comma separated; notes with these tags are unreadable to agents.",
   "Agent \u6743\u9650\uFF08\u53EF\u9009\uFF09": "Agent permissions (optional)",
   "Agent \u5DE5\u4F5C\u6A21\u5F0F": "Agent work mode",
-  "\u9009\u62E9\u53EA\u8BFB\u3001\u8349\u7A3F\u3001\u786E\u8BA4\u540E\u5199\u5165\u6216\u81EA\u52A8\u6267\u884C\uFF1B\u5B9E\u9645\u6743\u9650\u4ECD\u53D7\u4E0B\u65B9\u5F00\u5173\u7EA6\u675F\u3002": "Choose read-only, draft, confirm-before-write, or automatic execution; detailed switches still apply.",
+  "\u9009\u62E9\u53EA\u8BFB\u3001\u8349\u7A3F\u3001\u786E\u8BA4\u540E\u5199\u5165\u6216\u81EA\u52A8\u6267\u884C\uFF1B\u300C\u786E\u8BA4\u540E\u5199\u5165\u300D\u6863\u4E0B Agent \u7684\u5199\u64CD\u4F5C\u4F1A\u6302\u8D77\u4E3A\u5F85\u5BA1\u9879\uFF0C\u5728\u770B\u677F\u300C\u5F85\u5BA1\u5199\u5165\u300D\u4E2D\u91C7\u7EB3\u540E\u624D\u843D\u76D8\u3002\u5B9E\u9645\u6743\u9650\u4ECD\u53D7\u4E0B\u65B9\u5F00\u5173\u7EA6\u675F\u3002": "Choose read-only, draft, confirm-before-write, or automatic; in confirm mode agent writes are held as pending items and only applied after you accept them in the dashboard's Pending writes card. The switches below remain hard limits.",
   "\u53EA\u8BFB": "Read-only",
   "\u8349\u7A3F": "Draft",
   "\u786E\u8BA4\u540E\u5199\u5165": "Confirm before writing",
@@ -824,6 +933,29 @@ var EN = {
   "\u6708\u62A5": "Monthly",
   "Agent \u53D8\u66F4\u5BA1\u67E5": "Agent change review",
   "\u6682\u65E0 Agent \u53D8\u66F4\u8BB0\u5F55\u3002": "No agent changes yet.",
+  "\u5F85\u5BA1\u5199\u5165 \xB7 {n}": "Pending writes \xB7 {n}",
+  "\u300C\u786E\u8BA4\u540E\u5199\u5165\u300D\u6863\u4E0B\uFF0CAgent \u7684\u5199\u64CD\u4F5C\u6302\u8D77\u5728\u8FD9\u91CC\uFF0C\u91C7\u7EB3\u540E\u624D\u771F\u6B63\u843D\u76D8\uFF1B\u9A73\u56DE\u5219\u4E22\u5F03\u3002": "In confirm mode agent writes are held here; accept to apply them to disk, reject to discard.",
+  "\u6CA1\u6709\u6302\u8D77\u7684\u5F85\u5BA1\u5199\u5165\u3002": "No pending writes.",
+  "\u9884\u89C8\u5E76\u5BA1\u6279": "Preview & review",
+  "\u5F85\u5BA1\u5199\u5165": "pending write",
+  "\u9A73\u56DE\u4E22\u5F03": "Reject & discard",
+  "\u91C7\u7EB3\u5199\u5165": "Accept & write",
+  "\u5F53\u524D\u5185\u5BB9\uFF08\u672A\u91C7\u7EB3\uFF09": "Current content (not accepted)",
+  "\u91C7\u7EB3\u540E\u5185\u5BB9\uFF08\u672A\u843D\u76D8\uFF09": "Content if accepted (not on disk)",
+  "\u5DF2\u91C7\u7EB3\uFF0C\u5199\u5165\u5DF2\u843D\u76D8": "Accepted; write applied to disk",
+  "\u5DF2\u9A73\u56DE\uFF0C\u672A\u5199\u5165\u4EFB\u4F55\u5185\u5BB9": "Rejected; nothing was written",
+  "\u52FE\u9009\u5F85\u529E": "Task check",
+  "\u9057\u7559\u5F85\u529E\u5FEB\u7167": "Overdue task snapshot",
+  "\u9A73\u56DE": "Reject",
+  "\u3002\u8349\u7A3F\u9700\u624B\u52A8\u5BA1\u6838\uFF1B\u300C\u786E\u8BA4\u540E\u5199\u5165\u300D\u6863\u4E0B Agent \u7684\u5199\u64CD\u4F5C\u4F1A\u6302\u8D77\u5728\u300C\u5F85\u5BA1\u5199\u5165\u300D\u5217\u8868\uFF0C\u91C7\u7EB3\u540E\u624D\u843D\u76D8\uFF1B\u300C\u81EA\u52A8\u6267\u884C\u300D\u6863\u4E0D\u6302\u8D77\u3002": ". Drafts need manual review; in confirm mode agent writes are held in the Pending writes list until accepted; automatic mode applies them directly.",
+  "confirm \u6A21\u5F0F\u4E0B\u5199\u5165\u5DF2\u6302\u8D77\u5F85\u5BA1\uFF1A{path}": "Write held for review in confirm mode: {path}",
+  "readonly \u6A21\u5F0F\u62D2\u7EDD\u5199\u5165\uFF1A\u64CD\u4F5C {operation} \u4E0D\u88AB\u5141\u8BB8": "Read-only mode refuses writes: operation {operation} is not allowed",
+  "\u5F85\u5BA1\u5199\u5165\u5DF2\u91C7\u7EB3\u5E76\u843D\u76D8\uFF1A{path}": "Pending write accepted and applied: {path}",
+  "\u5F85\u5BA1\u5199\u5165\u5DF2\u9A73\u56DE\u5E76\u4E22\u5F03\uFF1A{path}": "Pending write rejected and discarded: {path}",
+  "\u672A\u77E5\u7684\u5F85\u5BA1\u5199\u5165\u7C7B\u578B\uFF1A{kind}": "Unknown pending write kind: {kind}",
+  "\u8BB0\u4E00\u6761\u901F\u8BB0\u5230 {path}": "Add a memo to {path}",
+  "\u5C06 {n} \u6761\u9057\u7559\u5F85\u529E\u5199\u5165 {path}": "Copy {n} overdue tasks into {path}",
+  "\u6CA1\u6709\u9700\u8981\u8BB0\u5F55\u7684\u9057\u7559\u5F85\u529E": "No overdue tasks to record",
   "\u5C40\u90E8\u4FEE\u6539": "Patch",
   "\u5C5E\u6027": "Frontmatter",
   "\u65B0\u5EFA/\u8986\u76D6": "Create/overwrite",
@@ -1021,6 +1153,31 @@ function findSection(text, heading, index) {
   }
   return { start: chosen.line + 1, end, lines };
 }
+function applyFrontmatterUpdate(text, updates) {
+  var _a2;
+  const lines = text.split("\n");
+  let start = -1;
+  let end = -1;
+  if (((_a2 = lines[0]) == null ? void 0 : _a2.trim()) === "---") {
+    for (let i = 1; i < lines.length; i += 1) {
+      if (lines[i].trim() === "---") {
+        end = i;
+        break;
+      }
+    }
+    if (end < 0) throw new Error("frontmatter \u672A\u95ED\u5408");
+    start = 1;
+  }
+  const block = start >= 0 ? lines.slice(start, end) : [];
+  for (const [key, value] of Object.entries(updates)) {
+    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const targetIndex = block.findIndex((line) => new RegExp(`^${escaped}\\s*:`).test(line));
+    const replacement = Array.isArray(value) ? value.length ? [`${key}:`, ...value.map((item) => `  - ${JSON.stringify(String(item))}`)] : [`${key}: []`] : [`${key}: ${JSON.stringify(value)}`];
+    if (targetIndex >= 0) block.splice(targetIndex, 1, ...replacement);
+    else block.push(...replacement);
+  }
+  return start >= 0 ? [...lines.slice(0, start), ...block, ...lines.slice(end)].join("\n") : ["---", ...block, "---", "", ...lines].join("\n");
+}
 var AGENT_API_VERSION = 1;
 var ApiError = class extends Error {
   constructor(code, message, status = 400) {
@@ -1030,7 +1187,7 @@ var ApiError = class extends Error {
   }
 };
 function safeAgentPath(input) {
-  const path = (0, import_obsidian2.normalizePath)(String(input != null ? input : "")).replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+/g, "/");
+  const path = (0, import_obsidian3.normalizePath)(String(input != null ? input : "")).replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+/g, "/");
   if (!path) throw new ApiError("EMPTY_PATH", "\u8DEF\u5F84\u4E0D\u80FD\u4E3A\u7A7A");
   if (path.split("/").some((part) => part === ".." || part === ".")) {
     throw new ApiError("FORBIDDEN", "\u975E\u6CD5\u8DEF\u5F84\uFF1A\u4E0D\u5141\u8BB8 . \u6216 ..");
@@ -1104,7 +1261,7 @@ var AgentApi = class {
   }
   assertOperation(operation) {
     if (!isOperationAllowed(operation, this.plugin.store.settings)) {
-      const message = tf("\u64CD\u4F5C {operation} \u672A\u88AB\u5141\u8BB8", { operation });
+      const message = operation !== "read" && this.plugin.store.settings.agentWorkMode === "readonly" ? tf("readonly \u6A21\u5F0F\u62D2\u7EDD\u5199\u5165\uFF1A\u64CD\u4F5C {operation} \u4E0D\u88AB\u5141\u8BB8", { operation }) : tf("\u64CD\u4F5C {operation} \u672A\u88AB\u5141\u8BB8", { operation });
       this.plugin.store.logDiagnostic("security", message);
       throw new ApiError("OPERATION_DENIED", message, 403);
     }
@@ -1121,6 +1278,109 @@ var AgentApi = class {
   }
   isAllowedByMode(path) {
     return isPathAllowedByMode(path, this.plugin.store.settings);
+  }
+  // -------------------------------------------------------------------------
+  // confirm 工作模式：写路径挂起为待审草稿（权限检查 → confirm 拦截 → 快照 → 落盘）
+  // -------------------------------------------------------------------------
+  isConfirmMode() {
+    return this.plugin.store.settings.agentWorkMode === "confirm";
+  }
+  /**
+   * 把一次写入挂起为待审条目并返回给调用方；不落盘、不建目录、不写快照。
+   * request 保存原请求，采纳时经 replayPending 走与直接写相同的落盘函数。
+   */
+  holdForConfirm(tool, path, kind, args, before, after) {
+    const id = `pw-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+    this.plugin.store.addPendingWrite({
+      id,
+      time: (/* @__PURE__ */ new Date()).toISOString(),
+      tool,
+      agent: this.currentAgent || "agent",
+      path,
+      request: { kind, args },
+      before,
+      after
+    });
+    const message = tf("confirm \u6A21\u5F0F\u4E0B\u5199\u5165\u5DF2\u6302\u8D77\u5F85\u5BA1\uFF1A{path}", { path });
+    this.plugin.store.logDiagnostic("storage", message, `${id} \xB7 ${tool}`);
+    return { pending: true, pendingId: id, path, message };
+  }
+  /** 待审列表（不含大段预览内容，供 Agent / UI 展示）。 */
+  listPendingWrites(limit = 50) {
+    var _a2;
+    return ((_a2 = this.plugin.store.data.pendingWrites) != null ? _a2 : []).slice(0, Math.max(1, Math.min(limit, 100))).map(({ id, time, tool, agent, path }) => ({ id, time, tool, agent, path }));
+  }
+  getPendingWrite(id) {
+    var _a2, _b;
+    return (_b = ((_a2 = this.plugin.store.data.pendingWrites) != null ? _a2 : []).find((item) => item.id === id)) != null ? _b : null;
+  }
+  /** 采纳：按挂起时保存的原请求重放对应的落盘函数（重放前再次过门禁）。 */
+  async approvePendingWrite(id) {
+    const record = this.getPendingWrite(id);
+    if (!record) throw new ApiError("NOT_FOUND", `\u5F85\u5BA1\u5199\u5165\u4E0D\u5B58\u5728\uFF1A${id}`, 404);
+    await this.replayPending(record.request);
+    this.plugin.store.removePendingWrite(id);
+    const message = tf("\u5F85\u5BA1\u5199\u5165\u5DF2\u91C7\u7EB3\u5E76\u843D\u76D8\uFF1A{path}", { path: record.path });
+    this.plugin.store.logDiagnostic("storage", message, id);
+    return { path: record.path };
+  }
+  /** 驳回：丢弃挂起请求（不落盘），并记安全诊断。 */
+  rejectPendingWrite(id) {
+    const removed = this.plugin.store.removePendingWrite(id);
+    if (!removed) throw new ApiError("NOT_FOUND", `\u5F85\u5BA1\u5199\u5165\u4E0D\u5B58\u5728\uFF1A${id}`, 404);
+    const message = tf("\u5F85\u5BA1\u5199\u5165\u5DF2\u9A73\u56DE\u5E76\u4E22\u5F03\uFF1A{path}", { path: removed.path });
+    this.plugin.store.logDiagnostic("security", message, `${removed.id} \xB7 ${removed.tool}`);
+    return { ok: true, path: removed.path };
+  }
+  /** 采纳时的重放分发：各 kind 与下方写方法一一对应，bypassConfirm=true。 */
+  async replayPending(request) {
+    var _a2;
+    const args = request.args;
+    const str = (value) => String(value != null ? value : "");
+    switch (request.kind) {
+      case "write_note":
+        await this.writeNote(
+          str(args.path),
+          str(args.content),
+          str(args.mode) || "create",
+          true
+        );
+        return;
+      case "patch_note":
+        await this.patchNote(args.input, true);
+        return;
+      case "frontmatter":
+        await this.updateFrontmatter(
+          str(args.path),
+          (_a2 = args.updates) != null ? _a2 : {},
+          args.ifMatch ? str(args.ifMatch) : void 0,
+          true
+        );
+        return;
+      case "knowledge":
+        await this.addKnowledge(args.input, true);
+        return;
+      case "memo":
+        await this.addMemo(
+          str(args.text),
+          Array.isArray(args.tags) ? args.tags.map(String) : [],
+          args.sourcePath ? str(args.sourcePath) : void 0,
+          typeof args.sourceLine === "number" ? args.sourceLine : void 0,
+          true
+        );
+        return;
+      case "worklog":
+        await this.recordWorkLog(args.input, true);
+        return;
+      case "task_complete":
+        await this.completeTask(str(args.path), Number(args.line), true);
+        return;
+      case "task_snapshot":
+        await this.snapshotTasks(true);
+        return;
+      default:
+        throw new ApiError("INVALID_PENDING", `\u672A\u77E5\u7684\u5F85\u5BA1\u5199\u5165\u7C7B\u578B\uFF1A${request.kind}`, 400);
+    }
   }
   cacheTags(file) {
     var _a2, _b, _c, _d;
@@ -1226,29 +1486,46 @@ var AgentApi = class {
     const safe = safeAgentPath(path);
     this.assertPathAllowed(safe, "read");
     const file = this.vault.getAbstractFileByPath(safe);
-    if (!(file instanceof import_obsidian2.TFile)) throw new Error(`\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`);
+    if (!(file instanceof import_obsidian3.TFile)) throw new Error(`\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`);
     if (this.hasDeniedTag(file)) throw new Error(`\u8BBF\u95EE\u88AB\u62D2\u7EDD\uFF1A${safe} \u5E26\u6709\u7981\u6B62\u8BBF\u95EE\u7684\u6807\u7B7E`);
     return { path: safe, content: await this.vault.read(file) };
   }
-  /** 新建、覆盖或追加笔记。 */
-  async writeNote(path, content, mode = "create") {
+  /** 新建、覆盖或追加笔记。confirm 档挂起为待审写入（bypassConfirm 仅采纳重放时使用）。 */
+  async writeNote(path, content, mode = "create", bypassConfirm = false) {
     const safe = safeAgentPath(path);
     this.assertPathAllowed(
       safe,
       mode === "overwrite" ? "overwrite" : mode === "append" ? "patch" : "create"
     );
     const folder = safe.includes("/") ? safe.slice(0, safe.lastIndexOf("/")) : "";
-    await ensureFolder(this.vault, folder);
     const existing = this.vault.getAbstractFileByPath(safe);
     if (mode === "create" && existing) throw new Error(`\u7B14\u8BB0\u5DF2\u5B58\u5728\uFF1A${safe}`);
+    if (!bypassConfirm && this.isConfirmMode()) {
+      const previous = existing instanceof import_obsidian3.TFile ? await this.vault.read(existing) : "";
+      const after = mode === "append" && existing instanceof import_obsidian3.TFile ? `${previous.trimEnd()}
+
+${content}` : content;
+      return {
+        ...this.holdForConfirm(
+          "write_note",
+          safe,
+          "write_note",
+          { path: safe, content, mode },
+          previous,
+          after
+        ),
+        path: safe
+      };
+    }
+    await ensureFolder(this.vault, folder);
     this.plugin.tracker.markAgentWrite(safe);
-    if (mode === "append" && existing instanceof import_obsidian2.TFile) {
+    if (mode === "append" && existing instanceof import_obsidian3.TFile) {
       const previous = await this.vault.read(existing);
       this.backupNote(safe, previous);
       await this.vault.modify(existing, `${previous.trimEnd()}
 
 ${content}`);
-    } else if (existing instanceof import_obsidian2.TFile) {
+    } else if (existing instanceof import_obsidian3.TFile) {
       const previous = await this.vault.read(existing);
       this.backupNote(safe, previous);
       await this.vault.modify(existing, content);
@@ -1260,8 +1537,22 @@ ${content}`);
     });
     return { path: safe };
   }
-  /** 记一条速记，写入当天日记。 */
-  async addMemo(text, tags = [], sourcePath, sourceLine) {
+  /** 记一条速记，写入当天日记。confirm 档挂起为待审写入（预览为条目摘要）。 */
+  async addMemo(text, tags = [], sourcePath, sourceLine, bypassConfirm = false) {
+    if (!bypassConfirm && this.isConfirmMode()) {
+      const daily = dailyNotePath(this.plugin.store.settings, /* @__PURE__ */ new Date());
+      const tagStr = tags.length ? `
+\u6807\u7B7E\uFF1A${tags.map((tag) => `#${String(tag).replace(/^#/, "")}`).join(" ")}` : "";
+      return this.holdForConfirm(
+        "add_memo",
+        daily,
+        "memo",
+        { text, tags, sourcePath, sourceLine },
+        "",
+        tf("\u8BB0\u4E00\u6761\u901F\u8BB0\u5230 {path}", { path: daily }) + `
+${String(text != null ? text : "").trim()}${tagStr}`
+      );
+    }
     return this.plugin.memos.add(
       text,
       tags,
@@ -1338,7 +1629,7 @@ ${content}`);
     const safe = safeAgentPath(path);
     this.assertPathAllowed(safe, "read");
     const file = this.vault.getAbstractFileByPath(safe);
-    if (!(file instanceof import_obsidian2.TFile)) throw new Error(`\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`);
+    if (!(file instanceof import_obsidian3.TFile)) throw new Error(`\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`);
     const cache = this.plugin.app.metadataCache.getFileCache(file);
     return {
       path: safe,
@@ -1354,7 +1645,7 @@ ${content}`);
     const safe = safeAgentPath(path);
     this.assertPathAllowed(safe, "read");
     const file = this.vault.getAbstractFileByPath(safe);
-    if (!(file instanceof import_obsidian2.TFile)) throw new Error(`\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`);
+    if (!(file instanceof import_obsidian3.TFile)) throw new Error(`\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`);
     const resolved = (_a2 = this.plugin.app.metadataCache.resolvedLinks) != null ? _a2 : {};
     const allowed = (target) => !this.isDeniedPath(target) && target !== safe;
     const outgoing = include.includes("outgoing") ? Object.keys((_b = resolved[safe]) != null ? _b : {}).filter(allowed) : [];
@@ -1366,13 +1657,13 @@ ${content}`);
     }
     return { path: safe, outgoing, backlinks, sameTag };
   }
-  /** 按标题或文本片段局部修改笔记；支持 dryRun、乐观锁、快照与 diff 统计。 */
-  async patchNote(input) {
+  /** 按标题或文本片段局部修改笔记；支持 dryRun、乐观锁、快照与 diff 统计。confirm 档挂起为待审写入。 */
+  async patchNote(input, bypassConfirm = false) {
     var _a2, _b, _c, _d, _e;
     const safe = safeAgentPath(input.path);
     this.assertPathAllowed(safe, "patch");
     const file = this.vault.getAbstractFileByPath(safe);
-    if (!(file instanceof import_obsidian2.TFile)) throw new ApiError("NOT_FOUND", `\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`, 404);
+    if (!(file instanceof import_obsidian3.TFile)) throw new ApiError("NOT_FOUND", `\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`, 404);
     const before = await this.vault.read(file);
     if (typeof input.expectedMtime === "number" && input.expectedMtime !== file.stat.mtime) {
       throw new ApiError("VERSION_CONFLICT", `\u6587\u4EF6\u5DF2\u88AB\u4FEE\u6539\uFF1A${safe}\uFF0C\u8BF7\u91CD\u65B0\u8BFB\u53D6\u540E\u518D\u5199\u5165`, 409);
@@ -1387,7 +1678,7 @@ ${content}`);
       } catch (error) {
         throw new ApiError("INVALID_JSON", "update_frontmatter \u7684 content \u5FC5\u987B\u662F JSON \u5BF9\u8C61\u5B57\u7B26\u4E32");
       }
-      const result2 = await this.updateFrontmatter(safe, updates, input.ifMatch);
+      const result2 = await this.updateFrontmatter(safe, updates, input.ifMatch, bypassConfirm);
       return { ...result2, mtime: file.stat.mtime, diffSummary: { addedLines: 0, removedLines: 0 } };
     }
     const content = String((_b = input.content) != null ? _b : "");
@@ -1445,6 +1736,16 @@ ${content}
         createdHeading
       };
     }
+    if (!bypassConfirm && this.isConfirmMode()) {
+      return {
+        ...this.holdForConfirm("patch_note", safe, "patch_note", { input }, before, result),
+        path: safe,
+        version: versionOf(result),
+        mtime: file.stat.mtime,
+        diffSummary,
+        createdHeading
+      };
+    }
     const snapshotId = this.backupNote(safe, before);
     this.plugin.tracker.markAgentWrite(safe);
     await this.vault.process(file, () => result);
@@ -1460,47 +1761,27 @@ ${content}
       createdHeading
     };
   }
-  /** 单独更新 frontmatter 字段，不动正文。 */
-  async updateFrontmatter(path, updates, ifMatch) {
+  /** 单独更新 frontmatter 字段，不动正文。confirm 档挂起为待审写入。 */
+  async updateFrontmatter(path, updates, ifMatch, bypassConfirm = false) {
     const safe = safeAgentPath(path);
     this.assertPathAllowed(safe, "patch");
     const file = this.vault.getAbstractFileByPath(safe);
-    if (!(file instanceof import_obsidian2.TFile)) throw new Error(`\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`);
+    if (!(file instanceof import_obsidian3.TFile)) throw new Error(`\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`);
     const before = await this.vault.read(file);
     if (ifMatch && versionOf(before) !== ifMatch) {
       throw new Error(`\u7248\u672C\u51B2\u7A81\uFF1A${safe} \u5DF2\u88AB\u4FEE\u6539\uFF0C\u8BF7\u91CD\u65B0\u8BFB\u53D6\u540E\u518D\u5199\u5165`);
     }
+    const result = applyFrontmatterUpdate(before, updates);
+    if (!bypassConfirm && this.isConfirmMode()) {
+      return {
+        ...this.holdForConfirm("frontmatter", safe, "frontmatter", { path: safe, updates, ifMatch }, before, result),
+        path: safe,
+        version: versionOf(result)
+      };
+    }
     this.backupNote(safe, before);
     this.plugin.tracker.markAgentWrite(safe);
-    let result = "";
-    await this.vault.process(file, (data) => {
-      var _a2;
-      const lines = data.split("\n");
-      let start = -1;
-      let end = -1;
-      if (((_a2 = lines[0]) == null ? void 0 : _a2.trim()) === "---") {
-        for (let i = 1; i < lines.length; i += 1) {
-          if (lines[i].trim() === "---") {
-            end = i;
-            break;
-          }
-        }
-        if (end < 0) throw new Error("frontmatter \u672A\u95ED\u5408");
-        start = 1;
-      }
-      const block = start >= 0 ? lines.slice(start, end) : [];
-      for (const [key, value] of Object.entries(updates)) {
-        const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const targetIndex = block.findIndex(
-          (line) => new RegExp(`^${escaped}\\s*:`).test(line)
-        );
-        const replacement = Array.isArray(value) ? value.length ? [`${key}:`, ...value.map((item) => `  - ${JSON.stringify(String(item))}`)] : [`${key}: []`] : [`${key}: ${JSON.stringify(value)}`];
-        if (targetIndex >= 0) block.splice(targetIndex, 1, ...replacement);
-        else block.push(...replacement);
-      }
-      result = start >= 0 ? [...lines.slice(0, start), ...block, ...lines.slice(end)].join("\n") : ["---", ...block, "---", "", ...lines].join("\n");
-      return result;
-    });
+    await this.vault.process(file, () => result);
     return { path: safe, version: versionOf(result) };
   }
   logToolCall(tool, agent, path) {
@@ -1543,11 +1824,20 @@ ${content}
     return inferCategory(title, content, tags, this.categories());
   }
   async listTasks(scope = "all") {
-    return this.plugin.tasks.list(scope);
+    const settings = this.plugin.store.settings;
+    return this.plugin.tasks.list(scope, {
+      accessible: (target) => !target || isPathAllowedByMode(target, settings)
+    });
   }
-  async completeTask(path, line) {
+  async completeTask(path, line, bypassConfirm = false) {
     const safe = safeAgentPath(path);
     this.assertPathAllowed(safe, "patch");
+    if (!bypassConfirm && this.isConfirmMode()) {
+      const file = this.vault.getAbstractFileByPath(safe);
+      const before = file instanceof import_obsidian3.TFile ? await this.vault.read(file) : "";
+      const after = before.split("\n").map((item, index) => index === line - 1 ? toggleCheckboxLine(item) : item).join("\n");
+      return this.holdForConfirm("complete_task", safe, "task_complete", { path: safe, line }, before, after);
+    }
     this.plugin.tracker.markAgentWrite(safe);
     await this.plugin.tasks.complete(safe, line);
     return { ok: true };
@@ -1557,13 +1847,18 @@ ${content}
     this.assertPathAllowed(safe, "read");
     return { id: await this.plugin.tasks.delegate(safe, line) };
   }
-  async snapshotTasks() {
+  async snapshotTasks(bypassConfirm = false) {
     const settings = this.plugin.store.settings;
-    const folder = normalizeFolder(settings.dailyNoteFolder);
     const now = /* @__PURE__ */ new Date();
-    const name = settings.dailyNoteFormat.replace(/YYYY/g, String(now.getFullYear())).replace(/MM/g, String(now.getMonth() + 1).padStart(2, "0")).replace(/DD/g, String(now.getDate()).padStart(2, "0"));
-    this.assertPathAllowed(folder ? `${folder}/${name}.md` : `${name}.md`, "patch");
-    return { count: await this.plugin.tasks.snapshot() };
+    const path = dailyNotePath(settings, now);
+    this.assertPathAllowed(path, "patch");
+    const accessible = (target) => isPathAllowedByMode(target, settings);
+    if (!bypassConfirm && this.isConfirmMode()) {
+      const overdue = await this.plugin.tasks.list("overdue", { accessible });
+      const summary = overdue.length ? tf("\u5C06 {n} \u6761\u9057\u7559\u5F85\u529E\u5199\u5165 {path}", { n: overdue.length, path }) : t("\u6CA1\u6709\u9700\u8981\u8BB0\u5F55\u7684\u9057\u7559\u5F85\u529E");
+      return this.holdForConfirm("snapshot_tasks", path, "task_snapshot", { date: now.toISOString() }, "", summary);
+    }
+    return { count: await this.plugin.tasks.snapshot({ accessible, date: now }) };
   }
   /** 最近 Agent 变更及其快照 id。 */
   getAgentChanges(limit = 20) {
@@ -1575,7 +1870,7 @@ ${content}
     const safe = safeAgentPath(snapshot.path);
     this.assertPathAllowed(safe, "overwrite");
     const file = this.vault.getAbstractFileByPath(safe);
-    if (!(file instanceof import_obsidian2.TFile)) throw new ApiError("NOT_FOUND", `\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`, 404);
+    if (!(file instanceof import_obsidian3.TFile)) throw new ApiError("NOT_FOUND", `\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`, 404);
     await restoreBackup(this.plugin, file, snapshotId);
     return { path: safe, reverted: true };
   }
@@ -1601,7 +1896,7 @@ ${content}
    * 记录一次 Agent 工作会话。同时写入 agent-logs/YYYY-MM-DD.md 与 data.json，
    * 让每天的工作过程成为可检索的沉淀。
    */
-  async recordWorkLog(input) {
+  async recordWorkLog(input, bypassConfirm = false) {
     const now = /* @__PURE__ */ new Date();
     const log = {
       id: `${now.getTime().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
@@ -1617,14 +1912,8 @@ ${content}
       tags: Array.isArray(input.tags) ? input.tags.map((tag) => String(tag).replace(/^#/, "")) : []
     };
     const folder = normalizeFolder(this.plugin.store.settings.workLogFolder);
-    this.assertPathAllowed(folder ? `${folder}/${log.date}.md` : `${log.date}.md`, "create");
-    await ensureFolder(this.vault, folder);
     const path = folder ? `${folder}/${log.date}.md` : `${log.date}.md`;
-    const abstract = this.vault.getAbstractFileByPath(path);
-    const file = abstract instanceof import_obsidian2.TFile ? abstract : await this.vault.create(path, `# \u5DE5\u4F5C\u65E5\u5FD7 ${log.date}
-
-`);
-    const previous = await this.vault.read(file);
+    this.assertPathAllowed(path, "create");
     const block = [
       `## ${log.time} \xB7 ${log.agent}`,
       "",
@@ -1641,6 +1930,28 @@ ${content}
       log.tags.length ? `\u6807\u7B7E\uFF1A${log.tags.map((tag) => `#${tag}`).join(" ")}` : "",
       ""
     ].join("\n");
+    if (!bypassConfirm && this.isConfirmMode()) {
+      const abstract2 = this.vault.getAbstractFileByPath(path);
+      const previous2 = abstract2 instanceof import_obsidian3.TFile ? await this.vault.read(abstract2) : `# \u5DE5\u4F5C\u65E5\u5FD7 ${log.date}
+
+`;
+      return this.holdForConfirm(
+        "record_work_log",
+        path,
+        "worklog",
+        { input },
+        previous2,
+        `${previous2.trimEnd()}
+
+${block}`
+      );
+    }
+    await ensureFolder(this.vault, folder);
+    const abstract = this.vault.getAbstractFileByPath(path);
+    const file = abstract instanceof import_obsidian3.TFile ? abstract : await this.vault.create(path, `# \u5DE5\u4F5C\u65E5\u5FD7 ${log.date}
+
+`);
+    const previous = await this.vault.read(file);
     this.plugin.tracker.markAgentWrite(path);
     await this.vault.modify(file, `${previous.trimEnd()}
 
@@ -1651,8 +1962,8 @@ ${block}`);
     this.plugin.store.addWorkLog(log);
     return log;
   }
-  /** 把一段知识沉淀成带 frontmatter 的独立笔记。 */
-  async addKnowledge(input) {
+  /** 把一段知识沉淀成带 frontmatter 的独立笔记。confirm 档挂起为待审写入。 */
+  async addKnowledge(input, bypassConfirm = false) {
     var _a2, _b, _c, _d, _e;
     const title = String(input.title || "\u672A\u547D\u540D\u7B14\u8BB0").trim();
     const safeTitle = title.replace(/[\\/:*?"<>|#\[\]]/g, "-").slice(0, 80) || "\u672A\u547D\u540D\u7B14\u8BB0";
@@ -1673,7 +1984,6 @@ ${block}`);
     const sub = normalizeFolder((_d = input.folder) != null ? _d : "").split("/").filter((part) => part && part !== "." && part !== "..").join("/");
     const folder = [base, category, sub].filter(Boolean).join("/");
     this.assertPathAllowed(folder ? `${folder}/placeholder.md` : "placeholder.md", "create");
-    await ensureFolder(this.vault, folder);
     const today = dateKey(/* @__PURE__ */ new Date());
     let fileName = `${today}-${safeTitle}.md`;
     let path = folder ? `${folder}/${fileName}` : fileName;
@@ -1726,6 +2036,13 @@ ${block}`);
       ""
     ].join("\n");
     this.assertPathAllowed(path, "create");
+    if (!bypassConfirm && this.isConfirmMode()) {
+      return {
+        ...this.holdForConfirm("add_knowledge", path, "knowledge", { input }, "", doc),
+        path
+      };
+    }
+    await ensureFolder(this.vault, folder);
     this.plugin.tracker.markAgentWrite(path);
     await this.vault.create(path, doc);
     this.plugin.store.updateDay(today, (day) => {
@@ -1744,6 +2061,7 @@ ${block}`);
   }
   /** 智能体开工时一次拿全需要的上下文。 */
   getDailyContext(days = 7) {
+    var _a2;
     return {
       generatedAt: dateKey(/* @__PURE__ */ new Date()),
       today: this.getToday(),
@@ -1753,7 +2071,8 @@ ${block}`);
       notes: this.listNotes("", 10),
       agentTasks: this.plugin.store.data.memos.filter(
         (memo) => memo.tags.includes("to-agent") && !memo.converted && !memo.archived
-      )
+      ),
+      pendingWrites: ((_a2 = this.plugin.store.data.pendingWrites) != null ? _a2 : []).length
     };
   }
   /** 认领一条 #to-agent 任务，避免被重复处理。 */
@@ -1789,7 +2108,7 @@ ${block}`);
 };
 
 // src/agent/server.ts
-var import_obsidian3 = require("obsidian");
+var import_obsidian4 = require("obsidian");
 
 // src/agent/security.ts
 function redactAuditPath(path) {
@@ -1833,7 +2152,7 @@ var AgentServer = class {
     if (!desired.enabled) return;
     const http = getHttp();
     if (!http) {
-      new import_obsidian3.Notice("Agent API \u9700\u8981\u684C\u9762\u7248 Obsidian\uFF08\u79FB\u52A8\u7AEF\u65E0 Node http\uFF09");
+      new import_obsidian4.Notice("Agent API \u9700\u8981\u684C\u9762\u7248 Obsidian\uFF08\u79FB\u52A8\u7AEF\u65E0 Node http\uFF09");
       return;
     }
     const server = http.createServer((request, response) => {
@@ -1849,9 +2168,9 @@ var AgentServer = class {
       });
       this.server = server;
       this.running = desired;
-      new import_obsidian3.Notice(`Agent API \u5DF2\u542F\u52A8\uFF1Ahttp://127.0.0.1:${desired.port}`);
+      new import_obsidian4.Notice(`Agent API \u5DF2\u542F\u52A8\uFF1Ahttp://127.0.0.1:${desired.port}`);
     } catch (error) {
-      new import_obsidian3.Notice(`Agent API \u542F\u52A8\u5931\u8D25\uFF08\u7AEF\u53E3 ${desired.port}\uFF09\uFF1A${String(error)}`);
+      new import_obsidian4.Notice(`Agent API \u542F\u52A8\u5931\u8D25\uFF08\u7AEF\u53E3 ${desired.port}\uFF09\uFF1A${String(error)}`);
       this.running = null;
       this.server = null;
     }
@@ -2410,6 +2729,7 @@ var DEFAULT_DATA = {
   toolCalls: [],
   snapshots: [],
   reviewedChanges: {},
+  pendingWrites: [],
   diagnostics: [],
   editSessions: {},
   focusSessions: [],
@@ -2475,6 +2795,10 @@ var Store = class {
       toolCalls: Array.isArray(loaded.toolCalls) ? loaded.toolCalls : [],
       snapshots: Array.isArray(loaded.snapshots) ? loaded.snapshots : [],
       reviewedChanges: loaded.reviewedChanges && typeof loaded.reviewedChanges === "object" && !Array.isArray(loaded.reviewedChanges) ? loaded.reviewedChanges : {},
+      // 旧版 data.json 没有该字段时默认空数组，保证升级兼容。
+      pendingWrites: Array.isArray(loaded.pendingWrites) ? loaded.pendingWrites.filter(
+        (item) => item && typeof item === "object" && typeof item.id === "string" && typeof item.path === "string"
+      ) : [],
       diagnostics: Array.isArray(loaded.diagnostics) ? loaded.diagnostics : [],
       editSessions: loaded.editSessions && typeof loaded.editSessions === "object" && !Array.isArray(loaded.editSessions) ? loaded.editSessions : {},
       focusSessions: Array.isArray(loaded.focusSessions) ? loaded.focusSessions : [],
@@ -2608,6 +2932,20 @@ var Store = class {
     this.logDiagnostic("storage", `Agent \u53D8\u66F4\u5DF2\u5BA1\u67E5\uFF1A${decision}`, key);
     this.scheduleSave();
   }
+  /** 挂起一条 confirm 模式的待审写入；超出上限时丢弃最旧的条目。 */
+  addPendingWrite(record) {
+    this.data.pendingWrites.unshift(record);
+    if (this.data.pendingWrites.length > 100) this.data.pendingWrites.length = 100;
+    this.scheduleSave(2e3);
+  }
+  /** 按 id 移除挂起项并返回被移除的记录（找不到返回 undefined）。 */
+  removePendingWrite(id) {
+    const index = this.data.pendingWrites.findIndex((item) => item.id === id);
+    if (index < 0) return void 0;
+    const [removed] = this.data.pendingWrites.splice(index, 1);
+    this.scheduleSave(2e3);
+    return removed;
+  }
   addSnapshot(record) {
     this.data.snapshots.unshift(record);
     if (this.data.snapshots.length > 200) this.data.snapshots.length = 200;
@@ -2621,7 +2959,7 @@ var Store = class {
 };
 
 // src/features/memo.ts
-var import_obsidian4 = require("obsidian");
+var import_obsidian5 = require("obsidian");
 var MemoManager = class {
   constructor(plugin) {
     this.plugin = plugin;
@@ -2644,16 +2982,11 @@ var MemoManager = class {
     };
     this.store.addMemo(memo);
     await this.appendToDailyNote(memo);
-    new import_obsidian4.Notice("\u901F\u8BB0\u5DF2\u8BB0\u5F55");
+    new import_obsidian5.Notice("\u901F\u8BB0\u5DF2\u8BB0\u5F55");
     return memo;
   }
   dailyNotePath(date) {
-    const folder = normalizeFolder(this.store.settings.dailyNoteFolder);
-    const fileName = formatDailyNoteName(
-      this.store.settings.dailyNoteFormat || "YYYY-MM-DD",
-      parseKey(date)
-    );
-    return folder ? `${folder}/${fileName}.md` : `${fileName}.md`;
+    return dailyNotePath(this.store.settings, parseKey(date));
   }
   async appendToDailyNote(memo) {
     const vault = this.plugin.app.vault;
@@ -2661,7 +2994,7 @@ var MemoManager = class {
     const path = this.dailyNotePath(memo.date);
     await ensureFolder(vault, folder);
     const existing = vault.getAbstractFileByPath(path);
-    const file = existing instanceof import_obsidian4.TFile ? existing : await vault.create(path, `# ${memo.date}
+    const file = existing instanceof import_obsidian5.TFile ? existing : await vault.create(path, `# ${memo.date}
 
 `);
     const content = await vault.read(file);
@@ -2708,7 +3041,7 @@ ${callout}`;
   /** 把 data.json 里的最新标签同步回日记 Callout（claim/complete/编辑后调用）。 */
   async syncTags(memo) {
     const file = this.plugin.app.vault.getAbstractFileByPath(this.dailyNotePath(memo.date));
-    if (!(file instanceof import_obsidian4.TFile)) return;
+    if (!(file instanceof import_obsidian5.TFile)) return;
     await this.plugin.app.vault.process(file, (data) => {
       const lines = data.split("\n");
       const range = this.findCalloutRange(lines, memo);
@@ -2720,7 +3053,7 @@ ${callout}`;
   /** 重写或删除日记里的 Callout。nextText 为 null 表示删除整块。 */
   async updateCallout(memo, nextText, oldText) {
     const file = this.plugin.app.vault.getAbstractFileByPath(this.dailyNotePath(memo.date));
-    if (!(file instanceof import_obsidian4.TFile)) return;
+    if (!(file instanceof import_obsidian5.TFile)) return;
     await this.plugin.app.vault.process(file, (data) => {
       const lines = data.split("\n");
       const range = this.findCalloutRange(lines, memo, oldText);
@@ -2749,7 +3082,7 @@ ${callout}`;
     if (tags) memo.tags = tags.map((tag) => tag.replace(/^#/, "")).filter(Boolean);
     await this.updateCallout(memo, clean, oldText);
     this.store.scheduleSave();
-    new import_obsidian4.Notice("\u901F\u8BB0\u5DF2\u66F4\u65B0");
+    new import_obsidian5.Notice("\u901F\u8BB0\u5DF2\u66F4\u65B0");
     return memo;
   }
   /** 删除速记：data.json 与日记 Callout 一起移除。 */
@@ -2760,7 +3093,7 @@ ${callout}`;
     await this.updateCallout(memo, null);
     this.store.data.memos.splice(index, 1);
     this.store.scheduleSave();
-    new import_obsidian4.Notice("\u901F\u8BB0\u5DF2\u5220\u9664");
+    new import_obsidian5.Notice("\u901F\u8BB0\u5DF2\u5220\u9664");
     return true;
   }
   /** 归档/取消归档：只影响列表与积压统计，日记里的历史记录保留。 */
@@ -2774,7 +3107,7 @@ ${callout}`;
 };
 
 // src/features/pomodoro.ts
-var import_obsidian5 = require("obsidian");
+var import_obsidian6 = require("obsidian");
 var DURATION = {
   focus: 25 * 60,
   short: 5 * 60,
@@ -2877,9 +3210,9 @@ var PomodoroManager = class {
         minutes: 25,
         source: "measured"
       });
-      if (!silent) new import_obsidian5.Notice("\u756A\u8304\u5B8C\u6210\uFF0C\u5DF2\u8BB0\u5165 25 \u5206\u949F\u4E13\u6CE8\uFF08\u5B9E\u6D4B\uFF09");
+      if (!silent) new import_obsidian6.Notice("\u756A\u8304\u5B8C\u6210\uFF0C\u5DF2\u8BB0\u5165 25 \u5206\u949F\u4E13\u6CE8\uFF08\u5B9E\u6D4B\uFF09");
     } else if (!silent) {
-      new import_obsidian5.Notice("\u4F11\u606F\u7ED3\u675F");
+      new import_obsidian6.Notice("\u4F11\u606F\u7ED3\u675F");
     }
     this.mode = this.mode === "focus" ? this.completed % 4 === 0 ? "long" : "short" : "focus";
     this.remaining = DURATION[this.mode];
@@ -2896,111 +3229,6 @@ var PomodoroManager = class {
     const seconds = String(this.remaining % 60).padStart(2, "0");
     const mode = this.mode === "focus" ? "\u756A\u8304" : this.mode === "short" ? "\u77ED\u4F11" : "\u957F\u4F11";
     this.statusEl.setText(`${this.running ? "\u25B6" : "\u23F8"} ${mode} ${minutes}:${seconds}`);
-  }
-};
-
-// src/features/tasks.ts
-var import_obsidian6 = require("obsidian");
-var CHECKBOX = /^(\s*[-*+]\s+)\[([ xX])\]\s+(.*)$/;
-var TaskManager = class {
-  constructor(plugin) {
-    this.plugin = plugin;
-  }
-  dateOf(file) {
-    const match = file.path.match(/(\d{4}-\d{2}-\d{2})/);
-    if (match) return match[1];
-    return dateKey(new Date(file.stat.ctime));
-  }
-  async list(scope = "all") {
-    if (scope === "agent") {
-      return this.plugin.store.data.memos.filter((memo) => memo.tags.includes("to-agent") && !memo.converted && !memo.archived).map((memo) => ({
-        path: "",
-        line: 0,
-        text: memo.text,
-        date: memo.date,
-        checked: false,
-        sourcePath: memo.sourcePath,
-        sourceLine: memo.sourceLine,
-        memoId: memo.id
-      }));
-    }
-    const today = dateKey(/* @__PURE__ */ new Date());
-    const result = [];
-    for (const file of this.plugin.app.vault.getMarkdownFiles()) {
-      const text = await this.plugin.app.vault.cachedRead(file);
-      const date = this.dateOf(file);
-      const lines = text.split("\n");
-      for (let index = 0; index < lines.length; index += 1) {
-        const match = lines[index].match(CHECKBOX);
-        if (!match) continue;
-        const checked = match[2].toLowerCase() === "x";
-        if (scope === "today" && date !== today) continue;
-        if (scope === "overdue" && (checked || date >= today)) continue;
-        result.push({
-          path: file.path,
-          line: index + 1,
-          text: match[3].trim(),
-          date,
-          checked
-        });
-      }
-    }
-    return result;
-  }
-  async complete(path, line) {
-    const file = this.plugin.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof import_obsidian6.TFile)) throw new Error(`\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${path}`);
-    await this.plugin.app.vault.process(file, (data) => {
-      const lines = data.split("\n");
-      const index = line - 1;
-      if (index < 0 || index >= lines.length) throw new Error(`\u884C\u53F7\u8D85\u51FA\u8303\u56F4\uFF1A${line}`);
-      lines[index] = lines[index].replace(
-        CHECKBOX,
-        (_full, prefix, state, text) => `${prefix}[x] ${text}`
-      );
-      return lines.join("\n");
-    });
-  }
-  async delegate(path, line) {
-    const tasks = await this.list("all");
-    const task = tasks.find((item) => item.path === path && item.line === line);
-    if (!task) throw new Error(`\u627E\u4E0D\u5230\u5F85\u529E\uFF1A${path}:${line}`);
-    const memo = await this.plugin.memos.add(task.text, ["to-agent"], {
-      path: task.path,
-      line: task.line
-    });
-    if (!memo) throw new Error("\u521B\u5EFA Agent \u4EFB\u52A1\u5931\u8D25");
-    return memo.id;
-  }
-  /** 按需把遗留待办写入当天日记，不默认执行。 */
-  async snapshot() {
-    var _a2;
-    const overdue = (await this.list("overdue")).filter((item) => !item.checked);
-    if (overdue.length === 0) return 0;
-    const settings = this.plugin.store.settings;
-    const folder = normalizeFolder(settings.dailyNoteFolder);
-    const today = dateKey(/* @__PURE__ */ new Date());
-    const name = settings.dailyNoteFormat.replace(/YYYY/g, String((/* @__PURE__ */ new Date()).getFullYear())).replace(/MM/g, String((/* @__PURE__ */ new Date()).getMonth() + 1).padStart(2, "0")).replace(/DD/g, String((/* @__PURE__ */ new Date()).getDate()).padStart(2, "0"));
-    const path = folder ? `${folder}/${name}.md` : `${name}.md`;
-    await ensureFolder(this.plugin.app.vault, folder);
-    const existing = this.plugin.app.vault.getAbstractFileByPath(path);
-    const file = existing instanceof import_obsidian6.TFile ? existing : await this.plugin.app.vault.create(path, `# ${today}
-
-`);
-    const grouped = /* @__PURE__ */ new Map();
-    for (const task of overdue) {
-      const group = (_a2 = grouped.get(task.date)) != null ? _a2 : [];
-      group.push(`- [ ] ${task.text}\uFF08\u6765\u81EA \`${task.path}\`\uFF09`);
-      grouped.set(task.date, group);
-    }
-    const lines = [`## \u9057\u7559\u5F85\u529E \xB7 ${today}`, ""];
-    for (const [date, items] of grouped) {
-      lines.push(`### ${date}`, ...items, "");
-    }
-    await this.plugin.app.vault.process(file, (data) => `${data.trimEnd()}
-
-${lines.join("\n")}`);
-    return overdue.length;
   }
 };
 
@@ -3953,7 +4181,7 @@ var PulseSettingTab = class extends import_obsidian12.PluginSettingTab {
       })
     );
     containerEl.createEl("h3", { text: t("Agent \u6743\u9650\uFF08\u53EF\u9009\uFF09") });
-    new import_obsidian12.Setting(containerEl).setName(t("Agent \u5DE5\u4F5C\u6A21\u5F0F")).setDesc(t("\u9009\u62E9\u53EA\u8BFB\u3001\u8349\u7A3F\u3001\u786E\u8BA4\u540E\u5199\u5165\u6216\u81EA\u52A8\u6267\u884C\uFF1B\u5B9E\u9645\u6743\u9650\u4ECD\u53D7\u4E0B\u65B9\u5F00\u5173\u7EA6\u675F\u3002")).addDropdown(
+    new import_obsidian12.Setting(containerEl).setName(t("Agent \u5DE5\u4F5C\u6A21\u5F0F")).setDesc(t("\u9009\u62E9\u53EA\u8BFB\u3001\u8349\u7A3F\u3001\u786E\u8BA4\u540E\u5199\u5165\u6216\u81EA\u52A8\u6267\u884C\uFF1B\u300C\u786E\u8BA4\u540E\u5199\u5165\u300D\u6863\u4E0B Agent \u7684\u5199\u64CD\u4F5C\u4F1A\u6302\u8D77\u4E3A\u5F85\u5BA1\u9879\uFF0C\u5728\u770B\u677F\u300C\u5F85\u5BA1\u5199\u5165\u300D\u4E2D\u91C7\u7EB3\u540E\u624D\u843D\u76D8\u3002\u5B9E\u9645\u6743\u9650\u4ECD\u53D7\u4E0B\u65B9\u5F00\u5173\u7EA6\u675F\u3002")).addDropdown(
       (dropdown) => dropdown.addOption("readonly", t("\u53EA\u8BFB")).addOption("draft", t("\u8349\u7A3F")).addOption("confirm", t("\u786E\u8BA4\u540E\u5199\u5165")).addOption("auto", t("\u81EA\u52A8\u6267\u884C")).setValue(settings.agentWorkMode).onChange((value) => {
         settings.agentWorkMode = value;
         if (settings.agentWorkMode === "readonly") {
@@ -4284,18 +4512,20 @@ function computeDiff(before, after) {
   return lines;
 }
 var DiffModal = class extends import_obsidian14.Modal {
-  constructor(app, titleText, before, after, onRestore, onKeep) {
+  constructor(app, titleText, before, after, onRestore, onKeep, labels) {
     super(app);
     this.titleText = titleText;
     this.before = before;
     this.after = after;
     this.onRestore = onRestore;
     this.onKeep = onKeep;
+    this.labels = labels;
     this.left = null;
     this.right = null;
     this.syncing = false;
   }
   onOpen() {
+    var _a2, _b, _c, _d, _e, _f, _g, _h;
     const { contentEl } = this;
     contentEl.addClass("sd-diff-modal");
     contentEl.createEl("h2", { text: this.titleText });
@@ -4305,20 +4535,20 @@ var DiffModal = class extends import_obsidian14.Modal {
     meta.createSpan({ text: `+${added} \u884C` });
     meta.createSpan({ text: `-${removed} \u884C` });
     const grid = contentEl.createDiv({ cls: "sd-diff-grid" });
-    this.left = this.column(grid, "\u5907\u4EFD\u7248\u672C\uFF08\u4FEE\u6539\u524D\uFF09", "old");
-    this.right = this.column(grid, "\u5F53\u524D\u7248\u672C\uFF08\u78C1\u76D8\u4E0A\uFF09", "new");
+    this.left = this.column(grid, (_b = (_a2 = this.labels) == null ? void 0 : _a2.leftTitle) != null ? _b : "\u5907\u4EFD\u7248\u672C\uFF08\u4FEE\u6539\u524D\uFF09", "old");
+    this.right = this.column(grid, (_d = (_c = this.labels) == null ? void 0 : _c.rightTitle) != null ? _d : "\u5F53\u524D\u7248\u672C\uFF08\u78C1\u76D8\u4E0A\uFF09", "new");
     this.renderLines(computeDiff(this.before, this.after));
     const actions = contentEl.createDiv({ cls: "sd-diff-actions" });
     if (this.onRestore) {
-      actions.createEl("button", { text: "\u91C7\u7528\u5907\u4EFD\uFF08\u64A4\u9500\u672C\u6B21\u4FEE\u6539\uFF09" }).onclick = () => {
-        var _a2;
-        (_a2 = this.onRestore) == null ? void 0 : _a2.call(this);
+      actions.createEl("button", { text: (_f = (_e = this.labels) == null ? void 0 : _e.restore) != null ? _f : "\u91C7\u7528\u5907\u4EFD\uFF08\u64A4\u9500\u672C\u6B21\u4FEE\u6539\uFF09" }).onclick = () => {
+        var _a3;
+        (_a3 = this.onRestore) == null ? void 0 : _a3.call(this);
         this.close();
       };
     }
-    actions.createEl("button", { cls: "mod-cta", text: "\u4FDD\u7559\u5F53\u524D\u5E76\u5173\u95ED" }).onclick = () => {
-      var _a2;
-      (_a2 = this.onKeep) == null ? void 0 : _a2.call(this);
+    actions.createEl("button", { cls: "mod-cta", text: (_h = (_g = this.labels) == null ? void 0 : _g.keep) != null ? _h : "\u4FDD\u7559\u5F53\u524D\u5E76\u5173\u95ED" }).onclick = () => {
+      var _a3;
+      (_a3 = this.onKeep) == null ? void 0 : _a3.call(this);
       this.close();
     };
   }
@@ -4393,12 +4623,81 @@ var DraftPreviewModal = class extends import_obsidian15.Modal {
 function renderAgentHub(view, root) {
   const body = root.createDiv({ cls: "sd-body" });
   renderDrafts(view, body);
+  renderPendingWrites(view, body);
   view.renderTasksCard(body);
   renderAgentChanges(view, body);
   renderWorkLogs(view, body);
   const secondary = body.createDiv({ cls: "sd-secondary sd-agent-secondary" });
   renderAgentStatus(view, secondary);
   view.renderFooter(body);
+}
+function renderPendingWrites(view, root) {
+  var _a2;
+  const pending = (_a2 = view.plugin.store.data.pendingWrites) != null ? _a2 : [];
+  if (pending.length === 0 && view.plugin.store.settings.agentWorkMode !== "confirm") return;
+  const card = root.createDiv({ cls: "sd-card" });
+  card.createDiv({ cls: "sd-card-title", text: tf("\u5F85\u5BA1\u5199\u5165 \xB7 {n}", { n: pending.length }) });
+  card.createDiv({ cls: "sd-card-sub", text: t("\u300C\u786E\u8BA4\u540E\u5199\u5165\u300D\u6863\u4E0B\uFF0CAgent \u7684\u5199\u64CD\u4F5C\u6302\u8D77\u5728\u8FD9\u91CC\uFF0C\u91C7\u7EB3\u540E\u624D\u771F\u6B63\u843D\u76D8\uFF1B\u9A73\u56DE\u5219\u4E22\u5F03\u3002") });
+  if (pending.length === 0) {
+    card.createDiv({ cls: "sd-empty", text: t("\u6CA1\u6709\u6302\u8D77\u7684\u5F85\u5BA1\u5199\u5165\u3002") });
+    return;
+  }
+  const list = card.createDiv({ cls: "sd-feed-list" });
+  for (const item of pending.slice(0, 20)) {
+    const row = list.createDiv({ cls: "sd-feed-row" });
+    row.createSpan({ text: `${localStamp(item.time).slice(5)} \xB7 ${item.agent} \xB7 ${item.path}` });
+    const actions = row.createDiv({ cls: "sd-audit-actions" });
+    actions.createSpan({ cls: "sd-audit-badge", text: pendingToolLabel(item.tool) });
+    actions.createEl("button", { cls: "mod-cta", text: t("\u9884\u89C8\u5E76\u5BA1\u6279") }).onclick = () => {
+      new DiffModal(
+        view.plugin.app,
+        `${item.path} \xB7 ${t("\u5F85\u5BA1\u5199\u5165")}`,
+        item.before,
+        item.after,
+        () => void rejectPendingWrite(view, item.id),
+        () => void approvePendingWrite(view, item.id),
+        {
+          restore: t("\u9A73\u56DE\u4E22\u5F03"),
+          keep: t("\u91C7\u7EB3\u5199\u5165"),
+          leftTitle: t("\u5F53\u524D\u5185\u5BB9\uFF08\u672A\u91C7\u7EB3\uFF09"),
+          rightTitle: t("\u91C7\u7EB3\u540E\u5185\u5BB9\uFF08\u672A\u843D\u76D8\uFF09")
+        }
+      ).open();
+    };
+    actions.createEl("button", { text: t("\u9A73\u56DE") }).onclick = () => void rejectPendingWrite(view, item.id);
+  }
+}
+var PENDING_TOOL_LABELS = {
+  write_note: "\u65B0\u5EFA/\u8986\u76D6",
+  patch_note: "\u5C40\u90E8\u4FEE\u6539",
+  frontmatter: "\u5C5E\u6027",
+  add_knowledge: "\u6C89\u6DC0",
+  add_memo: "\u901F\u8BB0",
+  record_work_log: "\u5DE5\u4F5C\u65E5\u5FD7",
+  complete_task: "\u52FE\u9009\u5F85\u529E",
+  snapshot_tasks: "\u9057\u7559\u5F85\u529E\u5FEB\u7167"
+};
+function pendingToolLabel(tool) {
+  const zh = PENDING_TOOL_LABELS[tool];
+  return zh ? t(zh) : tool;
+}
+async function approvePendingWrite(view, id) {
+  try {
+    await view.plugin.agentApi.approvePendingWrite(id);
+    new import_obsidian16.Notice(t("\u5DF2\u91C7\u7EB3\uFF0C\u5199\u5165\u5DF2\u843D\u76D8"));
+  } catch (error) {
+    new import_obsidian16.Notice(error instanceof Error ? error.message : String(error));
+  }
+  view.render();
+}
+async function rejectPendingWrite(view, id) {
+  try {
+    view.plugin.agentApi.rejectPendingWrite(id);
+    new import_obsidian16.Notice(t("\u5DF2\u9A73\u56DE\uFF0C\u672A\u5199\u5165\u4EFB\u4F55\u5185\u5BB9"));
+  } catch (error) {
+    new import_obsidian16.Notice(error instanceof Error ? error.message : String(error));
+  }
+  view.render();
 }
 function renderAgentChanges(view, root) {
   const card = root.createDiv({ cls: "sd-card" });
@@ -4491,7 +4790,7 @@ function renderDrafts(view, root) {
   };
   card.createDiv({
     cls: "sd-card-sub",
-    text: t("\u5F53\u524D\u5DE5\u4F5C\u6A21\u5F0F\uFF1A") + ((_a2 = modeLabels[view.plugin.store.settings.agentWorkMode]) != null ? _a2 : "confirm") + t("\u3002\u8349\u7A3F\u9700\u624B\u52A8\u5BA1\u6838\uFF1B\u8BBE\u4E3A\u300C\u81EA\u52A8\u6267\u884C\u300D\u53EF\u8DF3\u8FC7\u786E\u8BA4\uFF0C\u4F46\u9AD8\u98CE\u9669\u64CD\u4F5C\u4ECD\u4F1A\u8981\u6C42\u786E\u8BA4\u3002")
+    text: t("\u5F53\u524D\u5DE5\u4F5C\u6A21\u5F0F\uFF1A") + ((_a2 = modeLabels[view.plugin.store.settings.agentWorkMode]) != null ? _a2 : "confirm") + t("\u3002\u8349\u7A3F\u9700\u624B\u52A8\u5BA1\u6838\uFF1B\u300C\u786E\u8BA4\u540E\u5199\u5165\u300D\u6863\u4E0B Agent \u7684\u5199\u64CD\u4F5C\u4F1A\u6302\u8D77\u5728\u300C\u5F85\u5BA1\u5199\u5165\u300D\u5217\u8868\uFF0C\u91C7\u7EB3\u540E\u624D\u843D\u76D8\uFF1B\u300C\u81EA\u52A8\u6267\u884C\u300D\u6863\u4E0D\u6302\u8D77\u3002")
   });
   const drafts = [];
   for (const file of view.plugin.app.vault.getMarkdownFiles()) {
@@ -4517,7 +4816,7 @@ function renderDrafts(view, root) {
       });
     };
     actions.createEl("button", { text: t("\u91C7\u7EB3\u5E76\u5F52\u6863") }).onclick = () => {
-      void view.plugin.agentApi.updateFrontmatter(file.path, { sediment_status: "accepted" }).then(() => {
+      void view.plugin.agentApi.updateFrontmatter(file.path, { sediment_status: "accepted" }, void 0, true).then(() => {
         new import_obsidian16.Notice(t("\u5DF2\u91C7\u7EB3"));
         view.render();
       });

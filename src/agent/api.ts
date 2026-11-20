@@ -2,10 +2,11 @@ import { normalizePath, TFile } from "obsidian";
 import type { SedimentPlugin } from "../main";
 import { buildWeeklyReview } from "../features/review";
 import type { PomodoroState } from "../features/pomodoro";
+import { toggleCheckboxLine } from "../features/tasks";
 import { countWords } from "../tracking/tracker";
 import { restoreBackup } from "../features/audit";
-import type { DayRecord, MemoRecord, WorkLogRecord } from "../types";
-import { addDays, dateKey, hhmm, lastNDays, parseKey } from "../utils/dates";
+import type { DayRecord, MemoRecord, PendingWriteRecord, WorkLogRecord } from "../types";
+import { addDays, dailyNotePath, dateKey, hhmm, lastNDays, parseKey } from "../utils/dates";
 import { ensureFolder, normalizeFolder } from "../utils/vault";
 import { t, tf } from "../i18n";
 import {
@@ -82,6 +83,8 @@ export interface DailyContext {
   notes: NoteSummary[];
   /** 带 #to-agent 且未完成的任务 */
   agentTasks: MemoRecord[];
+  /** confirm 模式下挂起待审的写入数量（新增可选字段，旧客户端可忽略） */
+  pendingWrites: number;
 }
 
 /** 生成随机访问令牌，优先用 Web Crypto。 */
@@ -171,6 +174,38 @@ function findSection(
   return { start: chosen.line + 1, end, lines };
 }
 
+/** 纯函数：在笔记全文上应用 frontmatter 字段更新，供直接写与待审预览共用。 */
+export function applyFrontmatterUpdate(text: string, updates: Record<string, unknown>): string {
+  const lines = text.split("\n");
+  let start = -1;
+  let end = -1;
+  if (lines[0]?.trim() === "---") {
+    for (let i = 1; i < lines.length; i += 1) {
+      if (lines[i].trim() === "---") {
+        end = i;
+        break;
+      }
+    }
+    if (end < 0) throw new Error("frontmatter 未闭合");
+    start = 1;
+  }
+  const block = start >= 0 ? lines.slice(start, end) : [];
+  for (const [key, value] of Object.entries(updates)) {
+    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const targetIndex = block.findIndex((line) => new RegExp(`^${escaped}\\s*:`).test(line));
+    const replacement = Array.isArray(value)
+      ? value.length
+        ? [`${key}:`, ...value.map((item) => `  - ${JSON.stringify(String(item))}`)]
+        : [`${key}: []`]
+      : [`${key}: ${JSON.stringify(value)}`];
+    if (targetIndex >= 0) block.splice(targetIndex, 1, ...replacement);
+    else block.push(...replacement);
+  }
+  return start >= 0
+    ? [...lines.slice(0, start), ...block, ...lines.slice(end)].join("\n")
+    : ["---", ...block, "---", "", ...lines].join("\n");
+}
+
 /** 带机器可读错误码的 API 异常，HTTP 层据此返回 4xx。 */
 /** 对外 Agent API 版本；兼容策略见 README「Agent 接入」。 */
 export const AGENT_API_VERSION = 1;
@@ -184,6 +219,20 @@ export class ApiError extends Error {
     super(message);
   }
 }
+
+/**
+ * confirm 工作模式下写路径被挂起时的返回值：不带原字段的结果，
+ * 由 HTTP/MCP 原样返回给调用方（旧字段不删除，仅新增可选字段）。
+ */
+export interface AgentPendingResult {
+  pending: true;
+  pendingId: string;
+  path: string;
+  message: string;
+}
+
+/** 写入类方法在 confirm 档的返回：直接结果或挂起结果。 */
+export type WithPending<T> = T | AgentPendingResult;
 
 /** 阻止路径逃逸出库外。 */
 export function safeAgentPath(input: string): string {
@@ -278,7 +327,10 @@ export class AgentApi {
 
   private assertOperation(operation: AgentOperation): void {
     if (!isOperationAllowed(operation, this.plugin.store.settings)) {
-      const message = tf("操作 {operation} 未被允许", { operation });
+      const message =
+        operation !== "read" && this.plugin.store.settings.agentWorkMode === "readonly"
+          ? tf("readonly 模式拒绝写入：操作 {operation} 不被允许", { operation })
+          : tf("操作 {operation} 未被允许", { operation });
       this.plugin.store.logDiagnostic("security", message);
       throw new ApiError("OPERATION_DENIED", message, 403);
     }
@@ -297,6 +349,123 @@ export class AgentApi {
 
   private isAllowedByMode(path: string): boolean {
     return isPathAllowedByMode(path, this.plugin.store.settings);
+  }
+
+  // -------------------------------------------------------------------------
+  // confirm 工作模式：写路径挂起为待审草稿（权限检查 → confirm 拦截 → 快照 → 落盘）
+  // -------------------------------------------------------------------------
+
+  private isConfirmMode(): boolean {
+    return this.plugin.store.settings.agentWorkMode === "confirm";
+  }
+
+  /**
+   * 把一次写入挂起为待审条目并返回给调用方；不落盘、不建目录、不写快照。
+   * request 保存原请求，采纳时经 replayPending 走与直接写相同的落盘函数。
+   */
+  private holdForConfirm(
+    tool: string,
+    path: string,
+    kind: string,
+    args: Record<string, unknown>,
+    before: string,
+    after: string
+  ): AgentPendingResult {
+    const id = `pw-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+    this.plugin.store.addPendingWrite({
+      id,
+      time: new Date().toISOString(),
+      tool,
+      agent: this.currentAgent || "agent",
+      path,
+      request: { kind, args },
+      before,
+      after,
+    });
+    const message = tf("confirm 模式下写入已挂起待审：{path}", { path });
+    this.plugin.store.logDiagnostic("storage", message, `${id} · ${tool}`);
+    return { pending: true, pendingId: id, path, message };
+  }
+
+  /** 待审列表（不含大段预览内容，供 Agent / UI 展示）。 */
+  listPendingWrites(limit = 50): Array<{ id: string; time: string; tool: string; agent: string; path: string }> {
+    return (this.plugin.store.data.pendingWrites ?? [])
+      .slice(0, Math.max(1, Math.min(limit, 100)))
+      .map(({ id, time, tool, agent, path }) => ({ id, time, tool, agent, path }));
+  }
+
+  getPendingWrite(id: string): PendingWriteRecord | null {
+    return (this.plugin.store.data.pendingWrites ?? []).find((item) => item.id === id) ?? null;
+  }
+
+  /** 采纳：按挂起时保存的原请求重放对应的落盘函数（重放前再次过门禁）。 */
+  async approvePendingWrite(id: string): Promise<{ path: string }> {
+    const record = this.getPendingWrite(id);
+    if (!record) throw new ApiError("NOT_FOUND", `待审写入不存在：${id}`, 404);
+    await this.replayPending(record.request);
+    this.plugin.store.removePendingWrite(id);
+    const message = tf("待审写入已采纳并落盘：{path}", { path: record.path });
+    this.plugin.store.logDiagnostic("storage", message, id);
+    return { path: record.path };
+  }
+
+  /** 驳回：丢弃挂起请求（不落盘），并记安全诊断。 */
+  rejectPendingWrite(id: string): { ok: true; path: string } {
+    const removed = this.plugin.store.removePendingWrite(id);
+    if (!removed) throw new ApiError("NOT_FOUND", `待审写入不存在：${id}`, 404);
+    const message = tf("待审写入已驳回并丢弃：{path}", { path: removed.path });
+    this.plugin.store.logDiagnostic("security", message, `${removed.id} · ${removed.tool}`);
+    return { ok: true, path: removed.path };
+  }
+
+  /** 采纳时的重放分发：各 kind 与下方写方法一一对应，bypassConfirm=true。 */
+  private async replayPending(request: PendingWriteRecord["request"]): Promise<void> {
+    const args = request.args as Record<string, unknown>;
+    const str = (value: unknown): string => String(value ?? "");
+    switch (request.kind) {
+      case "write_note":
+        await this.writeNote(
+          str(args.path),
+          str(args.content),
+          (str(args.mode) || "create") as "create" | "overwrite" | "append",
+          true
+        );
+        return;
+      case "patch_note":
+        await this.patchNote(args.input as Parameters<AgentApi["patchNote"]>[0], true);
+        return;
+      case "frontmatter":
+        await this.updateFrontmatter(
+          str(args.path),
+          (args.updates ?? {}) as Record<string, unknown>,
+          args.ifMatch ? str(args.ifMatch) : undefined,
+          true
+        );
+        return;
+      case "knowledge":
+        await this.addKnowledge(args.input as KnowledgeInput, true);
+        return;
+      case "memo":
+        await this.addMemo(
+          str(args.text),
+          Array.isArray(args.tags) ? args.tags.map(String) : [],
+          args.sourcePath ? str(args.sourcePath) : undefined,
+          typeof args.sourceLine === "number" ? args.sourceLine : undefined,
+          true
+        );
+        return;
+      case "worklog":
+        await this.recordWorkLog(args.input as WorkLogInput, true);
+        return;
+      case "task_complete":
+        await this.completeTask(str(args.path), Number(args.line), true);
+        return;
+      case "task_snapshot":
+        await this.snapshotTasks(true);
+        return;
+      default:
+        throw new ApiError("INVALID_PENDING", `未知的待审写入类型：${request.kind}`, 400);
+    }
   }
 
   private cacheTags(file: TFile): string[] {
@@ -415,18 +584,42 @@ export class AgentApi {
     return { path: safe, content: await this.vault.read(file) };
   }
 
-  /** 新建、覆盖或追加笔记。 */
-  async writeNote(path: string, content: string, mode: "create" | "overwrite" | "append" = "create"): Promise<{ path: string }> {
+  /** 新建、覆盖或追加笔记。confirm 档挂起为待审写入（bypassConfirm 仅采纳重放时使用）。 */
+  async writeNote(
+    path: string,
+    content: string,
+    mode: "create" | "overwrite" | "append" = "create",
+    bypassConfirm = false
+  ): Promise<{ path: string; pending?: true; pendingId?: string; message?: string }> {
     const safe = safeAgentPath(path);
     this.assertPathAllowed(
       safe,
       mode === "overwrite" ? "overwrite" : mode === "append" ? "patch" : "create"
     );
     const folder = safe.includes("/") ? safe.slice(0, safe.lastIndexOf("/")) : "";
-    await ensureFolder(this.vault, folder);
     const existing = this.vault.getAbstractFileByPath(safe);
-
     if (mode === "create" && existing) throw new Error(`笔记已存在：${safe}`);
+
+    if (!bypassConfirm && this.isConfirmMode()) {
+      const previous = existing instanceof TFile ? await this.vault.read(existing) : "";
+      const after =
+        mode === "append" && existing instanceof TFile
+          ? `${previous.trimEnd()}\n\n${content}`
+          : content;
+      return {
+        ...this.holdForConfirm(
+          "write_note",
+          safe,
+          "write_note",
+          { path: safe, content, mode },
+          previous,
+          after
+        ),
+        path: safe,
+      };
+    }
+
+    await ensureFolder(this.vault, folder);
     this.plugin.tracker.markAgentWrite(safe);
     if (mode === "append" && existing instanceof TFile) {
       const previous = await this.vault.read(existing);
@@ -445,13 +638,26 @@ export class AgentApi {
     return { path: safe };
   }
 
-  /** 记一条速记，写入当天日记。 */
+  /** 记一条速记，写入当天日记。confirm 档挂起为待审写入（预览为条目摘要）。 */
   async addMemo(
     text: string,
     tags: string[] = [],
     sourcePath?: string,
-    sourceLine?: number
-  ): Promise<MemoRecord | null> {
+    sourceLine?: number,
+    bypassConfirm = false
+  ): Promise<WithPending<MemoRecord | null>> {
+    if (!bypassConfirm && this.isConfirmMode()) {
+      const daily = dailyNotePath(this.plugin.store.settings, new Date());
+      const tagStr = tags.length ? `\n标签：${tags.map((tag) => `#${String(tag).replace(/^#/, "")}`).join(" ")}` : "";
+      return this.holdForConfirm(
+        "add_memo",
+        daily,
+        "memo",
+        { text, tags, sourcePath, sourceLine },
+        "",
+        tf("记一条速记到 {path}", { path: daily }) + `\n${String(text ?? "").trim()}${tagStr}`
+      );
+    }
     return this.plugin.memos.add(
       text,
       tags,
@@ -596,7 +802,7 @@ export class AgentApi {
     return { path: safe, outgoing, backlinks, sameTag };
   }
 
-  /** 按标题或文本片段局部修改笔记；支持 dryRun、乐观锁、快照与 diff 统计。 */
+  /** 按标题或文本片段局部修改笔记；支持 dryRun、乐观锁、快照与 diff 统计。confirm 档挂起为待审写入。 */
   async patchNote(input: {
     path: string;
     heading?: string;
@@ -608,7 +814,7 @@ export class AgentApi {
     ifMatch?: string;
     expectedMtime?: number;
     dryRun?: boolean;
-  }): Promise<{
+  }, bypassConfirm = false): Promise<{
     path: string;
     version: string;
     mtime: number;
@@ -616,6 +822,9 @@ export class AgentApi {
     diffSummary: { addedLines: number; removedLines: number };
     previewDiff?: string;
     createdHeading?: boolean;
+    pending?: true;
+    pendingId?: string;
+    message?: string;
   }> {
     const safe = safeAgentPath(input.path);
     this.assertPathAllowed(safe, "patch");
@@ -637,7 +846,8 @@ export class AgentApi {
       } catch (error) {
         throw new ApiError("INVALID_JSON", "update_frontmatter 的 content 必须是 JSON 对象字符串");
       }
-      const result = await this.updateFrontmatter(safe, updates, input.ifMatch);
+      // 挂起判断统一在 updateFrontmatter 内做，这里透传 bypass 避免双重挂起。
+      const result = await this.updateFrontmatter(safe, updates, input.ifMatch, bypassConfirm);
       return { ...result, mtime: file.stat.mtime, diffSummary: { addedLines: 0, removedLines: 0 } };
     }
 
@@ -701,6 +911,17 @@ export class AgentApi {
       };
     }
 
+    if (!bypassConfirm && this.isConfirmMode()) {
+      return {
+        ...this.holdForConfirm("patch_note", safe, "patch_note", { input }, before, result),
+        path: safe,
+        version: versionOf(result),
+        mtime: file.stat.mtime,
+        diffSummary,
+        createdHeading,
+      };
+    }
+
     const snapshotId = this.backupNote(safe, before);
     this.plugin.tracker.markAgentWrite(safe);
     await this.vault.process(file, () => result);
@@ -717,12 +938,13 @@ export class AgentApi {
     };
   }
 
-  /** 单独更新 frontmatter 字段，不动正文。 */
+  /** 单独更新 frontmatter 字段，不动正文。confirm 档挂起为待审写入。 */
   async updateFrontmatter(
     path: string,
     updates: Record<string, unknown>,
-    ifMatch?: string
-  ): Promise<{ path: string; version: string }> {
+    ifMatch?: string,
+    bypassConfirm = false
+  ): Promise<{ path: string; version: string; pending?: true; pendingId?: string; message?: string }> {
     const safe = safeAgentPath(path);
     this.assertPathAllowed(safe, "patch");
     const file = this.vault.getAbstractFileByPath(safe);
@@ -731,44 +953,19 @@ export class AgentApi {
     if (ifMatch && versionOf(before) !== ifMatch) {
       throw new Error(`版本冲突：${safe} 已被修改，请重新读取后再写入`);
     }
+    const result = applyFrontmatterUpdate(before, updates);
+
+    if (!bypassConfirm && this.isConfirmMode()) {
+      return {
+        ...this.holdForConfirm("frontmatter", safe, "frontmatter", { path: safe, updates, ifMatch }, before, result),
+        path: safe,
+        version: versionOf(result),
+      };
+    }
+
     this.backupNote(safe, before);
     this.plugin.tracker.markAgentWrite(safe);
-
-    let result = "";
-    await this.vault.process(file, (data) => {
-      const lines = data.split("\n");
-      let start = -1;
-      let end = -1;
-      if (lines[0]?.trim() === "---") {
-        for (let i = 1; i < lines.length; i += 1) {
-          if (lines[i].trim() === "---") {
-            end = i;
-            break;
-          }
-        }
-        if (end < 0) throw new Error("frontmatter 未闭合");
-        start = 1;
-      }
-      const block = start >= 0 ? lines.slice(start, end) : [];
-      for (const [key, value] of Object.entries(updates)) {
-        const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const targetIndex = block.findIndex((line) =>
-          new RegExp(`^${escaped}\\s*:`).test(line)
-        );
-        const replacement = Array.isArray(value)
-          ? value.length
-            ? [`${key}:`, ...value.map((item) => `  - ${JSON.stringify(String(item))}`)]
-            : [`${key}: []`]
-          : [`${key}: ${JSON.stringify(value)}`];
-        if (targetIndex >= 0) block.splice(targetIndex, 1, ...replacement);
-        else block.push(...replacement);
-      }
-      result =
-        start >= 0
-          ? [...lines.slice(0, start), ...block, ...lines.slice(end)].join("\n")
-          : ["---", ...block, "---", "", ...lines].join("\n");
-      return result;
-    });
+    await this.vault.process(file, () => result);
     return { path: safe, version: versionOf(result) };
   }
 
@@ -820,12 +1017,29 @@ export class AgentApi {
   }
 
   async listTasks(scope = "all"): Promise<Array<{ path: string; line: number; text: string; date: string; checked: boolean }>> {
-    return this.plugin.tasks.list(scope as "today" | "overdue" | "all" | "agent");
+    // Agent 读源受访问模式约束：黑名单/白名单外笔记里的待办不得出现在结果里。
+    const settings = this.plugin.store.settings;
+    return this.plugin.tasks.list(scope as "today" | "overdue" | "all" | "agent", {
+      accessible: (target) => !target || isPathAllowedByMode(target, settings),
+    });
   }
 
-  async completeTask(path: string, line: number): Promise<{ ok: true }> {
+  async completeTask(
+    path: string,
+    line: number,
+    bypassConfirm = false
+  ): Promise<WithPending<{ ok: true }>> {
     const safe = safeAgentPath(path);
     this.assertPathAllowed(safe, "patch");
+    if (!bypassConfirm && this.isConfirmMode()) {
+      const file = this.vault.getAbstractFileByPath(safe);
+      const before = file instanceof TFile ? await this.vault.read(file) : "";
+      const after = before
+        .split("\n")
+        .map((item, index) => (index === line - 1 ? toggleCheckboxLine(item) : item))
+        .join("\n");
+      return this.holdForConfirm("complete_task", safe, "task_complete", { path: safe, line }, before, after);
+    }
     this.plugin.tracker.markAgentWrite(safe);
     await this.plugin.tasks.complete(safe, line);
     return { ok: true };
@@ -837,17 +1051,23 @@ export class AgentApi {
     return { id: await this.plugin.tasks.delegate(safe, line) };
   }
 
-  async snapshotTasks(): Promise<{ count: number }> {
-    // 与 TaskManager.snapshot 相同的路径口径：写入当天日记前先过权限门禁。
+  async snapshotTasks(bypassConfirm = false): Promise<WithPending<{ count: number }>> {
+    // 与 TaskManager.snapshot 相同的路径口径：统一走 dailyNotePath，
+    // 门禁校验与实际落盘使用同一 date 实例，消除跨午夜毫秒竞态。
     const settings = this.plugin.store.settings;
-    const folder = normalizeFolder(settings.dailyNoteFolder);
     const now = new Date();
-    const name = settings.dailyNoteFormat
-      .replace(/YYYY/g, String(now.getFullYear()))
-      .replace(/MM/g, String(now.getMonth() + 1).padStart(2, "0"))
-      .replace(/DD/g, String(now.getDate()).padStart(2, "0"));
-    this.assertPathAllowed(folder ? `${folder}/${name}.md` : `${name}.md`, "patch");
-    return { count: await this.plugin.tasks.snapshot() };
+    const path = dailyNotePath(settings, now);
+    this.assertPathAllowed(path, "patch");
+    const accessible = (target: string): boolean => isPathAllowedByMode(target, settings);
+
+    if (!bypassConfirm && this.isConfirmMode()) {
+      const overdue = await this.plugin.tasks.list("overdue", { accessible });
+      const summary = overdue.length
+        ? tf("将 {n} 条遗留待办写入 {path}", { n: overdue.length, path })
+        : t("没有需要记录的遗留待办");
+      return this.holdForConfirm("snapshot_tasks", path, "task_snapshot", { date: now.toISOString() }, "", summary);
+    }
+    return { count: await this.plugin.tasks.snapshot({ accessible, date: now }) };
   }
 
   /** 最近 Agent 变更及其快照 id。 */
@@ -898,7 +1118,7 @@ export class AgentApi {
    * 记录一次 Agent 工作会话。同时写入 agent-logs/YYYY-MM-DD.md 与 data.json，
    * 让每天的工作过程成为可检索的沉淀。
    */
-  async recordWorkLog(input: WorkLogInput): Promise<WorkLogRecord> {
+  async recordWorkLog(input: WorkLogInput, bypassConfirm = false): Promise<WithPending<WorkLogRecord>> {
     const now = new Date();
     const log: WorkLogRecord = {
       id: `${now.getTime().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
@@ -917,15 +1137,8 @@ export class AgentApi {
     };
 
     const folder = normalizeFolder(this.plugin.store.settings.workLogFolder);
-    this.assertPathAllowed(folder ? `${folder}/${log.date}.md` : `${log.date}.md`, "create");
-    await ensureFolder(this.vault, folder);
     const path = folder ? `${folder}/${log.date}.md` : `${log.date}.md`;
-    const abstract = this.vault.getAbstractFileByPath(path);
-    const file: TFile =
-      abstract instanceof TFile
-        ? abstract
-        : await this.vault.create(path, `# 工作日志 ${log.date}\n\n`);
-    const previous = await this.vault.read(file);
+    this.assertPathAllowed(path, "create");
 
     const block = [
       `## ${log.time} · ${log.agent}`,
@@ -946,6 +1159,30 @@ export class AgentApi {
       "",
     ].join("\n");
 
+    if (!bypassConfirm && this.isConfirmMode()) {
+      const abstract = this.vault.getAbstractFileByPath(path);
+      const previous =
+        abstract instanceof TFile
+          ? await this.vault.read(abstract)
+          : `# 工作日志 ${log.date}\n\n`;
+      return this.holdForConfirm(
+        "record_work_log",
+        path,
+        "worklog",
+        { input },
+        previous,
+        `${previous.trimEnd()}\n\n${block}`
+      );
+    }
+
+    await ensureFolder(this.vault, folder);
+    const abstract = this.vault.getAbstractFileByPath(path);
+    const file: TFile =
+      abstract instanceof TFile
+        ? abstract
+        : await this.vault.create(path, `# 工作日志 ${log.date}\n\n`);
+    const previous = await this.vault.read(file);
+
     this.plugin.tracker.markAgentWrite(path);
     await this.vault.modify(file, `${previous.trimEnd()}\n\n${block}`);
     this.plugin.store.updateDay(log.date, (day) => {
@@ -955,8 +1192,11 @@ export class AgentApi {
     return log;
   }
 
-  /** 把一段知识沉淀成带 frontmatter 的独立笔记。 */
-  async addKnowledge(input: KnowledgeInput): Promise<{ path: string; note?: string }> {
+  /** 把一段知识沉淀成带 frontmatter 的独立笔记。confirm 档挂起为待审写入。 */
+  async addKnowledge(
+    input: KnowledgeInput,
+    bypassConfirm = false
+  ): Promise<{ path: string; note?: string; pending?: true; pendingId?: string; message?: string }> {
     const title = String(input.title || "未命名笔记").trim();
     const safeTitle =
       title.replace(/[\\/:*?"<>|#\[\]]/g, "-").slice(0, 80) || "未命名笔记";
@@ -988,7 +1228,7 @@ export class AgentApi {
       .join("/");
     const folder = [base, category, sub].filter(Boolean).join("/");
     this.assertPathAllowed(folder ? `${folder}/placeholder.md` : "placeholder.md", "create");
-    await ensureFolder(this.vault, folder);
+    // 目录创建推迟到确认要落盘之后，挂起时不产生任何库内变更。
 
     const today = dateKey(new Date());
     let fileName = `${today}-${safeTitle}.md`;
@@ -1045,6 +1285,13 @@ export class AgentApi {
     ].join("\n");
 
     this.assertPathAllowed(path, "create");
+    if (!bypassConfirm && this.isConfirmMode()) {
+      return {
+        ...this.holdForConfirm("add_knowledge", path, "knowledge", { input }, "", doc),
+        path,
+      };
+    }
+    await ensureFolder(this.vault, folder);
     this.plugin.tracker.markAgentWrite(path);
     await this.vault.create(path, doc);
     this.plugin.store.updateDay(today, (day) => {
@@ -1077,6 +1324,7 @@ export class AgentApi {
       agentTasks: this.plugin.store.data.memos.filter(
         (memo) => memo.tags.includes("to-agent") && !memo.converted && !memo.archived
       ),
+      pendingWrites: (this.plugin.store.data.pendingWrites ?? []).length,
     };
   }
 

@@ -63,7 +63,9 @@ export class DiffModal extends Modal {
     private before: string,
     private after: string,
     private onRestore?: () => void,
-    private onKeep?: () => void
+    private onKeep?: () => void,
+    /** 覆盖两个动作按钮的文案（如待审写入场景的「驳回丢弃 / 采纳写入」），不传保持原行为。 */
+    private labels?: { restore?: string; keep?: string; leftTitle?: string; rightTitle?: string }
   ) {
     super(app);
   }
@@ -80,18 +82,18 @@ export class DiffModal extends Modal {
     meta.createSpan({ text: `-${removed} 行` });
 
     const grid = contentEl.createDiv({ cls: "sd-diff-grid" });
-    this.left = this.column(grid, "备份版本（修改前）", "old");
-    this.right = this.column(grid, "当前版本（磁盘上）", "new");
+    this.left = this.column(grid, this.labels?.leftTitle ?? "备份版本（修改前）", "old");
+    this.right = this.column(grid, this.labels?.rightTitle ?? "当前版本（磁盘上）", "new");
     this.renderLines(computeDiff(this.before, this.after));
 
     const actions = contentEl.createDiv({ cls: "sd-diff-actions" });
     if (this.onRestore) {
-      actions.createEl("button", { text: "采用备份（撤销本次修改）" }).onclick = () => {
+      actions.createEl("button", { text: this.labels?.restore ?? "采用备份（撤销本次修改）" }).onclick = () => {
         this.onRestore?.();
         this.close();
       };
     }
-    actions.createEl("button", { cls: "mod-cta", text: "保留当前并关闭" }).onclick = () => {
+    actions.createEl("button", { cls: "mod-cta", text: this.labels?.keep ?? "保留当前并关闭" }).onclick = () => {
       this.onKeep?.();
       this.close();
     };

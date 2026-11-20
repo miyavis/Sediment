@@ -10,12 +10,86 @@ import type { DashboardView } from "../../dashboard-view";
 export function renderAgentHub(view: DashboardView, root: HTMLElement): void {
   const body = root.createDiv({ cls: "sd-body" });
   renderDrafts(view, body);
+  renderPendingWrites(view, body);
   view.renderTasksCard(body);
   renderAgentChanges(view, body);
   renderWorkLogs(view, body);
   const secondary = body.createDiv({ cls: "sd-secondary sd-agent-secondary" });
   renderAgentStatus(view, secondary);
   view.renderFooter(body);
+}
+
+/** confirm 档挂起的 Agent 写入：预览走 DiffModal，采纳才真正落盘。 */
+export function renderPendingWrites(view: DashboardView, root: HTMLElement): void {
+  const pending = view.plugin.store.data.pendingWrites ?? [];
+  if (pending.length === 0 && view.plugin.store.settings.agentWorkMode !== "confirm") return;
+  const card = root.createDiv({ cls: "sd-card" });
+  card.createDiv({ cls: "sd-card-title", text: tf("待审写入 · {n}", { n: pending.length }) });
+  card.createDiv({ cls: "sd-card-sub", text: t("「确认后写入」档下，Agent 的写操作挂起在这里，采纳后才真正落盘；驳回则丢弃。") });
+  if (pending.length === 0) {
+    card.createDiv({ cls: "sd-empty", text: t("没有挂起的待审写入。") });
+    return;
+  }
+  const list = card.createDiv({ cls: "sd-feed-list" });
+  for (const item of pending.slice(0, 20)) {
+    const row = list.createDiv({ cls: "sd-feed-row" });
+    row.createSpan({ text: `${localStamp(item.time).slice(5)} · ${item.agent} · ${item.path}` });
+    const actions = row.createDiv({ cls: "sd-audit-actions" });
+    actions.createSpan({ cls: "sd-audit-badge", text: pendingToolLabel(item.tool) });
+    actions.createEl("button", { cls: "mod-cta", text: t("预览并审批") }).onclick = () => {
+      new DiffModal(
+        view.plugin.app,
+        `${item.path} · ${t("待审写入")}`,
+        item.before,
+        item.after,
+        () => void rejectPendingWrite(view, item.id),
+        () => void approvePendingWrite(view, item.id),
+        {
+          restore: t("驳回丢弃"),
+          keep: t("采纳写入"),
+          leftTitle: t("当前内容（未采纳）"),
+          rightTitle: t("采纳后内容（未落盘）"),
+        }
+      ).open();
+    };
+    actions.createEl("button", { text: t("驳回") }).onclick = () => void rejectPendingWrite(view, item.id);
+  }
+}
+
+const PENDING_TOOL_LABELS: Record<string, string> = {
+  write_note: "新建/覆盖",
+  patch_note: "局部修改",
+  frontmatter: "属性",
+  add_knowledge: "沉淀",
+  add_memo: "速记",
+  record_work_log: "工作日志",
+  complete_task: "勾选待办",
+  snapshot_tasks: "遗留待办快照",
+};
+
+function pendingToolLabel(tool: string): string {
+  const zh = PENDING_TOOL_LABELS[tool];
+  return zh ? t(zh) : tool;
+}
+
+async function approvePendingWrite(view: DashboardView, id: string): Promise<void> {
+  try {
+    await view.plugin.agentApi.approvePendingWrite(id);
+    new Notice(t("已采纳，写入已落盘"));
+  } catch (error) {
+    new Notice(error instanceof Error ? error.message : String(error));
+  }
+  view.render();
+}
+
+async function rejectPendingWrite(view: DashboardView, id: string): Promise<void> {
+  try {
+    view.plugin.agentApi.rejectPendingWrite(id);
+    new Notice(t("已驳回，未写入任何内容"));
+  } catch (error) {
+    new Notice(error instanceof Error ? error.message : String(error));
+  }
+  view.render();
 }
 
 export function renderAgentChanges(view: DashboardView, root: HTMLElement): void {
@@ -133,7 +207,7 @@ export function renderDrafts(view: DashboardView, root: HTMLElement): void {
   card.createDiv({
     cls: "sd-card-sub",
     text: t("当前工作模式：") + (modeLabels[view.plugin.store.settings.agentWorkMode] ?? "confirm") +
-      t("。草稿需手动审核；设为「自动执行」可跳过确认，但高风险操作仍会要求确认。"),
+      t("。草稿需手动审核；「确认后写入」档下 Agent 的写操作会挂起在「待审写入」列表，采纳后才落盘；「自动执行」档不挂起。"),
   });
   const drafts: TFile[] = [];
   for (const file of view.plugin.app.vault.getMarkdownFiles()) {
@@ -159,10 +233,13 @@ export function renderDrafts(view: DashboardView, root: HTMLElement): void {
       });
     };
     actions.createEl("button", { text: t("采纳并归档") }).onclick = () => {
-      void view.plugin.agentApi.updateFrontmatter(file.path, { sediment_status: "accepted" }).then(() => {
-        new Notice(t("已采纳"));
-        view.render();
-      });
+      // 人在看板上点「采纳」本身就是确认，绕过 confirm 挂起避免二次审批。
+      void view.plugin.agentApi
+        .updateFrontmatter(file.path, { sediment_status: "accepted" }, undefined, true)
+        .then(() => {
+          new Notice(t("已采纳"));
+          view.render();
+        });
     };
     actions.createEl("button", { text: t("合并到关联笔记") }).onclick = () => void mergeDraft(view, file);
     actions.createEl("button", { text: t("驳回删除") }).onclick = () => {
