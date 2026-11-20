@@ -18,6 +18,8 @@ export interface SearchResult {
   path: string;
   title: string;
   snippet: string;
+  matchType: "exact";
+  matchSource: "body";
 }
 
 export interface TodaySnapshot {
@@ -176,7 +178,7 @@ function splitList(value: string): string[] {
 }
 
 /** 阻止路径逃逸出库外。 */
-function safePath(input: string): string {
+export function safeAgentPath(input: string): string {
   const path = normalizePath(String(input ?? ""))
     .replace(/\\/g, "/")
     .replace(/^\/+/, "")
@@ -362,6 +364,8 @@ export class AgentApi {
         path: file.path,
         title: file.basename,
         snippet: text.slice(start, end).replace(/\s+/g, " ").trim(),
+        matchType: "exact",
+        matchSource: "body",
       });
     }
     return results;
@@ -369,7 +373,7 @@ export class AgentApi {
 
   /** 读取笔记全文。 */
   async readNote(path: string): Promise<{ path: string; content: string }> {
-    const safe = safePath(path);
+    const safe = safeAgentPath(path);
     this.assertPathAllowed(safe, "read");
     const file = this.vault.getAbstractFileByPath(safe);
     if (!(file instanceof TFile)) throw new Error(`笔记不存在：${safe}`);
@@ -379,7 +383,7 @@ export class AgentApi {
 
   /** 新建、覆盖或追加笔记。 */
   async writeNote(path: string, content: string, mode: "create" | "overwrite" | "append" = "create"): Promise<{ path: string }> {
-    const safe = safePath(path);
+    const safe = safeAgentPath(path);
     this.assertPathAllowed(
       safe,
       mode === "overwrite" ? "overwrite" : mode === "append" ? "patch" : "create"
@@ -506,7 +510,7 @@ export class AgentApi {
     headings: string[];
     links: string[];
   }> {
-    const safe = safePath(path);
+    const safe = safeAgentPath(path);
     this.assertPathAllowed(safe, "read");
     const file = this.vault.getAbstractFileByPath(safe);
     if (!(file instanceof TFile)) throw new Error(`笔记不存在：${safe}`);
@@ -525,7 +529,7 @@ export class AgentApi {
     path: string,
     include: string[] = ["outgoing", "backlinks", "tags"]
   ): { path: string; outgoing: string[]; backlinks: string[]; sameTag: string[] } {
-    const safe = safePath(path);
+    const safe = safeAgentPath(path);
     this.assertPathAllowed(safe, "read");
     const file = this.vault.getAbstractFileByPath(safe);
     if (!(file instanceof TFile)) throw new Error(`笔记不存在：${safe}`);
@@ -579,7 +583,7 @@ export class AgentApi {
     previewDiff?: string;
     createdHeading?: boolean;
   }> {
-    const safe = safePath(input.path);
+    const safe = safeAgentPath(input.path);
     this.assertPathAllowed(safe, "patch");
     const file = this.vault.getAbstractFileByPath(safe);
     if (!(file instanceof TFile)) throw new ApiError("NOT_FOUND", `笔记不存在：${safe}`, 404);
@@ -685,7 +689,7 @@ export class AgentApi {
     updates: Record<string, unknown>,
     ifMatch?: string
   ): Promise<{ path: string; version: string }> {
-    const safe = safePath(path);
+    const safe = safeAgentPath(path);
     this.assertPathAllowed(safe, "patch");
     const file = this.vault.getAbstractFileByPath(safe);
     if (!(file instanceof TFile)) throw new Error(`笔记不存在：${safe}`);

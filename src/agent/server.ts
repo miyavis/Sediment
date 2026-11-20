@@ -90,8 +90,15 @@ export class AgentServer {
       chunks.push(chunk as Buffer);
     }
     if (chunks.length === 0) return {};
-    const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-    if (!parsed || typeof parsed !== "object") return {};
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    } catch {
+      throw new ApiError("INVALID_JSON", "请求体必须是合法的 JSON 对象", 400);
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new ApiError("INVALID_JSON", "请求体必须是 JSON 对象", 400);
+    }
     return parsed as Record<string, unknown>;
   }
 
@@ -137,7 +144,12 @@ export class AgentServer {
           this.json(response, 200, await api.readNote(str(query.get("path"))));
           return;
         case "POST /note": {
-          const mode = str(body.mode as string, "create") as "create" | "overwrite" | "append";
+          const rawMode = str(body.mode as string, "create");
+          if (rawMode !== "create" && rawMode !== "overwrite" && rawMode !== "append") {
+            this.json(response, 400, { error: "mode 必须是 create、overwrite 或 append", code: "INVALID_MODE" });
+            return;
+          }
+          const mode = rawMode;
           this.json(response, 200, await api.writeNote(str(body.path as string), str(body.content as string), mode));
           return;
         }

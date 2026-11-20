@@ -340,6 +340,33 @@ export class PulseSettingTab extends PluginSettingTab {
           })
       );
 
+    new Setting(containerEl)
+      .setName(t("界面密度"))
+      .setDesc(t("精简模式优先显示捕获、任务和摘要。"))
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("compact", t("精简"))
+          .addOption("standard", t("标准"))
+          .addOption("full", t("完整"))
+          .setValue(settings.layoutDensity)
+          .onChange((value) => {
+            settings.layoutDensity = value as "compact" | "standard" | "full";
+            save();
+            this.plugin.refreshViews();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName(t("减少动态效果"))
+      .setDesc(t("关闭横幅和卡片动画，保留必要状态反馈。"))
+      .addToggle((toggle) =>
+        toggle.setValue(settings.reducedMotion).onChange((value) => {
+          settings.reducedMotion = value;
+          save();
+          this.plugin.refreshViews();
+        })
+      );
+
     containerEl.createEl("h3", { text: t("统计口径（贡献分封顶与权重）") });
     const recompute = () => {
       this.plugin.store.recomputeContributions();

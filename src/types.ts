@@ -132,6 +132,10 @@ export interface PulseSettings {
   backupKeep: number;
   /** 看板画风：像素湖面 / 水墨山水 / 像素城市 */
   artStyle: "lake" | "ink" | "city";
+  /** 界面密度 */
+  layoutDensity: "compact" | "standard" | "full";
+  /** 减少装饰动画和状态过渡 */
+  reducedMotion: boolean;
   /** 每天写作目标字数，0 表示关闭 */
   dailyWordGoal: number;
   /** 单日贡献分封顶，0 表示不封顶 */
@@ -233,6 +237,8 @@ export const DEFAULT_SETTINGS: PulseSettings = {
   backupFolder: "sediment-backup",
   backupKeep: 10,
   artStyle: "lake",
+  layoutDensity: "standard",
+  reducedMotion: false,
   dailyWordGoal: 1000,
   contributionDailyCap: 120,
   wordsPerWriteCap: 4000,

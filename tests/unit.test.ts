@@ -27,7 +27,9 @@ import {
 import { countWords, countCheckedTasks, noteDateKey } from "../src/tracking/tracker";
 import { normalizeFolder } from "../src/utils/vault";
 import { buildStatsCsv, buildExportJson, DEFAULT_EXPORT_OPTIONS } from "../src/features/export";
-import type { Store } from "../src/data/store";
+import { Store } from "../src/data/store";
+import { ApiError, safeAgentPath } from "../src/agent/api";
+import { tokenizeSemanticText } from "../src/agent/semantic";
 
 const day = (partial: Partial<DayRecord> = {}): DayRecord => ({ ...createEmptyDay(), ...partial });
 const settings = (partial: Partial<PulseSettings> = {}): PulseSettings => ({
@@ -265,4 +267,151 @@ test("resolveBridgePath：库内缺失时自动落盘嵌入式桥接并可握手
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+});
+
+test("Store.load：缺失字段补默认值并规范化历史数据", async () => {
+  const loadedData = {
+    version: 1,
+    days: {
+      "2026-11-20": {
+        wordsAdded: -50,
+        wordsRemoved: -3,
+        edits: -2,
+        notesCreated: -1,
+        tasksCompleted: -4,
+        focusMinutes: -25,
+        hourlyWords: [12, null, "5"],
+        capturedWords: -10,
+        aiWordsAdded: -20,
+        folderWords: null,
+        activeMinutes: -8,
+      },
+    },
+  };
+  const fakePlugin = {
+    loadData: async () => loadedData,
+  } as unknown as Parameters<typeof Store>[0];
+  const store = new Store(fakePlugin);
+
+  await store.load();
+
+  assert.equal(store.data.version, 1);
+  assert.ok(Array.isArray(store.data.memos));
+  assert.ok(Array.isArray(store.data.workLogs));
+  assert.ok(Array.isArray(store.data.snapshots));
+  assert.deepEqual(store.data.settings.language, DEFAULT_SETTINGS.language);
+  const normalized = store.getDay("2026-11-20");
+  assert.equal(normalized.wordsAdded, 0);
+  assert.equal(normalized.wordsRemoved, 0);
+  assert.equal(normalized.edits, 0);
+  assert.equal(normalized.notesCreated, 0);
+  assert.equal(normalized.tasksCompleted, 0);
+  assert.equal(normalized.focusMinutes, 0);
+  assert.equal(normalized.hourlyWords.length, 24);
+  assert.equal(normalized.hourlyWords[0], 12);
+  assert.equal(normalized.hourlyWords[1], 0);
+  assert.equal(normalized.hourlyWords[2], 5);
+  assert.deepEqual(normalized.folderWords, {});
+  assert.equal(normalized.activeMinutes, 0);
+  assert.equal(normalized.capturedWords, 0);
+  assert.equal(normalized.aiWordsAdded, 0);
+});
+
+test("Store.load：未知版本暂停写入并保留警告", async () => {
+  let saveCalls = 0;
+  const fakePlugin = {
+    loadData: async () => ({ version: 99, days: { "2026-11-20": day({ wordsAdded: 100 }) } }),
+    saveData: async () => { saveCalls += 1; },
+  } as unknown as Parameters<typeof Store>[0];
+  const store = new Store(fakePlugin);
+
+  await store.load();
+  await store.save();
+
+  assert.match(store.migrationWarning ?? "", /不支持的数据版本 99/);
+  assert.equal(saveCalls, 0);
+  assert.equal(store.getDay("2026-11-20").wordsAdded, 100);
+});
+
+test("Store.load：缺少版本或格式异常暂停写入", async () => {
+  for (const raw of ["broken", []]) {
+    let saveCalls = 0;
+    const fakePlugin = {
+      loadData: async () => raw,
+      saveData: async () => { saveCalls += 1; },
+    } as unknown as Parameters<typeof Store>[0];
+    const store = new Store(fakePlugin);
+
+    await store.load();
+    await store.save();
+
+    assert.ok(store.migrationWarning);
+    assert.equal(saveCalls, 0);
+  }
+});
+
+test("Agent 安全路径：拒绝穿越、系统目录和非 Markdown", () => {
+  const cases = [
+    "../secret.md",
+    "notes/../../secret.md",
+    ".obsidian/data.json",
+    ".git/config",
+    "notes/file.txt",
+    "",
+  ];
+  for (const value of cases) {
+    assert.throws(() => safeAgentPath(value), ApiError);
+  }
+});
+
+test("Agent 安全路径：规范化反斜杠并保留合法路径", () => {
+  assert.equal(safeAgentPath("notes\\daily\\2026.md"), "notes/daily/2026.md");
+  assert.equal(safeAgentPath("/notes//memo.md"), "notes/memo.md");
+});
+
+test("Store：工作日志保留上限，避免无界增长", () => {
+  const store = new Store({} as unknown as Parameters<typeof Store>[0]);
+  store.scheduleSave = () => {};
+  for (let index = 0; index < 520; index += 1) {
+    store.addWorkLog({
+      id: `log-${index}`,
+      date: "2026-11-20",
+      time: "08:00",
+      agent: "test",
+      task: "task",
+      summary: "summary",
+      decisions: "",
+      learnings: "",
+      openQuestions: "",
+      tags: [],
+      files: [],
+    });
+  }
+  assert.equal(store.data.workLogs.length, 500);
+  assert.equal(store.data.workLogs[0].id, "log-519");
+});
+
+test("Store：速记保留上限，避免无界增长", () => {
+  const store = new Store({} as unknown as Parameters<typeof Store>[0]);
+  store.scheduleSave = () => {};
+  for (let index = 0; index < 2020; index += 1) {
+    store.addMemo({
+      id: `memo-${index}`,
+      date: "2026-11-20",
+      time: "08:00",
+      text: "memo",
+      tags: [],
+      converted: false,
+      archived: false,
+    });
+  }
+  assert.equal(store.data.memos.length, 2000);
+  assert.equal(store.data.memos[0].id, "memo-2019");
+});
+
+test("语义检索分词：支持中文、英文和混合语言", () => {
+  assert.ok(tokenizeSemanticText("配置 MCP").includes("配置"));
+  assert.ok(tokenizeSemanticText("配置 MCP").includes("mcp"));
+  assert.ok(tokenizeSemanticText("知识库 search").some((token) => token === "知识" || token === "识库"));
+  assert.ok(tokenizeSemanticText("TF-IDF").includes("tf"));
 });

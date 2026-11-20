@@ -1,0 +1,35 @@
+name: 缺陷反馈
+description: 报告 Sediment 缺陷
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请勿贴出私密笔记全文、令牌或完整 data.json。
+  - type: input
+    id: version
+    attributes:
+      label: Sediment / Obsidian 版本
+      placeholder: "Sediment 0.8.7 / Obsidian 1.x"
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境
+      placeholder: "桌面端或移动端、操作系统、相关设置"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期与实际结果
+    validations:
+      required: true

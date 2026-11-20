@@ -85,6 +85,8 @@ export class DashboardView extends ItemView {
     const scrollTop = sameTab && scroller ? scroller.scrollTop : 0;
     root.empty();
     root.addClass("sd-dashboard");
+    root.setAttribute("data-density", this.plugin.store.settings.layoutDensity);
+    root.toggleClass("is-reduced-motion", this.plugin.store.settings.reducedMotion);
     root.setAttribute("data-tab", this.tab);
     this.renderHeader(root);
 

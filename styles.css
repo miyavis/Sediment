@@ -408,6 +408,20 @@ settings:
     padding-left: 8px;
     padding-right: 8px;
   }
+
+  .sd-banner {
+    height: 120px;
+  }
+
+  .sd-dashboard[data-density="compact"] .sd-banner,
+  .kp-memo-view[data-density="compact"] .kp-memo-form {
+    margin-bottom: 8px;
+  }
+
+  .sd-dashboard[data-density="compact"] .sd-insights-secondary,
+  .sd-dashboard[data-density="compact"] .sd-agent-secondary {
+    display: none;
+  }
 }
 
 /* ── Sediment 完整主视图 ───────────────────────────── */
@@ -1409,6 +1423,13 @@ settings:
   .sd-body > .sd-card {
     animation: none;
   }
+}
+
+.sd-dashboard.is-reduced-motion *,
+.kp-memo-view.is-reduced-motion * {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
 }
 
 @media (max-width: 768px) {

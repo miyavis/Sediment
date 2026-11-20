@@ -26,6 +26,12 @@ jobs:
       - name: Build plugin
         run: npm run build
 
+      - name: Run regression tests
+        run: npm test
+
+      - name: Verify release versions and files
+        run: node scripts/verify-release.mjs ${{ github.ref_name }}
+
       - name: Generate release notes from CHANGELOG.md
         run: node scripts/latest-changelog.mjs ${{ github.ref_name }} > RELEASE_NOTES.md
 

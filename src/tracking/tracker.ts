@@ -54,6 +54,7 @@ export class Tracker {
   private countedSessions = new Set<string>();
   private activeBuckets = new Set<string>();
   private agentWrites = new Map<string, number>();
+  private modifyTimers = new Map<string, number>();
   private startedAt = Date.now();
   private ready = false;
 
@@ -78,12 +79,15 @@ export class Tracker {
     );
     this.plugin.registerEvent(
       vault.on("modify", (file) => {
-        if (file instanceof TFile) void this.onModify(file);
+        if (file instanceof TFile) this.scheduleModify(file);
       })
     );
     this.plugin.registerEvent(
       vault.on("delete", (file) => {
         this.baseline.delete(file.path);
+        const timer = this.modifyTimers.get(file.path);
+        if (timer !== undefined) window.clearTimeout(timer);
+        this.modifyTimers.delete(file.path);
       })
     );
     this.plugin.registerEvent(
@@ -92,6 +96,11 @@ export class Tracker {
         if (snap) {
           this.baseline.delete(oldPath);
           this.baseline.set(file.path, snap);
+        }
+        const timer = this.modifyTimers.get(oldPath);
+        if (timer !== undefined) {
+          window.clearTimeout(timer);
+          this.modifyTimers.delete(oldPath);
         }
         const agentAt = this.agentWrites.get(oldPath);
         if (agentAt !== undefined) {
@@ -102,6 +111,22 @@ export class Tracker {
     );
 
     this.ready = true;
+  }
+
+  /** 停用插件时清理未执行的去抖修改任务。 */
+  stop(): void {
+    for (const timer of this.modifyTimers.values()) window.clearTimeout(timer);
+    this.modifyTimers.clear();
+  }
+
+  private scheduleModify(file: TFile): void {
+    const previous = this.modifyTimers.get(file.path);
+    if (previous !== undefined) window.clearTimeout(previous);
+    const timer = window.setTimeout(() => {
+      this.modifyTimers.delete(file.path);
+      void this.onModify(file);
+    }, 120);
+    this.modifyTimers.set(file.path, timer);
   }
 
   /** Agent API 写入前调用：标记来源，随后触发的 vault 事件不计入人类统计。 */

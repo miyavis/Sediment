@@ -57,6 +57,8 @@ export class MemoView extends ItemView {
     const root = this.contentEl;
     root.empty();
     root.addClass("kp-memo-view");
+    root.setAttribute("data-density", this.plugin.store.settings.layoutDensity);
+    root.toggleClass("is-reduced-motion", this.plugin.store.settings.reducedMotion);
 
     const tabs = root.createDiv({ cls: "sd-memo-tabs" });
     const options: Array<[MemoTab, string]> = [
