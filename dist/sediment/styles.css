@@ -457,13 +457,17 @@ settings:
 }
 
 .sd-navbar {
-  position: relative;
+  position: sticky;
+  top: 0;
+  z-index: 30;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   margin-top: -56px;
-  padding: 0 28px;
+  padding: 8px 28px;
+  background: var(--background-primary);
+  border-bottom: 1px solid var(--background-modifier-border);
 }
 
 .sd-brand {
@@ -521,9 +525,14 @@ settings:
 }
 
 .sd-today-actions {
+  position: sticky;
+  top: 53px;
+  z-index: 19;
   display: flex;
   gap: 8px;
   margin-bottom: 12px;
+  padding: 8px 0;
+  background: var(--background-primary);
 }
 
 .sd-today-action {
@@ -816,7 +825,7 @@ settings:
   }
 
   .sd-navbar {
-    padding: 0 12px;
+    padding: 8px 12px;
   }
 
   .sd-body {
@@ -1556,7 +1565,7 @@ settings:
 }
 
 .sd-navbar {
-  z-index: 2;
+  z-index: 30;
 }
 
 .sd-dashboard .sd-card {
@@ -1974,7 +1983,7 @@ settings:
 
 .sd-subnav {
   position: sticky;
-  top: 0;
+  top: 53px;
   z-index: 20;
   display: flex;
   flex-wrap: wrap;

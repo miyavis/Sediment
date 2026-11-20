@@ -23,6 +23,9 @@ import {
   eachDay,
   formatDailyNoteName,
   hhmm,
+  localHHmm,
+  localStamp,
+  isSameLocalDay,
 } from "../src/utils/dates";
 import { countWords, countCheckedTasks, noteDateKey } from "../src/tracking/tracker";
 import { normalizeFolder } from "../src/utils/vault";
@@ -124,6 +127,20 @@ test("dates：formatDailyNoteName 替换占位符", () => {
 
 test("dates：hhmm 补零", () => {
   assert.equal(hhmm(new Date(2026, 0, 1, 9, 5)), "09:05");
+});
+
+test("dates：localHHmm/localStamp 把 UTC 时间转成本地时间", () => {
+  const d = new Date(2026, 0, 1, 9, 5, 7);
+  const iso = d.toISOString();
+  assert.equal(localHHmm(iso), "09:05");
+  assert.equal(localStamp(iso), "2026-01-01 09:05");
+  assert.equal(localStamp(iso, true), "2026-01-01 09:05:07");
+});
+
+test("dates：isSameLocalDay 按本地日期判定", () => {
+  const d = new Date(2026, 0, 1, 0, 30);
+  assert.equal(isSameLocalDay(d.toISOString(), "2026-01-01"), true);
+  assert.equal(isSameLocalDay(d.toISOString(), "2026-01-02"), false);
 });
 
 test("countWords：中文按字计", () => {

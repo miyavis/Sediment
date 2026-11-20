@@ -26,9 +26,11 @@ export function buildWeeklyReview(store: Store, anchor: Date): string {
   const memos = store.data.memos.filter(
     (memo) => memo.date >= keys[0] && memo.date <= keys[keys.length - 1]
   );
-  const pendingMemos = memos.filter((memo) => !memo.converted && !memo.archived);
-  const agentTasks = store.data.memos.filter(
+  const agentTasks = memos.filter(
     (memo) => memo.tags.includes("to-agent") && !memo.converted
+  );
+  const pendingMemos = memos.filter(
+    (memo) => !memo.converted && !memo.archived && !memo.tags.includes("to-agent")
   );
   const best = keys.reduce(
     (bestDay, day) =>

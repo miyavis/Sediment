@@ -8,7 +8,7 @@ import { listBackups, readBackup, restoreBackup } from "../features/audit";
 import { buildWeeklyReview } from "../features/review";
 import { exportTodayReport } from "../features/embed";
 import { METRICS, type MetricKey } from "../types";
-import { addDays, dateKey, lastNDays, parseKey } from "../utils/dates";
+import { addDays, dateKey, isSameLocalDay, lastNDays, localHHmm, localStamp, parseKey } from "../utils/dates";
 import { t, tf } from "../i18n";
 
 export const DASHBOARD_VIEW_TYPE = "sediment-dashboard";
@@ -164,12 +164,11 @@ export class DashboardView extends ItemView {
   }
 
   private renderHeader(root: HTMLElement): void {
-    const header = root.createDiv({ cls: "sd-header" });
-    const banner = header.createDiv({ cls: "sd-banner" });
+    const banner = root.createDiv({ cls: "sd-banner" });
     banner.innerHTML = this.bannerSvg();
     this.bannerEl = banner;
 
-    const bar = header.createDiv({ cls: "sd-navbar" });
+    const bar = root.createDiv({ cls: "sd-navbar" });
     bar.createDiv({ cls: "sd-brand", text: "SEDIMENT" });
     const tabs = bar.createDiv({ cls: "sd-tabs" });
     for (const [key, label] of TABS) {
@@ -266,7 +265,7 @@ export class DashboardView extends ItemView {
         streak,
         longest: this.longestStreak(),
         memos: this.plugin.store.data.memos.filter((memo) => memo.date === today).length,
-        agentCalls: this.plugin.store.data.toolCalls.filter((call) => call.time.startsWith(today)).length,
+        agentCalls: this.plugin.store.data.toolCalls.filter((call) => isSameLocalDay(call.time, today)).length,
       });
     };
     const row = card.createDiv({ cls: "sd-today-row" });
@@ -327,7 +326,7 @@ export class DashboardView extends ItemView {
     const card = root.createDiv({ cls: "sd-card sd-agent-feed" });
     card.createDiv({ cls: "sd-card-title", text: t("今日 Agent 动态") });
     const today = dateKey(new Date());
-    const calls = this.plugin.store.data.toolCalls.filter((call) => call.time.startsWith(today));
+    const calls = this.plugin.store.data.toolCalls.filter((call) => isSameLocalDay(call.time, today));
     const logs = this.plugin.store.data.workLogs.filter((log) => log.date === today);
     if (calls.length === 0 && logs.length === 0) {
       card.createDiv({ cls: "sd-empty", text: t("今天还没有智能体活动。") });
@@ -336,7 +335,7 @@ export class DashboardView extends ItemView {
     const list = card.createDiv({ cls: "sd-feed-list" });
     for (const call of calls.slice(0, 8)) {
       const row = list.createDiv({ cls: "sd-feed-row" });
-      row.createSpan({ text: `${call.time.slice(11, 16)} · ${call.agent || "unknown"}` });
+      row.createSpan({ text: `${localHHmm(call.time)} · ${call.agent || "unknown"}` });
       const tool = call.tool.replace(/^(GET|POST) /, "");
       const target = call.path ? call.path.split("/").pop() : "";
       row.createEl("strong", { text: target ? `${tool} · ${target}` : tool, attr: { title: call.path || tool } });
@@ -459,7 +458,7 @@ export class DashboardView extends ItemView {
       if (!(file instanceof TFile)) continue;
       const backups = listBackups(this.plugin, call.path);
       const row = list.createDiv({ cls: "sd-feed-row" });
-      row.createSpan({ text: `${call.time.slice(5, 16)} · ${call.tool.replace(/^(GET|POST) /, "")}` });
+      row.createSpan({ text: `${localStamp(call.time).slice(5)} · ${call.tool.replace(/^(GET|POST) /, "")}` });
       const actions = row.createDiv({ cls: "sd-audit-actions" });
       const type = call.tool.includes("patch")
         ? t("局部修改")
@@ -596,7 +595,7 @@ export class DashboardView extends ItemView {
     item(t("累计调用"), String(calls.length));
     for (const [agent, count] of Object.entries(byAgent)) item(agent, tf("{n} 次", { n: count }));
     const last = calls[0];
-    if (last) card.createDiv({ cls: "sd-card-sub", text: `${t("最近调用")}：${last.time.slice(0, 16)} · ${last.tool}` });
+    if (last) card.createDiv({ cls: "sd-card-sub", text: `${t("最近调用")}：${localStamp(last.time)} · ${last.tool}` });
   }
 
   private renderDrafts(root: HTMLElement): void {
@@ -1217,7 +1216,7 @@ ${refLines}${dots}${peakLabel}</svg>`;
         days.reduce((sum, day) => sum + (day.hourlyWords[hour] ?? 0), 0)
       );
       const hourlyMean = this.mean(hourly);
-      rhythm.innerHTML += this.barChart(
+      rhythm.createDiv({ cls: "sd-chart-slot" }).innerHTML = this.barChart(
         hourly,
         "var(--interactive-accent)",
         hourlyMean > 0 ? [{ value: hourlyMean, label: tf("均值 {n}", { n: Math.round(hourlyMean) }) }] : []
@@ -1350,7 +1349,7 @@ ${refLines}${dots}${peakLabel}</svg>`;
         return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="var(--background-modifier-border)" stroke-width="1"/><text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-size="9" text-anchor="middle" dominant-baseline="middle" fill="var(--text-faint)">${month + 1}月</text>`;
       }).join("");
       const watermark = `<text x="110" y="116" text-anchor="middle" font-size="26" font-weight="600" fill="var(--text-faint)" opacity="0.18">${year}</text>`;
-      card.innerHTML += `<svg viewBox="0 0 220 220" class="sd-wheel">${tracks}${monthTicks}${watermark}${petals}</svg>`;
+      card.createDiv({ cls: "sd-chart-slot" }).innerHTML = `<svg viewBox="0 0 220 220" class="sd-wheel">${tracks}${monthTicks}${watermark}${petals}</svg>`;
       return;
     }
 
@@ -1363,7 +1362,7 @@ ${refLines}${dots}${peakLabel}</svg>`;
         }).join("");
         return `<text x="0" y="${month * 20 + 11}" font-size="9" fill="var(--text-faint)">${month + 1}</text>${bars}`;
       }).join("");
-      card.innerHTML += `<svg viewBox="0 0 420 248" class="sd-fingerprint">${fingerprintSvg}</svg>`;
+      card.createDiv({ cls: "sd-chart-slot" }).innerHTML = `<svg viewBox="0 0 420 248" class="sd-fingerprint">${fingerprintSvg}</svg>`;
       return;
     }
 

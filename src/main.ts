@@ -17,7 +17,7 @@ import { McpUninstallModal } from "./ui/mcp-uninstall-modal";
 import { PulseSettingTab } from "./ui/settings-tab";
 import { ChangelogModal } from "./ui/changelog-modal";
 import { normalizeFolder, ensureFolder } from "./utils/vault";
-import { addDays, dateKey, parseKey, startOfWeek } from "./utils/dates";
+import { addDays, dateKey, isSameLocalDay, parseKey, startOfWeek } from "./utils/dates";
 import { DashboardView, DASHBOARD_VIEW_TYPE } from "./views/dashboard-view";
 import { MemoView, MEMO_VIEW_TYPE } from "./views/memo-view";
 import { Tracker } from "./tracking/tracker";
@@ -160,7 +160,7 @@ export class SedimentPlugin extends Plugin {
           streak: this.agentApi.getToday().streak,
           longest: this.longestDayStreak(),
           memos: this.store.data.memos.filter((memo) => memo.date === today).length,
-          agentCalls: this.store.data.toolCalls.filter((call) => call.time.startsWith(today)).length,
+          agentCalls: this.store.data.toolCalls.filter((call) => isSameLocalDay(call.time, today)).length,
         });
       },
     });

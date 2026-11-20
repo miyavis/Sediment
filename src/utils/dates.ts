@@ -57,3 +57,23 @@ export function formatDailyNoteName(format: string, d: Date): string {
 export function hhmm(d: Date): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
+
+/** 把 ISO（UTC）时间按本地时区格式化为 HH:mm，用于展示。 */
+export function localHHmm(iso: string): string {
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? iso : hhmm(d);
+}
+
+/** 把 ISO（UTC）时间按本地时区格式化为 YYYY-MM-DD HH:mm[:ss]。 */
+export function localStamp(iso: string, withSeconds = false): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  const base = `${dateKey(d)} ${hhmm(d)}`;
+  return withSeconds ? `${base}:${String(d.getSeconds()).padStart(2, "0")}` : base;
+}
+
+/** ISO（UTC）时间的本地日期是否等于给定日期 key。 */
+export function isSameLocalDay(iso: string, key: string): boolean {
+  const d = new Date(iso);
+  return !isNaN(d.getTime()) && dateKey(d) === key;
+}

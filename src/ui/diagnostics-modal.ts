@@ -1,5 +1,6 @@
 import { App, Modal, Notice } from "obsidian";
 import type { DiagnosticRecord } from "../types";
+import { localStamp } from "../utils/dates";
 
 /** 真实环境诊断日志：迁移、安全拒绝、性能与存储事件。 */
 export class DiagnosticsModal extends Modal {
@@ -24,7 +25,7 @@ export class DiagnosticsModal extends Modal {
     }
     for (const record of this.records.slice(0, 100)) {
       const row = list.createDiv({ cls: `sd-diagnostic-row is-${record.category}` });
-      row.createSpan({ cls: "sd-diagnostic-time", text: record.time.slice(0, 19).replace("T", " ") });
+      row.createSpan({ cls: "sd-diagnostic-time", text: localStamp(record.time, true) });
       row.createSpan({ cls: "sd-diagnostic-tag", text: record.category });
       row.createSpan({ cls: "sd-diagnostic-msg", text: record.message });
       if (record.detail) row.createDiv({ cls: "sd-diagnostic-detail", text: record.detail });
