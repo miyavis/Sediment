@@ -1,12 +1,14 @@
 import { ItemView, Notice, Platform, type WorkspaceLeaf } from "obsidian";
 import type { SedimentPlugin } from "../main";
 import { ChangelogModal } from "../ui/changelog-modal";
+import { PosterModal } from "../ui/poster-modal";
 import { addDays, dateKey, lastNDays, parseKey } from "../utils/dates";
 import { METRICS, type MetricKey } from "../types";
 import { SEDIMENT_ICON_ID, SEDIMENT_LOGO_SVG } from "../ui/logo";
-import { t } from "../i18n";
+import { t, tf } from "../i18n";
 import { TABS, type RangeKey, type TabKey } from "./dashboard/constants";
-import { renderAgentHub } from "./dashboard/sections/agent";
+import { filterAgentTasks, pendingReviewChanges, reviewBadgeCount } from "./dashboard/review-queue";
+import { listDraftFiles, renderAgentHub } from "./dashboard/sections/agent";
 import { renderInsights } from "./dashboard/sections/insights";
 import { renderToday } from "./dashboard/sections/today";
 
@@ -80,6 +82,8 @@ export class DashboardView extends ItemView {
     if (this.tab === "today") renderToday(this, root);
     else if (this.tab === "insights") renderInsights(this, root);
     else renderAgentHub(this, root);
+    // 页脚统一在 render() 末尾渲染，三个页签（含今日页）都有；section 内不再各自调用。
+    this.renderFooter(root);
     this.lastRenderedTab = this.tab;
 
     // 同页签刷新保留滚动位置；切换页签则回到顶部。用户若主动滚动，取消这次恢复。
@@ -263,6 +267,20 @@ export class DashboardView extends ItemView {
         text: t(label),
         attr: { role: "tab", "aria-selected": key === this.tab ? "true" : "false" },
       });
+      if (key === "agent") {
+        const badge = reviewBadgeCount({
+          drafts: listDraftFiles(this).length,
+          changes: pendingReviewChanges(
+            this.plugin.store.data.toolCalls,
+            this.plugin.store.data.reviewedChanges
+          ).length,
+          pendingWrites: (this.plugin.store.data.pendingWrites ?? []).length,
+        });
+        if (badge > 0) {
+          button.createSpan({ cls: "sd-tab-badge", text: String(badge) });
+          button.setAttribute("aria-label", `${t(label)} · ${tf("待审 {n} 项", { n: badge })}`);
+        }
+      }
       button.onclick = () => {
         this.tab = key;
         this.render();
@@ -274,20 +292,33 @@ export class DashboardView extends ItemView {
     refresh.onclick = () => this.render();
   }
 
-  renderTasksCard(root: HTMLElement): void {
+  /** 待办卡。agentOnly=true 时只渲染 Agent 委派子集（审核队列契约），今日页仍合并今日/遗留/Agent。 */
+  renderTasksCard(root: HTMLElement, agentOnly = false): void {
     const card = root.createDiv({ cls: "sd-card sd-tasks" });
-    card.createDiv({ cls: "sd-card-title", text: t("待办 · 今日 / 遗留 / Agent") });
+    card.createDiv({
+      cls: "sd-card-title",
+      text: agentOnly ? t("Agent 待办") : t("待办 · 今日 / 遗留 / Agent"),
+    });
     const list = card.createDiv({ cls: "sd-task-list" });
     list.createDiv({ cls: "sd-empty", text: t("加载中…") });
-    void Promise.all([
-      this.plugin.tasks.list("today"),
-      this.plugin.tasks.list("overdue"),
-      this.plugin.tasks.list("agent"),
-    ]).then(([today, overdue, agent]) => {
+    const load = agentOnly
+      ? this.plugin.tasks.list("agent").then((agent) => filterAgentTasks(agent))
+      : Promise.all([
+          this.plugin.tasks.list("today"),
+          this.plugin.tasks.list("overdue"),
+          this.plugin.tasks.list("agent"),
+        ]).then(([today, overdue, agent]) => [
+          ...today.filter((task) => !task.checked),
+          ...overdue,
+          ...agent,
+        ]);
+    void load.then((items) => {
       list.empty();
-      const items = [...today.filter((task) => !task.checked), ...overdue, ...agent];
       if (items.length === 0) {
-        list.createDiv({ cls: "sd-empty", text: t("没有未完成待办。") });
+        list.createDiv({
+          cls: "sd-empty",
+          text: agentOnly ? t("没有委派的 Agent 待办。") : t("没有未完成待办。"),
+        });
         return;
       }
       for (const task of items.slice(0, 12)) {
@@ -352,6 +383,12 @@ export class DashboardView extends ItemView {
     changelog.onclick = () => new ChangelogModal(this.plugin.app).open();
     const styleButton = footer.createEl("button", { text: t("换画风") });
     styleButton.onclick = () => this.cycleArtStyle();
+    // 月报入口原在 insights section 内追加到页脚；页脚上移后按页签在此统一挂载。
+    if (this.tab === "insights") {
+      footer.createEl("button", { text: t("月报") }).onclick = () => {
+        new PosterModal(this.plugin.app, this.plugin.store, this.posterMonth).open();
+      };
+    }
     return footer;
   }
 

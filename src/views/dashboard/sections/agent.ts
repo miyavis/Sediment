@@ -1,22 +1,21 @@
-/** 智能体工坊页签的渲染逻辑。所有共享状态/方法通过 view 访问。 */
+/** 智能体工坊页签：纯审核队列（草稿 + 待审写入 + 变更审查 + 数据恢复 + Agent 待办）。
+ *  工作日志与连接状态已挪至今日页；页脚由 dashboard-view.render() 统一渲染。 */
 import { Notice, TFile } from "obsidian";
 import { DiffModal } from "../../../ui/diff-modal";
 import { DraftPreviewModal } from "../../../ui/draft-preview-modal";
 import { listBackups, readBackup, restoreBackup } from "../../../features/audit";
 import { localStamp } from "../../../utils/dates";
 import { t, tf } from "../../../i18n";
+import { pendingReviewChanges } from "../review-queue";
 import type { DashboardView } from "../../dashboard-view";
 
 export function renderAgentHub(view: DashboardView, root: HTMLElement): void {
   const body = root.createDiv({ cls: "sd-body" });
   renderDrafts(view, body);
   renderPendingWrites(view, body);
-  view.renderTasksCard(body);
   renderAgentChanges(view, body);
-  renderWorkLogs(view, body);
-  const secondary = body.createDiv({ cls: "sd-secondary sd-agent-secondary" });
-  renderAgentStatus(view, secondary);
-  view.renderFooter(body);
+  renderDataRecovery(view, body);
+  view.renderTasksCard(body, true);
 }
 
 /** confirm 档挂起的 Agent 写入：预览走 DiffModal，采纳才真正落盘。 */
@@ -26,6 +25,7 @@ export function renderPendingWrites(view: DashboardView, root: HTMLElement): voi
   const card = root.createDiv({ cls: "sd-card" });
   card.createDiv({ cls: "sd-card-title", text: tf("待审写入 · {n}", { n: pending.length }) });
   card.createDiv({ cls: "sd-card-sub", text: t("「确认后写入」档下，Agent 的写操作挂起在这里，采纳后才真正落盘；驳回则丢弃。") });
+  card.createDiv({ cls: "sd-card-sub", text: t("文件若在挂起后被修改，采纳会因版本冲突失败；可驳回后让 Agent 重发。") });
   if (pending.length === 0) {
     card.createDiv({ cls: "sd-empty", text: t("没有挂起的待审写入。") });
     return;
@@ -96,17 +96,10 @@ async function rejectPendingWrite(view: DashboardView, id: string): Promise<void
 export function renderAgentChanges(view: DashboardView, root: HTMLElement): void {
   const card = root.createDiv({ cls: "sd-card" });
   card.createDiv({ cls: "sd-card-title", text: t("Agent 变更审查") });
-  const seen = new Set<string>();
-  const calls = view.plugin.store.data.toolCalls
-    .filter((call) => call.tool.startsWith("POST "))
-    .filter((call) => {
-      if (!call.path || seen.has(call.path)) return false;
-      seen.add(call.path);
-      return true;
-    })
-    .filter((call) => /\.(md|json)$/.test(call.path))
-    .filter((call) => !view.plugin.store.data.reviewedChanges[`${call.time}|${call.path}`])
-    .slice(0, 8);
+  const calls = pendingReviewChanges(
+    view.plugin.store.data.toolCalls,
+    view.plugin.store.data.reviewedChanges
+  ).slice(0, 8);
 
   if (calls.length === 0) {
     card.createDiv({ cls: "sd-empty", text: t("暂无 Agent 变更记录。") });
@@ -196,9 +189,20 @@ export function renderAgentStatus(view: DashboardView, root: HTMLElement): void 
   if (last) card.createDiv({ cls: "sd-card-sub", text: `${t("最近调用")}：${localStamp(last.time)} · ${last.tool}` });
 }
 
+/** 扫描 vault 中 sediment_status=draft 的笔记（徽章计数与草稿卡共用同一口径）。 */
+export function listDraftFiles(view: DashboardView): TFile[] {
+  const drafts: TFile[] = [];
+  for (const file of view.plugin.app.vault.getMarkdownFiles()) {
+    const cache = view.plugin.app.metadataCache.getFileCache(file);
+    if (cache?.frontmatter?.sediment_status === "draft") drafts.push(file);
+  }
+  return drafts;
+}
+
 export function renderDrafts(view: DashboardView, root: HTMLElement): void {
   const card = root.createDiv({ cls: "sd-card" });
-  card.createDiv({ cls: "sd-card-title", text: t("AI 沉淀审核") });
+  const head = card.createDiv({ cls: "sd-card-head" });
+  head.createDiv({ cls: "sd-card-title", text: t("AI 沉淀审核") });
   const modeLabels: Record<string, string> = {
     readonly: t("只读"),
     draft: t("草稿"),
@@ -210,15 +214,13 @@ export function renderDrafts(view: DashboardView, root: HTMLElement): void {
     text: t("当前工作模式：") + (modeLabels[view.plugin.store.settings.agentWorkMode] ?? "confirm") +
       t("。草稿需手动审核；「确认后写入」档下 Agent 的写操作会挂起在「待审写入」列表，采纳后才落盘；「自动执行」档不挂起。"),
   });
-  const drafts: TFile[] = [];
-  for (const file of view.plugin.app.vault.getMarkdownFiles()) {
-    const cache = view.plugin.app.metadataCache.getFileCache(file);
-    if (cache?.frontmatter?.sediment_status === "draft") drafts.push(file);
-  }
+  const drafts = listDraftFiles(view);
   if (drafts.length === 0) {
     card.createDiv({ cls: "sd-empty", text: t("没有待审核的 AI 草稿。") });
     return;
   }
+  // 截断展示时卡头给出总数，避免用户误以为只有 20 份。
+  if (drafts.length > 20) head.createDiv({ cls: "sd-card-sub", text: tf("共 {n} 份草稿", { n: drafts.length }) });
   const list = card.createDiv({ cls: "sd-draft-list" });
   for (const file of drafts.slice(0, 20)) {
     const item = list.createDiv({ cls: "sd-draft-card" });
@@ -275,6 +277,54 @@ export async function mergeDraft(view: DashboardView, file: TFile): Promise<void
   await view.plugin.app.vault.trash(file, false);
   new Notice(tf("已合并到 {name}", { name: target.basename }));
   view.render();
+}
+
+/** 数据快照恢复：列出 data.json 备份并一键恢复（Task 5 API）。
+ *  恢复是重操作：先二次确认；恢复副本创建失败（返回 ""）必须显著告警，不得静默当成功。 */
+export function renderDataRecovery(view: DashboardView, root: HTMLElement): void {
+  const card = root.createDiv({ cls: "sd-card" });
+  card.createDiv({ cls: "sd-card-title", text: t("数据快照恢复") });
+  card.createDiv({
+    cls: "sd-card-sub",
+    text: t("列出备份目录中的 data.json 快照，可一键恢复统计数据。恢复前会先把当前数据另存为恢复副本，恢复错了也能回退。"),
+  });
+  card.createDiv({
+    cls: "sd-card-sub",
+    text: t("备份目录为库根目录时，列表可能混入你自己创建的 data-*.json；恢复前会校验内容格式，损坏或非本插件数据会被拒绝。"),
+  });
+  if (view.plugin.store.isPersistenceBlocked) {
+    card.createDiv({
+      cls: "sd-card-sub sd-recovery-warning",
+      text: t("数据写入已暂停以保护原始数据；恢复一份有效快照可解除暂停。"),
+    });
+  }
+  const backups = view.plugin.store.listDataBackups();
+  if (backups.length === 0) {
+    card.createDiv({ cls: "sd-empty", text: t("还没有数据备份。开启「自动备份统计数据」后，快照会出现在这里。") });
+    return;
+  }
+  const list = card.createDiv({ cls: "sd-feed-list" });
+  for (const backup of backups.slice(0, 20)) {
+    const row = list.createDiv({ cls: "sd-feed-row" });
+    row.createSpan({
+      text: `${backup.name} · ${localStamp(new Date(backup.savedAt).toISOString())} · ${(backup.size / 1024).toFixed(1)} KB`,
+    });
+    const actions = row.createDiv({ cls: "sd-audit-actions" });
+    actions.createEl("button", { text: t("恢复") }).onclick = () => {
+      if (!window.confirm(t("确认从该快照恢复统计数据？当前数据会先另存为恢复副本，恢复后看板立即重载。"))) return;
+      void view.plugin.store.restoreDataBackup(backup.name).then((recoveryPath) => {
+        if (recoveryPath === "") {
+          // 恢复副本创建失败：备份已写回但失去回退保险，必须显著告警。
+          new Notice(t("恢复副本创建失败：备份已恢复，但当前数据未能另存副本。请立即手动备份 data.json，避免再次恢复时无法回退。"), 15_000);
+        } else {
+          new Notice(tf("已从 {name} 恢复，恢复副本：{path}", { name: backup.name, path: recoveryPath }));
+        }
+        view.plugin.refreshViews();
+      }).catch((error) => {
+        new Notice(error instanceof Error ? error.message : String(error));
+      });
+    };
+  }
 }
 
 export function renderWorkLogs(view: DashboardView, root: HTMLElement): void {

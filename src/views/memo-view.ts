@@ -3,7 +3,7 @@ import type { SedimentPlugin } from "../main";
 import { exportMemoCard } from "../features/embed";
 import type { MemoRecord } from "../types";
 import { addDays, dateKey } from "../utils/dates";
-import { SEDIMENT_ICON_ID } from "../ui/logo";
+import { SEDIMENT_MEMO_ICON_ID } from "../ui/logo";
 import { ensureFolder, normalizeFolder } from "../utils/vault";
 import { t, tf } from "../i18n";
 
@@ -32,7 +32,7 @@ export class MemoView extends ItemView {
   }
 
   getIcon(): string {
-    return SEDIMENT_ICON_ID;
+    return SEDIMENT_MEMO_ICON_ID;
   }
 
   async onOpen(): Promise<void> {

@@ -841,7 +841,6 @@ var EN = {
   "\u6218\u62A5\u56FE\u7247": "Report image",
   "\u5FEB\u901F\u901F\u8BB0": "Quick memo",
   "\u67E5\u770B\u4ECA\u65E5\u4EFB\u52A1": "View today's tasks",
-  "\u5F00\u59CB\u4E13\u6CE8": "Start focus",
   "\u4ECA\u65E5 Agent \u52A8\u6001": "Today's agent activity",
   "\u4ECA\u5929\u8FD8\u6CA1\u6709\u667A\u80FD\u4F53\u6D3B\u52A8\u3002": "No agent activity today yet.",
   "\u8DF3\u8FC7": "Skip",
@@ -920,6 +919,9 @@ var EN = {
   "Agent \u7981\u6B62\u8BBF\u95EE\u7684\u6807\u7B7E": "Tags denied to Agent",
   "\u9017\u53F7\u5206\u9694\uFF1B\u5E26\u8FD9\u4E9B\u6807\u7B7E\u7684\u7B14\u8BB0\u5BF9 Agent \u4E0D\u53EF\u8BFB\u3002": "Comma separated; notes with these tags are unreadable to agents.",
   "Agent \u6743\u9650\uFF08\u53EF\u9009\uFF09": "Agent permissions (optional)",
+  "\u57FA\u7840": "Basics",
+  "\u6570\u636E\u5907\u4EFD": "Data backup",
+  "\u5207\u6362\u4E3A\u300C{mode}\u300D\u5C06\u91CD\u7F6E 5 \u4E2A\u6743\u9650\u5F00\u5173\uFF1A\u5141\u8BB8\u8BFB\u53D6\u3001\u5141\u8BB8\u65B0\u5EFA\u3001\u5141\u8BB8\u5C40\u90E8\u4FEE\u6539\u3001\u5141\u8BB8\u5168\u91CF\u8986\u76D6\u3001\u5141\u8BB8\u5220\u9664\uFF08\u5220\u9664\u59CB\u7EC8\u5173\u95ED\uFF09\u3002\u662F\u5426\u7EE7\u7EED\uFF1F": "Switching to \u201C{mode}\u201D resets 5 permission switches: allow read, allow create, allow patch, allow overwrite, allow delete (delete stays off). Continue?",
   "Agent \u5DE5\u4F5C\u6A21\u5F0F": "Agent work mode",
   "\u9009\u62E9\u53EA\u8BFB\u3001\u8349\u7A3F\u3001\u786E\u8BA4\u540E\u5199\u5165\u6216\u81EA\u52A8\u6267\u884C\uFF1B\u300C\u786E\u8BA4\u540E\u5199\u5165\u300D\u6863\u4E0B Agent \u7684\u5199\u64CD\u4F5C\u4F1A\u6302\u8D77\u4E3A\u5F85\u5BA1\u9879\uFF0C\u5728\u770B\u677F\u300C\u5F85\u5BA1\u5199\u5165\u300D\u4E2D\u91C7\u7EB3\u540E\u624D\u843D\u76D8\u3002\u5B9E\u9645\u6743\u9650\u4ECD\u53D7\u4E0B\u65B9\u5F00\u5173\u7EA6\u675F\u3002": "Choose read-only, draft, confirm-before-write, or automatic; in confirm mode agent writes are held as pending items and only applied after you accept them in the dashboard's Pending writes card. The switches below remain hard limits.",
   "\u53EA\u8BFB": "Read-only",
@@ -937,8 +939,6 @@ var EN = {
   "\u5141\u8BB8\u5C40\u90E8\u4FEE\u6539": "Allow patch",
   "\u5141\u8BB8\u5168\u91CF\u8986\u76D6": "Allow overwrite",
   "\u9ED8\u8BA4\u5F00\u542F\u4EE5\u517C\u5BB9\u65E7\u5DE5\u4F5C\u6D41\uFF1B\u5173\u95ED\u540E Agent \u5FC5\u987B\u7528 patch_note\u3002": "On by default for legacy workflows; off forces agents to use patch_note.",
-  "\u5141\u8BB8\u5220\u9664": "Allow delete",
-  "\u5F53\u524D\u63D2\u4EF6\u672A\u5F00\u653E\u5220\u9664\u5DE5\u5177\uFF0C\u9ED8\u8BA4\u5173\u95ED\u3002": "No delete tool is exposed; off by default.",
   // Agent API 运行时拒绝文案（access.ts 门禁，api.ts/server.ts 使用）
   "\u8BBF\u95EE\u88AB\u62D2\u7EDD\uFF1A{path} \u4F4D\u4E8E\u9ED1\u540D\u5355\u76EE\u5F55": "Access denied: {path} is inside a denied folder",
   "\u8BBF\u95EE\u88AB\u62D2\u7EDD\uFF1A{path} \u4E0D\u5728\u767D\u540D\u5355\u76EE\u5F55\u5185": "Access denied: {path} is outside the allowlist folders",
@@ -1073,6 +1073,9 @@ var EN = {
   "\u6062\u590D": "Restore",
   "\u5DF2\u6062\u590D\u5230\u6700\u8FD1\u5907\u4EFD": "Restored to the latest backup",
   "\u5F85\u529E \xB7 \u4ECA\u65E5 / \u9057\u7559 / Agent": "Tasks \xB7 today / overdue / agent",
+  "Agent \u5F85\u529E": "Agent tasks",
+  "\u6CA1\u6709\u59D4\u6D3E\u7684 Agent \u5F85\u529E\u3002": "No delegated Agent tasks.",
+  "\u5F85\u5BA1 {n} \u9879": "{n} awaiting review",
   "\u52A0\u8F7D\u4E2D\u2026": "Loading\u2026",
   "\u6CA1\u6709\u672A\u5B8C\u6210\u5F85\u529E\u3002": "No pending tasks.",
   "\u5B8C\u6210": "Complete",
@@ -1092,6 +1095,7 @@ var EN = {
   "{n} \u6B21": "{n} calls",
   "\u6700\u8FD1\u8C03\u7528": "Last call",
   "AI \u6C89\u6DC0\u5BA1\u6838": "AI knowledge review",
+  "\u5171 {n} \u4EFD\u8349\u7A3F": "{n} drafts in total",
   "\u6CA1\u6709\u5F85\u5BA1\u6838\u7684 AI \u8349\u7A3F\u3002": "No AI drafts awaiting review.",
   "\u91C7\u7EB3\u5E76\u5F52\u6863": "Accept & archive",
   "\u5DF2\u91C7\u7EB3": "Accepted",
@@ -1103,6 +1107,15 @@ var EN = {
   "\u5DF2\u5408\u5E76\u5230 {name}": "Merged into {name}",
   "\u667A\u80FD\u4F53\u5DE5\u4F5C\u65E5\u5FD7": "Agent work logs",
   "\u8FD8\u6CA1\u6709\u5DE5\u4F5C\u65E5\u5FD7\u3002": "No work logs yet.",
+  "\u6587\u4EF6\u82E5\u5728\u6302\u8D77\u540E\u88AB\u4FEE\u6539\uFF0C\u91C7\u7EB3\u4F1A\u56E0\u7248\u672C\u51B2\u7A81\u5931\u8D25\uFF1B\u53EF\u9A73\u56DE\u540E\u8BA9 Agent \u91CD\u53D1\u3002": "If the file changed after being held, accepting fails with a version conflict; reject it and let the agent resend.",
+  "\u6570\u636E\u5FEB\u7167\u6062\u590D": "Data snapshot recovery",
+  "\u5217\u51FA\u5907\u4EFD\u76EE\u5F55\u4E2D\u7684 data.json \u5FEB\u7167\uFF0C\u53EF\u4E00\u952E\u6062\u590D\u7EDF\u8BA1\u6570\u636E\u3002\u6062\u590D\u524D\u4F1A\u5148\u628A\u5F53\u524D\u6570\u636E\u53E6\u5B58\u4E3A\u6062\u590D\u526F\u672C\uFF0C\u6062\u590D\u9519\u4E86\u4E5F\u80FD\u56DE\u9000\u3002": "Lists data.json snapshots in the backup folder for one-click restore. Current data is saved as a recovery copy first, so a wrong restore can be rolled back.",
+  "\u5907\u4EFD\u76EE\u5F55\u4E3A\u5E93\u6839\u76EE\u5F55\u65F6\uFF0C\u5217\u8868\u53EF\u80FD\u6DF7\u5165\u4F60\u81EA\u5DF1\u521B\u5EFA\u7684 data-*.json\uFF1B\u6062\u590D\u524D\u4F1A\u6821\u9A8C\u5185\u5BB9\u683C\u5F0F\uFF0C\u635F\u574F\u6216\u975E\u672C\u63D2\u4EF6\u6570\u636E\u4F1A\u88AB\u62D2\u7EDD\u3002": "When the backup folder is the vault root, your own data-*.json files may appear here; content is validated before restore, and corrupted or foreign data is rejected.",
+  "\u6570\u636E\u5199\u5165\u5DF2\u6682\u505C\u4EE5\u4FDD\u62A4\u539F\u59CB\u6570\u636E\uFF1B\u6062\u590D\u4E00\u4EFD\u6709\u6548\u5FEB\u7167\u53EF\u89E3\u9664\u6682\u505C\u3002": "Writes are paused to protect the original data; restoring a valid snapshot lifts the pause.",
+  "\u8FD8\u6CA1\u6709\u6570\u636E\u5907\u4EFD\u3002\u5F00\u542F\u300C\u81EA\u52A8\u5907\u4EFD\u7EDF\u8BA1\u6570\u636E\u300D\u540E\uFF0C\u5FEB\u7167\u4F1A\u51FA\u73B0\u5728\u8FD9\u91CC\u3002": "No data backups yet. Enable \u201CAuto-backup stats\u201D and snapshots will appear here.",
+  "\u786E\u8BA4\u4ECE\u8BE5\u5FEB\u7167\u6062\u590D\u7EDF\u8BA1\u6570\u636E\uFF1F\u5F53\u524D\u6570\u636E\u4F1A\u5148\u53E6\u5B58\u4E3A\u6062\u590D\u526F\u672C\uFF0C\u6062\u590D\u540E\u770B\u677F\u7ACB\u5373\u91CD\u8F7D\u3002": "Restore stats from this snapshot? Current data is saved as a recovery copy first, and the dashboard reloads immediately.",
+  "\u6062\u590D\u526F\u672C\u521B\u5EFA\u5931\u8D25\uFF1A\u5907\u4EFD\u5DF2\u6062\u590D\uFF0C\u4F46\u5F53\u524D\u6570\u636E\u672A\u80FD\u53E6\u5B58\u526F\u672C\u3002\u8BF7\u7ACB\u5373\u624B\u52A8\u5907\u4EFD data.json\uFF0C\u907F\u514D\u518D\u6B21\u6062\u590D\u65F6\u65E0\u6CD5\u56DE\u9000\u3002": "Recovery copy failed: the backup was restored, but current data could not be saved aside. Back up data.json manually now, or a future restore may be irreversible.",
+  "\u5DF2\u4ECE {name} \u6062\u590D\uFF0C\u6062\u590D\u526F\u672C\uFF1A{path}": "Restored from {name}; recovery copy: {path}",
   "\u6570\u636E\u53EA\u7559\u5728\u672C\u5730": "data stays local",
   "\u6362\u753B\u98CE": "Change art",
   "\u77E5\u8BC6\u6307\u7EB9": "Knowledge fingerprint",
@@ -4380,6 +4393,83 @@ var McpUninstallModal = class extends import_obsidian12.Modal {
 
 // src/ui/settings-tab.ts
 var import_obsidian13 = require("obsidian");
+
+// src/ui/settings-sections.ts
+var SETTINGS_SECTIONS = [
+  {
+    id: "basics",
+    title: "\u57FA\u7840",
+    keys: [
+      "language",
+      "dailyNoteFolder",
+      "dailyNoteFormat",
+      "memoHeading",
+      "weekStart",
+      "heatmapMetric",
+      "trackEdits",
+      "reviewFolder",
+      "artStyle",
+      "dailyWordGoal",
+      "layoutDensity",
+      "reducedMotion"
+    ]
+  },
+  {
+    id: "agent",
+    title: "Agent \u6743\u9650\uFF08\u53EF\u9009\uFF09",
+    keys: [
+      "agentWorkMode",
+      "agentAccessMode",
+      "agentAllowedFolders",
+      "agentAllowRead",
+      "agentAllowCreate",
+      "agentAllowPatch",
+      "agentAllowOverwrite",
+      "enableAuditSnapshot",
+      "workLogFolder",
+      "knowledgeFolder",
+      "knowledgeCategories",
+      "deniedFolders",
+      "deniedTags"
+    ]
+  },
+  {
+    id: "backup",
+    title: "\u6570\u636E\u5907\u4EFD",
+    keys: ["backupEnabled", "backupFolder", "backupKeep"]
+  },
+  {
+    id: "stats",
+    title: "\u7EDF\u8BA1\u53E3\u5F84\uFF08\u8D21\u732E\u5206\u5C01\u9876\u4E0E\u6743\u91CD\uFF09",
+    keys: [
+      "contributionDailyCap",
+      "wordsPerWriteCap",
+      "weightNotesCreated",
+      "weightEdits",
+      "weightTasks",
+      "wordsPerPoint",
+      "focusMinutesPerPoint"
+    ]
+  },
+  {
+    id: "connection",
+    title: "Agent \u63A5\u5165\uFF08\u672C\u5730 HTTP / MCP\uFF09",
+    keys: ["agentServerEnabled", "agentServerPort", "agentServerToken"]
+  },
+  {
+    id: "clients",
+    title: "\u4E00\u952E\u914D\u7F6E\u667A\u80FD\u4F53\u5BA2\u6237\u7AEF",
+    keys: []
+  }
+];
+
+// src/ui/settings-tab.ts
+var WORK_MODE_LABELS = {
+  readonly: "\u53EA\u8BFB",
+  draft: "\u8349\u7A3F",
+  confirm: "\u786E\u8BA4\u540E\u5199\u5165",
+  auto: "\u81EA\u52A8\u6267\u884C"
+};
 var PulseSettingTab = class extends import_obsidian13.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
@@ -4397,6 +4487,17 @@ var PulseSettingTab = class extends import_obsidian13.PluginSettingTab {
     });
     const settings = this.plugin.store.settings;
     const save = () => void this.plugin.saveSettings();
+    for (const section of SETTINGS_SECTIONS) {
+      containerEl.createEl("h3", { text: t(section.title) });
+      if (section.id === "basics") this.renderBasics(containerEl, settings, save);
+      else if (section.id === "agent") this.renderAgent(containerEl, settings, save);
+      else if (section.id === "backup") this.renderBackup(containerEl, settings, save);
+      else if (section.id === "stats") this.renderStats(containerEl, settings, save);
+      else if (section.id === "connection") this.renderConnection(containerEl, settings, save);
+      else this.renderClients(containerEl);
+    }
+  }
+  renderBasics(containerEl, settings, save) {
     new import_obsidian13.Setting(containerEl).setName(t("\u754C\u9762\u8BED\u8A00")).setDesc(t("\u8DDF\u968F Obsidian\uFF08auto\uFF09\uFF0C\u6216\u5F3A\u5236\u4E2D\u6587 / \u82F1\u6587\u3002")).addDropdown(
       (dropdown) => dropdown.addOption("auto", t("\u8DDF\u968F\u7CFB\u7EDF")).addOption("zh", t("\u4E2D\u6587")).addOption("en", t("\u82F1\u6587")).setValue(settings.language).onChange((value) => {
         settings.language = value;
@@ -4451,41 +4552,49 @@ var PulseSettingTab = class extends import_obsidian13.PluginSettingTab {
         save();
       })
     );
-    new import_obsidian13.Setting(containerEl).setName(t("Agent \u5DE5\u4F5C\u65E5\u5FD7\u76EE\u5F55")).setDesc(t("\u667A\u80FD\u4F53\u6BCF\u6B21\u5DE5\u4F5C\u7684\u6C89\u6DC0\u65E5\u5FD7\uFF0C\u9ED8\u8BA4\u6309\u5929\u5199\u5165\u4E00\u4E2A\u6587\u4EF6\u3002")).addText(
-      (text) => text.setPlaceholder("agent-logs").setValue(settings.workLogFolder).onChange((value) => {
-        settings.workLogFolder = value;
-        save();
-      })
-    );
-    new import_obsidian13.Setting(containerEl).setName(t("\u77E5\u8BC6\u6C89\u6DC0\u76EE\u5F55")).setDesc(t("\u667A\u80FD\u4F53\u901A\u8FC7 add_knowledge \u5199\u5165\u7684\u957F\u671F\u7B14\u8BB0\u76EE\u5F55\u3002")).addText(
-      (text) => text.setPlaceholder("knowledge").setValue(settings.knowledgeFolder).onChange((value) => {
-        settings.knowledgeFolder = value;
-        save();
-      })
-    );
-    new import_obsidian13.Setting(containerEl).setName(t("\u77E5\u8BC6\u5E93\u5206\u7C7B")).setDesc(t("\u9017\u53F7\u5206\u9694\uFF0C\u667A\u80FD\u4F53\u6C89\u6DC0\u7B14\u8BB0\u65F6\u4F1A\u6309\u5206\u7C7B\u5EFA\u5B50\u76EE\u5F55\u3002")).addText(
-      (text) => text.setPlaceholder("\u6280\u672F,\u9879\u76EE,\u65B9\u6CD5,\u7075\u611F,\u590D\u76D8").setValue(settings.knowledgeCategories).onChange((value) => {
-        settings.knowledgeCategories = value;
+    new import_obsidian13.Setting(containerEl).setName(t("\u770B\u677F\u753B\u98CE")).setDesc(t("\u50CF\u7D20\u6E56\u9762 / \u6C34\u58A8\u5C71\u6C34 / \u50CF\u7D20\u57CE\u5E02\uFF0C\u4E5F\u53EF\u5728\u770B\u677F\u9875\u811A\u70B9\u300C\u6362\u753B\u98CE\u300D\u3002")).addDropdown(
+      (dropdown) => dropdown.addOption("lake", t("\u50CF\u7D20\u6E56\u9762")).addOption("ink", t("\u6C34\u58A8\u5C71\u6C34")).addOption("city", t("\u50CF\u7D20\u57CE\u5E02")).setValue(settings.artStyle).onChange((value) => {
+        settings.artStyle = value;
         save();
         this.plugin.refreshViews();
       })
     );
-    new import_obsidian13.Setting(containerEl).setName(t("Agent \u7981\u6B62\u8BBF\u95EE\u7684\u6587\u4EF6\u5939")).setDesc(t("\u9017\u53F7\u5206\u9694\uFF1B\u8FD9\u4E9B\u76EE\u5F55\u5BF9 Agent \u7684\u8BFB\u5199\u548C\u641C\u7D22\u5168\u90E8\u9690\u85CF\u3002")).addText(
-      (text) => text.setPlaceholder("\u4F8B\u5982\uFF1A\u8D22\u52A1,\u79C1\u4EBA\u65E5\u8BB0").setValue(settings.deniedFolders).onChange((value) => {
-        settings.deniedFolders = value;
+    new import_obsidian13.Setting(containerEl).setName(t("\u6BCF\u65E5\u5199\u4F5C\u76EE\u6807")).setDesc(t("\u770B\u677F\u4ECA\u5929\u5361\u7247\u663E\u793A\u8FDB\u5EA6\uFF0C0 \u8868\u793A\u5173\u95ED\u3002")).addText(
+      (text) => text.setPlaceholder("1000").setValue(String(settings.dailyWordGoal)).onChange((value) => {
+        const goal = Number(value);
+        settings.dailyWordGoal = Number.isFinite(goal) && goal >= 0 ? goal : 1e3;
         save();
+        this.plugin.refreshViews();
       })
     );
-    new import_obsidian13.Setting(containerEl).setName(t("Agent \u7981\u6B62\u8BBF\u95EE\u7684\u6807\u7B7E")).setDesc(t("\u9017\u53F7\u5206\u9694\uFF1B\u5E26\u8FD9\u4E9B\u6807\u7B7E\u7684\u7B14\u8BB0\u5BF9 Agent \u4E0D\u53EF\u8BFB\u3002")).addText(
-      (text) => text.setPlaceholder("\u4F8B\u5982\uFF1A\u79C1\u5BC6,\u5BC6\u7801").setValue(settings.deniedTags).onChange((value) => {
-        settings.deniedTags = value;
+    new import_obsidian13.Setting(containerEl).setName(t("\u754C\u9762\u5BC6\u5EA6")).setDesc(t("\u7CBE\u7B80\u6A21\u5F0F\u4F18\u5148\u663E\u793A\u6355\u83B7\u3001\u4EFB\u52A1\u548C\u6458\u8981\u3002")).addDropdown(
+      (dropdown) => dropdown.addOption("compact", t("\u7CBE\u7B80")).addOption("standard", t("\u6807\u51C6")).addOption("full", t("\u5B8C\u6574")).setValue(settings.layoutDensity).onChange((value) => {
+        settings.layoutDensity = value;
         save();
+        this.plugin.refreshViews();
       })
     );
-    containerEl.createEl("h3", { text: t("Agent \u6743\u9650\uFF08\u53EF\u9009\uFF09") });
+    new import_obsidian13.Setting(containerEl).setName(t("\u51CF\u5C11\u52A8\u6001\u6548\u679C")).setDesc(t("\u5173\u95ED\u6A2A\u5E45\u548C\u5361\u7247\u52A8\u753B\uFF0C\u4FDD\u7559\u5FC5\u8981\u72B6\u6001\u53CD\u9988\u3002")).addToggle(
+      (toggle) => toggle.setValue(settings.reducedMotion).onChange((value) => {
+        settings.reducedMotion = value;
+        save();
+        this.plugin.refreshViews();
+      })
+    );
+  }
+  renderAgent(containerEl, settings, save) {
     new import_obsidian13.Setting(containerEl).setName(t("Agent \u5DE5\u4F5C\u6A21\u5F0F")).setDesc(t("\u9009\u62E9\u53EA\u8BFB\u3001\u8349\u7A3F\u3001\u786E\u8BA4\u540E\u5199\u5165\u6216\u81EA\u52A8\u6267\u884C\uFF1B\u300C\u786E\u8BA4\u540E\u5199\u5165\u300D\u6863\u4E0B Agent \u7684\u5199\u64CD\u4F5C\u4F1A\u6302\u8D77\u4E3A\u5F85\u5BA1\u9879\uFF0C\u5728\u770B\u677F\u300C\u5F85\u5BA1\u5199\u5165\u300D\u4E2D\u91C7\u7EB3\u540E\u624D\u843D\u76D8\u3002\u5B9E\u9645\u6743\u9650\u4ECD\u53D7\u4E0B\u65B9\u5F00\u5173\u7EA6\u675F\u3002")).addDropdown(
       (dropdown) => dropdown.addOption("readonly", t("\u53EA\u8BFB")).addOption("draft", t("\u8349\u7A3F")).addOption("confirm", t("\u786E\u8BA4\u540E\u5199\u5165")).addOption("auto", t("\u81EA\u52A8\u6267\u884C")).setValue(settings.agentWorkMode).onChange((value) => {
-        settings.agentWorkMode = value;
+        var _a2;
+        const next = value;
+        if (next !== settings.agentWorkMode && !window.confirm(tf(
+          "\u5207\u6362\u4E3A\u300C{mode}\u300D\u5C06\u91CD\u7F6E 5 \u4E2A\u6743\u9650\u5F00\u5173\uFF1A\u5141\u8BB8\u8BFB\u53D6\u3001\u5141\u8BB8\u65B0\u5EFA\u3001\u5141\u8BB8\u5C40\u90E8\u4FEE\u6539\u3001\u5141\u8BB8\u5168\u91CF\u8986\u76D6\u3001\u5141\u8BB8\u5220\u9664\uFF08\u5220\u9664\u59CB\u7EC8\u5173\u95ED\uFF09\u3002\u662F\u5426\u7EE7\u7EED\uFF1F",
+          { mode: t((_a2 = WORK_MODE_LABELS[next]) != null ? _a2 : next) }
+        ))) {
+          dropdown.setValue(settings.agentWorkMode);
+          return;
+        }
+        settings.agentWorkMode = next;
         if (settings.agentWorkMode === "readonly") {
           settings.agentAllowRead = true;
           settings.agentAllowCreate = false;
@@ -4497,12 +4606,6 @@ var PulseSettingTab = class extends import_obsidian13.PluginSettingTab {
           settings.agentAllowCreate = true;
           settings.agentAllowPatch = false;
           settings.agentAllowOverwrite = false;
-          settings.agentAllowDelete = false;
-        } else if (settings.agentWorkMode === "confirm") {
-          settings.agentAllowRead = true;
-          settings.agentAllowCreate = true;
-          settings.agentAllowPatch = true;
-          settings.agentAllowOverwrite = true;
           settings.agentAllowDelete = false;
         } else {
           settings.agentAllowRead = true;
@@ -4551,18 +4654,45 @@ var PulseSettingTab = class extends import_obsidian13.PluginSettingTab {
         save();
       })
     );
-    new import_obsidian13.Setting(containerEl).setName(t("\u5141\u8BB8\u5220\u9664")).setDesc(t("\u5F53\u524D\u63D2\u4EF6\u672A\u5F00\u653E\u5220\u9664\u5DE5\u5177\uFF0C\u9ED8\u8BA4\u5173\u95ED\u3002")).addToggle(
-      (toggle) => toggle.setValue(settings.agentAllowDelete).onChange((value) => {
-        settings.agentAllowDelete = value;
-        save();
-      })
-    );
     new import_obsidian13.Setting(containerEl).setName(t("\u4FEE\u6539\u524D\u5B58\u5FEB\u7167")).setDesc(t("\u8986\u76D6\u6216 Patch \u524D\u4FDD\u5B58\u539F\u6587\uFF0C\u652F\u6301 Agent \u53D8\u66F4\u5BA1\u67E5\u4E0E\u4E00\u952E\u6062\u590D\u3002")).addToggle(
       (toggle) => toggle.setValue(settings.enableAuditSnapshot).onChange((value) => {
         settings.enableAuditSnapshot = value;
         save();
       })
     );
+    new import_obsidian13.Setting(containerEl).setName(t("Agent \u5DE5\u4F5C\u65E5\u5FD7\u76EE\u5F55")).setDesc(t("\u667A\u80FD\u4F53\u6BCF\u6B21\u5DE5\u4F5C\u7684\u6C89\u6DC0\u65E5\u5FD7\uFF0C\u9ED8\u8BA4\u6309\u5929\u5199\u5165\u4E00\u4E2A\u6587\u4EF6\u3002")).addText(
+      (text) => text.setPlaceholder("agent-logs").setValue(settings.workLogFolder).onChange((value) => {
+        settings.workLogFolder = value;
+        save();
+      })
+    );
+    new import_obsidian13.Setting(containerEl).setName(t("\u77E5\u8BC6\u6C89\u6DC0\u76EE\u5F55")).setDesc(t("\u667A\u80FD\u4F53\u901A\u8FC7 add_knowledge \u5199\u5165\u7684\u957F\u671F\u7B14\u8BB0\u76EE\u5F55\u3002")).addText(
+      (text) => text.setPlaceholder("knowledge").setValue(settings.knowledgeFolder).onChange((value) => {
+        settings.knowledgeFolder = value;
+        save();
+      })
+    );
+    new import_obsidian13.Setting(containerEl).setName(t("\u77E5\u8BC6\u5E93\u5206\u7C7B")).setDesc(t("\u9017\u53F7\u5206\u9694\uFF0C\u667A\u80FD\u4F53\u6C89\u6DC0\u7B14\u8BB0\u65F6\u4F1A\u6309\u5206\u7C7B\u5EFA\u5B50\u76EE\u5F55\u3002")).addText(
+      (text) => text.setPlaceholder("\u6280\u672F,\u9879\u76EE,\u65B9\u6CD5,\u7075\u611F,\u590D\u76D8").setValue(settings.knowledgeCategories).onChange((value) => {
+        settings.knowledgeCategories = value;
+        save();
+        this.plugin.refreshViews();
+      })
+    );
+    new import_obsidian13.Setting(containerEl).setName(t("Agent \u7981\u6B62\u8BBF\u95EE\u7684\u6587\u4EF6\u5939")).setDesc(t("\u9017\u53F7\u5206\u9694\uFF1B\u8FD9\u4E9B\u76EE\u5F55\u5BF9 Agent \u7684\u8BFB\u5199\u548C\u641C\u7D22\u5168\u90E8\u9690\u85CF\u3002")).addText(
+      (text) => text.setPlaceholder("\u4F8B\u5982\uFF1A\u8D22\u52A1,\u79C1\u4EBA\u65E5\u8BB0").setValue(settings.deniedFolders).onChange((value) => {
+        settings.deniedFolders = value;
+        save();
+      })
+    );
+    new import_obsidian13.Setting(containerEl).setName(t("Agent \u7981\u6B62\u8BBF\u95EE\u7684\u6807\u7B7E")).setDesc(t("\u9017\u53F7\u5206\u9694\uFF1B\u5E26\u8FD9\u4E9B\u6807\u7B7E\u7684\u7B14\u8BB0\u5BF9 Agent \u4E0D\u53EF\u8BFB\u3002")).addText(
+      (text) => text.setPlaceholder("\u4F8B\u5982\uFF1A\u79C1\u5BC6,\u5BC6\u7801").setValue(settings.deniedTags).onChange((value) => {
+        settings.deniedTags = value;
+        save();
+      })
+    );
+  }
+  renderBackup(containerEl, settings, save) {
     new import_obsidian13.Setting(containerEl).setName(t("\u81EA\u52A8\u5907\u4EFD\u7EDF\u8BA1\u6570\u636E")).setDesc(t("\u628A data.json \u5FEB\u7167\u5199\u5165\u5E93\u5185\u666E\u901A\u6587\u4EF6\u5939\uFF0C\u907F\u514D .obsidian \u88AB\u540C\u6B65\u5DE5\u5177\u5FFD\u7565\u3002")).addToggle(
       (toggle) => toggle.setValue(settings.backupEnabled).onChange((value) => {
         settings.backupEnabled = value;
@@ -4582,47 +4712,24 @@ var PulseSettingTab = class extends import_obsidian13.PluginSettingTab {
         save();
       })
     );
-    new import_obsidian13.Setting(containerEl).setName(t("\u770B\u677F\u753B\u98CE")).setDesc(t("\u50CF\u7D20\u6E56\u9762 / \u6C34\u58A8\u5C71\u6C34 / \u50CF\u7D20\u57CE\u5E02\uFF0C\u4E5F\u53EF\u5728\u770B\u677F\u9875\u811A\u70B9\u300C\u6362\u753B\u98CE\u300D\u3002")).addDropdown(
-      (dropdown) => dropdown.addOption("lake", t("\u50CF\u7D20\u6E56\u9762")).addOption("ink", t("\u6C34\u58A8\u5C71\u6C34")).addOption("city", t("\u50CF\u7D20\u57CE\u5E02")).setValue(settings.artStyle).onChange((value) => {
-        settings.artStyle = value;
-        save();
-        this.plugin.refreshViews();
-      })
-    );
-    new import_obsidian13.Setting(containerEl).setName(t("\u6BCF\u65E5\u5199\u4F5C\u76EE\u6807")).setDesc(t("\u770B\u677F\u4ECA\u5929\u5361\u7247\u663E\u793A\u8FDB\u5EA6\uFF0C0 \u8868\u793A\u5173\u95ED\u3002")).addText(
-      (text) => text.setPlaceholder("1000").setValue(String(settings.dailyWordGoal)).onChange((value) => {
-        const goal = Number(value);
-        settings.dailyWordGoal = Number.isFinite(goal) && goal >= 0 ? goal : 1e3;
-        save();
-        this.plugin.refreshViews();
-      })
-    );
-    new import_obsidian13.Setting(containerEl).setName(t("\u754C\u9762\u5BC6\u5EA6")).setDesc(t("\u7CBE\u7B80\u6A21\u5F0F\u4F18\u5148\u663E\u793A\u6355\u83B7\u3001\u4EFB\u52A1\u548C\u6458\u8981\u3002")).addDropdown(
-      (dropdown) => dropdown.addOption("compact", t("\u7CBE\u7B80")).addOption("standard", t("\u6807\u51C6")).addOption("full", t("\u5B8C\u6574")).setValue(settings.layoutDensity).onChange((value) => {
-        settings.layoutDensity = value;
-        save();
-        this.plugin.refreshViews();
-      })
-    );
-    new import_obsidian13.Setting(containerEl).setName(t("\u51CF\u5C11\u52A8\u6001\u6548\u679C")).setDesc(t("\u5173\u95ED\u6A2A\u5E45\u548C\u5361\u7247\u52A8\u753B\uFF0C\u4FDD\u7559\u5FC5\u8981\u72B6\u6001\u53CD\u9988\u3002")).addToggle(
-      (toggle) => toggle.setValue(settings.reducedMotion).onChange((value) => {
-        settings.reducedMotion = value;
-        save();
-        this.plugin.refreshViews();
-      })
-    );
-    containerEl.createEl("h3", { text: t("\u7EDF\u8BA1\u53E3\u5F84\uFF08\u8D21\u732E\u5206\u5C01\u9876\u4E0E\u6743\u91CD\uFF09") });
+  }
+  renderStats(containerEl, settings, save) {
     const recompute = () => {
       this.plugin.store.recomputeContributions();
       this.plugin.refreshViews();
     };
     const numberSetting = (name, desc, key, fallback, min = 0) => {
+      let debounceTimer = null;
       new import_obsidian13.Setting(containerEl).setName(t(name)).setDesc(t(desc)).addText(
         (text) => text.setPlaceholder(String(fallback)).setValue(String(settings[key])).onChange((value) => {
-          const parsed = Number(value);
-          settings[key] = Number.isFinite(parsed) && parsed >= min ? parsed : fallback;
-          save();
-          recompute();
+          if (debounceTimer !== null) window.clearTimeout(debounceTimer);
+          debounceTimer = window.setTimeout(() => {
+            debounceTimer = null;
+            const parsed = Number(value);
+            settings[key] = Number.isFinite(parsed) && parsed >= min ? parsed : fallback;
+            save();
+            recompute();
+          }, 300);
         })
       );
     };
@@ -4637,7 +4744,8 @@ var PulseSettingTab = class extends import_obsidian13.PluginSettingTab {
       cls: "sd-setup-hint",
       text: t("\u4FEE\u6539\u6743\u91CD\u6216\u5C01\u9876\u540E\u4F1A\u7ACB\u5373\u5168\u91CF\u91CD\u7B97\u5386\u53F2\u8D21\u732E\u5206\u3002Agent \u5199\u5165\u53EA\u8BA1\u300CAI \u65B0\u589E\u8BCD\u300D\uFF0C\u4E0D\u91CD\u590D\u8BA1\u5165\u4EBA\u7C7B\u5199\u4F5C\u7EDF\u8BA1\u3002")
     });
-    containerEl.createEl("h3", { text: t("Agent \u63A5\u5165\uFF08\u672C\u5730 HTTP / MCP\uFF09") });
+  }
+  renderConnection(containerEl, settings, save) {
     new import_obsidian13.Setting(containerEl).setName(t("\u542F\u7528\u672C\u5730 Agent API")).setDesc(t("\u53EA\u76D1\u542C 127.0.0.1\uFF0C\u4F9B MCP \u6865\u63A5\u548C\u672C\u5730\u811A\u672C\u8C03\u7528\u4E2A\u4EBA\u77E5\u8BC6\u5E93\u3002")).addToggle(
       (toggle) => toggle.setValue(settings.agentServerEnabled).onChange((value) => {
         settings.agentServerEnabled = value;
@@ -4666,7 +4774,8 @@ var PulseSettingTab = class extends import_obsidian13.PluginSettingTab {
         this.display();
       })
     );
-    containerEl.createEl("h3", { text: t("\u4E00\u952E\u914D\u7F6E\u667A\u80FD\u4F53\u5BA2\u6237\u7AEF") });
+  }
+  renderClients(containerEl) {
     const hint = containerEl.createDiv({ cls: "sd-setup-hint" });
     hint.setText(
       t("\u81EA\u52A8\u63A2\u6D4B\u672C\u673A\u5DF2\u5B89\u88C5\u7684\u667A\u80FD\u4F53\uFF0C\u52FE\u9009\u540E\u4E00\u952E\u5199\u5165 MCP \u914D\u7F6E\u3002\u5199\u5165\u524D\u4F1A\u5907\u4EFD\u539F\u6587\u4EF6\uFF0C\u91CD\u542F\u5BA2\u6237\u7AEF\u5373\u53EF\u751F\u6548\u3002")
@@ -4749,6 +4858,91 @@ var SEDIMENT_MEMO_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="curre
 // src/views/dashboard-view.ts
 var import_obsidian20 = require("obsidian");
 
+// src/ui/poster-modal.ts
+var import_obsidian15 = require("obsidian");
+var PosterModal = class extends import_obsidian15.Modal {
+  constructor(app, store, month) {
+    super(app);
+    this.store = store;
+    this.year = (/* @__PURE__ */ new Date()).getFullYear();
+    this.month = month;
+  }
+  onOpen() {
+    this.contentEl.addClass("sd-poster-modal");
+    this.renderPoster();
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+  renderPoster() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h2", { text: t("\u6708\u62A5\u6D77\u62A5") });
+    const head = contentEl.createDiv({ cls: "sd-poster-head" });
+    const prev = head.createEl("button", { text: "\u2039" });
+    const title = head.createDiv({
+      cls: "sd-poster-title",
+      text: `${this.year} \u5E74 ${this.month + 1} \u6708`
+    });
+    const next = head.createEl("button", { text: "\u203A" });
+    prev.onclick = () => {
+      this.month = (this.month + 11) % 12;
+      this.renderPoster();
+    };
+    next.onclick = () => {
+      this.month = (this.month + 1) % 12;
+      this.renderPoster();
+    };
+    const prefix = `${this.year}-${String(this.month + 1).padStart(2, "0")}`;
+    const monthDays = Object.entries(this.store.data.days).filter(([key]) => key.startsWith(prefix));
+    const monthTotal = monthDays.reduce((sum, [, day]) => sum + day.contribution, 0);
+    const monthWords = monthDays.reduce((sum, [, day]) => sum + day.wordsAdded, 0);
+    const monthActive = monthDays.filter(([, day]) => day.contribution > 0).length;
+    const post = contentEl.createDiv({ cls: "sd-poster" });
+    post.createDiv({ cls: "sd-poster-big", text: String(monthTotal) });
+    post.createDiv({ cls: "sd-poster-sub", text: t("\u672C\u6708\u8D21\u732E\u5206") });
+    const stats = post.createDiv({ cls: "sd-poster-stats" });
+    stats.createSpan({ text: tf("\u6D3B\u8DC3 {n} \u5929", { n: monthActive }) });
+    stats.createSpan({ text: tf("\u65B0\u589E {n} \u5B57", { n: monthWords }) });
+    const grid = post.createDiv({ cls: "sd-poster-grid" });
+    for (let day = 1; day <= new Date(this.year, this.month + 1, 0).getDate(); day += 1) {
+      const key = `${prefix}-${String(day).padStart(2, "0")}`;
+      const value = this.store.getDay(key).contribution;
+      grid.createDiv({ cls: "sd-poster-cell", attr: { title: `${key} \xB7 ${value} \u5206` } }).setAttribute(
+        "style",
+        `background:var(--interactive-accent);opacity:${value > 0 ? 0.2 + Math.min(0.8, value / 12) : 0.06}`
+      );
+    }
+    contentEl.createEl("button", { cls: "sd-poster-export", text: t("\u5BFC\u51FA PNG") }).onclick = () => {
+      var _a2;
+      return void this.exportPoster((_a2 = title.textContent) != null ? _a2 : "", monthTotal, monthWords, monthActive);
+    };
+  }
+  async exportPoster(title, total, words, active) {
+    const canvas = document.createElement("canvas");
+    canvas.width = 900;
+    canvas.height = 1200;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.fillStyle = "#f4f7fb";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#2f6fb2";
+    ctx.fillRect(0, 0, canvas.width, 260);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 64px sans-serif";
+    ctx.fillText(title, 60, 130);
+    ctx.fillStyle = "#20344d";
+    ctx.font = "bold 120px sans-serif";
+    ctx.fillText(String(total), 60, 470);
+    ctx.font = "32px sans-serif";
+    ctx.fillText(tf("\u6D3B\u8DC3 {n} \u5929", { n: active }) + " \xB7 " + tf("\u65B0\u589E {n} \u5B57", { n: words }), 60, 610);
+    const link = document.createElement("a");
+    link.download = `sediment-${title.replace(/\s/g, "")}.png`;
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+  }
+};
+
 // src/views/dashboard/constants.ts
 var TABS = [
   ["today", "\u4ECA\u65E5\u8109\u51B2"],
@@ -4771,11 +4965,31 @@ function startOfWeekFor(date, weekStart) {
   return copy;
 }
 
+// src/views/dashboard/review-queue.ts
+function reviewBadgeCount(counts) {
+  var _a2, _b, _c;
+  if (!counts) return 0;
+  const parts = [(_a2 = counts.drafts) != null ? _a2 : 0, (_b = counts.changes) != null ? _b : 0, (_c = counts.pendingWrites) != null ? _c : 0];
+  if (parts.some((part) => !Number.isFinite(part) || part < 0)) return 0;
+  return parts.reduce((sum, part) => sum + part, 0);
+}
+function pendingReviewChanges(calls, reviewed) {
+  const seen = /* @__PURE__ */ new Set();
+  return calls.filter((call) => call.tool.startsWith("POST ")).filter((call) => {
+    if (!call.path || seen.has(call.path)) return false;
+    seen.add(call.path);
+    return true;
+  }).filter((call) => /\.(md|json)$/.test(call.path)).filter((call) => !reviewed[`${call.time}|${call.path}`]);
+}
+function filterAgentTasks(tasks) {
+  return tasks.filter((task) => Boolean(task.memoId) && !task.path);
+}
+
 // src/views/dashboard/sections/agent.ts
-var import_obsidian17 = require("obsidian");
+var import_obsidian18 = require("obsidian");
 
 // src/ui/diff-modal.ts
-var import_obsidian15 = require("obsidian");
+var import_obsidian16 = require("obsidian");
 function computeDiff(before, after) {
   const oldLines = before.split("\n");
   const newLines = after.split("\n");
@@ -4813,7 +5027,7 @@ function computeDiff(before, after) {
   }
   return lines;
 }
-var DiffModal = class extends import_obsidian15.Modal {
+var DiffModal = class extends import_obsidian16.Modal {
   constructor(app, titleText, before, after, onRestore, onKeep, labels) {
     super(app);
     this.titleText = titleText;
@@ -4899,13 +5113,13 @@ var DiffModal = class extends import_obsidian15.Modal {
 };
 
 // src/ui/draft-preview-modal.ts
-var import_obsidian16 = require("obsidian");
-var DraftPreviewModal = class extends import_obsidian16.Modal {
+var import_obsidian17 = require("obsidian");
+var DraftPreviewModal = class extends import_obsidian17.Modal {
   constructor(app, titleText, content) {
     super(app);
     this.titleText = titleText;
     this.content = content;
-    this.component = new import_obsidian16.Component();
+    this.component = new import_obsidian17.Component();
   }
   onOpen() {
     this.component.load();
@@ -4913,7 +5127,7 @@ var DraftPreviewModal = class extends import_obsidian16.Modal {
     contentEl.addClass("sd-draft-preview");
     contentEl.createEl("h2", { text: this.titleText });
     const body = contentEl.createDiv({ cls: "sd-review-preview" });
-    void import_obsidian16.MarkdownRenderer.render(this.app, this.content, body, "", this.component);
+    void import_obsidian17.MarkdownRenderer.render(this.app, this.content, body, "", this.component);
   }
   onClose() {
     this.component.unload();
@@ -4926,12 +5140,9 @@ function renderAgentHub(view, root) {
   const body = root.createDiv({ cls: "sd-body" });
   renderDrafts(view, body);
   renderPendingWrites(view, body);
-  view.renderTasksCard(body);
   renderAgentChanges(view, body);
-  renderWorkLogs(view, body);
-  const secondary = body.createDiv({ cls: "sd-secondary sd-agent-secondary" });
-  renderAgentStatus(view, secondary);
-  view.renderFooter(body);
+  renderDataRecovery(view, body);
+  view.renderTasksCard(body, true);
 }
 function renderPendingWrites(view, root) {
   var _a2;
@@ -4940,6 +5151,7 @@ function renderPendingWrites(view, root) {
   const card = root.createDiv({ cls: "sd-card" });
   card.createDiv({ cls: "sd-card-title", text: tf("\u5F85\u5BA1\u5199\u5165 \xB7 {n}", { n: pending.length }) });
   card.createDiv({ cls: "sd-card-sub", text: t("\u300C\u786E\u8BA4\u540E\u5199\u5165\u300D\u6863\u4E0B\uFF0CAgent \u7684\u5199\u64CD\u4F5C\u6302\u8D77\u5728\u8FD9\u91CC\uFF0C\u91C7\u7EB3\u540E\u624D\u771F\u6B63\u843D\u76D8\uFF1B\u9A73\u56DE\u5219\u4E22\u5F03\u3002") });
+  card.createDiv({ cls: "sd-card-sub", text: t("\u6587\u4EF6\u82E5\u5728\u6302\u8D77\u540E\u88AB\u4FEE\u6539\uFF0C\u91C7\u7EB3\u4F1A\u56E0\u7248\u672C\u51B2\u7A81\u5931\u8D25\uFF1B\u53EF\u9A73\u56DE\u540E\u8BA9 Agent \u91CD\u53D1\u3002") });
   if (pending.length === 0) {
     card.createDiv({ cls: "sd-empty", text: t("\u6CA1\u6709\u6302\u8D77\u7684\u5F85\u5BA1\u5199\u5165\u3002") });
     return;
@@ -4987,30 +5199,28 @@ function pendingToolLabel(tool) {
 async function approvePendingWrite(view, id) {
   try {
     await view.plugin.agentApi.approvePendingWrite(id);
-    new import_obsidian17.Notice(t("\u5DF2\u91C7\u7EB3\uFF0C\u5199\u5165\u5DF2\u843D\u76D8"));
+    new import_obsidian18.Notice(t("\u5DF2\u91C7\u7EB3\uFF0C\u5199\u5165\u5DF2\u843D\u76D8"));
   } catch (error) {
-    new import_obsidian17.Notice(error instanceof Error ? error.message : String(error));
+    new import_obsidian18.Notice(error instanceof Error ? error.message : String(error));
   }
   view.render();
 }
 async function rejectPendingWrite(view, id) {
   try {
     view.plugin.agentApi.rejectPendingWrite(id);
-    new import_obsidian17.Notice(t("\u5DF2\u9A73\u56DE\uFF0C\u672A\u5199\u5165\u4EFB\u4F55\u5185\u5BB9"));
+    new import_obsidian18.Notice(t("\u5DF2\u9A73\u56DE\uFF0C\u672A\u5199\u5165\u4EFB\u4F55\u5185\u5BB9"));
   } catch (error) {
-    new import_obsidian17.Notice(error instanceof Error ? error.message : String(error));
+    new import_obsidian18.Notice(error instanceof Error ? error.message : String(error));
   }
   view.render();
 }
 function renderAgentChanges(view, root) {
   const card = root.createDiv({ cls: "sd-card" });
   card.createDiv({ cls: "sd-card-title", text: t("Agent \u53D8\u66F4\u5BA1\u67E5") });
-  const seen = /* @__PURE__ */ new Set();
-  const calls = view.plugin.store.data.toolCalls.filter((call) => call.tool.startsWith("POST ")).filter((call) => {
-    if (!call.path || seen.has(call.path)) return false;
-    seen.add(call.path);
-    return true;
-  }).filter((call) => /\.(md|json)$/.test(call.path)).filter((call) => !view.plugin.store.data.reviewedChanges[`${call.time}|${call.path}`]).slice(0, 8);
+  const calls = pendingReviewChanges(
+    view.plugin.store.data.toolCalls,
+    view.plugin.store.data.reviewedChanges
+  ).slice(0, 8);
   if (calls.length === 0) {
     card.createDiv({ cls: "sd-empty", text: t("\u6682\u65E0 Agent \u53D8\u66F4\u8BB0\u5F55\u3002") });
     return;
@@ -5018,7 +5228,7 @@ function renderAgentChanges(view, root) {
   const list = card.createDiv({ cls: "sd-feed-list" });
   for (const call of calls) {
     const file = view.plugin.app.vault.getAbstractFileByPath(call.path);
-    if (!(file instanceof import_obsidian17.TFile)) continue;
+    if (!(file instanceof import_obsidian18.TFile)) continue;
     const backups = listBackups(view.plugin, call.path);
     const row = list.createDiv({ cls: "sd-feed-row" });
     row.createSpan({ text: `${localStamp(call.time).slice(5)} \xB7 ${call.tool.replace(/^(GET|POST) /, "")}` });
@@ -5038,13 +5248,13 @@ function renderAgentChanges(view, root) {
             () => {
               void restoreBackup(view.plugin, file, backups[0].name).then(() => {
                 view.plugin.store.reviewChange(`${call.time}|${call.path}`, "reverted");
-                new import_obsidian17.Notice(t("\u5DF2\u91C7\u7528\u5907\u4EFD\uFF0C\u672C\u6B21 Agent \u4FEE\u6539\u5DF2\u64A4\u9500"));
+                new import_obsidian18.Notice(t("\u5DF2\u91C7\u7528\u5907\u4EFD\uFF0C\u672C\u6B21 Agent \u4FEE\u6539\u5DF2\u64A4\u9500"));
                 view.render();
               });
             },
             () => {
               view.plugin.store.reviewChange(`${call.time}|${call.path}`, "kept");
-              new import_obsidian17.Notice(t("\u5DF2\u6807\u8BB0\u4E3A\u4FDD\u7559\u5F53\u524D\u7248\u672C\uFF0C\u672C\u6B21\u53D8\u66F4\u4E0D\u518D\u5F85\u5BA1"));
+              new import_obsidian18.Notice(t("\u5DF2\u6807\u8BB0\u4E3A\u4FDD\u7559\u5F53\u524D\u7248\u672C\uFF0C\u672C\u6B21\u53D8\u66F4\u4E0D\u518D\u5F85\u5BA1"));
               view.render();
             }
           ).open();
@@ -5054,7 +5264,7 @@ function renderAgentChanges(view, root) {
         if (!window.confirm(t("\u786E\u8BA4\u6062\u590D\u8FD9\u4E2A Agent \u4FEE\u6539\u5FEB\u7167\uFF1F\u5F53\u524D\u7B14\u8BB0\u5185\u5BB9\u4F1A\u88AB\u66FF\u6362\u3002"))) return;
         void restoreBackup(view.plugin, file, backups[0].name).then(() => {
           view.plugin.store.reviewChange(`${call.time}|${call.path}`, "reverted");
-          new import_obsidian17.Notice(t("\u5DF2\u6062\u590D\u5230\u6700\u8FD1\u5907\u4EFD"));
+          new import_obsidian18.Notice(t("\u5DF2\u6062\u590D\u5230\u6700\u8FD1\u5907\u4EFD"));
           view.render();
         });
       };
@@ -5081,10 +5291,20 @@ function renderAgentStatus(view, root) {
   const last = calls[0];
   if (last) card.createDiv({ cls: "sd-card-sub", text: `${t("\u6700\u8FD1\u8C03\u7528")}\uFF1A${localStamp(last.time)} \xB7 ${last.tool}` });
 }
+function listDraftFiles(view) {
+  var _a2;
+  const drafts = [];
+  for (const file of view.plugin.app.vault.getMarkdownFiles()) {
+    const cache = view.plugin.app.metadataCache.getFileCache(file);
+    if (((_a2 = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a2.sediment_status) === "draft") drafts.push(file);
+  }
+  return drafts;
+}
 function renderDrafts(view, root) {
-  var _a2, _b, _c, _d;
+  var _a2, _b, _c;
   const card = root.createDiv({ cls: "sd-card" });
-  card.createDiv({ cls: "sd-card-title", text: t("AI \u6C89\u6DC0\u5BA1\u6838") });
+  const head = card.createDiv({ cls: "sd-card-head" });
+  head.createDiv({ cls: "sd-card-title", text: t("AI \u6C89\u6DC0\u5BA1\u6838") });
   const modeLabels = {
     readonly: t("\u53EA\u8BFB"),
     draft: t("\u8349\u7A3F"),
@@ -5095,22 +5315,19 @@ function renderDrafts(view, root) {
     cls: "sd-card-sub",
     text: t("\u5F53\u524D\u5DE5\u4F5C\u6A21\u5F0F\uFF1A") + ((_a2 = modeLabels[view.plugin.store.settings.agentWorkMode]) != null ? _a2 : "confirm") + t("\u3002\u8349\u7A3F\u9700\u624B\u52A8\u5BA1\u6838\uFF1B\u300C\u786E\u8BA4\u540E\u5199\u5165\u300D\u6863\u4E0B Agent \u7684\u5199\u64CD\u4F5C\u4F1A\u6302\u8D77\u5728\u300C\u5F85\u5BA1\u5199\u5165\u300D\u5217\u8868\uFF0C\u91C7\u7EB3\u540E\u624D\u843D\u76D8\uFF1B\u300C\u81EA\u52A8\u6267\u884C\u300D\u6863\u4E0D\u6302\u8D77\u3002")
   });
-  const drafts = [];
-  for (const file of view.plugin.app.vault.getMarkdownFiles()) {
-    const cache = view.plugin.app.metadataCache.getFileCache(file);
-    if (((_b = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _b.sediment_status) === "draft") drafts.push(file);
-  }
+  const drafts = listDraftFiles(view);
   if (drafts.length === 0) {
     card.createDiv({ cls: "sd-empty", text: t("\u6CA1\u6709\u5F85\u5BA1\u6838\u7684 AI \u8349\u7A3F\u3002") });
     return;
   }
+  if (drafts.length > 20) head.createDiv({ cls: "sd-card-sub", text: tf("\u5171 {n} \u4EFD\u8349\u7A3F", { n: drafts.length }) });
   const list = card.createDiv({ cls: "sd-draft-list" });
   for (const file of drafts.slice(0, 20)) {
     const item = list.createDiv({ cls: "sd-draft-card" });
     const title = item.createEl("button", { cls: "sd-draft-title", text: file.basename });
     title.onclick = () => void view.plugin.app.workspace.openLinkText(file.path, "", false);
     const cache = view.plugin.app.metadataCache.getFileCache(file);
-    const category = String((_d = (_c = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _c.category) != null ? _d : t("\u672A\u5206\u7C7B"));
+    const category = String((_c = (_b = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _b.category) != null ? _c : t("\u672A\u5206\u7C7B"));
     item.createDiv({ cls: "sd-card-sub", text: `${category} \xB7 ${file.path}` });
     const actions = item.createDiv({ cls: "sd-draft-actions" });
     actions.createEl("button", { text: t("\u67E5\u770B\u539F\u6587") }).onclick = () => {
@@ -5120,7 +5337,7 @@ function renderDrafts(view, root) {
     };
     actions.createEl("button", { text: t("\u91C7\u7EB3\u5E76\u5F52\u6863") }).onclick = () => {
       void view.plugin.agentApi.updateFrontmatter(file.path, { sediment_status: "accepted" }, void 0, true).then(() => {
-        new import_obsidian17.Notice(t("\u5DF2\u91C7\u7EB3"));
+        new import_obsidian18.Notice(t("\u5DF2\u91C7\u7EB3"));
         view.render();
       });
     };
@@ -5128,7 +5345,7 @@ function renderDrafts(view, root) {
     actions.createEl("button", { text: t("\u9A73\u56DE\u5220\u9664") }).onclick = () => {
       if (!window.confirm(t("\u786E\u8BA4\u9A73\u56DE\u5E76\u79FB\u5165\u56DE\u6536\u7AD9\uFF1F\u8349\u7A3F\u53EF\u5728\u56DE\u6536\u7AD9\u6062\u590D\u3002"))) return;
       void view.plugin.app.vault.trash(file, false).then(() => {
-        new import_obsidian17.Notice(t("\u5DF2\u9A73\u56DE\u5E76\u79FB\u5165\u56DE\u6536\u7AD9"));
+        new import_obsidian18.Notice(t("\u5DF2\u9A73\u56DE\u5E76\u79FB\u5165\u56DE\u6536\u7AD9"));
         view.render();
       });
     };
@@ -5140,12 +5357,12 @@ async function mergeDraft(view, file) {
   const links = (_a2 = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a2.links;
   const first = Array.isArray(links) && links.length > 0 ? String(links[0]) : "";
   if (!first) {
-    new import_obsidian17.Notice(t("\u8FD9\u5F20\u8349\u7A3F\u6CA1\u6709\u5173\u8054\u7B14\u8BB0\uFF0C\u65E0\u6CD5\u5408\u5E76"));
+    new import_obsidian18.Notice(t("\u8FD9\u5F20\u8349\u7A3F\u6CA1\u6709\u5173\u8054\u7B14\u8BB0\uFF0C\u65E0\u6CD5\u5408\u5E76"));
     return;
   }
   const target = view.plugin.app.vault.getMarkdownFiles().find((item) => item.basename === first || item.path === first);
   if (!target) {
-    new import_obsidian17.Notice(tf("\u627E\u4E0D\u5230\u5173\u8054\u7B14\u8BB0\uFF1A{name}", { name: first }));
+    new import_obsidian18.Notice(tf("\u627E\u4E0D\u5230\u5173\u8054\u7B14\u8BB0\uFF1A{name}", { name: first }));
     return;
   }
   if (!window.confirm(t("\u5408\u5E76\u540E\u8349\u7A3F\u5C06\u79FB\u5165\u56DE\u6536\u7AD9\uFF0C\u662F\u5426\u7EE7\u7EED\uFF1F"))) return;
@@ -5156,8 +5373,52 @@ async function mergeDraft(view, file) {
 ${body.trim()}
 `);
   await view.plugin.app.vault.trash(file, false);
-  new import_obsidian17.Notice(tf("\u5DF2\u5408\u5E76\u5230 {name}", { name: target.basename }));
+  new import_obsidian18.Notice(tf("\u5DF2\u5408\u5E76\u5230 {name}", { name: target.basename }));
   view.render();
+}
+function renderDataRecovery(view, root) {
+  const card = root.createDiv({ cls: "sd-card" });
+  card.createDiv({ cls: "sd-card-title", text: t("\u6570\u636E\u5FEB\u7167\u6062\u590D") });
+  card.createDiv({
+    cls: "sd-card-sub",
+    text: t("\u5217\u51FA\u5907\u4EFD\u76EE\u5F55\u4E2D\u7684 data.json \u5FEB\u7167\uFF0C\u53EF\u4E00\u952E\u6062\u590D\u7EDF\u8BA1\u6570\u636E\u3002\u6062\u590D\u524D\u4F1A\u5148\u628A\u5F53\u524D\u6570\u636E\u53E6\u5B58\u4E3A\u6062\u590D\u526F\u672C\uFF0C\u6062\u590D\u9519\u4E86\u4E5F\u80FD\u56DE\u9000\u3002")
+  });
+  card.createDiv({
+    cls: "sd-card-sub",
+    text: t("\u5907\u4EFD\u76EE\u5F55\u4E3A\u5E93\u6839\u76EE\u5F55\u65F6\uFF0C\u5217\u8868\u53EF\u80FD\u6DF7\u5165\u4F60\u81EA\u5DF1\u521B\u5EFA\u7684 data-*.json\uFF1B\u6062\u590D\u524D\u4F1A\u6821\u9A8C\u5185\u5BB9\u683C\u5F0F\uFF0C\u635F\u574F\u6216\u975E\u672C\u63D2\u4EF6\u6570\u636E\u4F1A\u88AB\u62D2\u7EDD\u3002")
+  });
+  if (view.plugin.store.isPersistenceBlocked) {
+    card.createDiv({
+      cls: "sd-card-sub sd-recovery-warning",
+      text: t("\u6570\u636E\u5199\u5165\u5DF2\u6682\u505C\u4EE5\u4FDD\u62A4\u539F\u59CB\u6570\u636E\uFF1B\u6062\u590D\u4E00\u4EFD\u6709\u6548\u5FEB\u7167\u53EF\u89E3\u9664\u6682\u505C\u3002")
+    });
+  }
+  const backups = view.plugin.store.listDataBackups();
+  if (backups.length === 0) {
+    card.createDiv({ cls: "sd-empty", text: t("\u8FD8\u6CA1\u6709\u6570\u636E\u5907\u4EFD\u3002\u5F00\u542F\u300C\u81EA\u52A8\u5907\u4EFD\u7EDF\u8BA1\u6570\u636E\u300D\u540E\uFF0C\u5FEB\u7167\u4F1A\u51FA\u73B0\u5728\u8FD9\u91CC\u3002") });
+    return;
+  }
+  const list = card.createDiv({ cls: "sd-feed-list" });
+  for (const backup of backups.slice(0, 20)) {
+    const row = list.createDiv({ cls: "sd-feed-row" });
+    row.createSpan({
+      text: `${backup.name} \xB7 ${localStamp(new Date(backup.savedAt).toISOString())} \xB7 ${(backup.size / 1024).toFixed(1)} KB`
+    });
+    const actions = row.createDiv({ cls: "sd-audit-actions" });
+    actions.createEl("button", { text: t("\u6062\u590D") }).onclick = () => {
+      if (!window.confirm(t("\u786E\u8BA4\u4ECE\u8BE5\u5FEB\u7167\u6062\u590D\u7EDF\u8BA1\u6570\u636E\uFF1F\u5F53\u524D\u6570\u636E\u4F1A\u5148\u53E6\u5B58\u4E3A\u6062\u590D\u526F\u672C\uFF0C\u6062\u590D\u540E\u770B\u677F\u7ACB\u5373\u91CD\u8F7D\u3002"))) return;
+      void view.plugin.store.restoreDataBackup(backup.name).then((recoveryPath) => {
+        if (recoveryPath === "") {
+          new import_obsidian18.Notice(t("\u6062\u590D\u526F\u672C\u521B\u5EFA\u5931\u8D25\uFF1A\u5907\u4EFD\u5DF2\u6062\u590D\uFF0C\u4F46\u5F53\u524D\u6570\u636E\u672A\u80FD\u53E6\u5B58\u526F\u672C\u3002\u8BF7\u7ACB\u5373\u624B\u52A8\u5907\u4EFD data.json\uFF0C\u907F\u514D\u518D\u6B21\u6062\u590D\u65F6\u65E0\u6CD5\u56DE\u9000\u3002"), 15e3);
+        } else {
+          new import_obsidian18.Notice(tf("\u5DF2\u4ECE {name} \u6062\u590D\uFF0C\u6062\u590D\u526F\u672C\uFF1A{path}", { name: backup.name, path: recoveryPath }));
+        }
+        view.plugin.refreshViews();
+      }).catch((error) => {
+        new import_obsidian18.Notice(error instanceof Error ? error.message : String(error));
+      });
+    };
+  }
 }
 function renderWorkLogs(view, root) {
   const card = root.createDiv({ cls: "sd-card" });
@@ -5177,91 +5438,6 @@ function renderWorkLogs(view, root) {
 
 // src/views/dashboard/sections/insights.ts
 var import_obsidian19 = require("obsidian");
-
-// src/ui/poster-modal.ts
-var import_obsidian18 = require("obsidian");
-var PosterModal = class extends import_obsidian18.Modal {
-  constructor(app, store, month) {
-    super(app);
-    this.store = store;
-    this.year = (/* @__PURE__ */ new Date()).getFullYear();
-    this.month = month;
-  }
-  onOpen() {
-    this.contentEl.addClass("sd-poster-modal");
-    this.renderPoster();
-  }
-  onClose() {
-    this.contentEl.empty();
-  }
-  renderPoster() {
-    const { contentEl } = this;
-    contentEl.empty();
-    contentEl.createEl("h2", { text: t("\u6708\u62A5\u6D77\u62A5") });
-    const head = contentEl.createDiv({ cls: "sd-poster-head" });
-    const prev = head.createEl("button", { text: "\u2039" });
-    const title = head.createDiv({
-      cls: "sd-poster-title",
-      text: `${this.year} \u5E74 ${this.month + 1} \u6708`
-    });
-    const next = head.createEl("button", { text: "\u203A" });
-    prev.onclick = () => {
-      this.month = (this.month + 11) % 12;
-      this.renderPoster();
-    };
-    next.onclick = () => {
-      this.month = (this.month + 1) % 12;
-      this.renderPoster();
-    };
-    const prefix = `${this.year}-${String(this.month + 1).padStart(2, "0")}`;
-    const monthDays = Object.entries(this.store.data.days).filter(([key]) => key.startsWith(prefix));
-    const monthTotal = monthDays.reduce((sum, [, day]) => sum + day.contribution, 0);
-    const monthWords = monthDays.reduce((sum, [, day]) => sum + day.wordsAdded, 0);
-    const monthActive = monthDays.filter(([, day]) => day.contribution > 0).length;
-    const post = contentEl.createDiv({ cls: "sd-poster" });
-    post.createDiv({ cls: "sd-poster-big", text: String(monthTotal) });
-    post.createDiv({ cls: "sd-poster-sub", text: t("\u672C\u6708\u8D21\u732E\u5206") });
-    const stats = post.createDiv({ cls: "sd-poster-stats" });
-    stats.createSpan({ text: tf("\u6D3B\u8DC3 {n} \u5929", { n: monthActive }) });
-    stats.createSpan({ text: tf("\u65B0\u589E {n} \u5B57", { n: monthWords }) });
-    const grid = post.createDiv({ cls: "sd-poster-grid" });
-    for (let day = 1; day <= new Date(this.year, this.month + 1, 0).getDate(); day += 1) {
-      const key = `${prefix}-${String(day).padStart(2, "0")}`;
-      const value = this.store.getDay(key).contribution;
-      grid.createDiv({ cls: "sd-poster-cell", attr: { title: `${key} \xB7 ${value} \u5206` } }).setAttribute(
-        "style",
-        `background:var(--interactive-accent);opacity:${value > 0 ? 0.2 + Math.min(0.8, value / 12) : 0.06}`
-      );
-    }
-    contentEl.createEl("button", { cls: "sd-poster-export", text: t("\u5BFC\u51FA PNG") }).onclick = () => {
-      var _a2;
-      return void this.exportPoster((_a2 = title.textContent) != null ? _a2 : "", monthTotal, monthWords, monthActive);
-    };
-  }
-  async exportPoster(title, total, words, active) {
-    const canvas = document.createElement("canvas");
-    canvas.width = 900;
-    canvas.height = 1200;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.fillStyle = "#f4f7fb";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = "#2f6fb2";
-    ctx.fillRect(0, 0, canvas.width, 260);
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 64px sans-serif";
-    ctx.fillText(title, 60, 130);
-    ctx.fillStyle = "#20344d";
-    ctx.font = "bold 120px sans-serif";
-    ctx.fillText(String(total), 60, 470);
-    ctx.font = "32px sans-serif";
-    ctx.fillText(tf("\u6D3B\u8DC3 {n} \u5929", { n: active }) + " \xB7 " + tf("\u65B0\u589E {n} \u5B57", { n: words }), 60, 610);
-    const link = document.createElement("a");
-    link.download = `sediment-${title.replace(/\s/g, "")}.png`;
-    link.href = canvas.toDataURL("image/png");
-    link.click();
-  }
-};
 
 // src/utils/charts.ts
 function referenceLines(refs, max, width, height, pad) {
@@ -5390,10 +5566,6 @@ function renderInsights(view, root) {
   } else {
     renderReview(view, content);
   }
-  const footer = view.renderFooter(body);
-  footer.createEl("button", { text: t("\u6708\u62A5") }).onclick = () => {
-    new PosterModal(view.plugin.app, view.plugin.store, view.posterMonth).open();
-  };
 }
 function renderInsightsSummary(view, root) {
   const card = root.createDiv({ cls: "sd-card sd-insight-summary" });
@@ -5891,13 +6063,6 @@ function renderToday(view, root) {
     const tasks = root.querySelector(".sd-tasks");
     if (tasks) view.scrollToElement(tasks);
   };
-  const pomodoroAction = actions.createEl("button", {
-    cls: "sd-today-action",
-    text: t("\u5F00\u59CB\u4E13\u6CE8")
-  });
-  pomodoroAction.onclick = () => {
-    if (!view.plugin.pomodoro.state().running) view.plugin.pomodoro.start();
-  };
   const bento = body.createDiv({ cls: "sd-bento" });
   renderTodayCard(view, bento);
   renderQuickMemo(view, bento);
@@ -5907,6 +6072,9 @@ function renderToday(view, root) {
   (_b = bento.querySelector(".sd-quick-memo")) == null ? void 0 : _b.addClass("sd-bento-memo");
   (_c = bento.querySelector(".sd-tasks")) == null ? void 0 : _c.addClass("sd-bento-tasks");
   (_d = bento.querySelector(".sd-agent-feed")) == null ? void 0 : _d.addClass("sd-bento-agent");
+  const secondary = body.createDiv({ cls: "sd-secondary sd-agent-secondary" });
+  renderWorkLogs(view, secondary);
+  renderAgentStatus(view, secondary);
   renderHints(view, body);
 }
 function renderHints(view, root) {
@@ -6093,6 +6261,7 @@ var DashboardView = class extends import_obsidian20.ItemView {
     if (this.tab === "today") renderToday(this, root);
     else if (this.tab === "insights") renderInsights(this, root);
     else renderAgentHub(this, root);
+    this.renderFooter(root);
     this.lastRenderedTab = this.tab;
     this.hasRendered = true;
     if (scroller) {
@@ -6237,6 +6406,7 @@ var DashboardView = class extends import_obsidian20.ItemView {
     this.heatTooltip = null;
   }
   renderHeader(root) {
+    var _a2;
     const banner = root.createDiv({ cls: "sd-banner" });
     banner.innerHTML = this.bannerSvg();
     this.bannerEl = banner;
@@ -6252,6 +6422,20 @@ var DashboardView = class extends import_obsidian20.ItemView {
         text: t(label),
         attr: { role: "tab", "aria-selected": key === this.tab ? "true" : "false" }
       });
+      if (key === "agent") {
+        const badge = reviewBadgeCount({
+          drafts: listDraftFiles(this).length,
+          changes: pendingReviewChanges(
+            this.plugin.store.data.toolCalls,
+            this.plugin.store.data.reviewedChanges
+          ).length,
+          pendingWrites: ((_a2 = this.plugin.store.data.pendingWrites) != null ? _a2 : []).length
+        });
+        if (badge > 0) {
+          button.createSpan({ cls: "sd-tab-badge", text: String(badge) });
+          button.setAttribute("aria-label", `${t(label)} \xB7 ${tf("\u5F85\u5BA1 {n} \u9879", { n: badge })}`);
+        }
+      }
       button.onclick = () => {
         this.tab = key;
         this.render();
@@ -6262,21 +6446,32 @@ var DashboardView = class extends import_obsidian20.ItemView {
     const refresh = bar.createEl("button", { cls: "sd-refresh", text: t("\u5237\u65B0") });
     refresh.onclick = () => this.render();
   }
-  renderTasksCard(root) {
+  /** 待办卡。agentOnly=true 时只渲染 Agent 委派子集（审核队列契约），今日页仍合并今日/遗留/Agent。 */
+  renderTasksCard(root, agentOnly = false) {
     const card = root.createDiv({ cls: "sd-card sd-tasks" });
-    card.createDiv({ cls: "sd-card-title", text: t("\u5F85\u529E \xB7 \u4ECA\u65E5 / \u9057\u7559 / Agent") });
+    card.createDiv({
+      cls: "sd-card-title",
+      text: agentOnly ? t("Agent \u5F85\u529E") : t("\u5F85\u529E \xB7 \u4ECA\u65E5 / \u9057\u7559 / Agent")
+    });
     const list = card.createDiv({ cls: "sd-task-list" });
     list.createDiv({ cls: "sd-empty", text: t("\u52A0\u8F7D\u4E2D\u2026") });
-    void Promise.all([
+    const load = agentOnly ? this.plugin.tasks.list("agent").then((agent) => filterAgentTasks(agent)) : Promise.all([
       this.plugin.tasks.list("today"),
       this.plugin.tasks.list("overdue"),
       this.plugin.tasks.list("agent")
-    ]).then(([today, overdue, agent]) => {
+    ]).then(([today, overdue, agent]) => [
+      ...today.filter((task) => !task.checked),
+      ...overdue,
+      ...agent
+    ]);
+    void load.then((items) => {
       var _a2;
       list.empty();
-      const items = [...today.filter((task) => !task.checked), ...overdue, ...agent];
       if (items.length === 0) {
-        list.createDiv({ cls: "sd-empty", text: t("\u6CA1\u6709\u672A\u5B8C\u6210\u5F85\u529E\u3002") });
+        list.createDiv({
+          cls: "sd-empty",
+          text: agentOnly ? t("\u6CA1\u6709\u59D4\u6D3E\u7684 Agent \u5F85\u529E\u3002") : t("\u6CA1\u6709\u672A\u5B8C\u6210\u5F85\u529E\u3002")
+        });
         return;
       }
       for (const task of items.slice(0, 12)) {
@@ -6336,6 +6531,11 @@ var DashboardView = class extends import_obsidian20.ItemView {
     changelog.onclick = () => new ChangelogModal(this.plugin.app).open();
     const styleButton = footer.createEl("button", { text: t("\u6362\u753B\u98CE") });
     styleButton.onclick = () => this.cycleArtStyle();
+    if (this.tab === "insights") {
+      footer.createEl("button", { text: t("\u6708\u62A5") }).onclick = () => {
+        new PosterModal(this.plugin.app, this.plugin.store, this.posterMonth).open();
+      };
+    }
     return footer;
   }
   analyticsCard(root, title, subtitle = "") {
@@ -6448,7 +6648,7 @@ var MemoView = class extends import_obsidian21.ItemView {
     return t("\u901F\u8BB0");
   }
   getIcon() {
-    return SEDIMENT_ICON_ID;
+    return SEDIMENT_MEMO_ICON_ID;
   }
   async onOpen() {
     this.render();

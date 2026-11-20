@@ -1,8 +1,10 @@
-/** 今日脉冲页签的渲染逻辑。所有共享状态/方法通过 view 访问。 */
+/** 今日脉冲页签的渲染逻辑。所有共享状态/方法通过 view 访问。
+ *  工作日志与连接状态卡自智能体工坊迁入（D2=B）；番茄唯一入口是今日卡内 toggle。 */
 import { exportTodayReport } from "../../../features/embed";
 import { dateKey, isSameLocalDay, localHHmm } from "../../../utils/dates";
 import { goalRing as goalRingSvg } from "../../../utils/charts";
 import { t, tf } from "../../../i18n";
+import { renderAgentStatus, renderWorkLogs } from "./agent";
 import type { DashboardView } from "../../dashboard-view";
 
 export function renderToday(view: DashboardView, root: HTMLElement): void {
@@ -26,13 +28,6 @@ export function renderToday(view: DashboardView, root: HTMLElement): void {
     const tasks = root.querySelector(".sd-tasks") as HTMLElement | null;
     if (tasks) view.scrollToElement(tasks);
   };
-  const pomodoroAction = actions.createEl("button", {
-    cls: "sd-today-action",
-    text: t("开始专注"),
-  });
-  pomodoroAction.onclick = () => {
-    if (!view.plugin.pomodoro.state().running) view.plugin.pomodoro.start();
-  };
   const bento = body.createDiv({ cls: "sd-bento" });
   renderTodayCard(view, bento);
   renderQuickMemo(view, bento);
@@ -42,6 +37,10 @@ export function renderToday(view: DashboardView, root: HTMLElement): void {
   bento.querySelector(".sd-quick-memo")?.addClass("sd-bento-memo");
   bento.querySelector(".sd-tasks")?.addClass("sd-bento-tasks");
   bento.querySelector(".sd-agent-feed")?.addClass("sd-bento-agent");
+  // 精简密度下沿用 sd-agent-secondary 的隐藏规则，捕获/任务/摘要优先。
+  const secondary = body.createDiv({ cls: "sd-secondary sd-agent-secondary" });
+  renderWorkLogs(view, secondary);
+  renderAgentStatus(view, secondary);
   renderHints(view, body);
 }
 

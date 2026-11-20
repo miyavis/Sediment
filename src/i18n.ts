@@ -183,7 +183,6 @@ const EN: Record<string, string> = {
   "战报图片": "Report image",
   "快速速记": "Quick memo",
   "查看今日任务": "View today's tasks",
-  "开始专注": "Start focus",
   "今日 Agent 动态": "Today's agent activity",
   "今天还没有智能体活动。": "No agent activity today yet.",
   "跳过": "Skip",
@@ -264,6 +263,10 @@ const EN: Record<string, string> = {
   "Agent 禁止访问的标签": "Tags denied to Agent",
   "逗号分隔；带这些标签的笔记对 Agent 不可读。": "Comma separated; notes with these tags are unreadable to agents.",
   "Agent 权限（可选）": "Agent permissions (optional)",
+  "基础": "Basics",
+  "数据备份": "Data backup",
+  "切换为「{mode}」将重置 5 个权限开关：允许读取、允许新建、允许局部修改、允许全量覆盖、允许删除（删除始终关闭）。是否继续？":
+    "Switching to “{mode}” resets 5 permission switches: allow read, allow create, allow patch, allow overwrite, allow delete (delete stays off). Continue?",
   "Agent 工作模式": "Agent work mode",
   "选择只读、草稿、确认后写入或自动执行；「确认后写入」档下 Agent 的写操作会挂起为待审项，在看板「待审写入」中采纳后才落盘。实际权限仍受下方开关约束。":
     "Choose read-only, draft, confirm-before-write, or automatic; in confirm mode agent writes are held as pending items and only applied after you accept them in the dashboard's Pending writes card. The switches below remain hard limits.",
@@ -282,8 +285,6 @@ const EN: Record<string, string> = {
   "允许局部修改": "Allow patch",
   "允许全量覆盖": "Allow overwrite",
   "默认开启以兼容旧工作流；关闭后 Agent 必须用 patch_note。": "On by default for legacy workflows; off forces agents to use patch_note.",
-  "允许删除": "Allow delete",
-  "当前插件未开放删除工具，默认关闭。": "No delete tool is exposed; off by default.",
   // Agent API 运行时拒绝文案（access.ts 门禁，api.ts/server.ts 使用）
   "访问被拒绝：{path} 位于黑名单目录": "Access denied: {path} is inside a denied folder",
   "访问被拒绝：{path} 不在白名单目录内": "Access denied: {path} is outside the allowlist folders",
@@ -422,6 +423,9 @@ const EN: Record<string, string> = {
   "恢复": "Restore",
   "已恢复到最近备份": "Restored to the latest backup",
   "待办 · 今日 / 遗留 / Agent": "Tasks · today / overdue / agent",
+  "Agent 待办": "Agent tasks",
+  "没有委派的 Agent 待办。": "No delegated Agent tasks.",
+  "待审 {n} 项": "{n} awaiting review",
   "加载中…": "Loading…",
   "没有未完成待办。": "No pending tasks.",
   "完成": "Complete",
@@ -441,6 +445,7 @@ const EN: Record<string, string> = {
   "{n} 次": "{n} calls",
   "最近调用": "Last call",
   "AI 沉淀审核": "AI knowledge review",
+  "共 {n} 份草稿": "{n} drafts in total",
   "没有待审核的 AI 草稿。": "No AI drafts awaiting review.",
   "采纳并归档": "Accept & archive",
   "已采纳": "Accepted",
@@ -452,6 +457,22 @@ const EN: Record<string, string> = {
   "已合并到 {name}": "Merged into {name}",
   "智能体工作日志": "Agent work logs",
   "还没有工作日志。": "No work logs yet.",
+  "文件若在挂起后被修改，采纳会因版本冲突失败；可驳回后让 Agent 重发。":
+    "If the file changed after being held, accepting fails with a version conflict; reject it and let the agent resend.",
+  "数据快照恢复": "Data snapshot recovery",
+  "列出备份目录中的 data.json 快照，可一键恢复统计数据。恢复前会先把当前数据另存为恢复副本，恢复错了也能回退。":
+    "Lists data.json snapshots in the backup folder for one-click restore. Current data is saved as a recovery copy first, so a wrong restore can be rolled back.",
+  "备份目录为库根目录时，列表可能混入你自己创建的 data-*.json；恢复前会校验内容格式，损坏或非本插件数据会被拒绝。":
+    "When the backup folder is the vault root, your own data-*.json files may appear here; content is validated before restore, and corrupted or foreign data is rejected.",
+  "数据写入已暂停以保护原始数据；恢复一份有效快照可解除暂停。":
+    "Writes are paused to protect the original data; restoring a valid snapshot lifts the pause.",
+  "还没有数据备份。开启「自动备份统计数据」后，快照会出现在这里。":
+    "No data backups yet. Enable “Auto-backup stats” and snapshots will appear here.",
+  "确认从该快照恢复统计数据？当前数据会先另存为恢复副本，恢复后看板立即重载。":
+    "Restore stats from this snapshot? Current data is saved as a recovery copy first, and the dashboard reloads immediately.",
+  "恢复副本创建失败：备份已恢复，但当前数据未能另存副本。请立即手动备份 data.json，避免再次恢复时无法回退。":
+    "Recovery copy failed: the backup was restored, but current data could not be saved aside. Back up data.json manually now, or a future restore may be irreversible.",
+  "已从 {name} 恢复，恢复副本：{path}": "Restored from {name}; recovery copy: {path}",
   "数据只留在本地": "data stays local",
   "换画风": "Change art",
   "知识指纹": "Knowledge fingerprint",

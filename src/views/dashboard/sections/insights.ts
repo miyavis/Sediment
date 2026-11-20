@@ -1,6 +1,5 @@
 /** 知识地层页签的渲染逻辑。所有共享状态/方法通过 view 访问。 */
 import { MarkdownRenderer, Notice, Platform } from "obsidian";
-import { PosterModal } from "../../../ui/poster-modal";
 import { buildWeeklyReview } from "../../../features/review";
 import { addDays, dateKey, lastNDays, parseKey } from "../../../utils/dates";
 import {
@@ -56,10 +55,6 @@ export function renderInsights(view: DashboardView, root: HTMLElement): void {
   } else {
     renderReview(view, content);
   }
-  const footer = view.renderFooter(body);
-  footer.createEl("button", { text: t("月报") }).onclick = () => {
-    new PosterModal(view.plugin.app, view.plugin.store, view.posterMonth).open();
-  };
 }
 
 export function renderInsightsSummary(view: DashboardView, root: HTMLElement): void {

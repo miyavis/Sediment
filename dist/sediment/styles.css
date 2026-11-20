@@ -89,6 +89,29 @@ settings:
   border-color: var(--interactive-accent);
 }
 
+/* Agent 页签待审徽章：复用 sd-audit-badge 的强调色语言；计数为 0 时不渲染。 */
+.sd-tab-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+  border-radius: 8px;
+}
+
+.sd-tab.is-active .sd-tab-badge {
+  color: var(--text-on-accent);
+  background: color-mix(in srgb, var(--text-on-accent) 22%, transparent);
+}
+
+/* 数据恢复卡的重操作警示（写入暂停 / 恢复副本失败相关提示）。 */
+.sd-recovery-warning {
+  color: var(--text-error, #d9544d);
+  font-weight: 600;
+}
+
 .sd-select {
   padding: 3px 6px;
   font-size: 12px;

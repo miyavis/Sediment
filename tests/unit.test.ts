@@ -56,6 +56,12 @@ import {
   listCategories,
   splitList,
 } from "../src/agent/access";
+import {
+  filterAgentTasks,
+  pendingReviewChanges,
+  reviewBadgeCount,
+} from "../src/views/dashboard/review-queue";
+import { SETTINGS_SECTIONS, settingsSection } from "../src/ui/settings-sections";
 
 const day = (partial: Partial<DayRecord> = {}): DayRecord => ({ ...createEmptyDay(), ...partial });
 const settings = (partial: Partial<PulseSettings> = {}): PulseSettings => ({
@@ -1850,4 +1856,56 @@ test("main：generateReview 文件已含本周区间标题时去重跳过", asyn
   previousContent = "# 上周复盘\n\n旧内容";
   await generateReview.call(fakePlugin);
   assert.equal(modifyCalls, 1);
+});
+
+// ── Task 7：页签契约与设置 IA（审核队列纯函数口径 + 设置分区数据） ──
+
+test("reviewBadgeCount：徽章=草稿+变更+待审写入之和，为 0 或非法输入不显示", () => {
+  assert.equal(reviewBadgeCount({ drafts: 2, changes: 3, pendingWrites: 4 }), 9);
+  assert.equal(reviewBadgeCount({ drafts: 0, changes: 0, pendingWrites: 0 }), 0);
+  assert.equal(reviewBadgeCount({ drafts: 1 }), 1); // 缺字段按 0 计
+  assert.equal(reviewBadgeCount(null), 0);
+  assert.equal(reviewBadgeCount(undefined), 0);
+  assert.equal(reviewBadgeCount({ drafts: -1, changes: 2, pendingWrites: 0 }), 0); // 不渲染负数徽章
+});
+
+test("filterAgentTasks：只保留速记委派的 Agent 子集，笔记原生待办不混入", () => {
+  const tasks = [
+    { path: "daily/2026-11-20.md", line: 3, text: "人类待办", date: "2026-11-20", checked: false },
+    { path: "", line: 0, text: "Agent 待办", date: "2026-11-20", checked: false, memoId: "m1" },
+    { path: "notes/x.md", line: 1, text: "带来源路径的笔记待办", date: "2026-11-19", checked: false, memoId: "m2" },
+  ];
+  const agent = filterAgentTasks(tasks);
+  assert.deepEqual(agent.map((task) => task.text), ["Agent 待办"]);
+  assert.equal(filterAgentTasks([]).length, 0);
+});
+
+test("pendingReviewChanges：POST 去重 + 仅 md/json + 排除已审查，徽章与卡片同口径", () => {
+  const calls = [
+    { time: "2026-11-20T10:00:00.000Z", tool: "POST patch_note", agent: "a", path: "n.md" },
+    { time: "2026-11-20T09:00:00.000Z", tool: "POST write_note", agent: "a", path: "n.md" }, // 同路径去重
+    { time: "2026-11-20T08:00:00.000Z", tool: "GET read_note", agent: "a", path: "r.md" }, // 读调用不待审
+    { time: "2026-11-20T07:00:00.000Z", tool: "POST write_note", agent: "a", path: "img.png" }, // 非 md/json
+    { time: "2026-11-20T06:00:00.000Z", tool: "POST write_note", agent: "a", path: "done.json" },
+    { time: "2026-11-20T05:00:00.000Z", tool: "POST write_note", agent: "a", path: "" }, // 无路径
+  ];
+  const reviewed = { "2026-11-20T06:00:00.000Z|done.json": "kept" as const };
+  const pending = pendingReviewChanges(calls, reviewed);
+  assert.deepEqual(pending.map((call) => call.path), ["n.md"]);
+  assert.equal(reviewBadgeCount({ drafts: 0, changes: pending.length, pendingWrites: 0 }), 1);
+});
+
+test("SETTINGS_SECTIONS：基础区置顶，Agent 目录/黑名单归 Agent 区，键跨区不重复", () => {
+  assert.equal(SETTINGS_SECTIONS[0].id, "basics");
+  assert.ok(SETTINGS_SECTIONS[0].keys.includes("language"));
+  const agent = settingsSection("agent");
+  for (const key of ["workLogFolder", "knowledgeFolder", "knowledgeCategories", "deniedFolders", "deniedTags"]) {
+    assert.ok(agent.keys.includes(key), `${key} 应归入 Agent 区`);
+    assert.ok(!SETTINGS_SECTIONS[0].keys.includes(key), `${key} 不应留在基础区`);
+  }
+  assert.ok(!agent.keys.includes("agentAllowDelete")); // 死开关已从设置 UI 移除
+  assert.deepEqual(settingsSection("backup").keys, ["backupEnabled", "backupFolder", "backupKeep"]);
+  const all = SETTINGS_SECTIONS.flatMap((section) => section.keys);
+  assert.equal(new Set(all).size, all.length); // 无一键跨区重复
+  assert.throws(() => settingsSection("不存在"));
 });

@@ -4,8 +4,16 @@ import { uninstallMcp } from "../features/uninstall";
 import { McpUninstallModal } from "./mcp-uninstall-modal";
 import type { SedimentPlugin } from "../main";
 import { generateToken } from "../agent/api";
-import { METRICS, type MetricKey } from "../types";
-import { resolveLocale, setLocale, t } from "../i18n";
+import { METRICS, type MetricKey, type PulseSettings } from "../types";
+import { resolveLocale, setLocale, t, tf } from "../i18n";
+import { SETTINGS_SECTIONS } from "./settings-sections";
+
+const WORK_MODE_LABELS: Record<string, string> = {
+  readonly: "只读",
+  draft: "草稿",
+  confirm: "确认后写入",
+  auto: "自动执行",
+};
 
 export class PulseSettingTab extends PluginSettingTab {
   constructor(app: App, private plugin: SedimentPlugin) {
@@ -26,6 +34,19 @@ export class PulseSettingTab extends PluginSettingTab {
     const settings = this.plugin.store.settings;
     const save = () => void this.plugin.saveSettings();
 
+    // 分区 IA 的单一事实源在 settings-sections.ts；这里按声明顺序渲染标题与内容。
+    for (const section of SETTINGS_SECTIONS) {
+      containerEl.createEl("h3", { text: t(section.title) });
+      if (section.id === "basics") this.renderBasics(containerEl, settings, save);
+      else if (section.id === "agent") this.renderAgent(containerEl, settings, save);
+      else if (section.id === "backup") this.renderBackup(containerEl, settings, save);
+      else if (section.id === "stats") this.renderStats(containerEl, settings, save);
+      else if (section.id === "connection") this.renderConnection(containerEl, settings, save);
+      else this.renderClients(containerEl);
+    }
+  }
+
+  private renderBasics(containerEl: HTMLElement, settings: PulseSettings, save: () => void): void {
     new Setting(containerEl)
       .setName(t("界面语言"))
       .setDesc(t("跟随 Obsidian（auto），或强制中文 / 英文。"))
@@ -130,73 +151,65 @@ export class PulseSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName(t("Agent 工作日志目录"))
-      .setDesc(t("智能体每次工作的沉淀日志，默认按天写入一个文件。"))
-      .addText((text) =>
-        text
-          .setPlaceholder("agent-logs")
-          .setValue(settings.workLogFolder)
+      .setName(t("看板画风"))
+      .setDesc(t("像素湖面 / 水墨山水 / 像素城市，也可在看板页脚点「换画风」。"))
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("lake", t("像素湖面"))
+          .addOption("ink", t("水墨山水"))
+          .addOption("city", t("像素城市"))
+          .setValue(settings.artStyle)
           .onChange((value) => {
-            settings.workLogFolder = value;
-            save();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName(t("知识沉淀目录"))
-      .setDesc(t("智能体通过 add_knowledge 写入的长期笔记目录。"))
-      .addText((text) =>
-        text
-          .setPlaceholder("knowledge")
-          .setValue(settings.knowledgeFolder)
-          .onChange((value) => {
-            settings.knowledgeFolder = value;
-            save();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName(t("知识库分类"))
-      .setDesc(t("逗号分隔，智能体沉淀笔记时会按分类建子目录。"))
-      .addText((text) =>
-        text
-          .setPlaceholder("技术,项目,方法,灵感,复盘")
-          .setValue(settings.knowledgeCategories)
-          .onChange((value) => {
-            settings.knowledgeCategories = value;
+            settings.artStyle = value as "lake" | "ink" | "city";
             save();
             this.plugin.refreshViews();
           })
       );
 
     new Setting(containerEl)
-      .setName(t("Agent 禁止访问的文件夹"))
-      .setDesc(t("逗号分隔；这些目录对 Agent 的读写和搜索全部隐藏。"))
+      .setName(t("每日写作目标"))
+      .setDesc(t("看板今天卡片显示进度，0 表示关闭。"))
       .addText((text) =>
         text
-          .setPlaceholder("例如：财务,私人日记")
-          .setValue(settings.deniedFolders)
+          .setPlaceholder("1000")
+          .setValue(String(settings.dailyWordGoal))
           .onChange((value) => {
-            settings.deniedFolders = value;
+            const goal = Number(value);
+            settings.dailyWordGoal = Number.isFinite(goal) && goal >= 0 ? goal : 1000;
             save();
+            this.plugin.refreshViews();
           })
       );
 
     new Setting(containerEl)
-      .setName(t("Agent 禁止访问的标签"))
-      .setDesc(t("逗号分隔；带这些标签的笔记对 Agent 不可读。"))
-      .addText((text) =>
-        text
-          .setPlaceholder("例如：私密,密码")
-          .setValue(settings.deniedTags)
+      .setName(t("界面密度"))
+      .setDesc(t("精简模式优先显示捕获、任务和摘要。"))
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("compact", t("精简"))
+          .addOption("standard", t("标准"))
+          .addOption("full", t("完整"))
+          .setValue(settings.layoutDensity)
           .onChange((value) => {
-            settings.deniedTags = value;
+            settings.layoutDensity = value as "compact" | "standard" | "full";
             save();
+            this.plugin.refreshViews();
           })
       );
 
-    containerEl.createEl("h3", { text: t("Agent 权限（可选）") });
+    new Setting(containerEl)
+      .setName(t("减少动态效果"))
+      .setDesc(t("关闭横幅和卡片动画，保留必要状态反馈。"))
+      .addToggle((toggle) =>
+        toggle.setValue(settings.reducedMotion).onChange((value) => {
+          settings.reducedMotion = value;
+          save();
+          this.plugin.refreshViews();
+        })
+      );
+  }
 
+  private renderAgent(containerEl: HTMLElement, settings: PulseSettings, save: () => void): void {
     new Setting(containerEl)
       .setName(t("Agent 工作模式"))
       .setDesc(t("选择只读、草稿、确认后写入或自动执行；「确认后写入」档下 Agent 的写操作会挂起为待审项，在看板「待审写入」中采纳后才落盘。实际权限仍受下方开关约束。"))
@@ -208,7 +221,16 @@ export class PulseSettingTab extends PluginSettingTab {
           .addOption("auto", t("自动执行"))
           .setValue(settings.agentWorkMode)
           .onChange((value) => {
-            settings.agentWorkMode = value as "readonly" | "draft" | "confirm" | "auto";
+            const next = value as "readonly" | "draft" | "confirm" | "auto";
+            // 切换档位会静默覆写 5 个权限开关，先说清楚再动手；取消则还原下拉。
+            if (next !== settings.agentWorkMode && !window.confirm(tf(
+              "切换为「{mode}」将重置 5 个权限开关：允许读取、允许新建、允许局部修改、允许全量覆盖、允许删除（删除始终关闭）。是否继续？",
+              { mode: t(WORK_MODE_LABELS[next] ?? next) }
+            ))) {
+              dropdown.setValue(settings.agentWorkMode);
+              return;
+            }
+            settings.agentWorkMode = next;
             if (settings.agentWorkMode === "readonly") {
               settings.agentAllowRead = true;
               settings.agentAllowCreate = false;
@@ -220,12 +242,6 @@ export class PulseSettingTab extends PluginSettingTab {
               settings.agentAllowCreate = true;
               settings.agentAllowPatch = false;
               settings.agentAllowOverwrite = false;
-              settings.agentAllowDelete = false;
-            } else if (settings.agentWorkMode === "confirm") {
-              settings.agentAllowRead = true;
-              settings.agentAllowCreate = true;
-              settings.agentAllowPatch = true;
-              settings.agentAllowOverwrite = true;
               settings.agentAllowDelete = false;
             } else {
               settings.agentAllowRead = true;
@@ -304,16 +320,6 @@ export class PulseSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName(t("允许删除"))
-      .setDesc(t("当前插件未开放删除工具，默认关闭。"))
-      .addToggle((toggle) =>
-        toggle.setValue(settings.agentAllowDelete).onChange((value) => {
-          settings.agentAllowDelete = value;
-          save();
-        })
-      );
-
-    new Setting(containerEl)
       .setName(t("修改前存快照"))
       .setDesc(t("覆盖或 Patch 前保存原文，支持 Agent 变更审查与一键恢复。"))
       .addToggle((toggle) =>
@@ -323,6 +329,74 @@ export class PulseSettingTab extends PluginSettingTab {
         })
       );
 
+    new Setting(containerEl)
+      .setName(t("Agent 工作日志目录"))
+      .setDesc(t("智能体每次工作的沉淀日志，默认按天写入一个文件。"))
+      .addText((text) =>
+        text
+          .setPlaceholder("agent-logs")
+          .setValue(settings.workLogFolder)
+          .onChange((value) => {
+            settings.workLogFolder = value;
+            save();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName(t("知识沉淀目录"))
+      .setDesc(t("智能体通过 add_knowledge 写入的长期笔记目录。"))
+      .addText((text) =>
+        text
+          .setPlaceholder("knowledge")
+          .setValue(settings.knowledgeFolder)
+          .onChange((value) => {
+            settings.knowledgeFolder = value;
+            save();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName(t("知识库分类"))
+      .setDesc(t("逗号分隔，智能体沉淀笔记时会按分类建子目录。"))
+      .addText((text) =>
+        text
+          .setPlaceholder("技术,项目,方法,灵感,复盘")
+          .setValue(settings.knowledgeCategories)
+          .onChange((value) => {
+            settings.knowledgeCategories = value;
+            save();
+            this.plugin.refreshViews();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName(t("Agent 禁止访问的文件夹"))
+      .setDesc(t("逗号分隔；这些目录对 Agent 的读写和搜索全部隐藏。"))
+      .addText((text) =>
+        text
+          .setPlaceholder("例如：财务,私人日记")
+          .setValue(settings.deniedFolders)
+          .onChange((value) => {
+            settings.deniedFolders = value;
+            save();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName(t("Agent 禁止访问的标签"))
+      .setDesc(t("逗号分隔；带这些标签的笔记对 Agent 不可读。"))
+      .addText((text) =>
+        text
+          .setPlaceholder("例如：私密,密码")
+          .setValue(settings.deniedTags)
+          .onChange((value) => {
+            settings.deniedTags = value;
+            save();
+          })
+      );
+  }
+
+  private renderBackup(containerEl: HTMLElement, settings: PulseSettings, save: () => void): void {
     new Setting(containerEl)
       .setName(t("自动备份统计数据"))
       .setDesc(t("把 data.json 快照写入库内普通文件夹，避免 .obsidian 被同步工具忽略。"))
@@ -358,66 +432,9 @@ export class PulseSettingTab extends PluginSettingTab {
             save();
           })
       );
+  }
 
-    new Setting(containerEl)
-      .setName(t("看板画风"))
-      .setDesc(t("像素湖面 / 水墨山水 / 像素城市，也可在看板页脚点「换画风」。"))
-      .addDropdown((dropdown) =>
-        dropdown
-          .addOption("lake", t("像素湖面"))
-          .addOption("ink", t("水墨山水"))
-          .addOption("city", t("像素城市"))
-          .setValue(settings.artStyle)
-          .onChange((value) => {
-            settings.artStyle = value as "lake" | "ink" | "city";
-            save();
-            this.plugin.refreshViews();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName(t("每日写作目标"))
-      .setDesc(t("看板今天卡片显示进度，0 表示关闭。"))
-      .addText((text) =>
-        text
-          .setPlaceholder("1000")
-          .setValue(String(settings.dailyWordGoal))
-          .onChange((value) => {
-            const goal = Number(value);
-            settings.dailyWordGoal = Number.isFinite(goal) && goal >= 0 ? goal : 1000;
-            save();
-            this.plugin.refreshViews();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName(t("界面密度"))
-      .setDesc(t("精简模式优先显示捕获、任务和摘要。"))
-      .addDropdown((dropdown) =>
-        dropdown
-          .addOption("compact", t("精简"))
-          .addOption("standard", t("标准"))
-          .addOption("full", t("完整"))
-          .setValue(settings.layoutDensity)
-          .onChange((value) => {
-            settings.layoutDensity = value as "compact" | "standard" | "full";
-            save();
-            this.plugin.refreshViews();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName(t("减少动态效果"))
-      .setDesc(t("关闭横幅和卡片动画，保留必要状态反馈。"))
-      .addToggle((toggle) =>
-        toggle.setValue(settings.reducedMotion).onChange((value) => {
-          settings.reducedMotion = value;
-          save();
-          this.plugin.refreshViews();
-        })
-      );
-
-    containerEl.createEl("h3", { text: t("统计口径（贡献分封顶与权重）") });
+  private renderStats(containerEl: HTMLElement, settings: PulseSettings, save: () => void): void {
     const recompute = () => {
       this.plugin.store.recomputeContributions();
       this.plugin.refreshViews();
@@ -436,6 +453,8 @@ export class PulseSettingTab extends PluginSettingTab {
       fallback: number,
       min = 0
     ): void => {
+      // 每键击都全量重算历史贡献分太重：300ms 防抖，停手后才落盘重算。
+      let debounceTimer: number | null = null;
       new Setting(containerEl)
         .setName(t(name))
         .setDesc(t(desc))
@@ -444,10 +463,14 @@ export class PulseSettingTab extends PluginSettingTab {
             .setPlaceholder(String(fallback))
             .setValue(String(settings[key]))
             .onChange((value) => {
-              const parsed = Number(value);
-              settings[key] = Number.isFinite(parsed) && parsed >= min ? parsed : fallback;
-              save();
-              recompute();
+              if (debounceTimer !== null) window.clearTimeout(debounceTimer);
+              debounceTimer = window.setTimeout(() => {
+                debounceTimer = null;
+                const parsed = Number(value);
+                settings[key] = Number.isFinite(parsed) && parsed >= min ? parsed : fallback;
+                save();
+                recompute();
+              }, 300);
             })
         );
     };
@@ -462,9 +485,9 @@ export class PulseSettingTab extends PluginSettingTab {
       cls: "sd-setup-hint",
       text: t("修改权重或封顶后会立即全量重算历史贡献分。Agent 写入只计「AI 新增词」，不重复计入人类写作统计。"),
     });
+  }
 
-    containerEl.createEl("h3", { text: t("Agent 接入（本地 HTTP / MCP）") });
-
+  private renderConnection(containerEl: HTMLElement, settings: PulseSettings, save: () => void): void {
     new Setting(containerEl)
       .setName(t("启用本地 Agent API"))
       .setDesc(t("只监听 127.0.0.1，供 MCP 桥接和本地脚本调用个人知识库。"))
@@ -514,8 +537,9 @@ export class PulseSettingTab extends PluginSettingTab {
           this.display();
         })
       );
+  }
 
-    containerEl.createEl("h3", { text: t("一键配置智能体客户端") });
+  private renderClients(containerEl: HTMLElement): void {
     const hint = containerEl.createDiv({ cls: "sd-setup-hint" });
     hint.setText(
       t("自动探测本机已安装的智能体，勾选后一键写入 MCP 配置。写入前会备份原文件，重启客户端即可生效。")
