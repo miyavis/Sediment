@@ -68,6 +68,7 @@ import {
   reviewBadgeCount,
 } from "../src/views/dashboard/review-queue";
 import { SETTINGS_SECTIONS, settingsSection } from "../src/ui/settings-sections";
+import { renderYearly } from "../src/views/dashboard/sections/insights";
 
 const day = (partial: Partial<DayRecord> = {}): DayRecord => ({ ...createEmptyDay(), ...partial });
 const settings = (partial: Partial<PulseSettings> = {}): PulseSettings => ({
@@ -1022,7 +1023,16 @@ test("H6：snapshotTasks 写当天日记前过 patch 门禁", async () => {
   });
   assert.equal(calls.snapshot.length, 0, "被拒绝时不得写日记");
 
-  const noPatch = fakeAgentPlugin({ agentAllowPatch: false });
+  // 日记已存在时按 patch 过门禁：patch=false 必须拒（日记缺失时按 create，见「终审 3」）。
+  const existingDaily = dailyNotePath(settings(), new Date());
+  const noPatch = fakeAgentPlugin({ agentAllowPatch: false }, {
+    plugin: {
+      app: {
+        vault: { getAbstractFileByPath: (p: string) => (p === existingDaily ? new TFile(p) : null) },
+        metadataCache: { getFileCache: () => undefined, resolvedLinks: {} },
+      },
+    },
+  });
   await assert.rejects(noPatch.api.snapshotTasks(), (error) => asApiError(error).code === "OPERATION_DENIED");
 
   const ok = fakeAgentPlugin();
@@ -1194,7 +1204,7 @@ function fakeConfirmPlugin(partial: Partial<PulseSettings> = {}, files: Record<s
     semantic: { search: async () => [] },
   };
   plugin.tasks = new TaskManager(plugin as never);
-  return { api: new AgentApi(plugin as never), tasks: plugin.tasks as TaskManager, store, pendingWrites, diagnostics, files: fileStore };
+  return { api: new AgentApi(plugin as never), tasks: plugin.tasks as TaskManager, store, pendingWrites, diagnostics, files: fileStore, plugin };
 }
 
 const pendingIdOf = (result: HoldResult): string => {
@@ -2509,6 +2519,164 @@ test("C3：EN 月份模板 {year}-{month} 配合补零月份输出 ISO 年月", 
     assert.equal(tf("{year} 年 {month} 月", { year: 2026, month: "12" }), "2026-12");
     setLocale("zh");
     assert.equal(tf("{year} 年 {month} 月", { year: 2026, month: "01" }), "2026 年 01 月");
+  } finally {
+    setLocale(prev);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 全分支终审单轮修复：claim/complete 日记门禁、recordWorkLog/snapshotTasks
+// 按存在性选操作、年轮图 i18n 与可访问性
+// ---------------------------------------------------------------------------
+
+/** 往 fakeConfirmPlugin 里塞一条当天 #to-agent 速记，返回该 memo 供副作用断言。 */
+function seedAgentMemo(ctx: ReturnType<typeof fakeConfirmPlugin>) {
+  const memo = {
+    id: "m1", date: dateKey(new Date()), time: "00:00", text: "任务",
+    tags: ["to-agent"], converted: false,
+  };
+  ctx.store.data.memos.push(memo);
+  return memo;
+}
+
+test("终审 1：claimAgentTask/completeAgentTask 日记路径过 patch 门禁；人用 bypass 面不受影响", async () => {
+  // 黑名单含日记目录：Agent claim/complete 都 403，零落盘（标签不动、syncTags 不触达）。
+  const denied = fakeConfirmPlugin({ agentWorkMode: "auto", deniedFolders: "daily" });
+  let syncCalls = 0;
+  denied.plugin.memos.syncTags = async () => { syncCalls += 1; };
+  const memo = seedAgentMemo(denied);
+  await assert.rejects(denied.api.claimAgentTask("m1"), (error) => {
+    const e = asApiError(error);
+    return e.code === "FORBIDDEN" && e.status === 403 && /daily/.test(e.message);
+  });
+  await assert.rejects(denied.api.completeAgentTask("m1"), (error) => {
+    const e = asApiError(error);
+    return e.code === "FORBIDDEN" && e.status === 403;
+  });
+  assert.equal(syncCalls, 0, "被拒时不得触达 memos.syncTags");
+  assert.deepEqual(memo.tags, ["to-agent"], "被拒时不得改标签");
+  assert.equal(memo.converted, false, "被拒时不得标记完成");
+  assert.equal(denied.files.size, 0, "零落盘");
+
+  // readonly 档：patch 操作被拒（403 OPERATION_DENIED）。
+  const ro = fakeConfirmPlugin({
+    agentWorkMode: "readonly",
+    agentAllowRead: true, agentAllowCreate: false, agentAllowPatch: false, agentAllowOverwrite: false,
+  });
+  seedAgentMemo(ro);
+  await assert.rejects(ro.api.claimAgentTask("m1"), (error) => {
+    const e = asApiError(error);
+    return e.code === "OPERATION_DENIED" && e.status === 403 && /readonly 模式拒绝写入/.test(e.message);
+  });
+  await assert.rejects(ro.api.completeAgentTask("m1"), (error) => asApiError(error).code === "OPERATION_DENIED");
+
+  // allowlist 不含日记目录：fail-closed，同样 403。
+  const allowlist = fakeConfirmPlugin({ agentWorkMode: "auto", agentAccessMode: "allowlist", agentAllowedFolders: "知识" });
+  seedAgentMemo(allowlist);
+  await assert.rejects(allowlist.api.claimAgentTask("m1"), (error) => asApiError(error).code === "FORBIDDEN");
+
+  // 人用看板调用面（bypassAccess=true）：readonly + 黑名单下照常认领/完成。
+  const human = fakeConfirmPlugin({
+    agentWorkMode: "readonly", deniedFolders: "daily",
+    agentAllowRead: true, agentAllowCreate: false, agentAllowPatch: false, agentAllowOverwrite: false,
+  });
+  let humanSync = 0;
+  human.plugin.memos.syncTags = async () => { humanSync += 1; };
+  seedAgentMemo(human);
+  const claimed = await human.api.claimAgentTask("m1", true);
+  assert.deepEqual(claimed.tags, ["agent-in-progress"]);
+  const done = await human.api.completeAgentTask("m1", "知识/产出.md", true);
+  assert.deepEqual(done.tags, ["agent-done"]);
+  assert.equal(done.converted, true);
+  assert.equal(done.resultPath, "知识/产出.md");
+  assert.equal(humanSync, 2, "人用面两次操作都正常同步日记标签");
+});
+
+test("终审 2：recordWorkLog 目标已存在按 patch 过门禁——draft 档第二次被拒且不改动既有日志", async () => {
+  const draftFlags = { agentAllowRead: true, agentAllowCreate: true, agentAllowPatch: false, agentAllowOverwrite: false };
+  const ctx = fakeConfirmPlugin({ agentWorkMode: "draft", ...draftFlags });
+  const first = (await ctx.api.recordWorkLog({ task: "t1", summary: "第一条" })) as HoldResult;
+  assert.equal(first.pending, undefined, "draft 档首条直接新建落盘");
+  const logPath = `agent-logs/${dateKey(new Date())}.md`;
+  const content = ctx.files.get(logPath);
+  assert.ok(content?.includes("第一条"));
+
+  await assert.rejects(ctx.api.recordWorkLog({ task: "t2", summary: "第二条" }), (error) => {
+    const e = asApiError(error);
+    return e.code === "OPERATION_DENIED" && e.status === 403;
+  });
+  assert.equal(ctx.files.get(logPath), content, "被拒的追加不得改动既有日志");
+  assert.equal(ctx.store.data.workLogs.length, 1, "被拒条目不得入库");
+
+  // confirm 档同步：首条挂起（create 门禁），采纳落盘后第二条按 patch 门禁被拒、不转挂起。
+  const confirm = fakeConfirmPlugin({ agentWorkMode: "confirm", ...draftFlags });
+  const held = (await confirm.api.recordWorkLog({ task: "t1", summary: "s" })) as HoldResult;
+  await confirm.api.approvePendingWrite(pendingIdOf(held));
+  assert.ok(confirm.files.has(logPath), "采纳后日志已落盘");
+  await assert.rejects(confirm.api.recordWorkLog({ task: "t2", summary: "s2" }), (error) => asApiError(error).code === "OPERATION_DENIED");
+  assert.equal(confirm.pendingWrites.length, 0, "门禁先于挂起：被拒的第二条不产生待审项");
+});
+
+test("终审 3：snapshotTasks 日记缺失按 create 过门禁——patch=true/create=false 不得凭空建日记", async () => {
+  const files = { "notes/a.md": "- [ ] 遗留任务\n" };
+  const ctx = fakeConfirmPlugin({ agentWorkMode: "auto", agentAllowCreate: false, agentAllowPatch: true }, files);
+  const dailyPath = dailyNotePath(ctx.store.settings, new Date());
+  await assert.rejects(ctx.api.snapshotTasks(), (error) => {
+    const e = asApiError(error);
+    return e.code === "OPERATION_DENIED" && e.status === 403;
+  });
+  assert.equal(ctx.files.has(dailyPath), false, "被拒时不得新建日记");
+
+  // confirm 档同样：门禁先于挂起，不产生待审项。
+  const confirm = fakeConfirmPlugin({ agentWorkMode: "confirm", agentAllowCreate: false, agentAllowPatch: true }, files);
+  await assert.rejects(confirm.api.snapshotTasks(), (error) => asApiError(error).code === "OPERATION_DENIED");
+  assert.equal(confirm.pendingWrites.length, 0);
+
+  // 日记已存在：按 patch 过门禁，create=false 不影响追加。
+  const existing = fakeConfirmPlugin(
+    { agentWorkMode: "auto", agentAllowCreate: false, agentAllowPatch: true },
+    { ...files, [dailyPath]: "# 今天\n" }
+  );
+  const res = (await existing.api.snapshotTasks()) as HoldResult & { count: number };
+  assert.equal(res.count, 1);
+  assert.ok(String(existing.files.get(dailyPath)).includes("遗留任务"));
+
+  // create 允许时缺日记照常新建（不破坏既有行为）。
+  const ok = fakeConfirmPlugin({ agentWorkMode: "auto" }, files);
+  const okRes = (await ok.api.snapshotTasks()) as HoldResult & { count: number };
+  assert.equal(okRes.count, 1);
+  assert.ok(ok.files.has(dailyNotePath(ok.store.settings, new Date())));
+});
+
+test("终审 4：年轮图月份标签走 tf()（EN 无中文泄漏），SVG 带 role=img 与 aria-label", () => {
+  const year = new Date().getFullYear();
+  const days: Record<string, DayRecord> = { [`${year}-01-05`]: day({ contribution: 4 }) };
+  const html: string[] = [];
+  const slot = {
+    set innerHTML(value: string) { html.push(value); },
+    get innerHTML() { return html[html.length - 1] ?? ""; },
+  };
+  const card = { setAttribute: () => {}, querySelector: () => undefined, createDiv: () => slot };
+  const view = {
+    yearlyTab: "wheel",
+    analyticsCard: () => card,
+    render: () => {},
+    plugin: { store: { data: { days }, getDay: (key: string) => days[key] ?? createEmptyDay() } },
+  };
+  const prev = getLocale();
+  try {
+    setLocale("zh");
+    renderYearly(view as never, {} as never);
+    const zh = html[0];
+    assert.ok(zh.includes(">1月<") && zh.includes(">12月<"), "ZH 月份标签保持 {n}月 口径");
+    assert.match(zh, /role="img"/, "年轮 SVG 必须带 role=img");
+    assert.match(zh, /aria-label="[^"]*年轮/, "aria-label 复用指纹图同款转义口径");
+    setLocale("en");
+    renderYearly(view as never, {} as never);
+    const en = html[1];
+    assert.ok(!/[\u4e00-\u9fff]/.test(en), "EN 年轮不得泄漏中文");
+    assert.match(en, /aria-label="[^"]*Year wheel/);
+    assert.ok(en.includes(">1<") && en.includes(">12<"), "EN 月份标签输出数字");
   } finally {
     setLocale(prev);
   }

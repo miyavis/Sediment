@@ -1088,7 +1088,10 @@ export class AgentApi {
     const settings = this.plugin.store.settings;
     const now = new Date();
     const path = dailyNotePath(settings, now);
-    this.assertPathAllowed(path, "patch");
+    // TaskManager.snapshot 在日记缺失时会新建：目标不存在按 create 过门禁，
+    // 堵住 patch=true/create=false 组合凭空建日记的旁路（与 recordWorkLog 同模式）。
+    const dailyExists = this.vault.getAbstractFileByPath(path) instanceof TFile;
+    this.assertPathAllowed(path, dailyExists ? "patch" : "create");
     const accessible = (target: string): boolean => isPathAllowedByMode(target, settings);
 
     if (!bypassConfirm && this.isConfirmMode()) {
@@ -1170,7 +1173,11 @@ export class AgentApi {
 
     const folder = normalizeFolder(this.plugin.store.settings.workLogFolder);
     const path = folder ? `${folder}/${log.date}.md` : `${log.date}.md`;
-    this.assertPathAllowed(path, "create");
+    // 与 addMemo 同款按存在性选操作：已存在时落盘走 vault.modify 追加（patch），
+    // 不存在才是新建（create）。draft 档（create 允许 / patch 拒绝）当天第二次
+    // record_work_log 不得直改既有笔记；confirm 挂起与采纳重放同样先过此门禁。
+    const logExists = this.vault.getAbstractFileByPath(path) instanceof TFile;
+    this.assertPathAllowed(path, logExists ? "patch" : "create");
 
     const block = [
       `## ${log.time} · ${log.agent}`,
@@ -1361,10 +1368,15 @@ export class AgentApi {
   }
 
   /** 认领一条 #to-agent 任务，避免被重复处理。 */
-  async claimAgentTask(id: string): Promise<MemoRecord> {
+  async claimAgentTask(id: string, bypassAccess = false): Promise<MemoRecord> {
     const memo = this.plugin.store.data.memos.find((item) => item.id === id);
     if (!memo) throw new Error(`速记不存在：${id}`);
     if (!memo.tags.includes("to-agent")) throw new Error(`速记 ${id} 不是待办任务`);
+    // syncTags 直改 memo.date 对应日记的 Callout 标签行：Agent 面必须过 patch 门禁。
+    // 人用看板调用面传 bypassAccess=true（与 bypassConfirm 同款模式），人用 UI 不受 Agent 权限限制。
+    if (!bypassAccess) {
+      this.assertPathAllowed(dailyNotePath(this.plugin.store.settings, parseKey(memo.date)), "patch");
+    }
     memo.tags = memo.tags.filter((tag) => tag !== "to-agent");
     if (!memo.tags.includes("agent-in-progress")) memo.tags.push("agent-in-progress");
     this.plugin.store.scheduleSave();
@@ -1373,9 +1385,13 @@ export class AgentApi {
   }
 
   /** 完成任务：标记为 #agent-done，可关联产出笔记。 */
-  async completeAgentTask(id: string, resultPath?: string): Promise<MemoRecord> {
+  async completeAgentTask(id: string, resultPath?: string, bypassAccess = false): Promise<MemoRecord> {
     const memo = this.plugin.store.data.memos.find((item) => item.id === id);
     if (!memo) throw new Error(`速记不存在：${id}`);
+    // 与 claimAgentTask 同款：日记目标过 patch 门禁，人用看板调用面传 bypassAccess=true。
+    if (!bypassAccess) {
+      this.assertPathAllowed(dailyNotePath(this.plugin.store.settings, parseKey(memo.date)), "patch");
+    }
     memo.tags = memo.tags.filter(
       (tag) => tag !== "to-agent" && tag !== "agent-in-progress" && tag !== "agent-done"
     );

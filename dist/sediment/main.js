@@ -2105,7 +2105,8 @@ ${task.text}
     const settings = this.plugin.store.settings;
     const now = /* @__PURE__ */ new Date();
     const path = dailyNotePath(settings, now);
-    this.assertPathAllowed(path, "patch");
+    const dailyExists = this.vault.getAbstractFileByPath(path) instanceof import_obsidian3.TFile;
+    this.assertPathAllowed(path, dailyExists ? "patch" : "create");
     const accessible = (target) => isPathAllowedByMode(target, settings);
     if (!bypassConfirm && this.isConfirmMode()) {
       const overdue = await this.plugin.tasks.list("overdue", { accessible });
@@ -2167,7 +2168,8 @@ ${task.text}
     };
     const folder = normalizeFolder(this.plugin.store.settings.workLogFolder);
     const path = folder ? `${folder}/${log.date}.md` : `${log.date}.md`;
-    this.assertPathAllowed(path, "create");
+    const logExists = this.vault.getAbstractFileByPath(path) instanceof import_obsidian3.TFile;
+    this.assertPathAllowed(path, logExists ? "patch" : "create");
     const block = [
       `## ${log.time} \xB7 ${log.agent}`,
       "",
@@ -2330,10 +2332,13 @@ ${block}`);
     };
   }
   /** 认领一条 #to-agent 任务，避免被重复处理。 */
-  async claimAgentTask(id) {
+  async claimAgentTask(id, bypassAccess = false) {
     const memo = this.plugin.store.data.memos.find((item) => item.id === id);
     if (!memo) throw new Error(`\u901F\u8BB0\u4E0D\u5B58\u5728\uFF1A${id}`);
     if (!memo.tags.includes("to-agent")) throw new Error(`\u901F\u8BB0 ${id} \u4E0D\u662F\u5F85\u529E\u4EFB\u52A1`);
+    if (!bypassAccess) {
+      this.assertPathAllowed(dailyNotePath(this.plugin.store.settings, parseKey(memo.date)), "patch");
+    }
     memo.tags = memo.tags.filter((tag) => tag !== "to-agent");
     if (!memo.tags.includes("agent-in-progress")) memo.tags.push("agent-in-progress");
     this.plugin.store.scheduleSave();
@@ -2341,9 +2346,12 @@ ${block}`);
     return memo;
   }
   /** 完成任务：标记为 #agent-done，可关联产出笔记。 */
-  async completeAgentTask(id, resultPath) {
+  async completeAgentTask(id, resultPath, bypassAccess = false) {
     const memo = this.plugin.store.data.memos.find((item) => item.id === id);
     if (!memo) throw new Error(`\u901F\u8BB0\u4E0D\u5B58\u5728\uFF1A${id}`);
+    if (!bypassAccess) {
+      this.assertPathAllowed(dailyNotePath(this.plugin.store.settings, parseKey(memo.date)), "patch");
+    }
     memo.tags = memo.tags.filter(
       (tag) => tag !== "to-agent" && tag !== "agent-in-progress" && tag !== "agent-done"
     );
@@ -6398,10 +6406,10 @@ function renderYearly(view, root) {
       const y2 = 110 + Math.sin(angle) * outer;
       const lx = 110 + Math.cos(angle) * 124;
       const ly = 110 + Math.sin(angle) * 124;
-      return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="var(--background-modifier-border)" stroke-width="1"/><text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-size="9" text-anchor="middle" dominant-baseline="middle" fill="var(--text-faint)">${month + 1}\u6708</text>`;
+      return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="var(--background-modifier-border)" stroke-width="1"/><text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-size="9" text-anchor="middle" dominant-baseline="middle" fill="var(--text-faint)">${tf("{n}\u6708", { n: month + 1 })}</text>`;
     }).join("");
     const watermark = `<text x="110" y="116" text-anchor="middle" font-size="26" font-weight="600" fill="var(--text-faint)" opacity="0.18">${year}</text>`;
-    card.createDiv({ cls: "sd-chart-slot" }).innerHTML = `<svg viewBox="0 0 220 220" class="sd-wheel">${tracks}${monthTicks}${watermark}${petals}</svg>`;
+    card.createDiv({ cls: "sd-chart-slot" }).innerHTML = `<svg viewBox="0 0 220 220" class="sd-wheel" role="img" aria-label="${escapeAttr(`${t("\u5E74\u8F6E")} \xB7 ${tf("{year} \u5E74", { year })}`)}">${tracks}${monthTicks}${watermark}${petals}</svg>`;
     return;
   }
   if (view.yearlyTab === "fingerprint") {
@@ -6910,7 +6918,7 @@ var DashboardView = class extends import_obsidian20.ItemView {
           };
         } else if (task.memoId) {
           actions.createEl("button", { text: t("\u8BA4\u9886") }).onclick = () => {
-            void this.plugin.agentApi.claimAgentTask(task.memoId).then(() => {
+            void this.plugin.agentApi.claimAgentTask(task.memoId, true).then(() => {
               new import_obsidian20.Notice(t("\u4EFB\u52A1\u5DF2\u8BA4\u9886"));
               this.render();
             }).catch((error) => new import_obsidian20.Notice(error instanceof Error ? error.message : t("\u64CD\u4F5C\u5931\u8D25")));
@@ -6922,7 +6930,7 @@ var DashboardView = class extends import_obsidian20.ItemView {
               complete.disabled = false;
               return;
             }
-            void this.plugin.agentApi.completeAgentTask(task.memoId).then(() => {
+            void this.plugin.agentApi.completeAgentTask(task.memoId, void 0, true).then(() => {
               new import_obsidian20.Notice(t("Agent \u5F85\u529E\u5DF2\u5B8C\u6210"));
               this.render();
             }).catch((error) => {

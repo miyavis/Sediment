@@ -363,7 +363,7 @@ export class DashboardView extends ItemView {
           };
         } else if (task.memoId) {
           actions.createEl("button", { text: t("认领") }).onclick = () => {
-            void this.plugin.agentApi.claimAgentTask(task.memoId!).then(() => {
+            void this.plugin.agentApi.claimAgentTask(task.memoId!, true).then(() => {
               new Notice(t("任务已认领"));
               this.render();
             }).catch((error) => new Notice(error instanceof Error ? error.message : t("操作失败")));
@@ -375,7 +375,7 @@ export class DashboardView extends ItemView {
               complete.disabled = false;
               return;
             }
-            void this.plugin.agentApi.completeAgentTask(task.memoId!).then(() => {
+            void this.plugin.agentApi.completeAgentTask(task.memoId!, undefined, true).then(() => {
               new Notice(t("Agent 待办已完成"));
               this.render();
             }).catch((error) => {
