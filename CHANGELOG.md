@@ -2,13 +2,16 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
-## [1.0.0] - 2026-11-20
+## [1.0.0] - 2026-11-21
 
 ### 新增
 - OpenCode 一键配置 v1/v2 双布局适配：按配置形状判定（v1 直挂条目优先，其次 mcp.servers），形状无线索时探测本机 `opencode --version`，探测失败默认 v2；写入原生结构（type:local + command 数组 + environment），v2 用对象 timeout、v1 用 enabled + 数字 timeout
 - 配置迁移自愈：写入 v2 时清理 v1 直挂残留，写入 v1 时清理 servers 内旧条目并移除空 servers 键，避免旧版误读
 - Windsurf Next 客户端候选（~/.codeium/windsurf-next/mcp_config.json）
-- 一键配置单元测试 +12（布局判定、双布局写入、迁移清理、桥接复用、片段输出、候选路径），全量 151 项
+- 一键配置单元测试 +12（布局判定、双布局写入、迁移清理、桥接复用、片段输出、候选路径）；另加审核行可读性与恢复入口迁移回归 2 项，全量 153 项
+
+### 改进
+- 数据快照恢复列表从智能体工坊挪到设置页备份分区（保留份数下方），工坊回归纯审核队列（草稿/待审写入/变更审查/Agent 待办）；恢复安全流程不变：二次确认→恢复副本→格式校验→写回重载
 
 ### 修复
 - OpenCode 一键配置不生效：此前对所有客户端写 Claude 风格条目（command 字符串 + args），OpenCode v1/v2 均不识别；现按客户端原生 schema 写入，实测 `opencode mcp list` 连接成功
@@ -16,6 +19,7 @@
 - Cline 条目不再写 timeout：Cline 按秒解释，写 60000 会被误读为 60000 秒；其余客户端保持 60000 毫秒
 - 移除无效候选 ~/.opencode.json：OpenCode 任何版本都不读取该位置
 - isAgentConfigured 兼容 OpenCode 双位置（v1 直挂与 v2 servers），已配置状态不再漏报
+- 审核行可读性：审批按钮 mod-cta 白字落浅底（对比度 1.1:1 全隐形）恢复强调底+显式字色（5.70:1）；待审写入/变更审查/快照恢复行不再复用 112px 元信息列与 faint 10px（485px 内容截到 112px、2.85:1），改独立布局占满剩余宽 + muted 11px（5.74:1）+ 悬停全文提示
 
 ## [0.9.8] - 2026-11-20
 

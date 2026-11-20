@@ -1803,6 +1803,17 @@ settings:
   white-space: nowrap;
 }
 
+/* 审核行（待审写入/变更审查/快照恢复）整条信息就是主内容，不能复用
+   「元信息 span + strong 标题」行的 112px 列与 faint 10px（实测 485px 内容截到 112px、对比度 2.85:1）。 */
+.sd-feed-row-audit {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.sd-feed-row-audit > span {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 .sd-progress {
   height: 8px;
 }
@@ -1963,10 +1974,19 @@ settings:
 .sd-audit-actions button {
   padding: 2px 8px;
   font-size: 10px;
+  color: var(--text-normal);
   background: var(--background-secondary);
   border: 1px solid var(--background-modifier-border);
   border-radius: 8px;
   cursor: pointer;
+}
+
+/* mod-cta 来自 app.css 且与本规则同级：只改背景会把白字留在浅底上（实测 1.1:1 全 invisible）。
+   恢复强调背景并显式声明字色，保住主操作按钮的视觉权重。 */
+.sd-audit-actions button.mod-cta {
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+  color: var(--text-on-accent);
 }
 
 .sd-audit-open {

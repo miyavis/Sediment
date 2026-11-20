@@ -2955,3 +2955,29 @@ test("终审 4：年轮图月份标签走 tf()（EN 无中文泄漏），SVG 带
     setLocale(prev);
   }
 });
+
+test("styles.css 审核行可读性回归：mod-cta 对比度与信息列宽", () => {
+  const css = fs.readFileSync("styles.css", "utf8");
+  // 根因 1：.sd-audit-actions button 只改背景不改颜色，mod-cta 的白字落在浅色背景上（实测 1.1:1）。
+  const cta = /\.sd-audit-actions button\.mod-cta\s*\{[^}]*\}/.exec(css);
+  assert.ok(cta, "缺少 .sd-audit-actions button.mod-cta 覆盖规则");
+  assert.match(cta[0], /color:\s*var\(--text-on-accent\)/, "mod-cta 必须显式声明字色");
+  assert.match(cta[0], /background:\s*var\(--interactive-accent\)/, "mod-cta 必须恢复强调背景，不能继承 secondary 浅底");
+  // 根因 2：审核行整条信息塞进 112px 元信息列 + faint 10px，路径被截断且对比度 2.85:1。
+  const audit = /\.sd-feed-row-audit\s*\{[^}]*\}/.exec(css);
+  assert.ok(audit, "缺少审核行独立布局 .sd-feed-row-audit");
+  assert.match(audit[0], /grid-template-columns:\s*minmax\(0,\s*1fr\)\s*auto/, "信息列须占剩余宽度，不复用 112px 元信息列");
+  const span = /\.sd-feed-row-audit\s*>\s*span\s*\{[^}]*\}/.exec(css);
+  assert.ok(span, "缺少审核行信息 span 规则");
+  assert.match(span[0], /color:\s*var\(--text-muted\)/, "审核行信息须用可读的 muted 色");
+  assert.match(span[0], /font-size:\s*11px/, "审核行信息字号不得低于 11px");
+});
+
+test("快照恢复入口迁移：工坊不再渲染、设置备份分区承接", () => {
+  const agentSrc = fs.readFileSync("src/views/dashboard/sections/agent.ts", "utf8");
+  assert.ok(!agentSrc.includes("renderDataRecovery"), "工坊不应再渲染数据快照恢复卡");
+  const settingsSrc = fs.readFileSync("src/ui/settings-tab.ts", "utf8");
+  assert.match(settingsSrc, /private renderRecoveryList\(/, "设置备份分区须承接快照恢复列表");
+  assert.match(settingsSrc, /restoreDataBackup/, "恢复安全流程须在设置侧保留");
+  assert.match(settingsSrc, /sd-feed-row-audit/, "恢复列表须复用可读审核行样式");
+});

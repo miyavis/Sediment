@@ -7,6 +7,7 @@ import { generateToken } from "../agent/api";
 import { METRICS, type MetricKey, type PulseSettings } from "../types";
 import { resolveLocale, setLocale, t, tf } from "../i18n";
 import { SETTINGS_SECTIONS } from "./settings-sections";
+import { localStamp } from "../utils/dates";
 
 const WORK_MODE_LABELS: Record<string, string> = {
   readonly: "只读",
@@ -444,6 +445,60 @@ export class PulseSettingTab extends PluginSettingTab {
             save();
           })
       );
+    this.renderRecoveryList(containerEl);
+  }
+
+  /** 数据快照恢复列表：自智能体工坊挪入备份分区（低频维护操作不占审核页）。
+   *  恢复是重操作：先二次确认；恢复副本写入失败（recovery="failed"）必须显著告警，
+   *  全新安装无当前数据（recovery="none"）则正常提示，不误报失败。 */
+  private renderRecoveryList(containerEl: HTMLElement): void {
+    containerEl.createDiv({ cls: "sd-card-title", text: t("数据快照恢复") });
+    containerEl.createDiv({
+      cls: "sd-card-sub",
+      text: t("列出备份目录中的 data.json 快照，可一键恢复统计数据。恢复前会先把当前数据另存为恢复副本，恢复错了也能回退。"),
+    });
+    containerEl.createDiv({
+      cls: "sd-card-sub",
+      text: t("备份目录为库根目录时，列表可能混入你自己创建的 data-*.json；恢复前会校验内容格式，损坏或非本插件数据会被拒绝。"),
+    });
+    if (this.plugin.store.isPersistenceBlocked) {
+      containerEl.createDiv({
+        cls: "sd-card-sub sd-recovery-warning",
+        text: t("数据写入已暂停以保护原始数据；恢复一份有效快照可解除暂停。"),
+      });
+    }
+    const backups = this.plugin.store.listDataBackups();
+    if (backups.length === 0) {
+      containerEl.createDiv({ cls: "sd-empty", text: t("还没有数据备份。开启「自动备份统计数据」后，快照会出现在这里。") });
+      return;
+    }
+    const list = containerEl.createDiv({ cls: "sd-feed-list" });
+    for (const backup of backups.slice(0, 20)) {
+      const row = list.createDiv({ cls: "sd-feed-row sd-feed-row-audit" });
+      row.createSpan({
+        text: `${backup.name} · ${localStamp(new Date(backup.savedAt).toISOString())} · ${(backup.size / 1024).toFixed(1)} KB`,
+        attr: { title: backup.name },
+      });
+      const actions = row.createDiv({ cls: "sd-audit-actions" });
+      actions.createEl("button", { text: t("恢复") }).onclick = () => {
+        if (!window.confirm(t("确认从该快照恢复统计数据？当前数据会先另存为恢复副本，恢复后看板立即重载。"))) return;
+        void this.plugin.store.restoreDataBackup(backup.name).then((result) => {
+          if (result.recovery === "failed") {
+            // 恢复副本创建失败：备份已写回但失去回退保险，必须显著告警。
+            new Notice(t("恢复副本创建失败：备份已恢复，但当前数据未能另存副本。请立即手动备份 data.json，避免再次恢复时无法回退。"), 15_000);
+          } else if (result.recovery === "none") {
+            // 全新安装没有当前数据可备份：无需恢复副本，不是失败。
+            new Notice(tf("已从 {name} 恢复（此前无数据，无需恢复副本）", { name: backup.name }));
+          } else {
+            new Notice(tf("已从 {name} 恢复，恢复副本：{path}", { name: backup.name, path: result.recoveryPath }));
+          }
+          this.plugin.refreshViews();
+          this.display();
+        }).catch((error) => {
+          new Notice(error instanceof Error ? error.message : String(error));
+        });
+      };
+    }
   }
 
   private renderStats(containerEl: HTMLElement, settings: PulseSettings, save: () => void): void {
