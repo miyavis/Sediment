@@ -1474,8 +1474,11 @@ settings:
   animation: none;
 }
 
-.sd-body .sd-card[id] {
-  scroll-margin-top: 64px;
+.sd-body .sd-card[id],
+.sd-tasks,
+.sd-quick-memo,
+.sd-quick-memo textarea {
+  scroll-margin-top: 72px;
 }
 
 .sd-body > .sd-card:nth-child(2) { animation-delay: 0.04s; }

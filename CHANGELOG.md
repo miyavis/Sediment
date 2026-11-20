@@ -2,6 +2,11 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [Unreleased]
+
+### 修复
+- 锚点/快捷跳转改回浏览器原生 scrollIntoView + CSS scroll-margin，修复「有的跳有的不跳」；用户主动滚动时取消排队中的滚动恢复，避免互相打断
+
 ## [0.9.4] - 2026-11-20
 
 ### 修复

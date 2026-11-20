@@ -4400,6 +4400,7 @@ var DashboardView = class extends import_obsidian17.ItemView {
     this.unsubscribePomodoro = null;
     this.lastRenderedTab = null;
     this.hasRendered = false;
+    this.scrollRestoreToken = 0;
     this.pendingFocusDate = null;
     this.metric = plugin.store.settings.heatmapMetric;
   }
@@ -4442,10 +4443,12 @@ var DashboardView = class extends import_obsidian17.ItemView {
     this.lastRenderedTab = this.tab;
     this.hasRendered = true;
     if (sameTab && scroller) {
+      const token = ++this.scrollRestoreToken;
       window.requestAnimationFrame(() => {
+        if (token !== this.scrollRestoreToken) return;
         scroller.scrollTop = scrollTop;
         window.requestAnimationFrame(() => {
-          scroller.scrollTop = scrollTop;
+          if (token === this.scrollRestoreToken) scroller.scrollTop = scrollTop;
         });
       });
     }
@@ -4527,7 +4530,7 @@ var DashboardView = class extends import_obsidian17.ItemView {
     memoAction.onclick = () => {
       const area = root.querySelector(".sd-quick-memo textarea");
       if (!area) return;
-      this.scrollToElement(area, 120);
+      this.scrollToElement(area);
       area.focus({ preventScroll: true });
     };
     const taskAction = actions.createEl("button", {
@@ -4536,7 +4539,7 @@ var DashboardView = class extends import_obsidian17.ItemView {
     });
     taskAction.onclick = () => {
       const tasks = root.querySelector(".sd-tasks");
-      if (tasks) this.scrollToElement(tasks, 80);
+      if (tasks) this.scrollToElement(tasks);
     };
     const pomodoroAction = actions.createEl("button", {
       cls: "sd-today-action",
@@ -4721,7 +4724,7 @@ var DashboardView = class extends import_obsidian17.ItemView {
       const button = subnav.createEl("button", { text: label });
       button.onclick = () => {
         const target = document.getElementById(id);
-        if (target instanceof HTMLElement) this.scrollToElement(target, 64);
+        if (target instanceof HTMLElement) this.scrollToElement(target);
       };
     }
     this.renderInsightsSummary(body);
@@ -5092,15 +5095,9 @@ ${body.trim()}
     this.heatTooltip.style.top = `${event.clientY + 14}px`;
   }
   /** 平滑滚动到目标，并为吸顶导航预留偏移。 */
-  scrollToElement(target, offset = 80) {
-    var _a2;
-    const scroller = (_a2 = this.scrollParent(this.contentEl)) != null ? _a2 : this.fallbackScroller();
-    if (!scroller) {
-      target.scrollIntoView({ behavior: "smooth", block: "start" });
-      return;
-    }
-    const top = target.getBoundingClientRect().top + scroller.scrollTop - offset;
-    scroller.scrollTo({ top, behavior: "smooth" });
+  scrollToElement(target) {
+    this.scrollRestoreToken += 1;
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
   }
   fallbackScroller() {
     var _a2;

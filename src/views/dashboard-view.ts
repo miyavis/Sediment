@@ -51,6 +51,7 @@ export class DashboardView extends ItemView {
   private unsubscribePomodoro: (() => void) | null = null;
   private lastRenderedTab: TabKey | null = null;
   private hasRendered = false;
+  private scrollRestoreToken = 0;
   private pendingFocusDate: string | null = null;
 
   constructor(leaf: WorkspaceLeaf, private plugin: SedimentPlugin) {
@@ -100,13 +101,15 @@ export class DashboardView extends ItemView {
     else this.renderAgentHub(root);
     this.lastRenderedTab = this.tab;
 
-    // 同页签刷新保留滚动位置。等布局稳定后再恢复，避免异步卡片把锚点顶偏。
+    // 同页签刷新保留滚动位置。用户若主动滚动，则取消这次恢复，避免和滚动动画打架。
     this.hasRendered = true;
     if (sameTab && scroller) {
+      const token = ++this.scrollRestoreToken;
       window.requestAnimationFrame(() => {
+        if (token !== this.scrollRestoreToken) return;
         scroller.scrollTop = scrollTop;
         window.requestAnimationFrame(() => {
-          scroller.scrollTop = scrollTop;
+          if (token === this.scrollRestoreToken) scroller.scrollTop = scrollTop;
         });
       });
     }
@@ -195,7 +198,7 @@ export class DashboardView extends ItemView {
     memoAction.onclick = () => {
       const area = root.querySelector(".sd-quick-memo textarea") as HTMLTextAreaElement | null;
       if (!area) return;
-      this.scrollToElement(area, 120);
+      this.scrollToElement(area);
       area.focus({ preventScroll: true });
     };
     const taskAction = actions.createEl("button", {
@@ -204,7 +207,7 @@ export class DashboardView extends ItemView {
     });
     taskAction.onclick = () => {
       const tasks = root.querySelector(".sd-tasks") as HTMLElement | null;
-      if (tasks) this.scrollToElement(tasks, 80);
+      if (tasks) this.scrollToElement(tasks);
     };
     const pomodoroAction = actions.createEl("button", {
       cls: "sd-today-action",
@@ -390,7 +393,7 @@ export class DashboardView extends ItemView {
       const button = subnav.createEl("button", { text: label });
       button.onclick = () => {
         const target = document.getElementById(id);
-        if (target instanceof HTMLElement) this.scrollToElement(target, 64);
+        if (target instanceof HTMLElement) this.scrollToElement(target);
       };
     }
     this.renderInsightsSummary(body);
@@ -810,14 +813,10 @@ export class DashboardView extends ItemView {
   }
 
   /** 平滑滚动到目标，并为吸顶导航预留偏移。 */
-  private scrollToElement(target: HTMLElement, offset = 80): void {
-    const scroller = this.scrollParent(this.contentEl) ?? this.fallbackScroller();
-    if (!scroller) {
-      target.scrollIntoView({ behavior: "smooth", block: "start" });
-      return;
-    }
-    const top = target.getBoundingClientRect().top + scroller.scrollTop - offset;
-    scroller.scrollTo({ top, behavior: "smooth" });
+  private scrollToElement(target: HTMLElement): void {
+    // 用户主动滚动时，取消上一次重绘排队的滚动恢复，避免两者打架。
+    this.scrollRestoreToken += 1;
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   private fallbackScroller(): HTMLElement | null {
