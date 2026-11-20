@@ -1,5 +1,7 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import { configureAgent, configSnippet, detectAgents, isAgentConfigured } from "../agent/setup";
+import { uninstallMcp } from "../features/uninstall";
+import { McpUninstallModal } from "./mcp-uninstall-modal";
 import type { SedimentPlugin } from "../main";
 import { generateToken } from "../agent/api";
 import { METRICS, type MetricKey } from "../types";
@@ -537,8 +539,28 @@ export class PulseSettingTab extends PluginSettingTab {
               new Notice(`${t("配置失败")}: ${error instanceof Error ? error.message : String(error)}`);
             }
           })
-        );
+        )
+        .addButton((button) => {
+          button.setButtonText(t("卸载"));
+          button.setDisabled(!configured);
+          button.onClick(() => {
+            const result = uninstallMcp(this.plugin, [agent.id], false);
+            new Notice(
+              result.failures.length > 0
+                ? `${t("卸载失败")}: ${result.failures.join("；")}`
+                : `${agent.name} ${t("MCP 配置已移除，重启客户端后生效")}`
+            );
+            this.display();
+          });
+        });
     }
+    new Setting(containerEl)
+      .setName(t("一键卸载 MCP 接入"))
+      .setDesc(t("选择要移除的客户端配置和桥接脚本；不会删除笔记或统计数据。"))
+      .addButton((button) =>
+        button.setButtonText(t("打开卸载向导")).onClick(() => new McpUninstallModal(this.plugin).open())
+      );
+
     new Setting(containerEl)
       .setName(t("复制配置 JSON"))
       .setDesc(t("手动粘贴到客户端的 MCP 配置文件中。"))

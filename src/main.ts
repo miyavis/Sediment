@@ -13,6 +13,7 @@ import { QuickMemoModal } from "./ui/quick-memo-modal";
 import { HealthModal } from "./ui/health-modal";
 import { ExportModal } from "./ui/export-modal";
 import { DiagnosticsModal } from "./ui/diagnostics-modal";
+import { McpUninstallModal } from "./ui/mcp-uninstall-modal";
 import { PulseSettingTab } from "./ui/settings-tab";
 import { ChangelogModal } from "./ui/changelog-modal";
 import { normalizeFolder, ensureFolder } from "./utils/vault";
@@ -198,6 +199,11 @@ export class SedimentPlugin extends Plugin {
       id: "export-data",
       name: t("导出数据（CSV/JSON，默认脱敏）"),
       callback: () => new ExportModal(this.app, this).open(),
+    });
+    this.addCommand({
+      id: "uninstall-mcp",
+      name: "一键卸载 MCP 接入",
+      callback: () => new McpUninstallModal(this).open(),
     });
     this.addCommand({
       id: "show-diagnostics",

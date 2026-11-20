@@ -2096,6 +2096,35 @@ settings:
   margin-top: 10px;
 }
 
+.sd-uninstall-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.sd-uninstall-row {
+  padding: 8px 10px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+}
+
+.sd-uninstall-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  word-break: break-all;
+  cursor: pointer;
+}
+
+.sd-uninstall-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 .sd-diagnostic-list {
   display: flex;
   flex-direction: column;
