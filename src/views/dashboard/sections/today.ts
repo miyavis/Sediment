@@ -37,9 +37,9 @@ export function renderToday(view: DashboardView, root: HTMLElement): void {
   bento.querySelector(".sd-quick-memo")?.addClass("sd-bento-memo");
   bento.querySelector(".sd-tasks")?.addClass("sd-bento-tasks");
   bento.querySelector(".sd-agent-feed")?.addClass("sd-bento-agent");
-  // 精简密度下沿用 sd-agent-secondary 的隐藏规则，捕获/任务/摘要优先。
+  // 工作日志保持可达（D2=B 迁移意图，compact 下不隐藏）；连接状态卡沿用旧隐藏规则。
+  renderWorkLogs(view, body.createDiv({ cls: "sd-secondary" }));
   const secondary = body.createDiv({ cls: "sd-secondary sd-agent-secondary" });
-  renderWorkLogs(view, secondary);
   renderAgentStatus(view, secondary);
   renderHints(view, body);
 }

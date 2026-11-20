@@ -6072,8 +6072,8 @@ function renderToday(view, root) {
   (_b = bento.querySelector(".sd-quick-memo")) == null ? void 0 : _b.addClass("sd-bento-memo");
   (_c = bento.querySelector(".sd-tasks")) == null ? void 0 : _c.addClass("sd-bento-tasks");
   (_d = bento.querySelector(".sd-agent-feed")) == null ? void 0 : _d.addClass("sd-bento-agent");
+  renderWorkLogs(view, body.createDiv({ cls: "sd-secondary" }));
   const secondary = body.createDiv({ cls: "sd-secondary sd-agent-secondary" });
-  renderWorkLogs(view, secondary);
   renderAgentStatus(view, secondary);
   renderHints(view, body);
 }
