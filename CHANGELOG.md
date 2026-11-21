@@ -2,6 +2,14 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [1.1.1] - 2026-11-21
+
+### 修复
+- 生成文件统一按 LF 写出：修复 Windows 上固化 CRLF 导致 Linux CI 构建产物与仓库不一致、dirty-tree 校验失败的问题。
+
+### 变更
+- 代码结构整理（不影响功能）：`version-bump.mjs` 归位到 `scripts/`；`tracker.ts` 从单文件目录平铺到 `src/`；`AgentApi` 的纯函数与审核队列分别抽到 `api-helpers.ts` / `api-review.ts`；单测拆为 `tests/suites/` 四组并共享 `tests/helpers.ts`。
+
 ## [1.1.0] - 2026-11-21
 
 ### 修复
