@@ -518,11 +518,12 @@ export class PulseSettingTab extends PluginSettingTab {
         | "wordsPerPoint"
         | "focusMinutesPerPoint",
       fallback: number,
-      min = 0
+      min = 0,
+      target: HTMLElement = containerEl
     ): void => {
       // 每键击都全量重算历史贡献分太重：300ms 防抖，停手后才落盘重算。
       let debounceTimer: number | null = null;
-      new Setting(containerEl)
+      new Setting(target)
         .setName(t(name))
         .setDesc(t(desc))
         .addText((text) =>
@@ -549,11 +550,13 @@ export class PulseSettingTab extends PluginSettingTab {
     };
     numberSetting("单日贡献分封顶", "防止单日刷分拉爆热力图，0 表示不封顶。默认 120。", "contributionDailyCap", 120);
     numberSetting("单次写入词数上限", "一次保存/粘贴最多计入的词数，0 表示不封顶。默认 4000。", "wordsPerWriteCap", 4000);
-    numberSetting("权重：新建笔记（每篇）", "默认 2 分。", "weightNotesCreated", 2);
-    numberSetting("权重：编辑会话（每次）", "默认 1 分。", "weightEdits", 1);
-    numberSetting("权重：完成任务（每条）", "默认 1 分。", "weightTasks", 1);
-    numberSetting("权重：每多少新增词得 1 分", "默认 100 词。", "wordsPerPoint", 100, 1);
-    numberSetting("权重：每多少专注分钟得 1 分", "默认 25 分钟。", "focusMinutesPerPoint", 25, 1);
+    const weights = containerEl.createEl("details", { cls: "sd-settings-weights" });
+    weights.createEl("summary", { text: t("高级权重（默认值已调好，一般无需修改）") });
+    numberSetting("权重：新建笔记（每篇）", "默认 2 分。", "weightNotesCreated", 2, 0, weights);
+    numberSetting("权重：编辑会话（每次）", "默认 1 分。", "weightEdits", 1, 0, weights);
+    numberSetting("权重：完成任务（每条）", "默认 1 分。", "weightTasks", 1, 0, weights);
+    numberSetting("权重：每多少新增词得 1 分", "默认 100 词。", "wordsPerPoint", 100, 1, weights);
+    numberSetting("权重：每多少专注分钟得 1 分", "默认 25 分钟。", "focusMinutesPerPoint", 25, 1, weights);
     containerEl.createDiv({
       cls: "sd-setup-hint",
       text: t("修改权重或封顶后会立即全量重算历史贡献分。Agent 写入只计「AI 新增词」，不重复计入人类写作统计。"),

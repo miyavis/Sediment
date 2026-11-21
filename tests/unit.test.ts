@@ -2278,6 +2278,15 @@ test("SETTINGS_SECTIONS：基础区置顶，Agent 目录/黑名单归 Agent 区�
   assert.throws(() => settingsSection("不存在"));
 });
 
+test("设置分层：权重收进 details，封顶留在主视线，分区键不变", () => {
+  const src = fs.readFileSync("src/ui/settings-tab.ts", "utf8");
+  assert.ok(src.includes('createEl("details"'), "权重须收进 details");
+  assert.ok(src.includes("sd-settings-weights"));
+  assert.equal(settingsSection("stats").keys.length, 7, "归属键不变，防再犯断言继续成立");
+  const capCalls = src.split("numberSetting(").length - 1;
+  assert.ok(capCalls >= 7, "7 项仍在渲染（5 项进折叠）");
+});
+
 // ── Task 8：i18n 防再犯扫描器自测 ──
 
 test("lint-i18n：构造违规样本——createEl text 未包裹的中文字面量能被抓到", () => {

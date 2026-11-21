@@ -702,6 +702,9 @@ const EN: Record<string, string> = {
   "速记 {date} {time}": "Memo {date} {time}",
   "工作日志 {date} {time} · {agent}": "Work log {date} {time} · {agent}",
   "待审核的知识草稿": "Knowledge draft pending review",
+
+  // 阶段三 Task 13：设置分层
+  "高级权重（默认值已调好，一般无需修改）": "Advanced weights (defaults are tuned; usually no need to change)",
 };
 
 /** 取当前语言的文案；英文未收录时回退中文源串。 */

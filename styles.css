@@ -1295,6 +1295,9 @@ settings:
   color: var(--text-muted);
 }
 
+.sd-settings-weights { margin: 6px 0 12px; }
+.sd-settings-weights > summary { cursor: pointer; color: var(--text-muted); font-size: var(--font-ui-small); }
+
 .sd-quick-memo textarea {
   width: 100%;
   margin: 8px 0;
