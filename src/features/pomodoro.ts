@@ -14,10 +14,19 @@ export interface PomodoroState {
   disabled: boolean;
 }
 
-/** 可注入依赖：测试用假时钟与假定时器驱动 tick。 */
+/** 可注入依赖：测试用假时钟、假定时器与内存化释放标记存储驱动。 */
 export interface PomodoroDeps {
   now?: () => number;
   setInterval?: (fn: () => void, ms: number) => number;
+  /** 正常退出标记存储，默认 window.localStorage；不可用时退回纯心跳检测。 */
+  storage?: PomodoroStorage;
+}
+
+/** 仅需 localStorage 的读写能力，便于测试注入。 */
+export interface PomodoroStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
 }
 
 const DURATION: Record<PomodoroMode, number> = {
@@ -30,6 +39,30 @@ const DURATION: Record<PomodoroMode, number> = {
 const HEARTBEAT_INTERVAL_MS = 15_000;
 /** 心跳新鲜度阈值：60s 内有心跳视为另一实例存活。 */
 const INSTANCE_ALIVE_MS = 60_000;
+
+/** localStorage 在受限环境可能抛错；拿不到就只靠心跳，不影响番茄功能。 */
+function defaultStorage(): PomodoroStorage | undefined {
+  try {
+    return typeof window === "undefined" ? undefined : window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+/** 释放标记按库隔离：同一 Obsidian 安装下所有库共用 localStorage 源。 */
+function releaseKeyFor(plugin: SedimentPlugin): string {
+  const vault = (
+    plugin as unknown as {
+      app?: { vault?: { getName?(): string; adapter?: { getBasePath?(): string } } };
+    }
+  ).app?.vault;
+  try {
+    const base = vault?.adapter?.getBasePath?.() ?? vault?.getName?.() ?? "default";
+    return `sediment:pomodoro-released:${base}`;
+  } catch {
+    return "sediment:pomodoro-released:default";
+  }
+}
 
 /**
  * 内置番茄钟：不依赖其它插件，完成后把专注分钟记进当天（实测口径），
@@ -51,12 +84,16 @@ export class PomodoroManager {
   private lastHeartbeatAt = 0;
   private readonly instanceId: string;
   private readonly now: () => number;
+  private readonly storage: PomodoroStorage | undefined;
+  private readonly releaseKey: string;
   private listeners = new Set<() => void>();
   private statusEl: HTMLElement | null = null;
 
   constructor(private plugin: SedimentPlugin, deps: PomodoroDeps = {}) {
     this.now = deps.now ?? (() => Date.now());
     this.instanceId = `${this.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    this.storage = deps.storage ?? defaultStorage();
+    this.releaseKey = releaseKeyFor(plugin);
     this.restore();
     this.statusEl = plugin.addStatusBarItem();
     this.updateStatus();
@@ -68,7 +105,11 @@ export class PomodoroManager {
   private restore(): void {
     const saved = this.plugin.store.data.pomodoro;
     if (!saved) return;
+    // 上一个实例正常退出时会留下标记：即使心跳还在 60s 窗口内，也视为已释放。
+    const cleanExit = !!saved.instanceId && this.readReleased() === saved.instanceId;
+    if (cleanExit) this.clearReleased();
     if (
+      !cleanExit &&
       saved.instanceId &&
       saved.instanceId !== this.instanceId &&
       typeof saved.heartbeatAt === "number" &&
@@ -125,6 +166,44 @@ export class PomodoroManager {
     };
     this.lastHeartbeatAt = now;
     this.plugin.store.scheduleSave();
+  }
+
+  private readReleased(): string | null {
+    try {
+      return this.storage?.getItem(this.releaseKey) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private writeReleased(instanceId: string): void {
+    try {
+      this.storage?.setItem(this.releaseKey, instanceId);
+    } catch {
+      // 存储不可用：退回心跳兜底。
+    }
+  }
+
+  private clearReleased(): void {
+    try {
+      this.storage?.removeItem(this.releaseKey);
+    } catch {
+      // 清不掉也只是多一条过期标记，不匹配后续实例标识即忽略。
+    }
+  }
+
+  /**
+   * 正常卸载（关窗/禁用插件/重载）时调用：给当前持有者写同步释放标记，
+   * 下次启动立即接管，避免把 60s 内的正常重开误判成另一存活实例。
+   * 崩溃退出不会走到这里，仍由心跳新鲜度兜底。
+   */
+  shutdown(): void {
+    if (this.disabled) return;
+    const saved = this.plugin.store.data.pomodoro;
+    if (!saved || saved.instanceId !== this.instanceId) return;
+    this.writeReleased(this.instanceId);
+    // 同步失效心跳：即使 onunload 的异步保存没赶上，重开也不会误判。
+    saved.heartbeatAt = 0;
   }
 
   state(): PomodoroState {

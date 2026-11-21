@@ -268,6 +268,7 @@ export class SedimentPlugin extends Plugin {
     if (this.serverRestartTimer !== null) window.clearTimeout(this.serverRestartTimer);
     if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
     this.tracker?.stop();
+    this.pomodoro?.shutdown();
     await this.agentServer?.stop();
     this.fileBridge?.stop();
     delete (window as Window & { Sediment?: unknown }).Sediment;

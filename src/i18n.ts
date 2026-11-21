@@ -325,6 +325,8 @@ const EN: Record<string, string> = {
   "失败 {from}（{reason}）": "Failed {from} ({reason})",
   "目标路径已被同名文件占用：{path}": "Target path is occupied by a file with the same name: {path}",
   "目标已有 {n} 个同名文件": "Target already has {n} files with the same names",
+  "无法创建目录：{path}": "Cannot create folder: {path}",
+  "创建目标目录失败：{error}": "Could not create the target folder: {error}",
   "移动失败：{error}": "Move failed: {error}",
   "移动失败：{error}；部分文件回滚失败，请手动检查": "Move failed: {error}; some files could not be rolled back — please check manually",
   "保留备份份数": "Backups to keep",

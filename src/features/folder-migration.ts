@@ -45,6 +45,8 @@ export interface MigrationFile {
 export interface MigrationVault {
   getFiles(): MigrationFile[];
   getAbstractFileByPath(path: string): unknown;
+  /** 真实 Vault 提供；rename 不会代建目标父目录，移动前必须逐级创建。 */
+  createFolder?(path: string): Promise<unknown>;
   adapter?: {
     list?(path: string): Promise<{ files: string[]; folders: string[] }>;
     rmdir?(path: string, recursive?: boolean): Promise<void>;
@@ -78,6 +80,32 @@ function targetIsFile(vault: MigrationVault, path: string): boolean {
   return !!existing && !Array.isArray((existing as { children?: unknown }).children);
 }
 
+function parentFolderOf(path: string): string {
+  const index = path.lastIndexOf("/");
+  return index < 0 ? "" : path.slice(0, index);
+}
+
+/**
+ * 真实 Obsidian 的 vault.rename 直接走 fs.rename，不会创建目标父目录，缺目录即 ENOENT。
+ * 移动前按层级从浅到深逐级补建（已存在则跳过）。
+ */
+async function ensureMigrationFolders(vault: MigrationVault, folders: string[]): Promise<void> {
+  const ordered = [...new Set(folders.filter(Boolean))].sort((a, b) => {
+    const depth = a.split("/").length - b.split("/").length;
+    return depth !== 0 ? depth : a.localeCompare(b);
+  });
+  for (const folder of ordered) {
+    if (vault.getAbstractFileByPath(folder)) continue;
+    if (!vault.createFolder) throw new Error(tf("无法创建目录：{path}", { path: folder }));
+    try {
+      await vault.createFolder(folder);
+    } catch (error) {
+      // 并发创建时目录可能已被其它流程建好，忽略即可。
+      if (!vault.getAbstractFileByPath(folder)) throw error;
+    }
+  }
+}
+
 /** 迁移后尽力清理空的源目录（含空子目录）；失败只保留原样，不影响迁移结果。 */
 async function cleanupEmptySource(vault: MigrationVault, folder: string): Promise<void> {
   const adapter = vault.adapter;
@@ -103,6 +131,7 @@ async function cleanupEmptySource(vault: MigrationVault, folder: string): Promis
  * 按 LEGACY_FOLDER_MIGRATIONS 迁移旧默认目录。
  * - 目录不存在或为空：只更新设置；
  * - 目标已有同名文件 / 目标路径被文件占用：整目录跳过并给出原因；
+ * - 目标父目录不存在：移动前逐级创建（Obsidian rename 不代建目录），创建失败则整目录失败；
  * - 单个文件移动失败：把已移动文件按相反顺序移回，目录设置保持旧值。
  * 设置更新只在整目录成功后发生；调用方负责保存设置与刷新界面。
  */
@@ -134,6 +163,25 @@ export async function migrateLegacyFolders(options: MigrateFoldersOptions): Prom
     const conflicts = moves.filter((move) => vault.getAbstractFileByPath(move.toPath));
     if (conflicts.length > 0) {
       outcome.skipped.push({ ...item, reason: tf("目标已有 {n} 个同名文件", { n: conflicts.length }) });
+      continue;
+    }
+
+    // 子目录也要保留：目标父目录（含 Sediment/ 本身）必须是文件夹且真实存在。
+    const destinationFolders = [...new Set(moves.map((move) => parentFolderOf(move.toPath)))];
+    const blockedFolder = destinationFolders.find((folder) => targetIsFile(vault, folder));
+    if (blockedFolder) {
+      outcome.skipped.push({ ...item, reason: tf("目标路径已被同名文件占用：{path}", { path: blockedFolder }) });
+      continue;
+    }
+    try {
+      await ensureMigrationFolders(vault, destinationFolders);
+    } catch (error) {
+      outcome.failed.push({
+        ...item,
+        reason: tf("创建目标目录失败：{error}", {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      });
       continue;
     }
 

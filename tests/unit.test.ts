@@ -36,7 +36,7 @@ import {
   isSameLocalDay,
 } from "../src/utils/dates";
 import { countWords, countCheckedTasks, noteDateKey, Tracker } from "../src/tracking/tracker";
-import { PomodoroManager } from "../src/features/pomodoro";
+import { PomodoroManager, type PomodoroStorage } from "../src/features/pomodoro";
 import { MemoManager } from "../src/features/memo";
 import { buildWeeklyReview } from "../src/features/review";
 import SedimentPlugin from "../src/main";
@@ -1986,10 +1986,11 @@ test("tracker：无基线文件只建基线，不把整篇内容误计为新增"
   assert.equal(h.days[key].wordsAdded, 2); // 之后的真实新增正常计分
 });
 
-/** pomodoro 行为测试桩：可注入 clock 与 setInterval。 */
+/** pomodoro 行为测试桩：可注入 clock、setInterval 与释放标记存储。 */
 function pomodoroHarness(
   saved: PersistedPomodoro | null = null,
-  start = new Date(2026, 10, 20, 9, 0, 0).getTime()
+  start = new Date(2026, 10, 20, 9, 0, 0).getTime(),
+  storage?: PomodoroStorage
 ) {
   let now = start;
   let tickFn: () => void = () => {};
@@ -2010,6 +2011,7 @@ function pomodoroHarness(
   };
   const plugin = {
     store,
+    app: { vault: { getName: () => "test-vault" } },
     addStatusBarItem: () => ({ setText: () => {} }),
     registerInterval: () => {},
   };
@@ -2019,6 +2021,7 @@ function pomodoroHarness(
       tickFn = fn;
       return 0;
     },
+    storage,
   });
   return {
     manager,
@@ -2030,6 +2033,23 @@ function pomodoroHarness(
       now = value;
     },
     getNow: () => now,
+  };
+}
+
+/** 内存版 localStorage：验证正常退出标记的读写与清除。 */
+function memoryStorage(initial: Record<string, string> = {}): PomodoroStorage & {
+  keys: Map<string, string>;
+} {
+  const keys = new Map(Object.entries(initial));
+  return {
+    keys,
+    getItem: (key) => keys.get(key) ?? null,
+    setItem: (key, value) => {
+      keys.set(key, value);
+    },
+    removeItem: (key) => {
+      keys.delete(key);
+    },
   };
 }
 
@@ -2077,6 +2097,58 @@ test("pomodoro：检测到另一存活实例则禁用，心跳过期则正常接
   assert.equal(stale.manager.state().disabled, false); // 心跳过期 → 接管
   assert.notEqual(stale.store.data.pomodoro?.instanceId, "other-instance"); // 接管立即写入本实例标识
   assert.equal(stale.store.data.pomodoro?.heartbeatAt, now); // 心跳立即刷新，接管窗口近零
+});
+
+test("pomodoro：正常退出标记后快速重启立即接管，不再误判为另一存活实例", () => {
+  const now = new Date(2026, 10, 20, 9, 0, 0).getTime();
+  const key = "sediment:pomodoro-released:test-vault";
+  const saved: PersistedPomodoro = {
+    mode: "focus",
+    remaining: 1500,
+    running: false,
+    completed: 0,
+    savedAt: now - 11_000,
+    instanceId: "previous-instance",
+    heartbeatAt: now - 11_000,
+  };
+  const storage = memoryStorage({ [key]: "previous-instance" });
+  const h = pomodoroHarness(saved, now, storage);
+  assert.equal(h.manager.state().disabled, false); // 正常退出不算存活
+  assert.notEqual(h.store.data.pomodoro?.instanceId, "previous-instance"); // 新实例接管
+  assert.equal(h.store.data.pomodoro?.heartbeatAt, now);
+  assert.equal(storage.getItem(key), null); // 标记用后清除
+});
+
+test("pomodoro：卸载时只有当前持有者写释放标记，禁用实例不碰对方状态", () => {
+  const now = new Date(2026, 10, 20, 9, 0, 0).getTime();
+  const key = "sediment:pomodoro-released:test-vault";
+
+  const ownerStorage = memoryStorage();
+  const owner = pomodoroHarness(null, now, ownerStorage);
+  owner.manager.start();
+  const ownerId = owner.store.data.pomodoro?.instanceId;
+  owner.manager.shutdown();
+  assert.equal(ownerStorage.getItem(key), ownerId);
+  assert.equal(owner.store.data.pomodoro?.heartbeatAt, 0); // 同步失效，异步保存失败也能兜底
+
+  const disabledStorage = memoryStorage();
+  const disabled = pomodoroHarness(
+    {
+      mode: "focus",
+      remaining: 1500,
+      running: false,
+      completed: 0,
+      savedAt: now - 5_000,
+      instanceId: "other-instance",
+      heartbeatAt: now - 5_000,
+    },
+    now,
+    disabledStorage
+  );
+  disabled.manager.shutdown();
+  assert.equal(disabledStorage.getItem(key), null);
+  assert.equal(disabled.store.data.pomodoro?.instanceId, "other-instance"); // 不覆盖对方
+  assert.equal(disabled.store.data.pomodoro?.heartbeatAt, now - 5_000);
 });
 
 /** memo 行为测试桩：内存 vault + 现有 Obsidian 桩。 */
@@ -3657,7 +3729,12 @@ function migrationHarness(initial: string[], failOnPath = "") {
   };
   const vault = {
     getFiles: () => [...paths.values()],
-    getAbstractFileByPath: (p: string) => paths.get(p) ?? null,
+    getAbstractFileByPath: (p: string) =>
+      paths.get(p) ?? (folders.has(p) ? { path: p, children: [] } : null),
+    createFolder: async (p: string) => {
+      if (paths.has(p) || folders.has(p)) throw new Error(`already exists: ${p}`);
+      folders.add(p);
+    },
     adapter: {
       list,
       rmdir: async (folder: string) => {
@@ -3672,6 +3749,11 @@ function migrationHarness(initial: string[], failOnPath = "") {
     renameFile: async (file: { path: string }, to: string) => {
       if (to === failOnPath) throw new Error("disk full");
       if (paths.has(to)) throw new Error(`already exists: ${to}`);
+      // 真实 Obsidian 的 vault.rename 直接走 fs.rename，不创建目标父目录：缺目录即 ENOENT。
+      const slash = to.lastIndexOf("/");
+      if (slash >= 0 && !folders.has(to.slice(0, slash))) {
+        throw new Error(`ENOENT: no such file or directory, rename '${file.path}' -> '${to}'`);
+      }
       paths.delete(file.path);
       renamed.push([file.path, to]);
       file.path = to;
@@ -3707,6 +3789,10 @@ test("migrateLegacyFolders：逐文件移入 Sediment/、更新设置并清理�
   assert.equal(h.paths.has("Sediment/knowledge/技术/a.md"), true);
   assert.equal(h.paths.has("notes/keep.md"), true, "目录外文件不受影响");
   assert.deepEqual(h.removed, ["daily", "knowledge/技术", "knowledge"]);
+  // 真实 Obsidian 的 rename 不建目录：必须先补建 Sediment/ 及各层目标目录。
+  assert.equal(h.folders.has("Sediment"), true);
+  assert.equal(h.folders.has("Sediment/daily"), true);
+  assert.equal(h.folders.has("Sediment/knowledge/技术"), true, "子目录层级同样补建");
 });
 
 test("migrateLegacyFolders：旧目录不存在时只更新设置", async () => {
@@ -3742,6 +3828,20 @@ test("migrateLegacyFolders：目标路径被同名文件占用时跳过", async 
   assert.equal(outcome.skipped.length, 1);
   assert.match(outcome.skipped[0].reason, /被同名文件占用/);
   assert.equal(s.dailyNoteFolder, "daily");
+});
+
+test("migrateLegacyFolders：子目录目标被文件占用时跳过，不移动也不建目录", async () => {
+  const h = migrationHarness(["daily/sub/a.md", "Sediment/daily/sub"]);
+  const s = settings({ dailyNoteFolder: "daily" });
+
+  const outcome = await migrateLegacyFolders({ settings: s, vault: h.vault, fileManager: h.fileManager });
+
+  assert.equal(outcome.skipped.length, 1);
+  assert.match(outcome.skipped[0].reason, /Sediment\/daily\/sub/);
+  assert.equal(outcome.migrated.length, 0);
+  assert.equal(s.dailyNoteFolder, "daily");
+  assert.deepEqual(h.renamed, []);
+  assert.equal(h.paths.has("daily/sub/a.md"), true, "源文件原地保留");
 });
 
 test("migrateLegacyFolders：移动中途失败时回滚已移动文件，设置不变", async () => {
