@@ -2282,6 +2282,19 @@ test("设置分层：权重收进 details，封顶留在主视线，分区键不
   const src = fs.readFileSync("src/ui/settings-tab.ts", "utf8");
   assert.ok(src.includes('createEl("details"'), "权重须收进 details");
   assert.ok(src.includes("sd-settings-weights"));
+  const detailsAt = src.indexOf('createEl("details"');
+  assert.ok(detailsAt > 0, "定位不到 details 创建处");
+  // 两项封顶是主视线设置：调用点必须出现在 details 之前，不能被一起折叠。
+  for (const key of ["contributionDailyCap", "wordsPerWriteCap"]) {
+    const callAt = src.search(new RegExp(`numberSetting\\([^;]*"${key}"`));
+    assert.ok(callAt >= 0, `${key} 未作为 numberSetting 调用参数出现`);
+    assert.ok(callAt < detailsAt, `${key} 须留在 details 之前（主视线内），实际 ${callAt} >= ${detailsAt}`);
+  }
+  // 五项权重不只出现字符串，而是确实以 weights 作为 target 渲染进折叠区。
+  for (const key of ["weightNotesCreated", "weightEdits", "weightTasks", "wordsPerPoint", "focusMinutesPerPoint"]) {
+    const routed = new RegExp(`"${key}"[^;]*weights\\)`);
+    assert.ok(routed.test(src), `${key} 须以 weights 为 target 传给 numberSetting`);
+  }
   assert.equal(settingsSection("stats").keys.length, 7, "归属键不变，防再犯断言继续成立");
   const capCalls = src.split("numberSetting(").length - 1;
   assert.ok(capCalls >= 7, "7 项仍在渲染（5 项进折叠）");
