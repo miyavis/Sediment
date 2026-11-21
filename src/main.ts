@@ -6,6 +6,7 @@ import { Store } from "./data/store";
 import { MemoManager } from "./features/memo";
 import { PomodoroManager } from "./features/pomodoro";
 import { TaskManager } from "./features/tasks";
+import { FileBridge } from "./features/file-bridge";
 import { exportTodayReport, heatmapSvg, parseEmbedOptions, todayLine } from "./features/embed";
 import { buildWeeklyReview } from "./features/review";
 import { rebuildHistory } from "./features/rebuild";
@@ -31,6 +32,7 @@ export class SedimentPlugin extends Plugin {
   pomodoro!: PomodoroManager;
   tasks!: TaskManager;
   agentApi!: AgentApi;
+  fileBridge!: FileBridge;
   agentServer!: AgentServer;
   semantic!: SemanticIndex;
 
@@ -65,6 +67,7 @@ export class SedimentPlugin extends Plugin {
     this.pomodoro = new PomodoroManager(this);
     this.tasks = new TaskManager(this);
     this.agentApi = new AgentApi(this);
+    this.fileBridge = new FileBridge(this);
     this.agentServer = new AgentServer(this);
     this.semantic = new SemanticIndex(this);
 
@@ -107,6 +110,7 @@ export class SedimentPlugin extends Plugin {
     );
 
     await this.agentServer.applySettings();
+    this.fileBridge.applySettings();
 
     this.registerObsidianProtocolHandler("sediment", (params) => {
       void this.handleProtocol(params);
@@ -265,12 +269,14 @@ export class SedimentPlugin extends Plugin {
     if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
     this.tracker?.stop();
     await this.agentServer?.stop();
+    this.fileBridge?.stop();
     delete (window as Window & { Sediment?: unknown }).Sediment;
     await this.store.save();
   }
 
   async saveSettings(): Promise<void> {
     await this.store.save();
+    this.fileBridge?.applySettings();
     if (this.serverRestartTimer !== null) window.clearTimeout(this.serverRestartTimer);
     this.serverRestartTimer = window.setTimeout(() => {
       this.serverRestartTimer = null;

@@ -20,6 +20,7 @@ import {
   splitList,
   type AgentOperation,
 } from "./access";
+import { bridgePendingId, type BridgeProposal, type BridgeRejectReason } from "./bridge-schema";
 
 export interface NoteSummary {
   path: string;
@@ -247,6 +248,20 @@ export interface AgentPendingResult {
 /** 写入类方法在 confirm 档的返回：直接结果或挂起结果。 */
 export type WithPending<T> = T | AgentPendingResult;
 
+/** 文件桥 / 采纳重放使用的写上下文；不参与 HTTP 参数。 */
+export interface WriteMeta {
+  /** 覆盖来源 Agent 名 */
+  agent?: string;
+  /** 文件桥：无条件挂起，不受工作模式影响 */
+  hold?: boolean;
+  /** 待审记录来源 */
+  source?: "bridge";
+  /** 文件桥提案 id */
+  proposalId?: string;
+  /** 指定待审记录 id；缺省时生成 pw-*，文件桥使用 bridge-<提案 id> 以便轮询去重 */
+  id?: string;
+}
+
 /** 阻止路径逃逸出库外。 */
 export function safeAgentPath(input: string): string {
   const path = normalizePath(String(input ?? ""))
@@ -266,6 +281,18 @@ export function safeAgentPath(input: string): string {
 }
 
 /**
+ * 文件桥决策回写口：由插件在启用文件桥时注入（Task 3 的 FileBridge）。
+ * 这里只声明最小结构，避免 AgentApi 反向依赖文件桥实现。
+ */
+interface BridgeDecisionSink {
+  notifyDecision(
+    record: PendingWriteRecord,
+    decision: "approved" | "rejected",
+    reason: BridgeRejectReason
+  ): void;
+}
+
+/**
  * 提供给 Agent / 脚本的高层知识库接口。
  * 同一实例同时挂在插件对象、window.Sediment 和本地 HTTP 服务上。
  */
@@ -274,6 +301,11 @@ export class AgentApi {
 
   private get vault() {
     return this.plugin.app.vault;
+  }
+
+  /** 文件桥未启用（或尚未接入）时为 undefined，决策钩子退化成空操作。 */
+  private get bridgeSink(): BridgeDecisionSink | undefined {
+    return (this.plugin as SedimentPlugin & { fileBridge?: BridgeDecisionSink }).fileBridge;
   }
 
   private currentTool = "";
@@ -384,18 +416,22 @@ export class AgentApi {
     kind: string,
     args: Record<string, unknown>,
     before: string,
-    after: string
+    after: string,
+    meta: WriteMeta = {}
   ): AgentPendingResult {
-    const id = `pw-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+    const id = meta.id ?? `pw-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
     this.plugin.store.addPendingWrite({
       id,
       time: new Date().toISOString(),
       tool,
-      agent: this.currentAgent || "agent",
+      agent: meta.agent || this.currentAgent || "agent",
       path,
       request: { kind, args },
       before,
       after,
+      ...(meta.source === "bridge" && meta.proposalId
+        ? { source: "bridge" as const, proposalId: meta.proposalId }
+        : {}),
     });
     const message = tf("confirm 模式下写入已挂起待审：{path}", { path });
     this.plugin.store.logDiagnostic("storage", message, `${id} · ${tool}`);
@@ -425,8 +461,12 @@ export class AgentApi {
     if (record.before !== "" && !(this.vault.getAbstractFileByPath(record.path) instanceof TFile)) {
       throw new ApiError("STALE_PENDING", staleMessage, 409);
     }
-    await this.replayPending(record.request);
+    await this.replayPending(record.request, record.agent);
     this.plugin.store.removePendingWrite(id);
+    // 只有文件桥来源才写决策；MCP/HTTP 待审记录完全不受影响。
+    if (record.source === "bridge") {
+      this.bridgeSink?.notifyDecision(record, "approved", "user_approved");
+    }
     const message = tf("待审写入已采纳并落盘：{path}", { path: record.path });
     this.plugin.store.logDiagnostic("storage", message, id);
     return { path: record.path };
@@ -436,13 +476,55 @@ export class AgentApi {
   rejectPendingWrite(id: string): { ok: true; path: string } {
     const removed = this.plugin.store.removePendingWrite(id);
     if (!removed) throw new ApiError("NOT_FOUND", tf("待审写入不存在：{id}", { id }), 404);
+    if (removed.source === "bridge") {
+      this.bridgeSink?.notifyDecision(removed, "rejected", removed.stale ? "stale" : "user_rejected");
+    }
     const message = tf("待审写入已驳回并丢弃：{path}", { path: removed.path });
     this.plugin.store.logDiagnostic("security", message, `${removed.id} · ${removed.tool}`);
     return { ok: true, path: removed.path };
   }
 
+  /** 文件桥导入：校验 + 门禁 + 预览 + 无条件挂起；绝不直接落盘。 */
+  async importBridgeProposal(proposal: BridgeProposal): Promise<{ pendingId: string; path: string }> {
+    if (!proposal.id) throw new ApiError("INVALID_PROPOSAL", t("文件桥提案缺少 id"), 400);
+    const meta: WriteMeta = {
+      id: bridgePendingId(proposal.id),
+      hold: true,
+      agent: proposal.agent,
+      source: "bridge",
+      proposalId: proposal.id,
+    };
+    let result: { path: string; pending?: true; pendingId?: string } | undefined;
+    switch (proposal.tool) {
+      case "write_note":
+        result = await this.writeNote(
+          proposal.args.path,
+          proposal.args.content,
+          proposal.args.mode,
+          false,
+          meta
+        );
+        break;
+      case "patch_note":
+        result = await this.patchNote(proposal.args.input, false, meta);
+        break;
+      case "add_knowledge":
+        result = await this.addKnowledge(
+          { ...proposal.args.input, agent: proposal.agent },
+          false,
+          meta
+        );
+        break;
+    }
+    if (!result?.pending || !result.pendingId) {
+      throw new ApiError("INVALID_PROPOSAL", tf("文件桥提案未挂起：{id}", { id: proposal.id }), 400);
+    }
+    return { pendingId: result.pendingId, path: result.path };
+  }
+
   /** 采纳时的重放分发：各 kind 与下方写方法一一对应，bypassConfirm=true。 */
-  private async replayPending(request: PendingWriteRecord["request"]): Promise<void> {
+  private async replayPending(request: PendingWriteRecord["request"], agent = ""): Promise<void> {
+    const meta: WriteMeta = agent ? { agent } : {};
     const args = request.args as Record<string, unknown>;
     const str = (value: unknown): string => String(value ?? "");
     switch (request.kind) {
@@ -451,22 +533,24 @@ export class AgentApi {
           str(args.path),
           str(args.content),
           (str(args.mode) || "create") as "create" | "overwrite" | "append",
-          true
+          true,
+          meta
         );
         return;
       case "patch_note":
-        await this.patchNote(args.input as Parameters<AgentApi["patchNote"]>[0], true);
+        await this.patchNote(args.input as Parameters<AgentApi["patchNote"]>[0], true, meta);
         return;
       case "frontmatter":
         await this.updateFrontmatter(
           str(args.path),
           (args.updates ?? {}) as Record<string, unknown>,
           args.ifMatch ? str(args.ifMatch) : undefined,
-          true
+          true,
+          meta
         );
         return;
       case "knowledge":
-        await this.addKnowledge(args.input as KnowledgeInput, true);
+        await this.addKnowledge(args.input as KnowledgeInput, true, meta);
         return;
       case "memo":
         await this.addMemo(
@@ -612,7 +696,8 @@ export class AgentApi {
     path: string,
     content: string,
     mode: "create" | "overwrite" | "append" = "create",
-    bypassConfirm = false
+    bypassConfirm = false,
+    meta?: WriteMeta
   ): Promise<{ path: string; pending?: true; pendingId?: string; message?: string }> {
     const safe = safeAgentPath(path);
     this.assertPathAllowed(
@@ -627,10 +712,10 @@ export class AgentApi {
     const knowledgeBase = normalizeFolder(this.plugin.store.settings.knowledgeFolder);
     const finalContent =
       mode === "create" && knowledgeBase.length > 0 && safe.startsWith(`${knowledgeBase}/`)
-        ? stampAgentProvenance(content, this.currentAgent || "agent", dateKey(new Date()))
+        ? stampAgentProvenance(content, meta?.agent || this.currentAgent || "agent", dateKey(new Date()))
         : content;
 
-    if (!bypassConfirm && this.isConfirmMode()) {
+    if (!bypassConfirm && (meta?.hold || this.isConfirmMode())) {
       const previous = existing instanceof TFile ? await this.vault.read(existing) : "";
       const after =
         mode === "append" && existing instanceof TFile
@@ -643,7 +728,8 @@ export class AgentApi {
           "write_note",
           { path: safe, content: finalContent, mode },
           previous,
-          after
+          after,
+          meta
         ),
         path: safe,
       };
@@ -850,7 +936,7 @@ export class AgentApi {
     ifMatch?: string;
     expectedMtime?: number;
     dryRun?: boolean;
-  }, bypassConfirm = false): Promise<{
+  }, bypassConfirm = false, meta?: WriteMeta): Promise<{
     path: string;
     version: string;
     mtime: number;
@@ -883,7 +969,7 @@ export class AgentApi {
         throw new ApiError("INVALID_JSON", "update_frontmatter 的 content 必须是 JSON 对象字符串");
       }
       // 挂起判断统一在 updateFrontmatter 内做，这里透传 bypass 避免双重挂起。
-      const result = await this.updateFrontmatter(safe, updates, input.ifMatch, bypassConfirm);
+      const result = await this.updateFrontmatter(safe, updates, input.ifMatch, bypassConfirm, meta);
       return { ...result, mtime: file.stat.mtime, diffSummary: { addedLines: 0, removedLines: 0 } };
     }
 
@@ -947,9 +1033,9 @@ export class AgentApi {
       };
     }
 
-    if (!bypassConfirm && this.isConfirmMode()) {
+    if (!bypassConfirm && (meta?.hold || this.isConfirmMode())) {
       return {
-        ...this.holdForConfirm("patch_note", safe, "patch_note", { input }, before, result),
+        ...this.holdForConfirm("patch_note", safe, "patch_note", { input }, before, result, meta),
         path: safe,
         version: versionOf(result),
         mtime: file.stat.mtime,
@@ -979,7 +1065,8 @@ export class AgentApi {
     path: string,
     updates: Record<string, unknown>,
     ifMatch?: string,
-    bypassConfirm = false
+    bypassConfirm = false,
+    meta?: WriteMeta
   ): Promise<{ path: string; version: string; pending?: true; pendingId?: string; message?: string }> {
     const safe = safeAgentPath(path);
     this.assertPathAllowed(safe, "patch");
@@ -991,9 +1078,9 @@ export class AgentApi {
     }
     const result = applyFrontmatterUpdate(before, updates);
 
-    if (!bypassConfirm && this.isConfirmMode()) {
+    if (!bypassConfirm && (meta?.hold || this.isConfirmMode())) {
       return {
-        ...this.holdForConfirm("frontmatter", safe, "frontmatter", { path: safe, updates, ifMatch }, before, result),
+        ...this.holdForConfirm("frontmatter", safe, "frontmatter", { path: safe, updates, ifMatch }, before, result, meta),
         path: safe,
         version: versionOf(result),
       };
@@ -1264,7 +1351,8 @@ export class AgentApi {
   /** 把一段知识沉淀成带 frontmatter 的独立笔记。confirm 档挂起为待审写入。 */
   async addKnowledge(
     input: KnowledgeInput,
-    bypassConfirm = false
+    bypassConfirm = false,
+    meta?: WriteMeta
   ): Promise<{ path: string; note?: string; pending?: true; pendingId?: string; message?: string }> {
     const title = String(input.title || t("未命名笔记")).trim();
     const safeTitle =
@@ -1354,9 +1442,9 @@ export class AgentApi {
     ].join("\n");
 
     this.assertPathAllowed(path, "create");
-    if (!bypassConfirm && this.isConfirmMode()) {
+    if (!bypassConfirm && (meta?.hold || this.isConfirmMode())) {
       return {
-        ...this.holdForConfirm("add_knowledge", path, "knowledge", { input }, "", doc),
+        ...this.holdForConfirm("add_knowledge", path, "knowledge", { input }, "", doc, meta),
         path,
       };
     }

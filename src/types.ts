@@ -82,6 +82,10 @@ export interface PendingWriteRecord {
   after: string;
   /** 目标在挂起后被删除/移动（启动对账或事件标记），只能驳回重发 */
   stale?: boolean;
+  /** 来源：文件桥导入的待审写入（MCP/HTTP 无此字段） */
+  source?: "bridge";
+  /** 文件桥提案 id（与 decisions/<id>.json 同名） */
+  proposalId?: string;
 }
 
 export interface MemoRecord {
@@ -200,6 +204,8 @@ export interface PulseSettings {
   embeddingEndpoint: string;
   /** Embedding 模型名（需先 ollama pull） */
   embeddingModel: string;
+  /** 文件桥：非 MCP 智能体通过插件目录提交写提案（实验，默认关闭） */
+  fileBridgeEnabled: boolean;
   /** Agent HTTP API / MCP 访问令牌 */
   agentServerToken: string;
 }
@@ -312,6 +318,7 @@ export const DEFAULT_SETTINGS: PulseSettings = {
   semanticEngine: "tfidf",
   embeddingEndpoint: "http://127.0.0.1:11434",
   embeddingModel: "bge-m3",
+  fileBridgeEnabled: false,
   agentServerToken: "",
 };
 

@@ -2,7 +2,7 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
-## [Unreleased]
+## [1.0.2] - 2026-11-21
 
 ### 新增
 - 待审写入失效检测：目标被删除/移动后标记 stale（启动对账 + 删除/重命名即时标记 + 采纳前复验），失效项只允许驳回后由 Agent 重发。
@@ -12,6 +12,7 @@
 - 周复盘、知识笔记、工作日志、健康任务与检索标题支持英文输出。
 - 可选 Ollama embedding 语义检索（默认关闭，不可用自动回退 TF-IDF）；设置新增「检索增强」分区。
 - 社区市场提交清单改为本地维护（不入库），manifest 描述改英文。
+- 文件桥（实验，默认关闭）：非 MCP 智能体可把 `write_note` / `patch_note` / `add_knowledge` 提案写入插件目录 `bridge/proposals/`，导入工坊待审队列；采纳/驳回结果写入 `bridge/decisions/` 供智能体轮询。现有 MCP 通道与工具不变。
 
 ### 改进
 - 统计口径区的 5 项权重收进「高级权重」折叠区，封顶两项保持可见。

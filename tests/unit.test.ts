@@ -46,6 +46,7 @@ import { buildStatsCsv, buildExportJson, DEFAULT_EXPORT_OPTIONS } from "../src/f
 import { todayLine } from "../src/features/embed";
 import { Store } from "../src/data/store";
 import { AgentApi, ApiError, safeAgentPath, stampAgentProvenance } from "../src/agent/api";
+import { FileBridge } from "../src/features/file-bridge";
 import { reconcilePendingWrites, markStaleByPaths } from "../src/agent/reconcile";
 import { SemanticIndex, tokenizeSemanticText } from "../src/agent/semantic";
 import { AgentServer, sanitizeServerError, tokensMatch } from "../src/agent/server";
@@ -86,6 +87,14 @@ import {
   migrateLegacyFolders,
   planFolderMigrations,
 } from "../src/features/folder-migration";
+import {
+  bridgePendingId,
+  bridgeProposalIdFromPath,
+  bridgeTextTooLarge,
+  buildBridgeDecision,
+  isBridgeProposalId,
+  parseBridgeProposal,
+} from "../src/agent/bridge-schema";
 
 const day = (partial: Partial<DayRecord> = {}): DayRecord => ({ ...createEmptyDay(), ...partial });
 const settings = (partial: Partial<PulseSettings> = {}): PulseSettings => ({
@@ -3748,3 +3757,477 @@ test("migrateLegacyFolders：移动中途失败时回滚已移动文件，设置
   assert.equal(h.paths.has("daily/a.md"), true);
   assert.equal(h.paths.has("daily/b.md"), true);
 });
+
+test("文件桥 schema：三类提案规范化与默认值", () => {
+  const write = parseBridgeProposal("demo-1", {
+    version: 1,
+    agent: "opencode",
+    tool: "write_note",
+    args: { path: "notes/a.md", content: "正文" },
+  });
+  assert.equal(write.ok, true);
+  if (write.ok) {
+    assert.equal(write.proposal.tool, "write_note");
+    assert.equal(write.proposal.agent, "opencode");
+    assert.deepEqual(write.proposal.args, { path: "notes/a.md", content: "正文", mode: "create" });
+  }
+
+  const patch = parseBridgeProposal("demo-2", {
+    agent: "claude",
+    tool: "patch_note",
+    args: { input: { path: "notes/a.md", find: "旧", content: "新", index: 0 } },
+  });
+  assert.equal(patch.ok, true);
+  if (patch.ok) {
+    assert.deepEqual(patch.proposal.args.input, {
+      path: "notes/a.md",
+      find: "旧",
+      content: "新",
+      index: 0,
+    });
+  }
+
+  const knowledge = parseBridgeProposal("demo-3", {
+    agent: "agent",
+    tool: "add_knowledge",
+    args: { input: { title: "标题", content: "正文", tags: ["agent"], links: ["某笔记"] } },
+  });
+  assert.equal(knowledge.ok, true);
+  if (knowledge.ok) {
+    assert.equal(knowledge.proposal.tool, "add_knowledge");
+    assert.deepEqual(knowledge.proposal.args.input.tags, ["agent"]);
+  }
+});
+
+test("文件桥 schema：拒绝非法工具、版本、id、字段与 dryRun", () => {
+  const badTool = parseBridgeProposal("demo", { agent: "a", tool: "delete_note", args: {} });
+  assert.equal(badTool.ok, false);
+
+  const badVersion = parseBridgeProposal("demo", {
+    version: 2,
+    agent: "a",
+    tool: "write_note",
+    args: { path: "a.md", content: "" },
+  });
+  assert.equal(badVersion.ok, false);
+  if (!badVersion.ok) assert.equal(badVersion.reason, "unsupported_version");
+
+  const badId = parseBridgeProposal("../evil", { agent: "a", tool: "write_note", args: { path: "a.md", content: "" } });
+  assert.equal(badId.ok, false);
+
+  const mismatch = parseBridgeProposal("demo", {
+    id: "other",
+    agent: "a",
+    tool: "write_note",
+    args: { path: "a.md", content: "" },
+  });
+  assert.equal(mismatch.ok, false);
+
+  const dryRun = parseBridgeProposal("demo", {
+    agent: "a",
+    tool: "patch_note",
+    args: { input: { path: "a.md", find: "x", content: "y", dryRun: true } },
+  });
+  assert.equal(dryRun.ok, false);
+
+  const noAnchor = parseBridgeProposal("demo", {
+    agent: "a",
+    tool: "patch_note",
+    args: { input: { path: "a.md", content: "y" } },
+  });
+  assert.equal(noAnchor.ok, false);
+
+  const badTags = parseBridgeProposal("demo", {
+    agent: "a",
+    tool: "add_knowledge",
+    args: { input: { title: "t", content: "c", tags: [1] } },
+  });
+  assert.equal(badTags.ok, false);
+});
+
+test("文件桥：id/路径解析与 256KB UTF-8 上限", () => {
+  assert.equal(isBridgeProposalId("demo-1"), true);
+  assert.equal(isBridgeProposalId(".hidden"), false);
+  assert.equal(isBridgeProposalId("a".repeat(65)), false);
+  assert.equal(bridgeProposalIdFromPath(".obsidian/plugins/sediment/bridge/proposals/demo-1.json"), "demo-1");
+  assert.equal(bridgeProposalIdFromPath(".obsidian/plugins/sediment/bridge/proposals/readme.txt"), null);
+  assert.equal(bridgePendingId("demo-1"), "bridge-demo-1");
+  assert.equal(bridgeTextTooLarge("a".repeat(256 * 1024)), false);
+  assert.equal(bridgeTextTooLarge("a".repeat(256 * 1024 + 1)), true);
+  assert.equal(bridgeTextTooLarge("中".repeat(90_000)), true);
+});
+
+test("文件桥：决策记录字段与截断", () => {
+  const decision = buildBridgeDecision({
+    id: "demo-1",
+    pendingId: "bridge-demo-1",
+    decision: "rejected",
+    reason: "forbidden",
+    agent: "opencode",
+    tool: "write_note",
+    path: "a.md",
+    message: "x".repeat(800),
+  });
+  assert.equal(decision.version, 1);
+  assert.equal(decision.decision, "rejected");
+  assert.equal(decision.reason, "forbidden");
+  assert.equal(decision.message?.length, 500);
+  assert.ok(decision.time.includes("T"));
+});
+
+test("文件桥导入：auto 模式也强制挂起，采纳后按提案 agent 登记来源", async () => {
+  const ctx = fakeConfirmPlugin({ agentWorkMode: "auto", knowledgeFolder: "Sediment/knowledge" });
+  const result = await ctx.api.importBridgeProposal({
+    id: "demo-1",
+    agent: "opencode",
+    tool: "write_note",
+    args: { path: "Sediment/knowledge/a.md", content: "正文", mode: "create" },
+  });
+  assert.equal(ctx.files.has("Sediment/knowledge/a.md"), false, "提案不得自动落盘");
+  assert.equal(result.pendingId, "bridge-demo-1");
+  const record = ctx.pendingWrites[0];
+  assert.equal(record.id, result.pendingId);
+  assert.equal(record.source, "bridge");
+  assert.equal(record.proposalId, "demo-1");
+  assert.equal(record.agent, "opencode");
+  assert.equal(record.tool, "write_note");
+  assert.match(record.after, /agent: "opencode"/);
+  await ctx.api.approvePendingWrite(result.pendingId);
+  assert.match(ctx.files.get("Sediment/knowledge/a.md") ?? "", /agent: "opencode"/);
+});
+
+test("文件桥导入：待审 id 固定为 bridge-<提案 id>，不同提案互不冲突", async () => {
+  const ctx = fakeConfirmPlugin({ agentWorkMode: "confirm" });
+  const first = await ctx.api.importBridgeProposal({
+    id: "poll-1",
+    agent: "opencode",
+    tool: "write_note",
+    args: { path: "notes/one.md", content: "甲", mode: "create" },
+  });
+  const second = await ctx.api.importBridgeProposal({
+    id: "poll-2",
+    agent: "claude",
+    tool: "write_note",
+    args: { path: "notes/two.md", content: "乙", mode: "create" },
+  });
+  assert.equal(first.pendingId, "bridge-poll-1");
+  assert.equal(second.pendingId, "bridge-poll-2");
+  assert.deepEqual(
+    ctx.pendingWrites.map((item) => item.id).sort(),
+    ["bridge-poll-1", "bridge-poll-2"],
+    "两个提案必须各自留下独立待审项，且 id 不得是 pw-* 或互相覆盖"
+  );
+});
+
+test("文件桥导入：patch_note 与 add_knowledge 挂起、预览、采纳", async () => {
+  const ctx = fakeConfirmPlugin({ agentWorkMode: "auto" }, { "notes/a.md": "hello world" });
+  const patch = await ctx.api.importBridgeProposal({
+    id: "p1",
+    agent: "claude",
+    tool: "patch_note",
+    args: { input: { path: "notes/a.md", find: "world", content: "sediment" } },
+  });
+  assert.equal(ctx.pendingWrites[0].before, "hello world");
+  assert.equal(ctx.pendingWrites[0].after, "hello sediment");
+  assert.equal(ctx.pendingWrites[0].request.kind, "patch_note");
+  await ctx.api.approvePendingWrite(patch.pendingId);
+  assert.equal(ctx.files.get("notes/a.md"), "hello sediment");
+
+  const knowledge = await ctx.api.importBridgeProposal({
+    id: "k1",
+    agent: "opencode",
+    tool: "add_knowledge",
+    args: { input: { title: "标题", content: "正文" } },
+  });
+  const knowledgeRecord = ctx.pendingWrites.find((item) => item.id === knowledge.pendingId);
+  assert.ok(knowledgeRecord);
+  assert.equal(knowledgeRecord.request.kind, "knowledge");
+  assert.match(knowledgeRecord.path, /^Sediment\/knowledge\//);
+  await ctx.api.approvePendingWrite(knowledge.pendingId);
+  assert.match(ctx.files.get(knowledgeRecord.path) ?? "", /agent: opencode/);
+});
+
+test("文件桥导入：门禁失败不产生待审项", async () => {
+  const denied = fakeConfirmPlugin({ agentWorkMode: "auto", deniedFolders: "secret" });
+  await assert.rejects(
+    denied.api.importBridgeProposal({
+      id: "d1",
+      agent: "a",
+      tool: "write_note",
+      args: { path: "secret/a.md", content: "x", mode: "create" },
+    }),
+    (error: unknown) => error instanceof ApiError && error.code === "FORBIDDEN"
+  );
+  assert.equal(denied.pendingWrites.length, 0);
+
+  const readonly = fakeConfirmPlugin({ agentWorkMode: "auto", agentAllowCreate: false });
+  await assert.rejects(
+    readonly.api.importBridgeProposal({
+      id: "d2",
+      agent: "a",
+      tool: "write_note",
+      args: { path: "notes/a.md", content: "x", mode: "create" },
+    }),
+    (error: unknown) => error instanceof ApiError && error.code === "OPERATION_DENIED"
+  );
+  assert.equal(readonly.pendingWrites.length, 0);
+});
+
+test("文件桥决策钩子：采纳/驳回写回，MCP 记录不触发", async () => {
+  const ctx = fakeConfirmPlugin({ agentWorkMode: "confirm" });
+  const calls: Array<{ id: string; decision: string; reason: string }> = [];
+  ctx.plugin.fileBridge = {
+    notifyDecision: (record: { id: string }, decision: string, reason: string) => {
+      calls.push({ id: record.id, decision, reason });
+    },
+  };
+
+  const approved = await ctx.api.importBridgeProposal({
+    id: "a1",
+    agent: "agent",
+    tool: "write_note",
+    args: { path: "notes/a.md", content: "x", mode: "create" },
+  });
+  await ctx.api.approvePendingWrite(approved.pendingId);
+  assert.deepEqual(calls[0], { id: approved.pendingId, decision: "approved", reason: "user_approved" });
+
+  const rejected = await ctx.api.importBridgeProposal({
+    id: "r1",
+    agent: "agent",
+    tool: "write_note",
+    args: { path: "notes/b.md", content: "y", mode: "create" },
+  });
+  ctx.api.rejectPendingWrite(rejected.pendingId);
+  assert.deepEqual(calls[1], { id: rejected.pendingId, decision: "rejected", reason: "user_rejected" });
+
+  const mcp = (await ctx.api.writeNote("notes/c.md", "z", "create")) as HoldResult;
+  await ctx.api.approvePendingWrite(pendingIdOf(mcp));
+  assert.equal(calls.length, 2, "MCP 待审记录不应触发文件桥决策");
+});
+
+test("文件桥导入：提案 agent 覆盖 args.input.agent（防冒充）", async () => {
+  const ctx = fakeConfirmPlugin({ agentWorkMode: "auto" });
+  const result = await ctx.api.importBridgeProposal({
+    id: "spoof-1",
+    agent: "opencode",
+    tool: "add_knowledge",
+    args: { input: { title: "冒充测试", content: "正文", agent: "spoofed" } },
+  });
+  const record = ctx.pendingWrites.find((item) => item.id === result.pendingId);
+  assert.ok(record);
+  assert.match(record.after, /agent: opencode/);
+  assert.doesNotMatch(record.after, /agent: spoofed/);
+  await ctx.api.approvePendingWrite(result.pendingId);
+  const written = ctx.files.get(record.path) ?? "";
+  assert.match(written, /agent: opencode/);
+  assert.doesNotMatch(written, /agent: spoofed/);
+});
+
+function fakeBridgeHarness() {
+  const files = new Map<string, string>();
+  const dirs = new Set<string>();
+  const adapter = {
+    exists: async (p: string) => files.has(p) || dirs.has(p),
+    mkdir: async (p: string) => {
+      dirs.add(p);
+    },
+    list: async (p: string) => {
+      const prefix = `${p}/`;
+      return {
+        files: [...files.keys()].filter((key) => key.startsWith(prefix) && !key.slice(prefix.length).includes("/")),
+        folders: [...dirs].filter((key) => key.startsWith(prefix) && !key.slice(prefix.length).includes("/")),
+      };
+    },
+    read: async (p: string) => {
+      const value = files.get(p);
+      if (value === undefined) throw new Error("missing");
+      return value;
+    },
+    write: async (p: string, data: string) => {
+      files.set(p, data);
+    },
+    rename: async (from: string, to: string) => {
+      const value = files.get(from);
+      if (value === undefined) throw new Error("missing");
+      files.delete(from);
+      files.set(to, value);
+    },
+    remove: async (p: string) => {
+      files.delete(p);
+    },
+  };
+  const pendingWrites: Array<Record<string, any>> = [];
+  const diagnostics: Array<{ category: string; message: string; detail?: string }> = [];
+  const imported: any[] = [];
+  const plugin: Record<string, any> = {
+    manifest: { id: "sediment", dir: ".obsidian/plugins/sediment" },
+    app: { vault: { configDir: ".obsidian", adapter } },
+    store: {
+      settings: { ...DEFAULT_SETTINGS, fileBridgeEnabled: true },
+      data: { pendingWrites },
+      logDiagnostic: (category: string, message: string, detail?: string) => {
+        diagnostics.push({ category, message, detail });
+      },
+    },
+    agentApi: {
+      importBridgeProposal: async (proposal: any) => {
+        imported.push(proposal);
+        return { pendingId: `bridge-${proposal.id}`, path: proposal.tool === "write_note" ? proposal.args.path : "x" };
+      },
+    },
+    refreshViews: () => {},
+  };
+  const bridge = new FileBridge(plugin as never);
+  return { bridge, plugin, files, dirs, pendingWrites, diagnostics, imported };
+}
+
+const proposalPath = (id: string) =>
+  `.obsidian/plugins/sediment/bridge/proposals/${id}.json`;
+const decisionPath = (id: string) =>
+  `.obsidian/plugins/sediment/bridge/decisions/${id}.json`;
+
+test("文件桥轮询：合法提案导入、非法 JSON/越权写决策、已有决策与待审跳过", async () => {
+  const ctx = fakeBridgeHarness();
+  ctx.files.set(
+    proposalPath("ok-1"),
+    JSON.stringify({ agent: "opencode", tool: "write_note", args: { path: "notes/a.md", content: "x" } })
+  );
+  ctx.files.set(proposalPath("bad-json"), "{not json");
+  ctx.files.set(
+    proposalPath("decided-1"),
+    JSON.stringify({ agent: "a", tool: "write_note", args: { path: "notes/b.md", content: "x" } })
+  );
+  ctx.files.set(decisionPath("decided-1"), "{}");
+  ctx.files.set(
+    proposalPath("pending-1"),
+    JSON.stringify({ agent: "a", tool: "write_note", args: { path: "notes/c.md", content: "x" } })
+  );
+  ctx.pendingWrites.push({ id: "bridge-pending-1" });
+
+  await ctx.bridge.scanNow();
+
+  assert.equal(ctx.imported.length, 1);
+  assert.equal(ctx.imported[0].id, "ok-1");
+  const badDecision = JSON.parse(ctx.files.get(decisionPath("bad-json")) ?? "{}");
+  assert.equal(badDecision.reason, "invalid_json");
+  assert.equal(ctx.files.has(decisionPath("decided-1")), true);
+  assert.equal(ctx.imported.some((item) => item.id === "decided-1"), false);
+  assert.equal(ctx.imported.some((item) => item.id === "pending-1"), false);
+});
+
+test("文件桥轮询：门禁失败写 rejected 决策且不重复处理", async () => {
+  const ctx = fakeBridgeHarness();
+  let calls = 0;
+  ctx.plugin.agentApi.importBridgeProposal = async () => {
+    calls += 1;
+    throw new ApiError("FORBIDDEN", "访问被拒绝", 403);
+  };
+  ctx.files.set(
+    proposalPath("denied-1"),
+    JSON.stringify({ agent: "a", tool: "write_note", args: { path: "secret/a.md", content: "x" } })
+  );
+
+  await ctx.bridge.scanNow();
+  await ctx.bridge.scanNow();
+
+  assert.equal(calls, 1, "失败提案不应每轮重试");
+  const decision = JSON.parse(ctx.files.get(decisionPath("denied-1")) ?? "{}");
+  assert.equal(decision.decision, "rejected");
+  assert.equal(decision.reason, "forbidden");
+  assert.equal(decision.pendingId, "bridge-denied-1");
+});
+
+test("文件桥轮询：队列满时不导入、不写决策", async () => {
+  const ctx = fakeBridgeHarness();
+  for (let index = 0; index < 100; index += 1) ctx.pendingWrites.push({ id: `pw-${index}` });
+  ctx.files.set(
+    proposalPath("wait-1"),
+    JSON.stringify({ agent: "a", tool: "write_note", args: { path: "notes/a.md", content: "x" } })
+  );
+
+  await ctx.bridge.scanNow();
+
+  assert.equal(ctx.imported.length, 0);
+  assert.equal(ctx.files.has(decisionPath("wait-1")), false);
+});
+
+test("文件桥决策：采纳/驳回写回且不覆盖已有决策", async () => {
+  const ctx = fakeBridgeHarness();
+  const record: Record<string, any> = {
+    id: "bridge-demo-9",
+    time: new Date().toISOString(),
+    tool: "write_note",
+    agent: "opencode",
+    path: "notes/a.md",
+    request: { kind: "write_note", args: {} },
+    before: "",
+    after: "",
+    source: "bridge",
+    proposalId: "demo-9",
+  };
+
+  ctx.bridge.notifyDecision(record as never, "approved", "user_approved");
+  await ctx.bridge.flushNow();
+  const decision = JSON.parse(ctx.files.get(decisionPath("demo-9")) ?? "{}");
+  assert.equal(decision.decision, "approved");
+  assert.equal(decision.reason, "user_approved");
+  assert.equal(decision.pendingId, "bridge-demo-9");
+
+  ctx.bridge.notifyDecision(record as never, "rejected", "user_rejected");
+  await ctx.bridge.flushNow();
+  const stillApproved = JSON.parse(ctx.files.get(decisionPath("demo-9")) ?? "{}");
+  assert.equal(stillApproved.decision, "approved", "已有决策不得覆盖");
+});
+
+test("文件桥决策：非法 proposalId 不拼接路径、不写决策文件", async () => {
+  const ctx = fakeBridgeHarness();
+  const record: Record<string, any> = {
+    id: "bridge-evil",
+    time: new Date().toISOString(),
+    tool: "write_note",
+    agent: "opencode",
+    path: "notes/a.md",
+    request: { kind: "write_note", args: {} },
+    before: "",
+    after: "",
+    source: "bridge",
+    proposalId: "../evil",
+  };
+
+  ctx.bridge.notifyDecision(record as never, "approved", "user_approved");
+  await ctx.bridge.flushNow();
+
+  assert.equal([...ctx.files.keys()].some((key) => key.includes("evil")), false, "非法 id 不得落盘");
+  assert.ok(ctx.diagnostics.some((item) => item.category === "security"));
+});
+
+test("文件桥轮询：同一轮两条非法 JSON 都写决策（链式 flush 不丢条目）", async () => {
+  const ctx = fakeBridgeHarness();
+  ctx.files.set(proposalPath("bad-a"), "{not json");
+  ctx.files.set(proposalPath("bad-b"), "[still not json");
+
+  await ctx.bridge.scanNow();
+
+  assert.equal(ctx.imported.length, 0);
+  for (const id of ["bad-a", "bad-b"]) {
+    const decision = JSON.parse(ctx.files.get(decisionPath(id)) ?? "{}");
+    assert.equal(decision.decision, "rejected", `${id} 决策必须落盘`);
+    assert.equal(decision.reason, "invalid_json");
+  }
+});
+
+test("文件桥轮询：禁用后直接扫描不导入、不写决策", async () => {
+  const ctx = fakeBridgeHarness();
+  ctx.files.set(
+    proposalPath("after-stop"),
+    JSON.stringify({ agent: "a", tool: "write_note", args: { path: "notes/stop.md", content: "x" } })
+  );
+
+  ctx.bridge.stop();
+  await ctx.bridge.scanNow();
+
+  assert.equal(ctx.imported.length, 0, "禁用后不得导入");
+  assert.equal(ctx.files.has(decisionPath("after-stop")), false, "禁用后不得写决策");
+  assert.equal(ctx.pendingWrites.length, 0);
+});
+

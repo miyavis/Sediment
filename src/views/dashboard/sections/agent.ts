@@ -38,7 +38,13 @@ export function renderPendingWrites(view: DashboardView, root: HTMLElement): voi
     const row = list.createDiv({ cls: "sd-feed-row sd-feed-row-audit" });
     row.createSpan({ text: `${localStamp(item.time).slice(5)} · ${item.agent} · ${item.path}`, attr: { title: item.path } });
     const actions = row.createDiv({ cls: "sd-audit-actions" });
-    actions.createSpan({ cls: "sd-audit-badge", text: pendingToolLabel(item.tool) });
+    actions.createSpan({
+      cls: "sd-audit-badge",
+      text:
+        item.source === "bridge"
+          ? `${pendingToolLabel(item.tool)} · ${t("文件桥")}`
+          : pendingToolLabel(item.tool),
+    });
     if (item.stale) {
       actions.createSpan({ cls: "sd-audit-badge is-stale", text: t("目标已删除/移动") });
       actions.createEl("button", { cls: "mod-cta", text: t("驳回") }).onclick = () =>

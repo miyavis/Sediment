@@ -12,7 +12,7 @@ Sediment 是一个本地优先的 Obsidian 插件，把知识工作统计、快�
 
 [![Obsidian](https://img.shields.io/badge/Obsidian-v1.6.0%2B-blue.svg)](https://obsidian.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v1.0.1-blue.svg)](https://github.com/miyavis/Sediment/releases)
+[![Version](https://img.shields.io/badge/version-v1.0.2-blue.svg)](https://github.com/miyavis/Sediment/releases)
 
 ## 核心入口
 
@@ -166,6 +166,39 @@ OpenCode 示例（把 `<vault>` 换成你的库根目录）：
 - 任务：`manage_tasks`
 - 审查：`manage_changes`
 - 高级只读状态：`get_workspace_state`（统计、图谱、番茄钟、周复盘、调用活动、工作日志、分类）
+
+### 文件桥（非 MCP 智能体，实验）
+
+默认关闭。设置 → Agent 接入（本地 HTTP / MCP）中启用后，插件会在 `.obsidian/plugins/sediment/bridge/` 创建 `proposals/` 与 `decisions/`。任何能写文件的智能体都可以提交提案；提案只进入工坊「待审写入」，用户采纳后才会落盘。
+
+`proposals/<id>.json`（`<id>` 为 1–64 位 `[A-Za-z0-9._-]`，且首字符为字母或数字）：
+
+```json
+{
+  "version": 1,
+  "agent": "opencode",
+  "tool": "write_note",
+  "args": { "path": "Sediment/knowledge/示例.md", "content": "# 示例", "mode": "create" },
+  "note": "为什么写这条"
+}
+```
+
+只支持 `write_note`、`patch_note`、`add_knowledge`；后两者的 `args.input` 与 MCP 同名工具一致。单文件不超过 256 KB。
+
+采纳或驳回后，插件写入 `decisions/<id>.json`：
+
+```json
+{
+  "version": 1,
+  "id": "demo-1",
+  "pendingId": "bridge-demo-1",
+  "decision": "approved",
+  "reason": "user_approved",
+  "time": "2026-11-21T10:00:00.000Z"
+}
+```
+
+智能体轮询 `decisions/<id>.json` 即可获知结果。提案永远不会自动落盘；导入前仍受黑名单、白名单和操作开关约束。已有决策不会被覆盖，重发请使用新 id。
 
 安全边界：
 

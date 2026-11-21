@@ -721,6 +721,20 @@ export class PulseSettingTab extends PluginSettingTab {
           this.display();
         })
       );
+
+    new Setting(containerEl)
+      .setName(t("启用文件桥（实验）"))
+      .setDesc(
+        t(
+          "非 MCP 智能体可把 write_note / patch_note / add_knowledge 提案放进插件目录 bridge/proposals/，在工坊预览后采纳或驳回；结果写到 bridge/decisions/。默认关闭，提案不会自动落盘。"
+        )
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(settings.fileBridgeEnabled).onChange((value) => {
+          settings.fileBridgeEnabled = value;
+          save();
+        })
+      );
   }
 
   private renderClients(containerEl: HTMLElement): void {

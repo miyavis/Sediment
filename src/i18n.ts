@@ -359,6 +359,13 @@ const EN: Record<string, string> = {
   "修改权重或封顶后会立即全量重算历史贡献分。Agent 写入只计「AI 新增词」，不重复计入人类写作统计。": "Changing weights or cap recomputes all history immediately. Agent writes count only as AI words, not human writing.",
   "Agent 接入（本地 HTTP / MCP）": "Agent access (local HTTP / MCP)",
   "启用本地 Agent API": "Enable local Agent API",
+  "启用文件桥（实验）": "Enable file bridge (experimental)",
+  "非 MCP 智能体可把 write_note / patch_note / add_knowledge 提案放进插件目录 bridge/proposals/，在工坊预览后采纳或驳回；结果写到 bridge/decisions/。默认关闭，提案不会自动落盘。":
+    "Agents that cannot use MCP can drop write_note / patch_note / add_knowledge proposals into bridge/proposals/ in the plugin folder, review them in the workshop, and approve or reject. Decisions are written to bridge/decisions/. Off by default; proposals are never applied automatically.",
+  "文件桥": "File bridge",
+  "文件桥导入失败：{code}": "File bridge import failed: {code}",
+  "文件桥提案未挂起：{id}": "File bridge proposal was not held: {id}",
+  "文件桥提案缺少 id": "File bridge proposal is missing an id",
   "只监听 127.0.0.1，供 MCP 桥接和本地脚本调用个人知识库。": "Listens on 127.0.0.1 only, for the MCP bridge and local scripts.",
   "端口": "Port",
   "默认 27123，修改后服务会自动重启。": "Default 27123; the server restarts on change.",
