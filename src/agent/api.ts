@@ -8,6 +8,7 @@ import { restoreBackup } from "../features/audit";
 import type { DayRecord, MemoRecord, PendingWriteRecord, ToolCallRecord, WorkLogRecord } from "../types";
 import { addDays, dailyNotePath, dateKey, hhmm, lastNDays, parseKey } from "../utils/dates";
 import { ensureFolder, normalizeFolder } from "../utils/vault";
+import { contentHash } from "../utils/hash";
 import { logError } from "../utils/log-error";
 import { ensureDirectory, listDirectory, removeFile, writeTextFile } from "../utils/node";
 import { t, tf } from "../i18n";
@@ -245,6 +246,10 @@ export type WithPending<T> = T | AgentPendingResult;
 export interface WriteMeta {
   /** 覆盖来源 Agent 名 */
   agent?: string;
+  /** 逻辑工具名，用于快照审计元数据 */
+  tool?: string;
+  /** 本次 HTTP 调用的流水记录；confirm 挂起时据此标记 held（替代共享可变字段） */
+  call?: ToolCallRecord | null;
   /** 文件桥：无条件挂起，不受工作模式影响 */
   hold?: boolean;
   /** 待审记录来源 */
@@ -253,6 +258,8 @@ export interface WriteMeta {
   proposalId?: string;
   /** 指定待审记录 id；缺省时生成 pw-*，文件桥使用 bridge-<提案 id> 以便轮询去重 */
   id?: string;
+  /** 采纳重放：仍过门禁但不再挂起 */
+  replay?: boolean;
 }
 
 /** 阻止路径逃逸出库外；configDir 由调用方从 Vault#configDir 传入，不再假定固定目录名。 */
@@ -303,19 +310,16 @@ export class AgentApi {
     return (this.plugin as SedimentPlugin & { fileBridge?: BridgeDecisionSink }).fileBridge;
   }
 
-  private currentTool = "";
-  private currentAgent = "";
-  /** 本次调用在 toolCalls 里的记录；挂起时据此标记 held，避免同一写入进两张卡。 */
-  private currentCall: ToolCallRecord | null = null;
+  /** 正在采纳中的待审 id；防止并发双击 approve 导致同一请求落盘两次。 */
+  private approving = new Set<string>();
 
-  setCallContext(tool: string, agent: string, call: ToolCallRecord | null = null): void {
-    this.currentTool = tool;
-    this.currentAgent = agent;
-    this.currentCall = call;
+  /** 构造一次请求专属的写上下文。共享可变字段会让并发请求串上下文，故显式传参。 */
+  callMeta(tool: string, agent: string, call: ToolCallRecord | null = null): WriteMeta {
+    return { tool, agent, call };
   }
 
   /** 写入前把原文快照存到插件 backups 目录，返回快照 id。 */
-  private backupNote(path: string, content: string): string {
+  private backupNote(path: string, content: string, meta?: WriteMeta): string {
     if (!this.plugin.store.settings.enableAuditSnapshot) return "";
     try {
       const adapter = this.plugin.app.vault.adapter as unknown as {
@@ -342,8 +346,8 @@ export class AgentApi {
         id,
         path,
         time: new Date().toISOString(),
-        tool: this.currentTool,
-        agent: this.currentAgent,
+        tool: meta?.tool ?? "",
+        agent: meta?.agent ?? "agent",
       });
       return id;
     } catch (error) {
@@ -417,14 +421,22 @@ export class AgentApi {
     meta: WriteMeta = {}
   ): AgentPendingResult {
     const id = meta.id ?? `pw-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+    // 条目式写入（速记/工作日志/任务快照等）的 before 也为空串，不能当成「新建文件」。
+    const ENTRY_KINDS = new Set([
+      "memo", "task_snapshot", "task_complete", "delegate_task", "snapshot_tasks",
+      "claim_agent_task", "complete_agent_task", "agent_task_claim", "agent_task_complete",
+    ]);
+    const expectAbsent = before === "" && !ENTRY_KINDS.has(kind);
     this.plugin.store.addPendingWrite({
       id,
       time: new Date().toISOString(),
       tool,
-      agent: meta.agent || this.currentAgent || "agent",
+      agent: meta.agent || "agent",
       path,
       request: { kind, args },
       before,
+      beforeHash: contentHash(before),
+      expectAbsent,
       after,
       ...(meta.source === "bridge" && meta.proposalId
         ? { source: "bridge" as const, proposalId: meta.proposalId }
@@ -432,7 +444,7 @@ export class AgentApi {
     });
     // 文件桥导入不经过 HTTP 调用记录；仅把当前请求的调用标记为挂起，防止重复计数。
     if (meta.source !== "bridge") {
-      this.plugin.store.markToolCallHeld(this.currentCall, id);
+      this.plugin.store.markToolCallHeld(meta.call ?? null, id);
     }
     const message = tf("confirm 模式下写入已挂起待审：{path}", { path });
     this.plugin.store.logDiagnostic("storage", message, `${id} · ${tool}`);
@@ -472,28 +484,73 @@ export class AgentApi {
     );
   }
 
-  /** 采纳：按挂起时保存的原请求重放对应的落盘函数（重放前再次过门禁）。 */
+  /** 采纳前复验挂起目标：删除/移动 → STALE_PENDING；内容被改 → CONTENT_CHANGED。
+   *  这是「人工审批的预览」与「实际落盘内容」之间的绑定校验，防止批准 A 落盘 B。 */
+  private async assertPendingUnchanged(record: PendingWriteRecord): Promise<void> {
+    const file = this.vault.getAbstractFileByPath(record.path);
+    if (record.expectAbsent) {
+      // 新建类：挂起时目标不存在，采纳时若已存在说明被别人抢先创建。
+      if (file instanceof TFile) {
+        throw new ApiError(
+          "CONTENT_CHANGED",
+          tf("待审目标在挂起后被创建，请驳回后让 Agent 重发：{path}", { path: record.path }),
+          409
+        );
+      }
+      return;
+    }
+    // 条目式写入（before 为空）没有全文快照可校验，只需确认目标仍在。
+    if (record.before === "") return;
+    if (!(file instanceof TFile)) {
+      throw new ApiError(
+        "STALE_PENDING",
+        tf("待审写入已失效（目标被删除或移动）：{path}，请驳回后让 Agent 重发", { path: record.path }),
+        409
+      );
+    }
+    if (record.beforeHash) {
+      const current = await this.vault.read(file);
+      if (contentHash(current) !== record.beforeHash) {
+        throw new ApiError(
+          "CONTENT_CHANGED",
+          tf("待审目标内容在挂起后被修改，请驳回后让 Agent 重发：{path}", { path: record.path }),
+          409
+        );
+      }
+    }
+  }
+
+  /** 采纳：按挂起时保存的原请求重放对应的落盘函数（重放前再次过门禁）。
+   *  同一 id 的采纳在 in-flight 期间原子占位，杜绝并发双击落盘两次。 */
   async approvePendingWrite(id: string): Promise<{ path: string }> {
-    const record = this.getPendingWrite(id);
-    if (!record) throw new ApiError("NOT_FOUND", tf("待审写入不存在：{id}", { id }), 404);
-    const staleMessage = tf("待审写入已失效（目标被删除或移动）：{path}，请驳回后让 Agent 重发", {
-      path: record.path,
-    });
-    if (record.stale) throw new ApiError("STALE_PENDING", staleMessage, 409);
-    // 启动对账之后仍可能被删：采纳前再复验一次，防止把已删除的笔记"复活"。
-    if (record.before !== "" && !(this.vault.getAbstractFileByPath(record.path) instanceof TFile)) {
-      throw new ApiError("STALE_PENDING", staleMessage, 409);
+    if (this.approving.has(id)) {
+      throw new ApiError("PENDING_IN_FLIGHT", t("该待审写入正在采纳中，请稍候"), 409);
     }
-    await this.replayPending(record.request, record.agent);
-    this.plugin.store.removePendingWrite(id);
-    this.settlePendingCall(record, true);
-    // 只有文件桥来源才写决策；MCP/HTTP 待审记录完全不受影响。
-    if (record.source === "bridge") {
-      this.bridgeSink?.notifyDecision(record, "approved", "user_approved");
+    this.approving.add(id);
+    try {
+      const record = this.getPendingWrite(id);
+      if (!record) throw new ApiError("NOT_FOUND", tf("待审写入不存在：{id}", { id }), 404);
+      if (record.stale) {
+        throw new ApiError(
+          "STALE_PENDING",
+          tf("待审写入已失效（目标被删除或移动）：{path}，请驳回后让 Agent 重发", { path: record.path }),
+          409
+        );
+      }
+      await this.assertPendingUnchanged(record);
+      await this.replayPending(record.request, record.agent);
+      this.plugin.store.removePendingWrite(id);
+      this.settlePendingCall(record, true);
+      // 只有文件桥来源才写决策；MCP/HTTP 待审记录完全不受影响。
+      if (record.source === "bridge") {
+        this.bridgeSink?.notifyDecision(record, "approved", "user_approved");
+      }
+      const message = tf("待审写入已采纳并落盘：{path}", { path: record.path });
+      this.plugin.store.logDiagnostic("storage", message, id);
+      return { path: record.path };
+    } finally {
+      this.approving.delete(id);
     }
-    const message = tf("待审写入已采纳并落盘：{path}", { path: record.path });
-    this.plugin.store.logDiagnostic("storage", message, id);
-    return { path: record.path };
   }
 
   /** 驳回：丢弃挂起请求（不落盘），并记安全诊断。 */
@@ -549,7 +606,7 @@ export class AgentApi {
 
   /** 采纳时的重放分发：各 kind 与下方写方法一一对应，bypassConfirm=true。 */
   private async replayPending(request: PendingWriteRecord["request"], agent = ""): Promise<void> {
-    const meta: WriteMeta = agent ? { agent } : {};
+    const meta: WriteMeta = agent ? { agent, replay: true } : { replay: true };
     const args = request.args;
     const str = (value: unknown): string =>
       typeof value === "string"
@@ -557,6 +614,13 @@ export class AgentApi {
         : typeof value === "number" || typeof value === "boolean"
           ? String(value)
           : "";
+    // 运行时校验：data.json 可能被旧版本/手工编辑写坏，不能靠 `as` 直接放行。
+    const requireRecord = (value: unknown): Record<string, unknown> => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) {
+        throw new ApiError("INVALID_PENDING", t("待审写入参数损坏，请驳回后让 Agent 重发"), 400);
+      }
+      return value as Record<string, unknown>;
+    };
     switch (request.kind) {
       case "write_note":
         await this.writeNote(
@@ -568,19 +632,19 @@ export class AgentApi {
         );
         return;
       case "patch_note":
-        await this.patchNote(args.input as Parameters<AgentApi["patchNote"]>[0], true, meta);
+        await this.patchNote(requireRecord(args.input) as Parameters<AgentApi["patchNote"]>[0], true, meta);
         return;
       case "frontmatter":
         await this.updateFrontmatter(
           str(args.path),
-          (args.updates ?? {}) as Record<string, unknown>,
+          requireRecord(args.updates ?? {}),
           args.ifMatch ? str(args.ifMatch) : undefined,
           true,
           meta
         );
         return;
       case "knowledge":
-        await this.addKnowledge(args.input as KnowledgeInput, true, meta);
+        await this.addKnowledge(requireRecord(args.input) as unknown as KnowledgeInput, true, meta);
         return;
       case "memo":
         await this.addMemo(
@@ -588,17 +652,24 @@ export class AgentApi {
           Array.isArray(args.tags) ? args.tags.map(String) : [],
           args.sourcePath ? str(args.sourcePath) : undefined,
           typeof args.sourceLine === "number" ? args.sourceLine : undefined,
-          true
+          true,
+          meta
         );
         return;
       case "worklog":
-        await this.recordWorkLog(args.input as WorkLogInput, true);
+        await this.recordWorkLog(requireRecord(args.input) as unknown as WorkLogInput, true, meta);
         return;
       case "task_complete":
-        await this.completeTask(str(args.path), Number(args.line), true);
+        await this.completeTask(str(args.path), Number(args.line), true, meta);
         return;
       case "task_snapshot":
-        await this.snapshotTasks(true);
+        await this.snapshotTasks(true, meta);
+        return;
+      case "claim_agent_task":
+        await this.claimAgentTask(str(args.id), false, meta);
+        return;
+      case "complete_agent_task":
+        await this.completeAgentTask(str(args.id), args.resultPath ? str(args.resultPath) : undefined, false, meta);
         return;
       default:
         throw new ApiError("INVALID_PENDING", tf("未知的待审写入类型：{kind}", { kind: request.kind }), 400);
@@ -743,7 +814,7 @@ export class AgentApi {
     const knowledgeBase = normalizeFolder(this.plugin.store.settings.knowledgeFolder);
     const finalContent =
       mode === "create" && knowledgeBase.length > 0 && safe.startsWith(`${knowledgeBase}/`)
-        ? stampAgentProvenance(content, meta?.agent || this.currentAgent || "agent", dateKey(new Date()))
+        ? stampAgentProvenance(content, meta?.agent || "agent", dateKey(new Date()))
         : content;
 
     if (!bypassConfirm && (meta?.hold || this.isConfirmMode())) {
@@ -770,11 +841,11 @@ export class AgentApi {
     this.plugin.tracker.markAgentWrite(safe);
     if (mode === "append" && existing instanceof TFile) {
       const previous = await this.vault.read(existing);
-      this.backupNote(safe, previous);
+      this.backupNote(safe, previous, meta);
       await this.vault.modify(existing, `${previous.trimEnd()}\n\n${finalContent}`);
     } else if (existing instanceof TFile) {
       const previous = await this.vault.read(existing);
-      this.backupNote(safe, previous);
+      this.backupNote(safe, previous, meta);
       await this.vault.modify(existing, finalContent);
     } else {
       await this.vault.create(safe, finalContent);
@@ -792,7 +863,8 @@ export class AgentApi {
     tags: string[] = [],
     sourcePath?: string,
     sourceLine?: number,
-    bypassConfirm = false
+    bypassConfirm = false,
+    meta?: WriteMeta
   ): Promise<WithPending<MemoRecord | null>> {
     // A1 收口：速记经 memos.add -> appendToDailyNote 落到当天日记，
     // 日记目标路径必须与其他写路径同款过门禁（黑名单/白名单/操作开关）。
@@ -808,7 +880,8 @@ export class AgentApi {
         "memo",
         { text, tags, sourcePath, sourceLine },
         "",
-        tf("记一条速记到 {path}", { path: daily }) + `\n${String(text ?? "").trim()}${tagStr}`
+        tf("记一条速记到 {path}", { path: daily }) + `\n${String(text ?? "").trim()}${tagStr}`,
+        meta
       );
     }
     return this.plugin.memos.add(
@@ -1072,7 +1145,7 @@ export class AgentApi {
       };
     }
 
-    const snapshotId = this.backupNote(safe, before);
+    const snapshotId = this.backupNote(safe, before, meta);
     this.plugin.tracker.markAgentWrite(safe);
     await this.vault.process(file, () => result);
     this.plugin.store.updateDay(this.plugin.store.todayKey(), (day) => {
@@ -1114,7 +1187,7 @@ export class AgentApi {
       };
     }
 
-    this.backupNote(safe, before);
+    this.backupNote(safe, before, meta);
     this.plugin.tracker.markAgentWrite(safe);
     await this.vault.process(file, () => result);
     return { path: safe, version: versionOf(result) };
@@ -1178,7 +1251,8 @@ export class AgentApi {
   async completeTask(
     path: string,
     line: number,
-    bypassConfirm = false
+    bypassConfirm = false,
+    meta?: WriteMeta
   ): Promise<WithPending<{ ok: true }>> {
     const safe = safeAgentPath(path, this.vault.configDir);
     this.assertPathAllowed(safe, "patch");
@@ -1189,7 +1263,7 @@ export class AgentApi {
         .split("\n")
         .map((item, index) => (index === line - 1 ? toggleCheckboxLine(item) : item))
         .join("\n");
-      return this.holdForConfirm("complete_task", safe, "task_complete", { path: safe, line }, before, after);
+      return this.holdForConfirm("complete_task", safe, "task_complete", { path: safe, line }, before, after, meta);
     }
     this.plugin.tracker.markAgentWrite(safe);
     await this.plugin.tasks.complete(safe, line);
@@ -1199,7 +1273,8 @@ export class AgentApi {
   async delegateTask(
     path: string,
     line: number,
-    bypassConfirm = false
+    bypassConfirm = false,
+    meta?: WriteMeta
   ): Promise<WithPending<{ id: string }>> {
     const safe = safeAgentPath(path, this.vault.configDir);
     this.assertPathAllowed(safe, "read");
@@ -1219,13 +1294,14 @@ export class AgentApi {
         "memo",
         { text: task.text, tags: ["to-agent"], sourcePath: safe, sourceLine: line },
         "",
-        tf("记一条速记到 {path}", { path: daily }) + `\n${task.text}\n标签：#to-agent`
+        tf("记一条速记到 {path}", { path: daily }) + `\n${task.text}\n标签：#to-agent`,
+        meta
       );
     }
     return { id: await this.plugin.tasks.delegate(safe, line) };
   }
 
-  async snapshotTasks(bypassConfirm = false): Promise<WithPending<{ count: number }>> {
+  async snapshotTasks(bypassConfirm = false, meta?: WriteMeta): Promise<WithPending<{ count: number }>> {
     // 与 TaskManager.snapshot 相同的路径口径：统一走 dailyNotePath，
     // 门禁校验与实际落盘使用同一 date 实例，消除跨午夜毫秒竞态。
     const settings = this.plugin.store.settings;
@@ -1243,7 +1319,7 @@ export class AgentApi {
         ? tf("将 {n} 条遗留待办写入 {path}", { n: overdue.length, path })
         : t("没有需要记录的遗留待办");
       // args 只存重放所需信息：task_snapshot 重放时按当时日期重算，不落 date 死字段。
-      return this.holdForConfirm("snapshot_tasks", path, "task_snapshot", {}, "", summary);
+      return this.holdForConfirm("snapshot_tasks", path, "task_snapshot", {}, "", summary, meta);
     }
     return { count: await this.plugin.tasks.snapshot({ accessible, date: now }) };
   }
@@ -1296,7 +1372,7 @@ export class AgentApi {
    * 记录一次 Agent 工作会话。同时写入 agent-logs/YYYY-MM-DD.md 与 data.json，
    * 让每天的工作过程成为可检索的沉淀。
    */
-  async recordWorkLog(input: WorkLogInput, bypassConfirm = false): Promise<WithPending<WorkLogRecord>> {
+  async recordWorkLog(input: WorkLogInput, bypassConfirm = false, meta?: WriteMeta): Promise<WithPending<WorkLogRecord>> {
     const now = new Date();
     const log: WorkLogRecord = {
       id: `${now.getTime().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
@@ -1355,7 +1431,8 @@ export class AgentApi {
         "worklog",
         { input },
         previous,
-        `${preview.trimEnd()}\n\n${block}`
+        `${preview.trimEnd()}\n\n${block}`,
+        meta
       );
     }
 
@@ -1424,6 +1501,13 @@ export class AgentApi {
       path = folder ? `${folder}/${fileName}` : fileName;
       counter += 1;
     }
+    // 最终路径统一过 safeAgentPath：拦住反斜杠 ..、盘符、config/.git 等逃逸。
+    const safePath = safeAgentPath(path, this.vault.configDir ?? "");
+    if (safePath !== path) {
+      throw new ApiError("FORBIDDEN", t("知识笔记目标路径不合法"), 403);
+    }
+    this.assertPathAllowed(safePath, "create");
+    path = safePath;
 
     const frontmatter = [
       "---",
@@ -1514,7 +1598,11 @@ export class AgentApi {
   }
 
   /** 认领一条 #to-agent 任务，避免被重复处理。 */
-  async claimAgentTask(id: string, bypassAccess = false): Promise<MemoRecord> {
+  async claimAgentTask(
+    id: string,
+    bypassAccess = false,
+    meta?: WriteMeta
+  ): Promise<MemoRecord | AgentPendingResult> {
     const memo = this.plugin.store.data.memos.find((item) => item.id === id);
     if (!memo) throw new Error(`速记不存在：${id}`);
     if (!memo.tags.includes("to-agent")) throw new Error(`速记 ${id} 不是待办任务`);
@@ -1522,6 +1610,17 @@ export class AgentApi {
     // 人用看板调用面传 bypassAccess=true（与 bypassConfirm 同款模式），人用 UI 不受 Agent 权限限制。
     if (!bypassAccess) {
       this.assertPathAllowed(dailyNotePath(this.plugin.store.settings, parseKey(memo.date)), "patch");
+      if (!meta?.hold && !meta?.replay && this.isConfirmMode()) {
+        return this.holdForConfirm(
+          "claim_agent_task",
+          dailyNotePath(this.plugin.store.settings, parseKey(memo.date)),
+          "claim_agent_task",
+          { id },
+          "",
+          tf("认领 Agent 任务：{text}", { text: memo.text }),
+          meta
+        );
+      }
     }
     memo.tags = memo.tags.filter((tag) => tag !== "to-agent");
     if (!memo.tags.includes("agent-in-progress")) memo.tags.push("agent-in-progress");
@@ -1531,12 +1630,28 @@ export class AgentApi {
   }
 
   /** 完成任务：标记为 #agent-done，可关联产出笔记。 */
-  async completeAgentTask(id: string, resultPath?: string, bypassAccess = false): Promise<MemoRecord> {
+  async completeAgentTask(
+    id: string,
+    resultPath?: string,
+    bypassAccess = false,
+    meta?: WriteMeta
+  ): Promise<MemoRecord | AgentPendingResult> {
     const memo = this.plugin.store.data.memos.find((item) => item.id === id);
     if (!memo) throw new Error(`速记不存在：${id}`);
     // 与 claimAgentTask 同款：日记目标过 patch 门禁，人用看板调用面传 bypassAccess=true。
     if (!bypassAccess) {
       this.assertPathAllowed(dailyNotePath(this.plugin.store.settings, parseKey(memo.date)), "patch");
+      if (!meta?.hold && !meta?.replay && this.isConfirmMode()) {
+        return this.holdForConfirm(
+          "complete_agent_task",
+          dailyNotePath(this.plugin.store.settings, parseKey(memo.date)),
+          "complete_agent_task",
+          { id, resultPath },
+          "",
+          tf("完成 Agent 任务：{text}", { text: memo.text }),
+          meta
+        );
+      }
     }
     memo.tags = memo.tags.filter(
       (tag) => tag !== "to-agent" && tag !== "agent-in-progress" && tag !== "agent-done"

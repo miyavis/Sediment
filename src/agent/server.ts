@@ -10,7 +10,7 @@ import {
   type NodeHttpResponse,
   type NodeHttpServer,
 } from "../utils/node";
-import { AGENT_API_VERSION, ApiError } from "./api";
+import { AGENT_API_VERSION, ApiError, type AgentApi } from "./api";
 import { redactAuditPath } from "./security";
 import { t, tf } from "../i18n";
 import { logError } from "../utils/log-error";
@@ -29,10 +29,18 @@ export function tokensMatch(supplied: string, expected: string): boolean {
 export class AgentServer {
   private server: NodeHttpServer | null = null;
   private running: { enabled: boolean; port: number; token: string } | null = null;
+  /** 配置变更串行链：防快速连续改端口/开关时并发 listen → EADDRINUSE。 */
+  private settingsChain: Promise<void> = Promise.resolve();
 
   constructor(private plugin: SedimentPlugin) {}
 
-  async applySettings(): Promise<void> {
+  applySettings(): Promise<void> {
+    const next = this.settingsChain.then(() => this.performApplySettings());
+    this.settingsChain = next.catch(() => {});
+    return next;
+  }
+
+  private async performApplySettings(): Promise<void> {
     const settings = this.plugin.store.settings;
     const desired = {
       enabled: settings.agentServerEnabled,
@@ -73,10 +81,13 @@ export class AgentServer {
   }
 
   async stop(): Promise<void> {
+    // 先摘掉引用，避免并发 applySettings 再次 close 同一句柄。
     const server = this.server;
     this.server = null;
     this.running = null;
     if (!server) return;
+    // keep-alive 长连接会让 close 回调一直不触发，reload 后端口残留。
+    server.closeAllConnections?.();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 
@@ -118,6 +129,20 @@ export class AgentServer {
   }
 
   private async handle(request: NodeHttpRequest, response: NodeHttpResponse): Promise<void> {
+    // 写请求的审计行先入队（confirm 挂起要绑定该记录），若最终响应是错误则撤回。
+    let failedCall: ReturnType<AgentApi["logToolCall"]> | null = null;
+    let statusCode = 200;
+    const rawResponse = response;
+    response = {
+      writeHead: (status, headers) => {
+        statusCode = status;
+        rawResponse.writeHead(status, headers);
+      },
+      end: (body) => {
+        if (failedCall && statusCode >= 400) this.plugin.store.dropToolCall(failedCall);
+        rawResponse.end(body);
+      },
+    };
     let url: URL;
     try {
       url = new URL(request.url ?? "/", "http://127.0.0.1");
@@ -151,8 +176,11 @@ export class AgentServer {
       const loggedPath =
         (typeof body.path === "string" ? body.path : "") || str(query.get("path"), "");
       const tool = `${request.method} ${url.pathname}`;
-      const call = api.logToolCall(tool, agent, redactAuditPath(loggedPath));
-      api.setCallContext(tool, agent, call);
+      const isWrite = request.method !== "GET" && request.method !== "HEAD";
+      const call = isWrite ? api.logToolCall(tool, agent, redactAuditPath(loggedPath)) : null;
+      failedCall = call;
+      // 每次请求独立的写上下文，杜绝并发请求串 agent / pendingId。
+      const writeMeta = api.callMeta(tool, agent, call);
 
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
@@ -177,7 +205,7 @@ export class AgentServer {
             return;
           }
           const mode = rawMode;
-          this.json(response, 200, await api.writeNote(str(body.path as string), str(body.content as string), mode));
+          this.json(response, 200, await api.writeNote(str(body.path as string), str(body.content as string), mode, false, writeMeta));
           return;
         }
         case "POST /memo": {
@@ -189,7 +217,9 @@ export class AgentServer {
               str(body.text as string),
               tags,
               str(body.sourcePath as string) || undefined,
-              typeof body.sourceLine === "number" ? body.sourceLine : undefined
+              typeof body.sourceLine === "number" ? body.sourceLine : undefined,
+              false,
+              writeMeta
             )
           );
           return;
@@ -224,7 +254,7 @@ export class AgentServer {
               openQuestions: str(body.openQuestions as string),
               files,
               tags,
-            })
+            }, false, writeMeta)
           );
           return;
         }
@@ -243,7 +273,7 @@ export class AgentServer {
               source: str(body.source as string),
               tags,
               links,
-            })
+            }, false, writeMeta)
           );
           return;
         }
@@ -277,13 +307,13 @@ export class AgentServer {
           this.json(response, 200, await api.listTasks(str(query.get("scope"), "all")));
           return;
         case "POST /tasks/complete":
-          this.json(response, 200, await api.completeTask(str(body.path as string), Number(body.line)));
+          this.json(response, 200, await api.completeTask(str(body.path as string), Number(body.line), false, writeMeta));
           return;
         case "POST /tasks/delegate":
-          this.json(response, 200, await api.delegateTask(str(body.path as string), Number(body.line)));
+          this.json(response, 200, await api.delegateTask(str(body.path as string), Number(body.line), false, writeMeta));
           return;
         case "POST /tasks/snapshot":
-          this.json(response, 200, await api.snapshotTasks());
+          this.json(response, 200, await api.snapshotTasks(false, writeMeta));
           return;
         case "POST /patch-note":
           this.json(
@@ -305,7 +335,7 @@ export class AgentServer {
               ifMatch: str(body.ifMatch as string) || undefined,
               expectedMtime: typeof body.expectedMtime === "number" ? body.expectedMtime : undefined,
               dryRun: body.dryRun === true,
-            })
+            }, false, writeMeta)
           );
           return;
         case "POST /frontmatter":
@@ -315,18 +345,20 @@ export class AgentServer {
             await api.updateFrontmatter(
               str(body.path as string),
               (body.updates ?? {}) as Record<string, unknown>,
-              str(body.ifMatch as string) || undefined
+              str(body.ifMatch as string) || undefined,
+              false,
+              writeMeta
             )
           );
           return;
         case "POST /agent-task/claim":
-          this.json(response, 200, await api.claimAgentTask(str(body.id as string)));
+          this.json(response, 200, await api.claimAgentTask(str(body.id as string), false, writeMeta));
           return;
         case "POST /agent-task/complete":
           this.json(
             response,
             200,
-            await api.completeAgentTask(str(body.id as string), str(body.resultPath as string) || undefined)
+            await api.completeAgentTask(str(body.id as string), str(body.resultPath as string) || undefined, false, writeMeta)
           );
           return;
         case "GET /pomodoro":

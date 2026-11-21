@@ -198,7 +198,7 @@ Security boundaries:
 
 The complete tool list is available through MCP `tools/list`.
 
-**API version**: `AGENT_API_VERSION = 1` (`/health` returns `agentApiVersion`). The version increments when tool names or parameter shapes change; within one version, existing tools are not removed or renamed.
+**API version**: `AGENT_API_VERSION = 1` (`/health` returns `agentApiVersion`). The version increments when tool names or parameter shapes change. Tool inventory may change between plugin releases: the 13 task-oriented tools replaced the earlier fine-grained names in a single breaking change; consult the CHANGELOG before upgrading automations.
 
 ## Data and recovery
 
@@ -221,8 +221,8 @@ npm test
 npm run test:release
 ```
 
-- `npm run build` — sync versions/docs/MCP bridge, type-check, and generate `main.js`
-- `npm test` — unit tests and MCP smoke test
+- `npm run build` — sync versions/changelog/MCP bridge, type-check, bundle `main.js`, and package `dist/sediment/`
+- `npm test` — i18n lint, unit tests, and MCP smoke test (`npm run test:typecheck`, `npm run lint:eslint`, `npm run lint:stylelint` are separate)
 - `npm run test:release` — verify version, changelog, and release artifacts
 
 **One version source**: `version` in `package.json`. During the build, `version-bump.mjs` syncs it to `package-lock.json`, `manifest.json`, `versions.json`, the MCP `serverInfo`, and the version badges in both READMEs. Release flow:

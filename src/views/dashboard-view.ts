@@ -10,9 +10,10 @@ import { t, tf } from "../i18n";
 import { appendSvg, setSvg } from "../utils/dom";
 import { TABS, type RangeKey, type TabKey } from "./dashboard/constants";
 import { filterAgentTasks, pendingReviewChanges, reviewBadgeCount } from "./dashboard/review-queue";
-import { listDraftFiles, paintAgentStatus, renderAgentHub } from "./dashboard/sections/agent";
+import { paintAgentStatus, renderAgentHub } from "./dashboard/sections/agent";
 import { renderInsights } from "./dashboard/sections/insights";
 import { renderToday } from "./dashboard/sections/today";
+import { scanAgentState, type AgentScan } from "./dashboard/scan-cache";
 
 export const DASHBOARD_VIEW_TYPE = "sediment-dashboard";
 
@@ -40,6 +41,22 @@ export class DashboardView extends ItemView {
   hasRendered = false;
   scrollRestoreToken = 0;
   pendingFocusDate: string | null = null;
+  /** 一次 render 内的 Agent 工坊扫描缓存；render 开头清空。 */
+  private agentScanCache: AgentScan | null = null;
+
+  /** 用户正在看板内输入时不自动重绘，避免写日记/速记时丢焦点。 */
+  isEditing(): boolean {
+    const active = document.activeElement;
+    if (!active || !this.contentEl.contains(active)) return false;
+    return active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement ||
+      (active as HTMLElement).isContentEditable === true;
+  }
+
+  /** 徽章与工坊各卡共用同一次全库扫描。 */
+  agentScan(): AgentScan {
+    this.agentScanCache ??= scanAgentState(this.plugin);
+    return this.agentScanCache;
+  }
 
   constructor(leaf: WorkspaceLeaf, public plugin: SedimentPlugin) {
     super(leaf);
@@ -60,6 +77,9 @@ export class DashboardView extends ItemView {
 
   async onOpen(): Promise<void> {
     this.render();
+    this.registerDomEvent(this.containerEl.ownerDocument, "keydown", (event: KeyboardEvent) => {
+      if (event.key === "Escape") this.hideHeatTooltip();
+    });
     this.registerInterval(window.setInterval(() => this.updateBanner(), 60_000));
     this.registerInterval(window.setInterval(() => this.refreshAgentStatusCard(), 30_000));
     this.unsubscribePomodoro = this.plugin.pomodoro.subscribe(() => this.updatePomodoroButton());
@@ -72,6 +92,7 @@ export class DashboardView extends ItemView {
 
   render(): void {
     const root = this.contentEl;
+    this.agentScanCache = null;
     const rerender = this.hasRendered;
     const scroller = this.scrollParent(root) ?? this.fallbackScroller();
     const sameTab = this.lastRenderedTab === this.tab;
@@ -219,6 +240,25 @@ export class DashboardView extends ItemView {
     return "🌘";
   }
 
+  /** 热力图 tooltip 的笔记列表缓存：避免每划过一格就全库扫描。 */
+  private heatNotesCache: { at: number; byDate: Map<string, string[]> } | null = null;
+
+  private heatNotesFor(key: string): string[] {
+    const now = Date.now();
+    if (!this.heatNotesCache || now - this.heatNotesCache.at > 60_000) {
+      const byDate = new Map<string, string[]>();
+      for (const file of this.plugin.app.vault.getMarkdownFiles()) {
+        const match = file.path.match(/\d{4}-\d{2}-\d{2}/);
+        if (!match) continue;
+        const list = byDate.get(match[0]) ?? [];
+        if (list.length < 4) list.push(file.basename);
+        byDate.set(match[0], list);
+      }
+      this.heatNotesCache = { at: now, byDate };
+    }
+    return this.heatNotesCache.byDate.get(key) ?? [];
+  }
+
   showHeatTooltip(event: MouseEvent, key: string): void {
     this.hideHeatTooltip();
     const doc = this.containerEl.ownerDocument;
@@ -231,11 +271,7 @@ export class DashboardView extends ItemView {
         tf("贡献 {c} 分 · 新增 {w} 字", { c: day.contribution, w: day.wordsAdded }) +
         (day.aiWordsAdded > 0 ? tf("（AI {n}）", { n: day.aiWordsAdded }) : ""),
     });
-    const notes = this.plugin.app.vault
-      .getMarkdownFiles()
-      .filter((file) => file.path.includes(key))
-      .map((file) => file.basename)
-      .slice(0, 4);
+    const notes = this.heatNotesFor(key);
     if (notes.length > 0) tip.createDiv({ cls: "sd-tip-notes", text: tf("笔记：{list}", { list: notes.join(t("、")) }) });
     const memos = this.plugin.store.data.memos.filter((memo) => memo.date === key).slice(0, 2);
     if (memos.length > 0) tip.createDiv({ cls: "sd-tip-notes", text: tf("速记：{list}", { list: memos.map((memo) => memo.text).join(" / ") }) });
@@ -266,7 +302,7 @@ export class DashboardView extends ItemView {
     const brand = bar.createDiv({ cls: "sd-brand" });
     appendSvg(brand, SEDIMENT_LOGO_SVG);
     brand.createSpan({ text: "SEDIMENT" });
-    const tabs = bar.createDiv({ cls: "sd-tabs" });
+    const tabs = bar.createDiv({ cls: "sd-tabs", attr: { role: "tablist", "aria-label": t("主页签") } });
     for (const [key, label] of TABS) {
       // 移动端隐藏智能体工坊入口（README 移动端承诺：Agent 管理留在桌面端）。
       if (Platform.isMobile && key === "agent") continue;
@@ -277,7 +313,7 @@ export class DashboardView extends ItemView {
       });
       if (key === "agent") {
         const badge = reviewBadgeCount({
-          drafts: listDraftFiles(this).length,
+          drafts: this.agentScan().drafts.length,
           changes: pendingReviewChanges(
             this.plugin.store.data.toolCalls,
             this.plugin.store.data.reviewedChanges
@@ -294,7 +330,7 @@ export class DashboardView extends ItemView {
         this.render();
       };
     }
-    const refresh = bar.createEl("button", { cls: "sd-refresh", text: t("刷新") });
+    const refresh = bar.createEl("button", { cls: "sd-refresh", text: t("重绘看板") });
     refresh.onclick = () => this.render();
   }
 
@@ -314,12 +350,8 @@ export class DashboardView extends ItemView {
     const list = card.createDiv({ cls: "sd-task-list" });
     list.createDiv({ cls: "sd-empty", text: t("加载中…") });
     const load = agentOnly
-      ? this.plugin.tasks.list("agent").then((agent) => filterAgentTasks(agent))
-      : Promise.all([
-          this.plugin.tasks.list("today"),
-          this.plugin.tasks.list("overdue"),
-          this.plugin.tasks.list("agent"),
-        ]).then(([today, overdue, agent]) => [
+      ? this.plugin.tasks.listGrouped().then(({ agent }) => filterAgentTasks(agent))
+      : this.plugin.tasks.listGrouped().then(({ today, overdue, agent }) => [
           ...today.filter((task) => !task.checked),
           ...overdue,
           ...agent,
@@ -414,10 +446,12 @@ export class DashboardView extends ItemView {
     footer.createSpan({ text: `Sediment ${this.plugin.manifest.version} · ${t("数据只留在本地")}` });
     const changelog = footer.createEl("button", { text: t("更新记录") });
     changelog.onclick = () => new ChangelogModal(this.plugin.app).open();
-    const styleButton = footer.createEl("button", { text: t("换画风") });
-    styleButton.onclick = (event) => this.showArtStyleMenu(event);
+    if (this.plugin.store.settings.multiArtStyle) {
+      const styleButton = footer.createEl("button", { text: t("换画风") });
+      styleButton.onclick = (event) => this.showArtStyleMenu(event);
+    }
     // 月报入口原在 insights section 内追加到页脚；页脚上移后按页签在此统一挂载。
-    if (this.tab === "insights") {
+    if (this.tab === "insights" && this.plugin.store.settings.showPoster) {
       footer.createEl("button", { text: t("月报") }).onclick = () => {
         new PosterModal(this.plugin.app, this.plugin.store, this.posterMonth).open();
       };

@@ -12,7 +12,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "18"
+          node-version: "22"
       - run: npm ci --registry=https://registry.npmjs.org
       - run: npm run build
       - run: npm test
+      - run: npm run test:typecheck
+      - run: npm run lint:eslint
+      - run: npm run lint:stylelint
+      - run: node scripts/verify-release.mjs
+      - name: Ensure build left the tree clean
+        run: git diff --exit-code -- package.json package-lock.json manifest.json versions.json src/changelog.ts src/agent/bridge-source.ts main.js dist/sediment

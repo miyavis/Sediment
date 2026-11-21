@@ -12,15 +12,28 @@ export interface BackupInfo {
   mtimeMs: number;
 }
 
+/** 一次目录列举拿到多个笔记的快照，供审核列表批量使用（避免逐行同步 IO）。 */
+export function listBackupsMap(plugin: SedimentPlugin, paths: string[]): Map<string, BackupInfo[]> {
+  const map = new Map<string, BackupInfo[]>(paths.map((path) => [path, []]));
+  const directory = backupDirectory(plugin.app.vault);
+  if (!directory || !fileExists(directory)) return map;
+  const entries = listDirectory(directory).map((name) => ({
+    name,
+    mtimeMs: fileMtimeMs(`${directory}/${name}`).mtimeMs,
+  }));
+  for (const path of paths) {
+    const suffix = path.replace(/[\\/]/g, "_");
+    map.set(
+      path,
+      entries.filter((entry) => entry.name.endsWith(suffix)).sort((a, b) => b.mtimeMs - a.mtimeMs)
+    );
+  }
+  return map;
+}
+
 /** 列出某个笔记在插件 backups 目录里的历史快照。 */
 export function listBackups(plugin: SedimentPlugin, path: string): BackupInfo[] {
-  const directory = backupDirectory(plugin.app.vault);
-  if (!directory || !fileExists(directory)) return [];
-  const suffix = path.replace(/[\\/]/g, "_");
-  return listDirectory(directory)
-    .filter((name) => name.endsWith(suffix))
-    .map((name) => ({ name, mtimeMs: fileMtimeMs(`${directory}/${name}`).mtimeMs }))
-    .sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return listBackupsMap(plugin, [path]).get(path) ?? [];
 }
 
 export function readBackup(plugin: SedimentPlugin, name: string): string {

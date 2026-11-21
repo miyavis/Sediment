@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 /** 发版准备：把 CHANGELOG 的 [Unreleased] 定稿为版本号，并更新版本源 package.json。 */
 const raw = process.argv[2] ?? process.env.GITHUB_REF_NAME ?? "";
 const version = raw.replace(/^v/, "");
-if (!/^\d+\.\d+\.\d+/.test(version)) {
+if (!/^\d+\.\d+\.\d+$/.test(version)) {
   console.error("用法：npm run release:prepare -- 0.9.3");
   process.exit(1);
 }

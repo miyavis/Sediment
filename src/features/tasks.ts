@@ -52,22 +52,24 @@ export class TaskManager {
     return inFolder(path, dailyFolder) || TASK_TAG.test(text);
   }
 
-  async list(scope: "today" | "overdue" | "all" | "agent" = "all", opts: TaskReadOptions = {}): Promise<TaskItem[]> {
-    if (scope === "agent") {
-      return this.plugin.store.data.memos
-        .filter((memo) => memo.tags.includes("to-agent") && !memo.converted && !memo.archived)
-        .map((memo) => ({
-          path: "",
-          line: 0,
-          text: memo.text,
-          date: memo.date,
-          checked: false,
-          sourcePath: memo.sourcePath,
-          sourceLine: memo.sourceLine,
-          memoId: memo.id,
-        }));
-    }
-    const today = dateKey(new Date());
+  /** 速记委派的 Agent 任务（不读库）。 */
+  private agentTasks(): TaskItem[] {
+    return this.plugin.store.data.memos
+      .filter((memo) => memo.tags.includes("to-agent") && !memo.converted && !memo.archived)
+      .map((memo) => ({
+        path: "",
+        line: 0,
+        text: memo.text,
+        date: memo.date,
+        checked: false,
+        sourcePath: memo.sourcePath,
+        sourceLine: memo.sourceLine,
+        memoId: memo.id,
+      }));
+  }
+
+  /** 单次全库扫描：拿到所有原生复选框，后续按作用域分组，避免同一页签重复读库。 */
+  private async scanFileTasks(opts: TaskReadOptions): Promise<TaskItem[]> {
     const dailyFolder = normalizeFolder(this.plugin.store.settings.dailyNoteFolder);
     const result: TaskItem[] = [];
     for (const file of this.plugin.app.vault.getMarkdownFiles()) {
@@ -79,19 +81,36 @@ export class TaskManager {
       for (let index = 0; index < lines.length; index += 1) {
         const match = lines[index].match(CHECKBOX);
         if (!match) continue;
-        const checked = match[2].toLowerCase() === "x";
-        if (scope === "today" && date !== today) continue;
-        if (scope === "overdue" && (checked || date >= today)) continue;
         result.push({
           path: file.path,
           line: index + 1,
           text: match[3].trim(),
           date,
-          checked,
+          checked: match[2].toLowerCase() === "x",
         });
       }
     }
     return result;
+  }
+
+  /** 今日/遗留/Agent 三组一次扫描完成（今日页渲染专用）。 */
+  async listGrouped(opts: TaskReadOptions = {}): Promise<{ today: TaskItem[]; overdue: TaskItem[]; agent: TaskItem[] }> {
+    const all = await this.scanFileTasks(opts);
+    const today = dateKey(new Date());
+    return {
+      today: all.filter((task) => task.date === today),
+      overdue: all.filter((task) => !task.checked && task.date < today),
+      agent: this.agentTasks(),
+    };
+  }
+
+  async list(scope: "today" | "overdue" | "all" | "agent" = "all", opts: TaskReadOptions = {}): Promise<TaskItem[]> {
+    if (scope === "agent") return this.agentTasks();
+    const all = await this.scanFileTasks(opts);
+    const today = dateKey(new Date());
+    if (scope === "today") return all.filter((task) => task.date === today);
+    if (scope === "overdue") return all.filter((task) => !task.checked && task.date < today);
+    return all;
   }
 
   async complete(path: string, line: number): Promise<void> {

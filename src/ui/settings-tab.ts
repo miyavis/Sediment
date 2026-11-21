@@ -181,7 +181,27 @@ export class PulseSettingTab extends PluginSettingTab {
         button.setButtonText(t("一键迁移")).onClick(() => void this.runLegacyFolderMigration())
       );
 
-    new Setting(containerEl)
+    new Setting(containerEl).setName(t("实验性功能")).setHeading();
+    const experimental: Array<[keyof PulseSettings, string, string]> = [
+      ["showMoonPhase", t("月相日历"), t("年度画像中显示月相页签（装饰性，默认关闭）。")],
+      ["showMemoWander", t("速记漫步"), t("按共同词推荐一条旧速记（默认关闭）。")],
+      ["showPoster", t("月报海报导出"), t("洞察页脚显示月报 PNG 导出（默认关闭）。")],
+      ["multiArtStyle", t("多画风切换"), t("开放像素湖面 / 水墨 / 城市三种画风切换（默认关闭，固定湖面）。")],
+    ];
+    for (const [key, name, desc] of experimental) {
+      new Setting(containerEl)
+        .setName(name)
+        .setDesc(desc)
+        .addToggle((toggle) =>
+          toggle.setValue(Boolean(settings[key])).onChange((value) => {
+            (settings[key] as boolean) = value;
+            save();
+            this.plugin.refreshViews();
+          })
+        );
+    }
+
+    if (settings.multiArtStyle) new Setting(containerEl)
       .setName(t("看板画风"))
       .setDesc(t("像素湖面 / 水墨山水 / 像素城市，也可在看板页脚点「换画风」。"))
       .addDropdown((dropdown) =>
@@ -633,7 +653,7 @@ export class PulseSettingTab extends PluginSettingTab {
             })
         );
     };
-    numberSetting("单日贡献分封顶", "防止单日刷分拉爆热力图，0 表示不封顶。默认 120。", "contributionDailyCap", 120);
+    numberSetting("单日贡献分封顶", "防止单日刷分拉爆热力图，0 表示不封顶。默认 120。达到封顶后，当天后续努力在热力图与地层中不再体现，请按需调高或关闭。", "contributionDailyCap", 120);
     numberSetting("单次写入词数上限", "一次保存/粘贴最多计入的词数，0 表示不封顶。默认 4000。", "wordsPerWriteCap", 4000);
     const weights = containerEl.createEl("details", { cls: "sd-settings-weights" });
     weights.createEl("summary", { text: t("高级权重（默认值已调好，一般无需修改）") });

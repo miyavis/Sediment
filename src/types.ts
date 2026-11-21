@@ -98,6 +98,10 @@ export interface PendingWriteRecord {
   request: { kind: string; args: Record<string, unknown> };
   /** 预览：挂起时的目标内容（新建或条目式写入为空串） */
   before: string;
+  /** 挂起时 before 的 SHA-256；采纳前复验，防止「批准 A、落盘 B」 */
+  beforeHash?: string;
+  /** true=新建类（挂起时目标必须不存在）；缺省/false=条目式写入（before 空不代表新建） */
+  expectAbsent?: boolean;
   /** 预览：采纳后的内容或操作摘要 */
   after: string;
   /** 目标在挂起后被删除/移动（启动对账或事件标记），只能驳回重发 */
@@ -226,6 +230,14 @@ export interface PulseSettings {
   embeddingModel: string;
   /** 文件桥：非 MCP 智能体通过插件目录提交写提案（实验，默认关闭） */
   fileBridgeEnabled: boolean;
+  /** 实验性装饰功能：月相日历，默认关闭 */
+  showMoonPhase: boolean;
+  /** 实验性功能：速记"漫步"，默认关闭 */
+  showMemoWander: boolean;
+  /** 实验性功能：月报海报导出，默认关闭 */
+  showPoster: boolean;
+  /** 实验性功能：多画风切换，默认关闭（固定像素湖面） */
+  multiArtStyle: boolean;
   /** Agent HTTP API / MCP 访问令牌 */
   agentServerToken: string;
 }
@@ -287,12 +299,12 @@ export interface MetricDef {
 }
 
 export const METRICS: MetricDef[] = [
-  { key: "contribution", label: "贡献分", hint: "综合加权得分" },
-  { key: "wordsAdded", label: "新增词数", hint: "自己打的字" },
+  { key: "contribution", label: "贡献分", hint: "综合加权得分（可在设置中调整权重与单日封顶）" },
+  { key: "wordsAdded", label: "新增词数", hint: "正文新增词数（含大段粘贴，单次写入有上限）" },
   { key: "edits", label: "编辑会话", hint: "有效编辑次数" },
   { key: "notesCreated", label: "新建笔记", hint: "当天有内容的新笔记" },
   { key: "tasksCompleted", label: "完成任务", hint: "新增勾选的待办" },
-  { key: "focusMinutes", label: "专注分钟", hint: "预留给专注插件联动" },
+  { key: "focusMinutes", label: "专注分钟", hint: "内置番茄钟实际完成的专注时长（休息不计）" },
 ];
 
 export const DEFAULT_SETTINGS: PulseSettings = {
@@ -341,6 +353,10 @@ export const DEFAULT_SETTINGS: PulseSettings = {
   embeddingEndpoint: "http://127.0.0.1:11434",
   embeddingModel: "bge-m3",
   fileBridgeEnabled: false,
+  showMoonPhase: false,
+  showMemoWander: false,
+  showPoster: false,
+  multiArtStyle: false,
   agentServerToken: "",
 };
 

@@ -3,6 +3,10 @@ import path from "node:path";
 
 const root = process.cwd();
 const tag = (process.argv[2] ?? "").replace(/^v/, "");
+if (tag && !/^\d+\.\d+\.\d+$/.test(tag)) {
+  console.error(`非法发布标签：${tag}（只允许 x.y.z 或 vx.y.z）`);
+  process.exit(1);
+}
 const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 const manifest = JSON.parse(fs.readFileSync(path.join(root, "manifest.json"), "utf8"));
 const bridge = fs.readFileSync(path.join(root, "mcp-server", "index.mjs"), "utf8");
@@ -48,6 +52,27 @@ const versionsMap = JSON.parse(fs.readFileSync(path.join(root, "versions.json"),
 if (!Object.prototype.hasOwnProperty.call(versionsMap, manifest.version)) {
   console.error(`versions.json 缺少版本键 ${manifest.version}`);
   process.exit(1);
+}
+if (versionsMap[manifest.version] !== manifest.minAppVersion) {
+  console.error(`versions.json[${manifest.version}] 与 manifest.minAppVersion 不一致`);
+  process.exit(1);
+}
+
+// package-lock 顶层与根包版本须与唯一版本源一致。
+const lock = JSON.parse(fs.readFileSync(path.join(root, "package-lock.json"), "utf8"));
+if (lock.version !== manifest.version || lock.packages?.[""]?.version !== manifest.version) {
+  console.error("package-lock.json 版本与 manifest 不一致");
+  process.exit(1);
+}
+
+// dist 产物须存在且与源一致（安装整包不能是过期副本）。
+for (const file of ["main.js", "manifest.json", "styles.css"]) {
+  const source = fs.readFileSync(path.join(root, file));
+  const packaged = path.join(root, "dist", "sediment", file);
+  if (!fs.existsSync(packaged) || !source.equals(fs.readFileSync(packaged))) {
+    console.error(`dist/sediment/${file} 缺失或与源不一致`);
+    process.exit(1);
+  }
 }
 
 console.log(`Release ${manifest.version} verified`);

@@ -1,4 +1,4 @@
-import { Notice, type Plugin } from "obsidian";
+import { Notice, TFile, type Plugin } from "obsidian";
 import {
   computeContribution,
   createEmptyDay,
@@ -19,6 +19,7 @@ import { t, tf } from "../i18n";
 import { reconcilePendingWrites, markStaleByPaths } from "../agent/reconcile";
 import { rebuildAgentUsage, recordAgentUsage, sanitizeAgentUsage } from "./agent-usage";
 import { dateKey } from "../utils/dates";
+import { contentHash } from "../utils/hash";
 import { ensureFolder, normalizeFolder } from "../utils/vault";
 import { logError } from "../utils/log-error";
 
@@ -71,6 +72,9 @@ export class Store {
   recoveryCopyPath: string | null = null;
   private persistenceBlocked = false;
   private saveTimer: number | null = null;
+  /** 保存与备份串行链：避免并发 save/backup/restore 互相覆盖。 */
+  private saveChain: Promise<void> = Promise.resolve();
+  private backupChain: Promise<number> = Promise.resolve(0);
   private lastBackupAt = 0;
   /** 保存失败 Notice 节流：持续失败时 60s 内同类只弹一次，避免刷屏。 */
   private lastSaveNoticeAt = 0;
@@ -235,30 +239,68 @@ export class Store {
     this.scheduleSave();
   }
 
-  async save(): Promise<void> {
-    if (this.persistenceBlocked) return;
+  private cancelSaveTimer(): void {
     if (this.saveTimer !== null) {
       window.clearTimeout(this.saveTimer);
       this.saveTimer = null;
     }
-    try {
-      await this.plugin.saveData(this.data);
-    } catch (error) {
-      logError(this, "保存 data.json 失败", error);
-      const now = Date.now();
-      if (now - this.lastSaveNoticeAt >= 60_000) {
-        this.lastSaveNoticeAt = now;
-        new Notice(t("数据保存失败，请检查磁盘空间或文件权限"));
+  }
+
+  /** 只等待在途 IO 落地，不额外保存当前内存态（恢复前调用：旧数据反正要被替换）。 */
+  private async waitForIdleIO(): Promise<void> {
+    this.cancelSaveTimer();
+    await this.saveChain;
+    await this.backupChain;
+  }
+
+  /** 卸载前冲刷：把当前内存态作为最后一次保存入队，再等待全部 IO 结束。 */
+  async flush(): Promise<void> {
+    this.cancelSaveTimer();
+    await this.save();
+    await this.backupChain;
+  }
+
+  async save(): Promise<void> {
+    if (this.persistenceBlocked) return;
+    this.cancelSaveTimer();
+    const next = this.saveChain.then(() => this.persistWithRetry());
+    // 保存失败不向调用方抛错（沿用旧语义），但失败链不能阻塞后续保存。
+    this.saveChain = next.catch(() => {});
+    return next;
+  }
+
+  /** 实际写盘：失败退避重试 3 次；成功后再触发一次自动备份。 */
+  private async persistWithRetry(): Promise<void> {
+    if (this.persistenceBlocked) return;
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        await this.plugin.saveData(this.data);
+        void this.backupData().catch((error) => {
+          logError(this, "自动备份失败", error);
+        });
+        return;
+      } catch (error) {
+        lastError = error;
+        if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 120 * 2 ** attempt));
       }
-      return;
     }
-    void this.backupData().catch((error) => {
-      logError(this, "自动备份失败", error);
-    });
+    logError(this, "保存 data.json 失败", lastError);
+    const now = Date.now();
+    if (now - this.lastSaveNoticeAt >= 60_000) {
+      this.lastSaveNoticeAt = now;
+      new Notice(t("数据保存失败，请检查磁盘空间或文件权限"));
+    }
   }
 
   /** 把 data.json 快照写入库内普通文件夹，按设置保留最近若干份。失败向调用方抛错。 */
   async backupData(force = false): Promise<number> {
+    const next = this.backupChain.then(() => this.performBackup(force));
+    this.backupChain = next.catch(() => 0);
+    return next;
+  }
+
+  private async performBackup(force: boolean): Promise<number> {
     if (!this.data.settings.backupEnabled && !force) return 0;
     const now = Date.now();
     if (!force && now - this.lastBackupAt < 3_600_000) return 0;
@@ -266,7 +308,8 @@ export class Store {
     const folder = normalizeFolder(this.data.settings.backupFolder);
     await ensureFolder(this.plugin.app.vault, folder);
     const date = new Date();
-    const stamp = `${dateKey(date)}-${String(date.getHours()).padStart(2, "0")}${String(date.getMinutes()).padStart(2, "0")}`;
+    // 毫秒 + 随机后缀：并发/同分钟内多次备份不写同名文件，避免互相覆盖。
+    const stamp = `${dateKey(date)}-${String(date.getHours()).padStart(2, "0")}${String(date.getMinutes()).padStart(2, "0")}${String(date.getSeconds()).padStart(2, "0")}-${String(date.getMilliseconds()).padStart(3, "0")}-${Math.random().toString(36).slice(2, 6)}`;
     const path = folder ? `${folder}/data-${stamp}.json` : `data-${stamp}.json`;
     await this.plugin.app.vault.adapter.write(path, JSON.stringify(this.data, null, 2));
     this.lastBackupAt = now;
@@ -306,6 +349,8 @@ export class Store {
    * 文件名非法（含路径穿越）或备份损坏时抛错。
    */
   async restoreDataBackup(name: string): Promise<RestoreBackupResult> {
+    // 恢复前先让在途保存/备份落地，否则旧数据可能覆盖刚恢复的备份。
+    await this.waitForIdleIO();
     if (!/^data-[A-Za-z0-9._-]+\.json$/.test(name) || name.includes("..")) {
       throw new Error(t("备份文件名不合法"));
     }
@@ -429,6 +474,12 @@ export class Store {
     return true;
   }
 
+  /** 移除一次写请求的调用流水（鉴权/参数/路由失败时不留审计行）。按引用匹配。 */
+  dropToolCall(call: ToolCallRecord): void {
+    const index = this.data.toolCalls.indexOf(call);
+    if (index >= 0) this.data.toolCalls.splice(index, 1);
+  }
+
   /** 驳回后移除从未落盘的调用记录，避免留下「目标已删除」的幽灵审计行。 */
   dropPendingToolCall(pendingId: string): boolean {
     const index = this.data.toolCalls.findIndex(
@@ -472,6 +523,40 @@ export class Store {
   /** 删除/重命名事件即时标记失效待审项。 */
   markPendingWritesStale(paths: string[]): number {
     const marked = markStaleByPaths(this.data.pendingWrites, paths);
+    if (marked > 0) this.scheduleSave(2000);
+    return marked;
+  }
+
+  /** 修改事件：挂起后目标内容被改（或新建目标被抢先创建）→ 标记失效，
+   *  与 approvePendingWrite 的哈希复验同一口径，避免批准旧预览落盘新内容。 */
+  async markPendingWritesChanged(paths: string[]): Promise<number> {
+    const targets = new Set(paths);
+    let marked = 0;
+    for (const record of this.data.pendingWrites ?? []) {
+      if (record.stale || !targets.has(record.path)) continue;
+      const file = this.plugin.app.vault.getAbstractFileByPath(record.path);
+      if (record.expectAbsent) {
+        if (file instanceof TFile) {
+          record.stale = true;
+          marked += 1;
+        }
+        continue;
+      }
+      // 条目式写入没有全文快照，内容变动不据此失效（仍由删除/重命名事件处理）。
+      if (record.before === "") continue;
+      if (!(file instanceof TFile)) {
+        record.stale = true;
+        marked += 1;
+        continue;
+      }
+      if (record.beforeHash) {
+        const current = await this.plugin.app.vault.read(file);
+        if (contentHash(current) !== record.beforeHash) {
+          record.stale = true;
+          marked += 1;
+        }
+      }
+    }
     if (marked > 0) this.scheduleSave(2000);
     return marked;
   }

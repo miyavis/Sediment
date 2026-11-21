@@ -4,8 +4,7 @@ import { Notice, TFile } from "obsidian";
 import { DiffModal } from "../../../ui/diff-modal";
 import { DraftPreviewModal } from "../../../ui/draft-preview-modal";
 import { confirmAction } from "../../../ui/confirm-modal";
-import { listBackups, readBackup, restoreBackup } from "../../../features/audit";
-import { scanKnowledgeState } from "../../../features/knowledge-state";
+import { listBackupsMap, readBackup, restoreBackup } from "../../../features/audit";
 import { summarizeAgentUsage } from "../../../data/agent-usage";
 import { localStamp } from "../../../utils/dates";
 import { frontmatterOf, normalizeFolder } from "../../../utils/vault";
@@ -116,12 +115,7 @@ export function renderUnregisteredSources(view: DashboardView, root: HTMLElement
   // 空目录会被扫描器当成「整个库」，清空设置时会把全库笔记列成未登记，故直接不渲染。
   const knowledgeFolder = normalizeFolder(plugin.store.settings.knowledgeFolder);
   if (!knowledgeFolder) return;
-  const files = plugin.app.vault.getMarkdownFiles().map((file) => ({
-    path: file.path,
-    mtime: file.stat.mtime,
-    frontmatter: frontmatterOf(plugin.app.metadataCache.getFileCache(file)),
-  }));
-  const state = scanKnowledgeState(files, knowledgeFolder);
+  const state = view.agentScan();
   if (state.unregistered === 0) return;
   const card = root.createDiv({ cls: "sd-card" });
   card.createDiv({ cls: "sd-card-title", text: tf("来源未登记 · {n}", { n: state.unregistered }) });
@@ -164,6 +158,10 @@ export function renderAgentChanges(view: DashboardView, root: HTMLElement): void
     return;
   }
   const list = card.createDiv({ cls: "sd-feed-list" });
+  const backupsByPath = listBackupsMap(
+    view.plugin,
+    rows.filter((row) => !row.missing).map((row) => row.call.path)
+  );
   for (const { call, missing } of rows) {
     const row = list.createDiv({ cls: "sd-feed-row sd-feed-row-audit" });
     row.createSpan({ text: `${localStamp(call.time).slice(5)} · ${call.tool.replace(/^(GET|POST) /, "")}`, attr: { title: call.path } });
@@ -181,7 +179,7 @@ export function renderAgentChanges(view: DashboardView, root: HTMLElement): void
     }
     const file = view.plugin.app.vault.getAbstractFileByPath(call.path);
     if (!(file instanceof TFile)) continue;
-    const backups = listBackups(view.plugin, call.path);
+    const backups = backupsByPath.get(call.path) ?? [];
     const type = call.tool.includes("patch")
       ? t("局部修改")
       : call.tool.includes("frontmatter")
@@ -229,6 +227,13 @@ export function renderAgentChanges(view: DashboardView, root: HTMLElement): void
             view.render();
           });
         });
+      };
+    } else {
+      // 新建类写入没有旧快照可对比，但仍需结案入口，否则徽章只增不减。
+      actions.createEl("button", { text: t("标记已审查") }).onclick = () => {
+        view.plugin.store.reviewChange(`${call.time}|${call.path}`, "kept");
+        new Notice(t("已标记为已审查"));
+        view.render();
       };
     }
   }
@@ -308,12 +313,7 @@ export function renderAgentStatus(view: DashboardView, root: HTMLElement): void 
 
 /** 扫描 vault 中 sediment_status=draft 的笔记（徽章计数与草稿卡共用同一口径）。 */
 export function listDraftFiles(view: DashboardView): TFile[] {
-  const drafts: TFile[] = [];
-  for (const file of view.plugin.app.vault.getMarkdownFiles()) {
-    const cache = view.plugin.app.metadataCache.getFileCache(file);
-    if (cache?.frontmatter?.sediment_status === "draft") drafts.push(file);
-  }
-  return drafts;
+  return view.agentScan().drafts;
 }
 
 export function renderDrafts(view: DashboardView, root: HTMLElement): void {
@@ -331,7 +331,7 @@ export function renderDrafts(view: DashboardView, root: HTMLElement): void {
     text: t("当前工作模式：") + (modeLabels[view.plugin.store.settings.agentWorkMode] ?? "confirm") +
       t("。草稿需手动审核；「确认后写入」档下 Agent 的写操作会挂起在「待审写入」列表，采纳后才落盘；「自动执行」档不挂起。"),
   });
-  const drafts = listDraftFiles(view);
+  const drafts = view.agentScan().drafts;
   if (drafts.length === 0) {
     card.createDiv({ cls: "sd-empty", text: t("没有待审核的 AI 草稿。") });
     return;
@@ -353,13 +353,16 @@ export function renderDrafts(view: DashboardView, root: HTMLElement): void {
       });
     };
     actions.createEl("button", { text: t("采纳并归档") }).onclick = () => {
-      // 人在看板上点「采纳」本身就是确认，绕过 confirm 挂起避免二次审批。
-      void view.plugin.agentApi
-        .updateFrontmatter(file.path, { sediment_status: "accepted" }, undefined, true)
-        .then(() => {
-          new Notice(t("已采纳"));
-          view.render();
-        });
+      // 与「驳回删除」「完成待办」一致：状态变更先二次确认，再绕过 confirm 挂起直接落盘。
+      void confirmAction(view.plugin.app, t("确认采纳该草稿并归档？")).then((ok) => {
+        if (!ok) return;
+        void view.plugin.agentApi
+          .updateFrontmatter(file.path, { sediment_status: "accepted" }, undefined, true)
+          .then(() => {
+            new Notice(t("已采纳"));
+            view.render();
+          });
+      });
     };
     actions.createEl("button", { text: t("合并到关联笔记") }).onclick = () => void mergeDraft(view, file);
     actions.createEl("button", { text: t("驳回删除") }).onclick = () => {

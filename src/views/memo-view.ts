@@ -92,10 +92,11 @@ export class MemoView extends ItemView {
       const secondary = root.createDiv({ cls: "sd-memo-subtabs" });
       const options: Array<[MemoTab, string]> = [
         ["review", t("回顾")],
-        ["walk", t("漫步")],
+        ...(this.plugin.store.settings.showMemoWander ? [["walk", t("漫步")] as [MemoTab, string]] : []),
         ["tags", t("标签")],
         ["knowledge", t("沉淀")],
       ];
+      if (!this.plugin.store.settings.showMemoWander && this.tab === "walk") this.tab = "all";
       for (const [key, label] of options) {
         const button = secondary.createEl("button", {
           cls: `sd-memo-tab ${key === this.tab ? "is-active" : ""}`,
@@ -428,7 +429,7 @@ export class MemoView extends ItemView {
       root.createDiv({ cls: "sd-empty", text: t("还没有速记可以漫步。") });
       return;
     }
-    let current = memos.find((memo) => memo.id === this.walkId) ?? memos[0];
+    const current = memos.find((memo) => memo.id === this.walkId) ?? memos[0];
     const card = root.createDiv({ cls: "sd-card sd-walk" });
     card.createDiv({ cls: "sd-card-sub", text: `${t("漫步")} · ${current.date} ${current.time}` });
     card.appendChild(this.memoCard(current));

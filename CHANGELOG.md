@@ -2,6 +2,22 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [Unreleased]
+
+### 修复
+- 确认（confirm）档：人工审批的预览与落盘内容绑定（挂起时记录 `before` 的 SHA-256，采纳前复验；目标在挂起后被修改或抢先创建则拒绝采纳），并把「修改」事件纳入失效判定。
+- 本地 API：每次请求使用独立的写上下文，杜绝并发请求串 agent / 待审 id；同一待审项并发采纳只落盘一次。
+- 数据存储：保存串行化 + 失败退避重试，备份文件名加秒/毫秒/随机后缀避免并发覆盖，恢复前等待在途 IO 结束；插件卸载时先关 HTTP 再冲刷保存。
+- 本地 API：GET 与失败响应（401/400/413/404/500）不再写审计流水；HTTP 服务配置变更串行化，关闭时主动断开 keep-alive 连接。
+- Agent 变更审查：无旧快照的新建类写入也提供「标记已审查」，徽章不再只增不减。
+- 权限门禁：`claimAgentTask` / `completeAgentTask` 接入 confirm 挂起；`addKnowledge` 最终路径统一过 `safeAgentPath`；待审重放改为运行时校验参数，损坏记录返回 400 而非 500。
+
+### 改进
+- 性能：今日页待办一次全库扫描分组，工坊徽章/草稿/来源卡共用扫描缓存，审核列表快照批量列举，热力图 tooltip 缓存；自动刷新不再打断输入。
+- 实验性功能：月相日历、速记漫步、月报海报、多画风切换收进设置分区，默认关闭。
+- 统计口径：明确贡献分封顶、粘贴词数、活跃时间估算与地层 AI 归属；日均按有记录天数计算。
+- 工程：open full TypeScript strict、测试独立 typecheck、ESLint/stylelint 与发布校验进入 CI；移除源码文本 grep 式伪测试。
+
 ## [1.0.11] - 2026-11-21
 
 ### 修复
@@ -97,7 +113,7 @@
 ## [1.0.1] - 2026-11-20
 
 ### 改进
-- 发布流水线升级 Node 24 运行时：checkout v7、setup-node v7、action-gh-release v3（v3 仅运行时迁移，输入不变），消除 GitHub Actions Node 20 弃用警告
+- 发布流水线升级 Node 22 运行时：checkout v7、setup-node v7、action-gh-release v3（v3 仅运行时迁移，输入不变），消除 GitHub Actions Node 20 弃用警告
 - CI 构建 Node 18（已 EOL）升级 22 LTS
 
 ## [1.0.0] - 2026-11-21

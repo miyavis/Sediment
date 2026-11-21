@@ -1,5 +1,5 @@
 /** 知识地层页签的渲染逻辑。所有共享状态/方法通过 view 访问。 */
-import { MarkdownRenderer, Notice, Platform } from "obsidian";
+import { MarkdownRenderer, Notice } from "obsidian";
 import { buildWeeklyReview } from "../../../features/review";
 import { scanKnowledgeState } from "../../../features/knowledge-state";
 import { addDays, dateKey, lastNDays, parseKey } from "../../../utils/dates";
@@ -15,7 +15,7 @@ import {
 import { METRICS } from "../../../types";
 import { t, tf } from "../../../i18n";
 import { aggregateStrata, recentStrataRange, type StrataMonth } from "../../../utils/strata";
-import { frontmatterOf, normalizeFolder } from "../../../utils/vault";
+import { normalizeFolder } from "../../../utils/vault";
 import { appendSvg } from "../../../utils/dom";
 import { RANGE_OPTIONS, WEEKDAYS, startOfWeekFor } from "../constants";
 import type { DashboardView } from "../../dashboard-view";
@@ -32,8 +32,7 @@ export function renderInsights(view: DashboardView, root: HTMLElement): void {
     ["review", t("本周复盘")],
   ];
   for (const [key, label] of sections) {
-    // 移动端收窄子导航：投入分布/年度画像为桌面向重图表，窄屏不展示入口。
-    if (Platform.isMobile && (key === "folders" || key === "yearly")) continue;
+    // 所有入口都保留：窄屏由 CSS 横向滚动承载，不静默阉割功能。
     const button = subnav.createEl("button", {
       cls: key === view.insightsSection ? "is-active" : "",
       text: label,
@@ -109,12 +108,7 @@ export function renderKnowledgeState(view: DashboardView, root: HTMLElement): vo
   // 空目录会被扫描器当成「整个库」，清空设置时各项数字会虚高，故直接不渲染。
   const knowledgeFolder = normalizeFolder(plugin.store.settings.knowledgeFolder);
   if (!knowledgeFolder) return;
-  const files = plugin.app.vault.getMarkdownFiles().map((file) => ({
-    path: file.path,
-    mtime: file.stat.mtime,
-    frontmatter: frontmatterOf(plugin.app.metadataCache.getFileCache(file)),
-  }));
-  const state = scanKnowledgeState(files, knowledgeFolder);
+  const state = scanKnowledgeState(view.agentScan().files, knowledgeFolder);
   const card = root.createDiv({ cls: "sd-card sd-knowledge-state" });
   const head = card.createDiv({ cls: "sd-card-head" });
   head.createDiv({ cls: "sd-card-title", text: t("知识库现状") });
@@ -173,7 +167,8 @@ export function renderOverview(view: DashboardView, root: HTMLElement): void {
   const left = grid.createDiv({ cls: "sd-overview-left" });
   left.createDiv({ cls: "sd-metric-label", text: t("累计贡献分") });
   left.createDiv({ cls: "sd-metric-value", text: String(total) });
-  left.createDiv({ cls: "sd-metric-hint", text: tf("{active} 天有记录 · 日均 {avg} 分", { active, avg: keys.length ? Math.round(total / keys.length) : 0 }) });
+  // 与周复盘「未记录日期不视作零」同口径：日均只按有记录的天数计算。
+  left.createDiv({ cls: "sd-metric-hint", text: tf("{active} 天有记录 · 日均 {avg} 分（不含空天）", { active, avg: active ? Math.round(total / active) : 0 }) });
   const overviewValues = keys.map((key) => view.value(key));
   const overviewMean = mean(overviewValues);
   appendSvg(
@@ -195,7 +190,7 @@ export function renderOverview(view: DashboardView, root: HTMLElement): void {
   mini(t("活跃天数"), `${active} / ${keys.length}`, t("有记录的日子"), ringSvg(active, keys.length));
   mini(t("当前连续"), tf("{n} 天", { n: view.currentStreak() }), tf("最长 {n} 天 · 按全部历史", { n: view.longestStreak() }));
   const investedMinutes = keys.reduce((sum, key) => sum + (view.plugin.store.getDay(key).activeMinutes + view.plugin.store.getDay(key).focusMinutes), 0);
-  mini(t("投入时间"), tf("{n} 小时", { n: Math.round(investedMinutes / 60 * 10) / 10 }), t("交互 / 专注"));
+  mini(t("投入时间"), tf("{n} 小时", { n: Math.round(investedMinutes / 60 * 10) / 10 }), t("活跃估算（5 分钟桶）+ 番茄专注"));
   mini(t("最高的一天"), view.value(best) > 0 ? String(view.value(best)) : "—", best);
 }
 
@@ -238,7 +233,7 @@ export function renderStrata(view: DashboardView, root: HTMLElement): void {
   const card = root.createDiv({ cls: "sd-card sd-strata", attr: { id: "sd-strata" } });
   const head = card.createDiv({ cls: "sd-card-head" });
   head.createDiv({ cls: "sd-card-title", text: t("知识地层剖面") });
-  head.createDiv({ cls: "sd-card-sub", text: tf("近 {n} 个月 · 人 / AI / 任务 / 专注按月沉积", { n: months.length }) });
+  head.createDiv({ cls: "sd-card-sub", text: tf("近 {n} 个月 · 人 / AI / 任务 / 专注按月沉积。「AI 写」仅统计经本地 API/MCP 的写入；绕过 API 的直写计入人写。", { n: months.length }) });
 
   const totals = months.reduce(
     (sum, month) => ({
@@ -297,7 +292,7 @@ export function renderStrata(view: DashboardView, root: HTMLElement): void {
   const hits = months
     .map(
       (month, index) =>
-        `<rect class="sd-strata-hit" data-index="${index}" x="${(labelW + index * colW).toFixed(1)}" y="${topPad}" width="${colW.toFixed(1)}" height="${bandsH}" tabindex="0" role="img" aria-label="${escapeAttr(
+        `<rect class="sd-strata-hit" data-index="${index}" x="${(labelW + index * colW).toFixed(1)}" y="${topPad}" width="${colW.toFixed(1)}" height="${bandsH}" tabindex="0" role="button" aria-label="${escapeAttr(
           `${month.month} · ${tf("人写 {human} 字 · AI 写 {agent} 字", { human: month.human, agent: month.agent })} · ${tf("完成任务 {tasks} 个 · 专注 {focus} 分钟", { tasks: month.tasks, focus: month.focus })}`
         )}"/>`
     )
@@ -382,7 +377,7 @@ export function renderHeatmap(view: DashboardView, root: HTMLElement): void {
   const cells: Array<{ key: string; value: number; date: Date; el: HTMLElement }> = [];
 
   for (let week = 0; week < 53; week += 1) {
-    const column = columns.createDiv({ cls: "sd-col" });
+    const column = columns.createDiv({ cls: "sd-col", attr: { role: "row" } });
     for (let day = 0; day < 7; day += 1) {
       const date = addDays(start, week * 7 + day);
       const key = dateKey(date);
@@ -677,8 +672,9 @@ export function renderYearly(view: DashboardView, root: HTMLElement): void {
   const yearlyOptions: Array<["wheel" | "fingerprint" | "moon", string]> = [
     ["wheel", t("年轮")],
     ["fingerprint", t("指纹")],
-    ["moon", t("月相")],
+    ...(view.plugin.store.settings.showMoonPhase ? [["moon", t("月相")] as ["moon", string]] : []),
   ];
+  if (!view.plugin.store.settings.showMoonPhase && view.yearlyTab === "moon") view.yearlyTab = "wheel";
   for (const [key, title] of yearlyOptions) {
     const button = yearlyTabs?.createEl("button", {
       cls: key === view.yearlyTab ? "is-active" : "",

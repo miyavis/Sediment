@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 const pkgPath = "package.json";
 const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
 const version = process.argv[2] || pkg.version;
-if (!/^\d+\.\d+\.\d+/.test(version)) {
+if (!/^\d+\.\d+\.\d+$/.test(version)) {
   console.error(`非法版本号：${version}`);
   process.exit(1);
 }

@@ -95,7 +95,11 @@ export class SedimentPlugin extends Plugin {
       this.scheduleRefresh(path);
     };
     this.registerEvent(vault.on("create", (file) => onVaultChange(file.path)));
-    this.registerEvent(vault.on("modify", (file) => onVaultChange(file.path)));
+    this.registerEvent(vault.on("modify", (file) => {
+      // 挂起期间目标内容被改 → 标记失效，与采纳前的哈希复验同口径。
+      void this.store.markPendingWritesChanged([file.path]);
+      onVaultChange(file.path);
+    }));
     this.registerEvent(
       vault.on("delete", (file) => {
         this.store.markPendingWritesStale([file.path]);
@@ -253,6 +257,10 @@ export class SedimentPlugin extends Plugin {
       id: "cycle-art-style",
       name: t("切换看板画风"),
       callback: () => {
+        if (!this.store.settings.multiArtStyle) {
+          new Notice(t("多画风为实验性功能，请在设置中开启"));
+          return;
+        }
         const styles = ["lake", "ink", "city"] as const;
         const current = this.store.settings.artStyle;
         this.store.settings.artStyle = styles[(styles.indexOf(current) + 1) % styles.length];
@@ -265,15 +273,16 @@ export class SedimentPlugin extends Plugin {
   private serverRestartTimer: number | null = null;
   private refreshTimer: number | null = null;
 
-  onunload(): void {
+  async onunload(): Promise<void> {
     if (this.serverRestartTimer !== null) window.clearTimeout(this.serverRestartTimer);
     if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
     this.tracker?.stop();
     this.pomodoro?.shutdown();
-    void this.agentServer?.stop();
     this.fileBridge?.stop();
     delete (window as Window & { Sediment?: unknown }).Sediment;
-    void this.store.save();
+    // 按顺序收尾：先关 HTTP（释放端口），再冲刷在途保存。
+    await this.agentServer?.stop();
+    await this.store.flush();
   }
 
   async saveSettings(): Promise<void> {
@@ -303,7 +312,10 @@ export class SedimentPlugin extends Plugin {
 
   refreshViews(soft = false): void {
     for (const leaf of this.app.workspace.getLeavesOfType(DASHBOARD_VIEW_TYPE)) {
-      (leaf.view as DashboardView).render();
+      const view = leaf.view as DashboardView;
+      // 自动刷新（写笔记触发）不打断正在输入的用户；手动刷新仍走完整 render。
+      if (soft && view.isEditing()) continue;
+      view.render();
     }
     for (const leaf of this.app.workspace.getLeavesOfType(MEMO_VIEW_TYPE)) {
       const view = leaf.view as MemoView;
@@ -339,7 +351,7 @@ export class SedimentPlugin extends Plugin {
     this.refreshTimer = window.setTimeout(() => {
       this.refreshTimer = null;
       this.refreshViews(true);
-    }, 400);
+    }, 1000);
   }
 
   private async activateView(type: string): Promise<void> {

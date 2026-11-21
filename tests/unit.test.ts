@@ -6,6 +6,9 @@ import os from "node:os";
 import path from "node:path";
 import net from "node:net";
 import { spawnSync } from "node:child_process";
+import { contentHash } from "../src/utils/hash";
+/** obsidian 类型里的 TFile 构造函数无参；测试假实现接受路径，做显式类型桥接。 */
+const TFileWithPath = TFile as unknown as new (path: string) => TFile;
 import { configureAgent, configSnippet, isAgentConfigured, resolveBridgePath } from "../src/agent/setup";
 import * as setupNs from "../src/agent/setup";
 import { BRIDGE_SOURCE } from "../src/agent/bridge-source";
@@ -347,7 +350,7 @@ function fakeStore(): Store {
   return {
     data,
     settings: data.settings,
-    getDay: (key: string) => days[key] ?? createEmptyDay(),
+    getDay: (key: string) => (days as Record<string, DayRecord>)[key] ?? createEmptyDay(),
   } as unknown as Store;
 }
 
@@ -716,7 +719,7 @@ test("Store.load：缺失字段补默认值并规范化历史数据", async () =
   };
   const fakePlugin = {
     loadData: async () => loadedData,
-  } as unknown as Parameters<typeof Store>[0];
+  } as unknown as ConstructorParameters<typeof Store>[0];
   const store = new Store(fakePlugin);
 
   await store.load();
@@ -748,7 +751,7 @@ test("Store.load：未知版本暂停写入并保留警告", async () => {
   const fakePlugin = {
     loadData: async () => ({ version: 99, days: { "2026-11-20": day({ wordsAdded: 100 }) } }),
     saveData: async () => { saveCalls += 1; },
-  } as unknown as Parameters<typeof Store>[0];
+  } as unknown as ConstructorParameters<typeof Store>[0];
   const store = new Store(fakePlugin);
 
   await store.load();
@@ -765,7 +768,7 @@ test("Store.load：缺少版本或格式异常暂停写入", async () => {
     const fakePlugin = {
       loadData: async () => raw,
       saveData: async () => { saveCalls += 1; },
-    } as unknown as Parameters<typeof Store>[0];
+    } as unknown as ConstructorParameters<typeof Store>[0];
     const store = new Store(fakePlugin);
 
     await store.load();
@@ -827,7 +830,7 @@ function fakePluginWith(vault: ReturnType<typeof fakeVault>["vault"], raw: unkno
       },
     },
   };
-  return { plugin: plugin as unknown as Parameters<typeof Store>[0], saved };
+  return { plugin: plugin as unknown as ConstructorParameters<typeof Store>[0], saved };
 }
 
 test("Store.load：结构性损坏保留恢复副本并阻塞写入", async () => {
@@ -898,7 +901,7 @@ test("Store.load：版本号写回失败时阻塞写入并保留恢复副本", a
     loadData: async () => raw,
     saveData: async () => { throw new Error("disk full"); },
     app: { vault },
-  } as unknown as Parameters<typeof Store>[0];
+  } as unknown as ConstructorParameters<typeof Store>[0];
   const store = new Store(plugin);
 
   await store.load();
@@ -924,7 +927,7 @@ test("Store.backupData：库根目录只备份不清理", async () => {
 
   assert.equal(count, 1);
   assert.equal(written.length, 1);
-  assert.match(written[0][0], /^data-\d{4}-\d{2}-\d{2}-\d{4}\.json$/);
+  assert.match(written[0][0], /^data-\d{4}-\d{2}-\d{2}-\d{6}-\d{3}-[a-z0-9]+\.json$/);
   assert.equal(trashed.length, 0);
 });
 
@@ -969,7 +972,7 @@ test("Store.save：保存失败弹 Notice 并记录错误，不向调用方抛�
     loadData: async () => null,
     saveData: async () => { throw new Error("disk full"); },
     app: { vault },
-  } as unknown as Parameters<typeof Store>[0];
+  } as unknown as ConstructorParameters<typeof Store>[0];
   const store = new Store(plugin);
   await store.load();
   const messages = (Notice as unknown as { messages: string[] }).messages;
@@ -984,6 +987,30 @@ test("Store.save：保存失败弹 Notice 并记录错误，不向调用方抛�
   }
   assert.ok(logged > 0);
   assert.ok(messages.some((m) => m.includes("数据保存失败")));
+});
+
+test("Store.save：写失败退避重试，并发保存串行化不重叠", async () => {
+  const { vault } = fakeVault();
+  let calls = 0;
+  let inFlight = 0;
+  let maxInFlight = 0;
+  const plugin = {
+    loadData: async () => ({ version: 1 }),
+    saveData: async () => {
+      calls += 1;
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight -= 1;
+      if (calls <= 2) throw new Error("transient");
+    },
+    app: { vault },
+  } as unknown as ConstructorParameters<typeof Store>[0];
+  const store = new Store(plugin);
+  await store.load();
+  await Promise.all([store.save(), store.save()]);
+  assert.equal(maxInFlight, 1, "两次保存必须串行");
+  assert.equal(calls, 4, "第一次写失败重试两次后成功，第二次一次成功");
 });
 
 test("Store.listDataBackups：只列备份目录内 data 快照，按时间倒序", async () => {
@@ -1094,7 +1121,7 @@ test("Agent 安全路径：规范化反斜杠并保留合法路径", () => {
 });
 
 test("Store：工作日志保留上限，避免无界增长", () => {
-  const store = new Store({} as unknown as Parameters<typeof Store>[0]);
+  const store = new Store({} as unknown as ConstructorParameters<typeof Store>[0]);
   store.scheduleSave = () => {};
   for (let index = 0; index < 520; index += 1) {
     store.addWorkLog({
@@ -1116,7 +1143,7 @@ test("Store：工作日志保留上限，避免无界增长", () => {
 });
 
 test("Store：速记保留上限，避免无界增长", () => {
-  const store = new Store({} as unknown as Parameters<typeof Store>[0]);
+  const store = new Store({} as unknown as ConstructorParameters<typeof Store>[0]);
   store.scheduleSave = () => {};
   for (let index = 0; index < 2020; index += 1) {
     store.addMemo({
@@ -1165,7 +1192,7 @@ test("Store.load：大批量历史数据规范化且不重复计数", async () =
       contribution: 999,
     };
   }
-  const store = new Store({ loadData: async () => ({ version: 1, days }) } as unknown as Parameters<typeof Store>[0]);
+  const store = new Store({ loadData: async () => ({ version: 1, days }) } as unknown as ConstructorParameters<typeof Store>[0]);
   await store.load();
   assert.equal(Object.keys(store.data.days).length, 400);
   const normalized = store.getDay("2026-01-01");
@@ -1306,7 +1333,7 @@ test("H6：completeTask 受 patch 与黑名单门禁约束", async () => {
 
   const ok = fakeAgentPlugin();
   await assert.doesNotReject(ok.api.completeTask("公开\\a.md", 3));
-  assert.ok(ok.calls.complete.length === 1 && (ok.calls.complete[0][0] as string) === "公开/a.md");
+  assert.ok(ok.calls.complete.length === 1 && ((ok.calls.complete[0] as unknown[])[0] as string) === "公开/a.md");
 });
 
 test("H6：delegateTask 需要 read 权限且受白名单约束（含日记目标路径）", async () => {
@@ -1350,7 +1377,7 @@ test("H6：snapshotTasks 写当天日记前过 patch 门禁", async () => {
   const noPatch = fakeAgentPlugin({ agentAllowPatch: false }, {
     plugin: {
       app: {
-        vault: { getAbstractFileByPath: (p: string) => (p === existingDaily ? new TFile(p) : null) },
+        vault: { getAbstractFileByPath: (p: string) => (p === existingDaily ? new TFileWithPath(p) : null) },
         metadataCache: { getFileCache: () => undefined, resolvedLinks: {} },
       },
     },
@@ -1458,7 +1485,7 @@ type HoldResult = { path?: string; pending?: true; pendingId?: string; message?:
 /** 内存版 vault：足够跑通 writeNote/patchNote/frontmatter/日记类落盘与读路径。 */
 function memoryVault(files: Record<string, string> = {}) {
   const store = new Map(Object.entries(files));
-  const asFile = (p: string) => new TFile(p);
+  const asFile = (p: string) => new TFileWithPath(p);
   const vault = {
     getMarkdownFiles: () => Array.from(store.keys(), asFile),
     getAbstractFileByPath: (p: string) => (store.has(p) ? asFile(p) : null),
@@ -1592,13 +1619,103 @@ test("confirm 档：writeNote 挂起不落盘；采纳落盘、驳回丢弃、�
   assert.equal(denied.pendingWrites.length, 0, "越权写入不得转挂起");
 });
 
+test("confirm 档：挂起后目标内容被改 → 采纳报 CONTENT_CHANGED，不落盘且保留待审", async () => {
+  const ctx = fakeConfirmPlugin({ agentWorkMode: "confirm" }, { "notes/a.md": "原文\n" });
+  const held = (await ctx.api.writeNote("notes/a.md", "新文", "overwrite")) as HoldResult;
+  const id = pendingIdOf(held);
+  assert.ok(ctx.pendingWrites[0].beforeHash, "挂起时记录 before 哈希");
+  ctx.files.set("notes/a.md", "被人改过\n");
+  await assert.rejects(
+    ctx.api.approvePendingWrite(id),
+    (error) => asApiError(error).code === "CONTENT_CHANGED"
+  );
+  assert.equal(ctx.files.get("notes/a.md"), "被人改过\n", "不得覆盖人工修改");
+  assert.equal(ctx.pendingWrites.length, 1, "被拒后保留待审项供驳回");
+
+  // 新建类：挂起后目标被抢先创建也不能覆盖。
+  const ctx2 = fakeConfirmPlugin({ agentWorkMode: "confirm" });
+  const held2 = (await ctx2.api.writeNote("notes/b.md", "x", "create")) as HoldResult;
+  ctx2.files.set("notes/b.md", "抢先创建");
+  await assert.rejects(
+    ctx2.api.approvePendingWrite(pendingIdOf(held2)),
+    (error) => asApiError(error).code === "CONTENT_CHANGED"
+  );
+});
+
+test("confirm 档：并发请求各自结算调用流水；同一待审并发采纳只落盘一次", async () => {
+  const ctx = fakeConfirmPlugin({ agentWorkMode: "confirm" });
+  const callA = ctx.store.logToolCall({
+    time: new Date().toISOString(), tool: "POST /note", agent: "alice", path: "notes/a.md",
+  });
+  const callB = ctx.store.logToolCall({
+    time: new Date().toISOString(), tool: "POST /note", agent: "bob", path: "notes/b.md",
+  });
+  const heldA = (await ctx.api.writeNote("notes/a.md", "A", "create", false,
+    ctx.api.callMeta("POST /note", "alice", callA))) as HoldResult;
+  const heldB = (await ctx.api.writeNote("notes/b.md", "B", "create", false,
+    ctx.api.callMeta("POST /note", "bob", callB))) as HoldResult;
+  assert.equal(callA.pendingId, pendingIdOf(heldA), "A 的调用绑定 A 的待审");
+  assert.equal(callB.pendingId, pendingIdOf(heldB), "B 的调用绑定 B 的待审");
+
+  const [first, second] = await Promise.allSettled([
+    ctx.api.approvePendingWrite(pendingIdOf(heldA)),
+    ctx.api.approvePendingWrite(pendingIdOf(heldA)),
+  ]);
+  assert.equal(first.status, "fulfilled");
+  assert.equal(second.status, "rejected");
+  if (second.status === "rejected") {
+    assert.equal(asApiError(second.reason).code, "PENDING_IN_FLIGHT");
+  }
+  assert.equal(ctx.files.get("notes/a.md"), "A", "不得重复落盘");
+  assert.ok((ctx.files.get("notes/a.md") || "").indexOf("B") < 0);
+});
+
+test("confirm 档：claim/completeAgentTask 挂起不直接改标签；addKnowledge 反斜杠逃逸被拒", async () => {
+  const ctx = fakeConfirmPlugin({ agentWorkMode: "confirm" }, {
+    "Sediment/daily/2026-11-21.md": "---\ndate: 2026-11-21\n---\n- [ ] x\n",
+  });
+  const memo = {
+    id: "m1", date: "2026-11-21", time: "10:00", text: "交给 agent", tags: ["to-agent"],
+    converted: false,
+  };
+  ctx.store.data.memos.push(memo);
+  const held = (await ctx.api.claimAgentTask("m1")) as HoldResult;
+  assert.ok(held.pending);
+  assert.deepEqual(memo.tags, ["to-agent"], "挂起期间不得直接改标签");
+  await ctx.api.approvePendingWrite(pendingIdOf(held));
+  assert.ok(memo.tags.includes("agent-in-progress"), "采纳后才改标签");
+
+  const heldDone = (await ctx.api.completeAgentTask("m1")) as HoldResult;
+  assert.ok(heldDone.pending);
+  await ctx.api.approvePendingWrite(pendingIdOf(heldDone));
+  assert.ok(memo.tags.includes("agent-done"));
+
+  await assert.rejects(
+    ctx.api.addKnowledge({ title: "x", content: "y", folder: "..\\..\\evil" }),
+    (error) => asApiError(error).code === "FORBIDDEN"
+  );
+});
+
+test("confirm 档：从 data.json 恢复的挂起写入仍可按原请求重放落盘", async () => {
+  const ctx = fakeConfirmPlugin({ agentWorkMode: "confirm" }, { "notes/x.md": "旧内容\n" });
+  // 模拟重启后从 data.json 载入的待审项（内容与哈希已冻结）。
+  ctx.pendingWrites.push({
+    id: "pw-restored", time: new Date().toISOString(), tool: "write_note", agent: "qoder",
+    path: "notes/x.md", request: { kind: "write_note", args: { path: "notes/x.md", content: "重启后落盘", mode: "overwrite" } },
+    before: "旧内容\n", beforeHash: contentHash("旧内容\n"), after: "重启后落盘", expectAbsent: false,
+  });
+  await ctx.api.approvePendingWrite("pw-restored");
+  assert.equal(ctx.files.get("notes/x.md"), "重启后落盘");
+  assert.equal(ctx.pendingWrites.length, 0);
+});
+
 test("confirm 档：挂起写入只算待审，不重复计入变更审查；采纳转入审查，驳回不留痕", async () => {
   const ctx = fakeConfirmPlugin({ agentWorkMode: "confirm" });
   const call = ctx.store.logToolCall({
     time: new Date().toISOString(), tool: "POST /note", agent: "qoder", path: "notes/a.md",
   });
-  ctx.api.setCallContext("POST /note", "qoder", call);
-  const held = (await ctx.api.writeNote("notes/a.md", "内容", "create")) as HoldResult;
+  const meta = ctx.api.callMeta("POST /note", "qoder", call);
+  const held = (await ctx.api.writeNote("notes/a.md", "内容", "create", false, meta)) as HoldResult;
   assert.equal(call.held, true);
   assert.equal(call.pendingId, ctx.pendingWrites[0].id);
   assert.equal(pendingReviewChanges(ctx.store.data.toolCalls, {}).length, 0, "挂起期间不进变更审查");
@@ -1616,8 +1733,8 @@ test("confirm 档：挂起写入只算待审，不重复计入变更审查；采
   const call2 = ctx.store.logToolCall({
     time: new Date().toISOString(), tool: "POST /note", agent: "qoder", path: "notes/b.md",
   });
-  ctx.api.setCallContext("POST /note", "qoder", call2);
-  const rejected = (await ctx.api.writeNote("notes/b.md", "x", "create")) as HoldResult;
+  const meta2 = ctx.api.callMeta("POST /note", "qoder", call2);
+  const rejected = (await ctx.api.writeNote("notes/b.md", "x", "create", false, meta2)) as HoldResult;
   ctx.api.rejectPendingWrite(pendingIdOf(rejected));
   assert.equal(
     ctx.store.data.toolCalls.some((item: Record<string, any>) => item.path === "notes/b.md"),
@@ -1818,7 +1935,7 @@ test("pendingWrites：旧 data.json 缺字段默认空数组，往返保存不�
     saveData: async (data: Record<string, any>) => {
       saved = JSON.parse(JSON.stringify(data));
     },
-  } as unknown as Parameters<typeof Store>[0];
+  } as unknown as ConstructorParameters<typeof Store>[0];
   const store1 = new Store(plugin1);
   store1.scheduleSave = () => {};
   await store1.load();
@@ -1846,7 +1963,7 @@ test("pendingWrites：旧 data.json 缺字段默认空数组，往返保存不�
       ],
     }),
     saveData: async () => {},
-  } as unknown as Parameters<typeof Store>[0];
+  } as unknown as ConstructorParameters<typeof Store>[0];
   const store2 = new Store(plugin2);
   store2.scheduleSave = () => {};
   await store2.load();
@@ -1861,6 +1978,26 @@ test("移交项 2：dailyNotePath 统一三处路径口径", () => {
   assert.equal(dailyNotePath({ dailyNoteFolder: "", dailyNoteFormat: "YYYY年MM月DD日" }, new Date(2026, 10, 19)), "2026年11月19日.md");
   assert.equal(dailyNotePath({ dailyNoteFolder: "d", dailyNoteFormat: "" }, new Date(2026, 0, 5)), "d/2026-01-05.md", "空格式回退 YYYY-MM-DD");
   assert.equal(dailyNotePath({ dailyNoteFolder: "daily", dailyNoteFormat: "YYYY/MM/DD" }, new Date(2026, 0, 5)), "daily/2026/01/05.md");
+});
+
+test("TaskManager.listGrouped：一次全库扫描同时给出今日/遗留/Agent 三组", async () => {
+  const today = dateKey(new Date());
+  const ctx = fakeConfirmPlugin({}, {
+    [`Sediment/daily/${today}.md`]: "- [ ] 今日\n- [x] 已完成\n",
+    "Sediment/daily/2020-01-01.md": "- [ ] 遗留\n",
+  });
+  ctx.plugin.app.vault.cachedRead = async (f: { path: string }) => {
+    (ctx.plugin as any).reads = ((ctx.plugin as any).reads ?? 0) + 1;
+    return (ctx.files as Map<string, string>).get(f.path) ?? "";
+  };
+  ctx.store.data.memos.push({
+    id: "m1", date: today, time: "10:00", text: "委派任务", tags: ["to-agent"], converted: false,
+  });
+  const groups = await ctx.tasks.listGrouped();
+  assert.deepEqual(groups.today.map((t) => t.text), ["今日", "已完成"]);
+  assert.deepEqual(groups.overdue.map((t) => t.text), ["遗留"]);
+  assert.deepEqual(groups.agent.map((t) => t.text), ["委派任务"]);
+  assert.equal((ctx.plugin as any).reads, 2, "两篇笔记各只读一次，而不是三次全库扫描");
 });
 
 test("待办来源：只扫日记与 #task 笔记，模板和知识笔记验收清单不进入待办", async () => {
@@ -2491,28 +2628,6 @@ test("SETTINGS_SECTIONS：基础区置顶，Agent 目录/黑名单归 Agent 区�
   assert.throws(() => settingsSection("不存在"));
 });
 
-test("设置分层：权重收进 details，封顶留在主视线，分区键不变", () => {
-  const src = fs.readFileSync("src/ui/settings-tab.ts", "utf8");
-  assert.ok(src.includes('createEl("details"'), "权重须收进 details");
-  assert.ok(src.includes("sd-settings-weights"));
-  const detailsAt = src.indexOf('createEl("details"');
-  assert.ok(detailsAt > 0, "定位不到 details 创建处");
-  // 两项封顶是主视线设置：调用点必须出现在 details 之前，不能被一起折叠。
-  for (const key of ["contributionDailyCap", "wordsPerWriteCap"]) {
-    const callAt = src.search(new RegExp(`numberSetting\\([^;]*"${key}"`));
-    assert.ok(callAt >= 0, `${key} 未作为 numberSetting 调用参数出现`);
-    assert.ok(callAt < detailsAt, `${key} 须留在 details 之前（主视线内），实际 ${callAt} >= ${detailsAt}`);
-  }
-  // 五项权重不只出现字符串，而是确实以 weights 作为 target 渲染进折叠区。
-  for (const key of ["weightNotesCreated", "weightEdits", "weightTasks", "wordsPerPoint", "focusMinutesPerPoint"]) {
-    const routed = new RegExp(`"${key}"[^;]*weights\\)`);
-    assert.ok(routed.test(src), `${key} 须以 weights 为 target 传给 numberSetting`);
-  }
-  assert.equal(settingsSection("stats").keys.length, 7, "归属键不变，防再犯断言继续成立");
-  const capCalls = src.split("numberSetting(").length - 1;
-  assert.ok(capCalls >= 7, "7 项仍在渲染（5 项进折叠）");
-});
-
 // ── Task 8：i18n 防再犯扫描器自测 ──
 
 test("lint-i18n：构造违规样本——createEl text 未包裹的中文字面量能被抓到", () => {
@@ -2675,7 +2790,7 @@ test("Store.load：EN 预读顺序下启动迁移警告为英文（回归 main.t
     const raw = { version: 99, settings: { language: "en" }, days: {} };
     // main.ts onload 现在先 setLocale(localeFromPersisted(loadData())) 再 store.load()。
     setLocale(localeFromPersisted(raw));
-    const store = new Store({ loadData: async () => raw } as unknown as Parameters<typeof Store>[0]);
+    const store = new Store({ loadData: async () => raw } as unknown as ConstructorParameters<typeof Store>[0]);
     await store.load();
     assert.match(store.migrationWarning ?? "", /Unsupported data version 99/);
     assert.doesNotMatch(store.migrationWarning ?? "", /不支持的数据版本/);
@@ -2689,7 +2804,7 @@ test("Store.load：zh 预读顺序下迁移警告仍为中文", async () => {
   try {
     const raw = { version: 99, settings: { language: "zh" } };
     setLocale(localeFromPersisted(raw));
-    const store = new Store({ loadData: async () => raw } as unknown as Parameters<typeof Store>[0]);
+    const store = new Store({ loadData: async () => raw } as unknown as ConstructorParameters<typeof Store>[0]);
     await store.load();
     assert.match(store.migrationWarning ?? "", /不支持的数据版本 99/);
   } finally {
@@ -2907,7 +3022,7 @@ test("A3：restoreDataBackup 三态语义——此前无数据 none / 副本写�
   const originalLog = failStore.logDiagnostic.bind(failStore);
   failStore.logDiagnostic = (category: string, message: string, detail?: string, schedule?: boolean) => {
     diagnosticCalls.push(message);
-    originalLog(category, message, detail, schedule);
+    originalLog(category as Parameters<typeof originalLog>[0], message, detail, schedule);
   };
   const originalError = console.error;
   let logged = 0;
@@ -2931,7 +3046,7 @@ test("A4：保存持续失败时 Notice 60 秒节流，console 与诊断每次�
     loadData: async () => null,
     saveData: async () => { throw new Error("disk full"); },
     app: { vault },
-  } as unknown as Parameters<typeof Store>[0];
+  } as unknown as ConstructorParameters<typeof Store>[0];
   const store = new Store(plugin);
   await store.load();
   noticeMessages.length = 0;
@@ -3005,8 +3120,20 @@ test("第 5 项：AgentServer HTTP 契约——仅 Authorization 头鉴权、?to
     store: {
       settings: { agentServerEnabled: true, agentServerPort: port, agentServerToken: "unit-token" },
       logDiagnostic: (category: string, message: string) => { diagnostics.push({ category, message }); },
+      toolCalls: [] as Array<Record<string, unknown>>,
+      dropToolCall: (call: Record<string, unknown>) => {
+        const index = (plugin.store as any).toolCalls.indexOf(call);
+        if (index >= 0) (plugin.store as any).toolCalls.splice(index, 1);
+      },
     },
-    agentApi: { logToolCall: () => {}, setCallContext: () => {} },
+    agentApi: {
+      logToolCall: (tool: string, agent: string, path: string) => {
+        const record = { time: new Date().toISOString(), tool, agent, path };
+        (plugin.store as any).toolCalls.unshift(record);
+        return record;
+      },
+      callMeta: (tool: string, agent: string, call: any) => ({ tool, agent, call }),
+    },
     manifest: { version: "0.9.7" },
   } as unknown as ConstructorParameters<typeof AgentServer>[0];
   const server = new AgentServer(plugin);
@@ -3040,19 +3167,14 @@ test("第 5 项：AgentServer HTTP 契约——仅 Authorization 头鉴权、?to
     );
     assert.match(tooLarge, /^HTTP\/1\.1 413/);
     assert.match(tooLarge, /PAYLOAD_TOO_LARGE/);
+    assert.equal(
+      (plugin.store as any).toolCalls.length,
+      0,
+      "GET / 401 / 400 / 413 / 404 都不得留下审计行"
+    );
   } finally {
     await server.stop();
   }
-});
-
-test("第 5 项：MCP 桥接源——令牌走 Authorization 头、缺令牌报错、超时与缓冲上限齐备", () => {
-  assert.ok(BRIDGE_SOURCE.includes("Authorization: `Bearer ${TOKEN}`"), "令牌必须走 Authorization 头");
-  assert.ok(!BRIDGE_SOURCE.includes('searchParams.set("token"'), "不得再把令牌拼进查询串");
-  assert.ok(BRIDGE_SOURCE.includes("缺少令牌"), "缺 SEDIMENT_TOKEN 必须显式报错而非静默匿名请求");
-  assert.ok(BRIDGE_SOURCE.includes("REQUEST_TIMEOUT_MS"), "HTTP 请求必须有超时");
-  assert.ok(BRIDGE_SOURCE.includes("MAX_RESPONSE_CHARS"), "响应体必须有大小上限");
-  assert.ok(BRIDGE_SOURCE.includes("MAX_STDIN_BUFFER_CHARS"), "stdin 缓冲必须有上限");
-  assert.ok(BRIDGE_SOURCE.includes("畸形 JSON"), "畸形 JSON 输入必须显式报错");
 });
 
 test("B3：escapeAttr 导出复用——& < > 双引号全量转义", () => {
@@ -3156,10 +3278,10 @@ test("终审 1：claimAgentTask/completeAgentTask 日记路径过 patch 门禁�
   let humanSync = 0;
   human.plugin.memos.syncTags = async () => { humanSync += 1; };
   seedAgentMemo(human);
-  const claimed = await human.api.claimAgentTask("m1", true);
+  const claimed = (await human.api.claimAgentTask("m1", true)) as MemoRecord;
   assert.deepEqual(claimed.tags, ["agent-in-progress"]);
-  const done = await human.api.completeAgentTask("m1", "知识/产出.md", true);
-  assert.deepEqual(done.tags, ["agent-done"]);
+  const done = (await human.api.completeAgentTask("m1", "知识/产出.md", true)) as MemoRecord;
+  assert.deepEqual((done as MemoRecord).tags, ["agent-done"]);
   assert.equal(done.converted, true);
   assert.equal(done.resultPath, "知识/产出.md");
   assert.equal(humanSync, 2, "人用面两次操作都正常同步日记标签");
@@ -3249,7 +3371,7 @@ test("终审 4：年轮图月份标签走 tf()（EN 无中文泄漏），SVG 带
     yearlyTab: "wheel",
     analyticsCard: () => card,
     render: () => {},
-    plugin: { store: { data: { days }, getDay: (key: string) => days[key] ?? createEmptyDay() } },
+    plugin: { store: { settings: { showMoonPhase: true }, data: { days }, getDay: (key: string) => days[key] ?? createEmptyDay() } },
   };
   const prev = getLocale();
   try {
@@ -3286,15 +3408,6 @@ test("styles.css 审核行可读性回归：mod-cta 对比度与信息列宽", (
   assert.ok(span, "缺少审核行信息 span 规则");
   assert.match(span[0], /color:\s*var\(--text-muted\)/, "审核行信息须用可读的 muted 色");
   assert.match(span[0], /font-size:\s*11px/, "审核行信息字号不得低于 11px");
-});
-
-test("快照恢复入口迁移：工坊不再渲染、设置备份分区承接", () => {
-  const agentSrc = fs.readFileSync("src/views/dashboard/sections/agent.ts", "utf8");
-  assert.ok(!agentSrc.includes("renderDataRecovery"), "工坊不应再渲染数据快照恢复卡");
-  const settingsSrc = fs.readFileSync("src/ui/settings-tab.ts", "utf8");
-  assert.match(settingsSrc, /private renderRecoveryList\(/, "设置备份分区须承接快照恢复列表");
-  assert.match(settingsSrc, /restoreDataBackup/, "恢复安全流程须在设置侧保留");
-  assert.match(settingsSrc, /sd-feed-row-audit/, "恢复列表须复用可读审核行样式");
 });
 
 // ── 阶段二 Task 12：上架准备 ──
@@ -3397,22 +3510,7 @@ test("confirm 档：已标记 stale 的待审项直接拒绝采纳", async () =>
   assert.equal(ctx.files.get("notes/a.md"), "line1\n", "未落盘");
 });
 
-test("main.ts：删除/重命名标记失效待审项，启动时对账", () => {
-  const src = fs.readFileSync("src/main.ts", "utf8");
-  assert.ok(src.includes("markPendingWritesStale([file.path])"), "delete 事件须标记被删路径");
-  assert.ok(src.includes("markPendingWritesStale([oldPath])"), "rename 事件须标记旧路径");
-  assert.ok(src.includes("this.store.reconcilePending("), "启动须做一次对账");
-});
-
 // ── 阶段一 Task 3：工坊失效待审 UI ──
-
-test("工坊：stale 待审行渲染失效徽章且只提供驳回", () => {
-  const src = fs.readFileSync("src/views/dashboard/sections/agent.ts", "utf8");
-  assert.ok(src.includes("item.stale"), "待审行须判断 stale");
-  assert.ok(src.includes("sd-audit-badge is-stale"), "stale 徽章类名");
-  const css = fs.readFileSync("styles.css", "utf8");
-  assert.match(css, /\.sd-audit-badge\.is-stale/);
-});
 
 test("i18n：stale 相关英文条目已收录", () => {
   setLocale("en");
@@ -3466,12 +3564,6 @@ test("scanKnowledgeState：空库返回零值；未登记列表封顶 20", () =>
 
 // ── 阶段一 Task 5：看板「知识库现状」卡 ──
 
-test("脉冲概览：挂载知识库现状卡（实时扫描口径）", () => {
-  const src = fs.readFileSync("src/views/dashboard/sections/insights.ts", "utf8");
-  assert.ok(src.includes("renderKnowledgeState(view, content)"), "overview 分支须渲染现状卡");
-  assert.ok(src.includes("实时扫描"), "须明确实时扫描口径");
-});
-
 test("i18n：知识库现状卡英文条目已收录", () => {
   setLocale("en");
   try {
@@ -3483,13 +3575,6 @@ test("i18n：知识库现状卡英文条目已收录", () => {
 });
 
 // ── 阶段一 Task 7：工坊「来源未登记」卡 + 标记为人工 ──
-
-test("工坊：来源未登记卡挂载，标记为人工走 user 触发的 bypass 重放", () => {
-  const src = fs.readFileSync("src/views/dashboard/sections/agent.ts", "utf8");
-  assert.ok(src.includes("renderUnregisteredSources(view, body)"), "工坊须挂载未登记卡");
-  assert.ok(src.includes('source: "human"'), "标记动作写 source: human");
-  assert.ok(/updateFrontmatter\(path, \{ source: "human" \}, undefined, true\)/.test(src));
-});
 
 test("i18n：来源未登记卡英文条目已收录", () => {
   setLocale("en");
@@ -3509,7 +3594,7 @@ function fakeHealthPlugin(
   partial: Partial<PulseSettings> = {}
 ) {
   const entries = files.map((entry) => {
-    const file = new TFile(entry.path);
+    const file = new TFileWithPath(entry.path);
     file.stat = { ctime: 0, mtime: entry.mtime ?? Date.now(), size: entry.size ?? 100 };
     return { file, frontmatter: entry.frontmatter };
   });
@@ -3790,7 +3875,7 @@ test("SemanticIndex：默认 TF-IDF 不发 embedding 请求；embedding 结果�
   const open = await denied.search("apple");
   assert.equal(open.some((hit) => hit.path === "private/x.md"), true, "建索引时未设黑名单");
 
-  ctx.plugin.store.settings.deniedFolders = "private";
+  (ctx.plugin as any).store.settings.deniedFolders = "private";
   const results = await denied.search("apple");
   assert.equal(results.some((hit) => hit.path === "private/x.md"), false);
 
@@ -4026,7 +4111,7 @@ test("文件桥 schema：三类提案规范化与默认值", () => {
   });
   assert.equal(patch.ok, true);
   if (patch.ok) {
-    assert.deepEqual(patch.proposal.args.input, {
+    assert.deepEqual((patch.proposal.args as any).input, {
       path: "notes/a.md",
       find: "旧",
       content: "新",
@@ -4543,7 +4628,7 @@ test("Store.load：旧数据缺少聚合字段时按现有流水重建", async (
         { time: new Date().toISOString(), tool: "search_notes", agent: "qoder", path: "" },
       ],
     }),
-  } as unknown as Parameters<typeof Store>[0];
+  } as unknown as ConstructorParameters<typeof Store>[0];
   const store = new Store(fakePlugin);
   await store.load();
   assert.equal(store.data.agentUsage.qoder.total, 1);

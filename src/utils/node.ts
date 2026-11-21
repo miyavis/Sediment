@@ -1,66 +1,50 @@
 /**
- * Node 内置模块的类型化封装。
- *
- * 审核环境的 ESLint 可能只安装了 `obsidian` 类型而缺少 `@types/node`，届时
- * `fs`/`os`/`http`/`crypto` 的导入会被推断为 `any`，触发一串
- * `no-unsafe-*` 告警。这里把用到的 API 收敛到一处并显式声明最小接口，
- * 其余模块只调用这些类型化函数，避免 `any` 扩散。
+ * Node 内置模块的类型化封装：业务代码只依赖这里导出的最小接口，
+ * 不直接散落 `fs`/`http`/`crypto` 导入。@types/node 已作为 devDependency，
+ * 因此这里不再需要 `typed<T>` 万能断言逃生口。
  */
-import { createServer as nodeCreateServer } from "http";
-import { createHash as nodeCreateHash, timingSafeEqual as nodeTimingSafeEqual } from "crypto";
+import { createServer } from "http";
+import { createHash, timingSafeEqual } from "crypto";
 import {
-  existsSync as nodeExistsSync,
-  mkdirSync as nodeMkdirSync,
-  readFileSync as nodeReadFileSync,
-  readdirSync as nodeReaddirSync,
-  rmSync as nodeRmSync,
-  statSync as nodeStatSync,
-  unlinkSync as nodeUnlinkSync,
-  writeFileSync as nodeWriteFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
 } from "fs";
-import { homedir as nodeHomedir } from "os";
-
-/** 把可能被推断为 any 的导入重新标注为指定类型（不用 `as unknown as`，避免多余断言告警）。 */
-function typed<T>(value: unknown): T {
-  return value as T;
-}
+import { homedir } from "os";
 
 /* ---------- 文件系统 ---------- */
 
-export const fileExists = typed<(path: string) => boolean>(nodeExistsSync);
+export const fileExists = existsSync;
 
-export const ensureDirectory = typed<(path: string, options: { recursive: boolean }) => void>(
-  nodeMkdirSync
-);
+export const ensureDirectory = mkdirSync;
 
-export const readTextFile = typed<(path: string, encoding: "utf8") => string>(nodeReadFileSync);
+export const readTextFile = (path: string, encoding: "utf8"): string =>
+  readFileSync(path, encoding);
 
-export const writeTextFile = typed<(
-  path: string,
-  content: string,
-  encoding: "utf8"
-) => void>(nodeWriteFileSync);
+export const writeTextFile = (path: string, content: string, encoding: "utf8"): void => {
+  writeFileSync(path, content, encoding);
+};
 
-export const listDirectory = typed<(path: string) => string[]>(nodeReaddirSync);
+export const listDirectory = (path: string): string[] => [...readdirSync(path)];
 
-export const fileMtimeMs = typed<(path: string) => { mtimeMs: number }>(nodeStatSync);
+export const fileMtimeMs = (path: string): { mtimeMs: number } => ({ mtimeMs: statSync(path).mtimeMs });
 
-export const removeFile = typed<(path: string) => void>(nodeUnlinkSync);
+export const removeFile = unlinkSync;
 
-export const removePath = typed<(
-  path: string,
-  options: { recursive: boolean; force: boolean }
-) => void>(nodeRmSync);
+export const removePath = rmSync;
 
 /* ---------- 运行环境 ---------- */
 
-export const homeDirectory = typed<() => string>(nodeHomedir);
+export const homeDirectory = homedir;
 
 /** 通过 window 读取 APPDATA，避免审核环境缺少 `process` 类型。 */
 export function appDataDirectory(): string {
-  const runtime = typed<{ process?: { env?: Record<string, string | undefined> } }>(
-    typeof window === "undefined" ? {} : window
-  );
+  const runtime = window as unknown as { process?: { env?: Record<string, string | undefined> } };
   return runtime.process?.env?.APPDATA ?? "";
 }
 
@@ -82,15 +66,11 @@ export function decodeUtf8(bytes: Uint8Array): string {
 }
 
 export function sha256Digest(input: string): Uint8Array {
-  const createHash = typed<(algorithm: string) => {
-    update(data: string, encoding: "utf8"): { digest(): Uint8Array };
-  }>(nodeCreateHash);
-  return createHash("sha256").update(input, "utf8").digest();
+  return new Uint8Array(createHash("sha256").update(input, "utf8").digest());
 }
 
 export function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
-  const compare = typed<(a: Uint8Array, b: Uint8Array) => boolean>(nodeTimingSafeEqual);
-  return compare(a, b);
+  return timingSafeEqual(a, b);
 }
 
 /* ---------- HTTP ---------- */
@@ -113,8 +93,11 @@ export interface NodeHttpServer {
   off(event: "error", listener: (error: unknown) => void): void;
   listen(port: number, host: string, callback: () => void): void;
   close(callback: () => void): void;
+  /** Node 18.2+：关闭 keep-alive 长连接，避免 close 被拖住。 */
+  closeAllConnections?(): void;
 }
 
-export const createHttpServer = typed<(
+export const createHttpServer = (
   listener: (request: NodeHttpRequest, response: NodeHttpResponse) => void
-) => NodeHttpServer>(nodeCreateServer);
+): NodeHttpServer =>
+  createServer(listener as Parameters<typeof createServer>[0]) as unknown as NodeHttpServer;

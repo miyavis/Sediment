@@ -28,7 +28,7 @@ jobs:
         run: npm ci --registry=https://registry.npmjs.org
 
       - name: Prepare release version
-        run: node scripts/release-prepare.mjs ${{ github.ref_name }}
+        run: node scripts/release-prepare.mjs "${{ github.ref_name }}"
 
       - name: Build plugin
         run: npm run build
@@ -37,7 +37,7 @@ jobs:
         run: npm test
 
       - name: Verify release versions and files
-        run: node scripts/verify-release.mjs ${{ github.ref_name }}
+        run: node scripts/verify-release.mjs "${{ github.ref_name }}"
 
       - name: Attest release assets
         uses: actions/attest@v4
@@ -48,7 +48,7 @@ jobs:
             styles.css
 
       - name: Generate release notes from CHANGELOG.md
-        run: node scripts/latest-changelog.mjs ${{ github.ref_name }} > RELEASE_NOTES.md
+        run: node scripts/latest-changelog.mjs "${{ github.ref_name }}" > RELEASE_NOTES.md
 
       - name: Publish release
         uses: softprops/action-gh-release@v3

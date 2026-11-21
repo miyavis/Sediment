@@ -92,13 +92,19 @@ export class SemanticIndex {
   private embeddingCache = new Map<string, { hash: string; vector: number[] }>();
   private embeddingKey = "";
   private embeddingFailed = false;
+  /** 索引失效节流：避免每次库变更都重置 embedding 失败状态、反复打 Ollama。 */
+  private lastEmbeddingRetryAt = 0;
 
   constructor(private plugin: SedimentPlugin, private request: RequestFn = obsidianRequest) {}
 
   invalidate(): void {
     this.dirty = true;
-    // 允许下次重建时重试 embedding（Ollama 可能是临时不可用）。
-    this.embeddingFailed = false;
+    // 索引仍惰性重建（搜索时才做）；embedding 失败只允许每分钟重试一次。
+    const now = Date.now();
+    if (now - this.lastEmbeddingRetryAt > 60_000) {
+      this.lastEmbeddingRetryAt = now;
+      this.embeddingFailed = false;
+    }
   }
 
   private deniedTags(): string[] {

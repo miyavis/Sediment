@@ -13,7 +13,7 @@ export function renderToday(view: DashboardView, root: HTMLElement): void {
   const actions = body.createDiv({ cls: "sd-today-actions" });
   const memoAction = actions.createEl("button", {
     cls: "sd-today-action is-primary",
-    text: t("记一条速记"),
+    text: t("去记速记"),
   });
   memoAction.onclick = () => {
     const area = root.querySelector<HTMLTextAreaElement>(".sd-quick-memo textarea");

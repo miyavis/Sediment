@@ -217,7 +217,7 @@ OpenCode 示例（把 `<vault>` 换成你的库根目录）：
 
 完整工具清单可通过 MCP `tools/list` 查询。
 
-**API 版本**：`AGENT_API_VERSION = 1`（`/health` 返回 `agentApiVersion`）。工具名或参数结构变更时递增该版本；同一版本内不会删除或重命名已有工具，客户端可按版本决定兼容策略。
+**API 版本**：`AGENT_API_VERSION = 1`（`/health` 返回 `agentApiVersion`）。工具名或参数结构变更时递增该版本。插件版本之间工具清单可能变化：13 个任务型工具一次性替换了早期的细粒度工具名；升级自动化脚本前请查阅 CHANGELOG。
 
 ## 数据与恢复
 
@@ -240,8 +240,8 @@ npm test
 npm run test:release
 ```
 
-- `npm run build`：同步版本、文档和 MCP bridge、类型检查、生成 `main.js`
-- `npm test`：运行单元测试和 MCP 冒烟
+- `npm run build`：同步版本 / CHANGELOG / MCP bridge、类型检查、打包 `main.js` 并生成 `dist/sediment/`
+- `npm test`：运行 i18n lint、单元测试和 MCP 冒烟（`npm run test:typecheck`、`npm run lint:eslint`、`npm run lint:stylelint` 为独立命令）
 - `npm run test:release`：校验版本、CHANGELOG 和发布产物
 
 **版本号只有一个源**：`package.json` 的 `version`。构建时 `version-bump.mjs` 自动同步到 `package-lock.json`、`manifest.json`、`versions.json`、`mcp-server/index.mjs` 的 `serverInfo` 和两份 README 的版本徽章。发版流程：
