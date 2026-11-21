@@ -79,8 +79,9 @@ function expand(tokens: string[]): string[] {
 }
 
 /**
- * 纯本地的 TF-IDF 向量检索，带中文双字切分和轻量同义词扩展。
- * 不联网、不下载模型，索引常驻内存，vault 变化时可失效重建。
+ * 语义检索：默认纯本地的 TF-IDF 向量检索，带中文双字切分和轻量同义词扩展。
+ * TF-IDF 默认不联网；可选 embedding 仅访问本机 Ollama 回环，不可用自动回退。
+ * 索引常驻内存，vault 变化时可失效重建。
  */
 export class SemanticIndex {
   private vectors = new Map<string, Map<string, number>>();
@@ -178,7 +179,9 @@ export class SemanticIndex {
     const texts: string[] = [];
     const targets: Array<{ path: string; hash: string }> = [];
     const alive = new Set(files.map((file) => file.path));
-    for (const path of [...this.embeddingVectors.keys()]) {
+    // 向量与缓存都按 alive 清理：失败清空只会清 embeddingVectors，缓存项需同步淘汰。
+    const known = new Set([...this.embeddingVectors.keys(), ...this.embeddingCache.keys()]);
+    for (const path of known) {
       if (!alive.has(path)) {
         this.embeddingVectors.delete(path);
         this.embeddingCache.delete(path);
@@ -247,6 +250,7 @@ export class SemanticIndex {
 
   async search(query: string, limit = 10): Promise<SemanticHit[]> {
     const started = performance.now();
+    if (!String(query ?? "").trim()) return [];
     await this.build();
     const cap = Math.max(1, Math.min(limit, 50));
     const settings = this.plugin.store.settings;
@@ -270,11 +274,17 @@ export class SemanticIndex {
     try {
       const client = new OllamaEmbeddingClient(settings.embeddingEndpoint, settings.embeddingModel, this.request);
       const [queryVector] = await client.embed([query.slice(0, 2000)]);
-      const hits: SemanticHit[] = [];
+      const scored: Array<{ path: string; score: number }> = [];
       for (const [path, vector] of this.embeddingVectors) {
         if (!this.isReachable(path)) continue;
         const score = cosineSimilarity(vector, queryVector);
         if (score <= 0) continue;
+        scored.push({ path, score });
+      }
+      scored.sort((a, b) => b.score - a.score);
+      // 先截断再取片段：只为最终命中的几条读正文，避免整库 cachedRead。
+      const hits: SemanticHit[] = [];
+      for (const { path, score } of scored.slice(0, cap)) {
         hits.push({
           path,
           score,
@@ -283,7 +293,7 @@ export class SemanticIndex {
           matchSource: "embedding",
         });
       }
-      return hits.sort((a, b) => b.score - a.score).slice(0, cap);
+      return hits;
     } catch (error) {
       this.embeddingFailed = true;
       this.plugin.store.logDiagnostic(

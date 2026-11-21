@@ -773,7 +773,7 @@ export class AgentApi {
     return { file: file.path, selection, cursorLine: cursor.line + 1, cursorParagraph };
   }
 
-  /** 本地语义检索（TF-IDF + 同义词），不联网。 */
+  /** 语义检索：TF-IDF 模式纯本地离线；embedding 模式仅访问本机回环 Ollama，不可用时自动回退 TF-IDF。 */
   async semanticSearch(query: string, limit = 10): Promise<Array<{ path: string; score: number; snippet: string }>> {
     return this.plugin.semantic.search(String(query ?? ""), limit);
   }

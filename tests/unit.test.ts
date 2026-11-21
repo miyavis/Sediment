@@ -3546,13 +3546,21 @@ test("SemanticIndex：默认 TF-IDF 不发 embedding 请求；embedding 结果�
   assert.equal(hits[0].matchSource, "tf-idf");
   assert.equal(calls, 0);
 
-  const denied = new SemanticIndex(
-    fakeSemanticPlugin(
-      { "a.md": "apple", "private/x.md": "apple secret" },
-      { semanticEngine: "embedding", deniedFolders: "private" }
-    ).plugin,
-    counting
+  const ctx = fakeSemanticPlugin(
+    { "a.md": "apple", "private/x.md": "apple secret" },
+    { semanticEngine: "embedding" }
   );
+  const denied = new SemanticIndex(ctx.plugin, counting);
+  // 先放开门禁建索引：private/x.md 的向量确实进了内存，后续只能靠逐条门禁拦住。
+  const open = await denied.search("apple");
+  assert.equal(open.some((hit) => hit.path === "private/x.md"), true, "建索引时未设黑名单");
+
+  ctx.plugin.store.settings.deniedFolders = "private";
   const results = await denied.search("apple");
   assert.equal(results.some((hit) => hit.path === "private/x.md"), false);
+
+  // 显式失效重建后再查，同样不能命中。
+  denied.invalidate();
+  const rebuilt = await denied.search("apple");
+  assert.equal(rebuilt.some((hit) => hit.path === "private/x.md"), false);
 });
