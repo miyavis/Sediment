@@ -634,6 +634,12 @@ const EN: Record<string, string> = {
   "待审草稿": "Drafts pending review",
   "来源未登记": "Unregistered source",
   "最近更新": "Last updated",
+
+  // 阶段一 Task 7：来源未登记
+  "来源未登记 · {n}": "Unregistered source · {n}",
+  "这些知识笔记没有 source 属性（可能来自绕过 MCP 的直写或手动新建）。标记为人工后计入人工来源；不改动正文。": "These knowledge notes have no source property (possibly written directly, bypassing MCP, or created manually). Marking as human records them as human-sourced; the note body is untouched.",
+  "标记为人工": "Mark as human",
+  "已标记为人工来源": "Marked as human source",
 };
 
 /** 取当前语言的文案；英文未收录时回退中文源串。 */

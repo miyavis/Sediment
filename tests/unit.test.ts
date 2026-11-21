@@ -3179,3 +3179,22 @@ test("i18n：知识库现状卡英文条目已收录", () => {
     setLocale("zh");
   }
 });
+
+// ── 阶段一 Task 7：工坊「来源未登记」卡 + 标记为人工 ──
+
+test("工坊：来源未登记卡挂载，标记为人工走 user 触发的 bypass 重放", () => {
+  const src = fs.readFileSync("src/views/dashboard/sections/agent.ts", "utf8");
+  assert.ok(src.includes("renderUnregisteredSources(view, body)"), "工坊须挂载未登记卡");
+  assert.ok(src.includes('source: "human"'), "标记动作写 source: human");
+  assert.ok(/updateFrontmatter\(path, \{ source: "human" \}, undefined, true\)/.test(src));
+});
+
+test("i18n：来源未登记卡英文条目已收录", () => {
+  setLocale("en");
+  try {
+    assert.equal(t("标记为人工"), "Mark as human");
+    assert.equal(t("已标记为人工来源"), "Marked as human source");
+  } finally {
+    setLocale("zh");
+  }
+});

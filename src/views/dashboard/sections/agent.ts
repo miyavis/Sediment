@@ -4,7 +4,9 @@ import { Notice, TFile } from "obsidian";
 import { DiffModal } from "../../../ui/diff-modal";
 import { DraftPreviewModal } from "../../../ui/draft-preview-modal";
 import { listBackups, readBackup, restoreBackup } from "../../../features/audit";
+import { scanKnowledgeState } from "../../../features/knowledge-state";
 import { localStamp } from "../../../utils/dates";
+import { normalizeFolder } from "../../../utils/vault";
 import { t, tf } from "../../../i18n";
 import { pendingReviewChanges } from "../review-queue";
 import type { DashboardView } from "../../dashboard-view";
@@ -13,6 +15,7 @@ export function renderAgentHub(view: DashboardView, root: HTMLElement): void {
   const body = root.createDiv({ cls: "sd-body" });
   renderDrafts(view, body);
   renderPendingWrites(view, body);
+  renderUnregisteredSources(view, body);
   renderAgentChanges(view, body);
   view.renderTasksCard(body, true);
 }
@@ -93,6 +96,48 @@ async function rejectPendingWrite(view: DashboardView, id: string): Promise<void
   try {
     view.plugin.agentApi.rejectPendingWrite(id);
     new Notice(t("已驳回，未写入任何内容"));
+  } catch (error) {
+    new Notice(error instanceof Error ? error.message : String(error));
+  }
+  view.render();
+}
+
+/** 来源未登记：知识目录内没有 source 属性的笔记（绕过 MCP 直写/手动新建的中性呈现）。 */
+export function renderUnregisteredSources(view: DashboardView, root: HTMLElement): void {
+  const plugin = view.plugin;
+  // 空目录会被扫描器当成「整个库」，清空设置时会把全库笔记列成未登记，故直接不渲染。
+  const knowledgeFolder = normalizeFolder(plugin.store.settings.knowledgeFolder);
+  if (!knowledgeFolder) return;
+  const files = plugin.app.vault.getMarkdownFiles().map((file) => ({
+    path: file.path,
+    mtime: file.stat.mtime,
+    frontmatter: plugin.app.metadataCache.getFileCache(file)?.frontmatter as
+      | Record<string, unknown>
+      | undefined,
+  }));
+  const state = scanKnowledgeState(files, knowledgeFolder);
+  if (state.unregistered === 0) return;
+  const card = root.createDiv({ cls: "sd-card" });
+  card.createDiv({ cls: "sd-card-title", text: tf("来源未登记 · {n}", { n: state.unregistered }) });
+  card.createDiv({
+    cls: "sd-card-sub",
+    text: t("这些知识笔记没有 source 属性（可能来自绕过 MCP 的直写或手动新建）。标记为人工后计入人工来源；不改动正文。"),
+  });
+  const list = card.createDiv({ cls: "sd-feed-list" });
+  for (const path of state.unregisteredPaths) {
+    const row = list.createDiv({ cls: "sd-feed-row sd-feed-row-audit" });
+    const open = row.createEl("button", { cls: "sd-knowledge-open", text: path });
+    open.onclick = () => void plugin.app.workspace.openLinkText(path, "", false);
+    const actions = row.createDiv({ cls: "sd-audit-actions" });
+    actions.createEl("button", { text: t("标记为人工") }).onclick = () => void markHumanSource(view, path);
+  }
+}
+
+/** 用户亲自触发的登记动作：与草稿采纳同款 bypass 先例，仍过访问门禁。 */
+async function markHumanSource(view: DashboardView, path: string): Promise<void> {
+  try {
+    await view.plugin.agentApi.updateFrontmatter(path, { source: "human" }, undefined, true);
+    new Notice(t("已标记为人工来源"));
   } catch (error) {
     new Notice(error instanceof Error ? error.message : String(error));
   }
