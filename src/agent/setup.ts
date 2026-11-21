@@ -29,29 +29,13 @@ interface OsModule {
   homedir(): string;
 }
 
-interface ChildProcessModule {
-  execSync(command: string, options: { timeout: number; encoding: string; windowsHide: boolean; stdio: ["ignore", "pipe", "ignore"] }): string;
-}
-
-/** 探测本机 OpenCode 主版本号；未安装或执行失败返回 undefined。 */
-function probeOpenCodeVersion(): number | undefined {
-  const cp = nodeModule<ChildProcessModule>("child_process");
-  if (!cp) return undefined;
-  try {
-    const out = cp.execSync("opencode --version", { timeout: 5000, encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
-    const match = /v?(\d+)\./.exec(String(out));
-    return match ? Number(match[1]) : undefined;
-  } catch (error) {
-    return undefined;
-  }
-}
-
 /**
  * 判定 OpenCode 配置布局：
  * 1. 直挂的 type/command 数组条目 → v1（v1 格式是两版都接受的公共分母，混合配置优先保 v1）；
- * 2. 已有 mcp.servers → v2；形状明确时不探测版本。
- * 3. 形状无线索（含 Claude 风格残留）时按探测版本判定，探测失败默认 v2。
+ * 2. 已有 mcp.servers → v2。
+ * 3. 形状无线索（含 Claude 风格残留）时默认 v2；可注入 probe 供调用方按需覆盖。
  * 依据官方迁移文档：v1 直挂 mcp.<name>（enabled/数字 timeout），v2 归入 mcp.servers（disabled/对象 timeout），V2 兼容 V1 条目。
+ * 不执行本机命令探测版本：避免插件获得 shell 执行能力，新装客户端按当前 v2 布局写入。
  */
 export function detectOpenCodeLayout(data: Record<string, unknown>, probe?: () => number | undefined): "v1" | "v2" {
   const mcp = (data.mcp ?? {}) as Record<string, unknown>;
@@ -210,7 +194,7 @@ export function configSnippet(plugin: SedimentPlugin, id = "opencode"): string {
   };
   const bridge = resolveBridgePath(plugin);
   if (isOpenCode) {
-    const layout = detectOpenCodeLayout({}, probeOpenCodeVersion);
+    const layout = detectOpenCodeLayout({});
     const entry = buildOpenCodeEntry(plugin, target, bridge, layout);
     const mcp = layout === "v2" ? { servers: { sediment: entry } } : { sediment: entry };
     return JSON.stringify({ mcp }, null, 2);
@@ -227,7 +211,7 @@ export function configureAgent(plugin: SedimentPlugin, target: AgentTarget): voi
   const raw = fs.readFileSync(target.configPath, "utf8");
   const data = readJson(raw);
   if (target.rootKey === "mcp") {
-    const layout = detectOpenCodeLayout(data, probeOpenCodeVersion);
+    const layout = detectOpenCodeLayout(data);
     const mcp = (data.mcp ?? {}) as Record<string, unknown>;
     const entry = buildOpenCodeEntry(plugin, target, bridge, layout);
     if (layout === "v2") {

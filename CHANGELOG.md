@@ -2,6 +2,12 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [1.0.6] - 2026-11-21
+
+### 上架反馈
+- 移除 OpenCode 版本命令探测：插件不再调用子进程模块；新配置统一按 OpenCode v2 布局写入，已有配置仍按形状判定 v1/v2。
+- README 明确 Node `fs` 的用途边界（MCP 客户端配置、插件内桥接脚本、快照目录），并声明不执行 shell 命令。
+
 ## [1.0.5] - 2026-11-21
 
 ### 上架反馈
@@ -47,7 +53,7 @@
 ## [1.0.0] - 2026-11-21
 
 ### 新增
-- OpenCode 一键配置 v1/v2 双布局适配：按配置形状判定（v1 直挂条目优先，其次 mcp.servers），形状无线索时探测本机 `opencode --version`，探测失败默认 v2；写入原生结构（type:local + command 数组 + environment），v2 用对象 timeout、v1 用 enabled + 数字 timeout
+- OpenCode 一键配置 v1/v2 双布局适配：按配置形状判定（v1 直挂条目优先，其次 mcp.servers），形状无线索时按本机 OpenCode 版本探测，探测失败默认 v2；写入原生结构（type:local + command 数组 + environment），v2 用对象 timeout、v1 用 enabled + 数字 timeout
 - 配置迁移自愈：写入 v2 时清理 v1 直挂残留，写入 v1 时清理 servers 内旧条目并移除空 servers 键，避免旧版误读
 - Windsurf Next 客户端候选（~/.codeium/windsurf-next/mcp_config.json）
 - 一键配置单元测试 +12（布局判定、双布局写入、迁移清理、桥接复用、片段输出、候选路径）；另加审核行可读性与恢复入口迁移回归 2 项，全量 153 项

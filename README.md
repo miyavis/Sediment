@@ -7,6 +7,7 @@ Local-first Obsidian plugin: knowledge statistics, heatmaps, quick memos, weekly
 - The optional local Agent API is off by default and listens on `127.0.0.1` only; requests require the token shown in settings.
 - Optional semantic search targets an Ollama endpoint (local loopback by default) and falls back to TF-IDF when it is unavailable.
 - "Configure agent clients" reads and writes MCP configuration files **outside the vault**, under your user home or `%APPDATA%` (for example `~/.claude.json`, `~/.cursor/mcp.json`, `~/.config/opencode/opencode.jsonc`). It only adds or removes the Sediment entry; "Uninstall MCP access" removes that entry again.
+- Direct filesystem access uses Node's `fs` module only for those MCP configuration files, the plugin's own `mcp-server/index.mjs`, and note snapshots under `.obsidian/plugins/sediment/backups/`. The plugin does not run shell commands.
 - No telemetry, no cloud upload, no self-update, and no advertising.
 
 ## Install
@@ -31,7 +32,7 @@ Sediment 是一个本地优先的 Obsidian 插件，把知识工作统计、快�
 
 [![Obsidian](https://img.shields.io/badge/Obsidian-v1.6.0%2B-blue.svg)](https://obsidian.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v1.0.5-blue.svg)](https://github.com/miyavis/Sediment/releases)
+[![Version](https://img.shields.io/badge/version-v1.0.6-blue.svg)](https://github.com/miyavis/Sediment/releases)
 
 ## 核心入口
 
@@ -41,7 +42,7 @@ Sediment 是一个本地优先的 Obsidian 插件，把知识工作统计、快�
 | **知识** | 热力图、写作趋势、投入分布、年度画像和周期复盘 |
 | **Agent** | 草稿审核、待办认领、变更审查、快照恢复和工作日志 |
 
-支持精简、标准、完整三档布局密度。插件为桌面端专用（manifest 标记 `isDesktopOnly`），因为一键配置、快照与卸载依赖 Node 的文件系统与子进程能力。
+支持精简、标准、完整三档布局密度。插件为桌面端专用（manifest 标记 `isDesktopOnly`），因为一键配置、快照与卸载依赖 Node 的文件系统能力。
 
 ## 快速开始
 
@@ -285,7 +286,7 @@ mcp-server/          MCP stdio 桥接
 
 - 没有云授权或云同步，核心内容不上传
 - 语义检索默认使用本地 TF-IDF；可选接入本机 Ollama embedding（仅回环，不可用时自动回退 TF-IDF），不依赖云端模型
-- 桌面端专用：插件使用 Node 的文件系统与子进程能力（一键配置、快照、卸载），manifest 已标记 `isDesktopOnly`
+- 桌面端专用：插件使用 Node 的文件系统能力（一键配置、快照、卸载），manifest 已标记 `isDesktopOnly`
 - 数据迁移、大 vault 性能仍需持续基准验证
 
 ## 更新记录
