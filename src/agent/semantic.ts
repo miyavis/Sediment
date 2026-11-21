@@ -1,14 +1,30 @@
+import { requestUrl } from "obsidian";
 import type { SedimentPlugin } from "../main";
+import type { PulseSettings } from "../types";
+import { tf } from "../i18n";
 import { normalizeFolder } from "../utils/vault";
 import { isPathAllowedByMode, splitList } from "./access";
+import { OllamaEmbeddingClient, cosineSimilarity, hashText, type RequestFn } from "./embedding";
 
 export interface SemanticHit {
   path: string;
   score: number;
   snippet: string;
   matchType: "semantic";
-  matchSource: "tf-idf";
+  matchSource: "tf-idf" | "embedding";
 }
+
+/** 生产请求函数：Obsidian requestUrl（宿主代理，绕过 CORS），失败不抛、由客户端校验状态码。 */
+const obsidianRequest: RequestFn = async (options) => {
+  const response = await requestUrl({
+    url: options.url,
+    method: options.method,
+    headers: options.headers,
+    body: options.body,
+    throw: false,
+  });
+  return { status: response.status, json: response.json };
+};
 
 const STOP_WORDS = new Set([
   "我们", "你们", "他们", "这个", "那个", "因为", "所以", "但是", "如果", "可以",
@@ -72,11 +88,17 @@ export class SemanticIndex {
   private documents = 0;
   private dirty = true;
   private buildPromise: Promise<void> | null = null;
+  private embeddingVectors = new Map<string, number[]>();
+  private embeddingCache = new Map<string, { hash: string; vector: number[] }>();
+  private embeddingKey = "";
+  private embeddingFailed = false;
 
-  constructor(private plugin: SedimentPlugin) {}
+  constructor(private plugin: SedimentPlugin, private request: RequestFn = obsidianRequest) {}
 
   invalidate(): void {
     this.dirty = true;
+    // 允许下次重建时重试 embedding（Ollama 可能是临时不可用）。
+    this.embeddingFailed = false;
   }
 
   private deniedTags(): string[] {
@@ -123,6 +145,65 @@ export class SemanticIndex {
       }
       this.vectors.set(path, vector);
     }
+
+    if (this.plugin.store.settings.semanticEngine === "embedding") {
+      try {
+        await this.buildEmbeddings(files);
+        this.embeddingFailed = false;
+      } catch (error) {
+        this.embeddingFailed = true;
+        this.embeddingVectors.clear();
+        this.plugin.store.logDiagnostic(
+          "performance",
+          tf("Embedding 不可用，已回退 TF-IDF：{error}", {
+            error: error instanceof Error ? error.message : String(error),
+          })
+        );
+      }
+    } else {
+      this.embeddingVectors.clear();
+    }
+  }
+
+  /** 向量化：按 hash 增量缓存，只 embed 新增/变化文件；模型或地址变更时整体重建。 */
+  private async buildEmbeddings(files: import("obsidian").TFile[]): Promise<void> {
+    const settings = this.plugin.store.settings;
+    const key = `${settings.embeddingEndpoint}|${settings.embeddingModel}`;
+    if (key !== this.embeddingKey) {
+      this.embeddingCache.clear();
+      this.embeddingVectors.clear();
+      this.embeddingKey = key;
+    }
+    const client = new OllamaEmbeddingClient(settings.embeddingEndpoint, settings.embeddingModel, this.request);
+    const texts: string[] = [];
+    const targets: Array<{ path: string; hash: string }> = [];
+    const alive = new Set(files.map((file) => file.path));
+    for (const path of [...this.embeddingVectors.keys()]) {
+      if (!alive.has(path)) {
+        this.embeddingVectors.delete(path);
+        this.embeddingCache.delete(path);
+      }
+    }
+    for (const file of files) {
+      const text = (await this.plugin.app.vault.cachedRead(file)).slice(0, 2000);
+      const hash = hashText(text);
+      const cached = this.embeddingCache.get(file.path);
+      if (cached && cached.hash === hash) {
+        this.embeddingVectors.set(file.path, cached.vector);
+        continue;
+      }
+      texts.push(text);
+      targets.push({ path: file.path, hash });
+    }
+    const BATCH = 16;
+    for (let start = 0; start < texts.length; start += BATCH) {
+      const vectors = await client.embed(texts.slice(start, start + BATCH));
+      for (let offset = 0; offset < vectors.length; offset += 1) {
+        const target = targets[start + offset];
+        this.embeddingCache.set(target.path, { hash: target.hash, vector: vectors[offset] });
+        this.embeddingVectors.set(target.path, vectors[offset]);
+      }
+    }
   }
 
   private async build(): Promise<void> {
@@ -167,27 +248,13 @@ export class SemanticIndex {
   async search(query: string, limit = 10): Promise<SemanticHit[]> {
     const started = performance.now();
     await this.build();
-    const queryVector = this.vectorFor(tokenizeSemanticText(query));
-    if (queryVector.size === 0) return [];
-
-    const results: SemanticHit[] = [];
-    for (const [path, documentVector] of this.vectors) {
-      // 索引可能在设置收紧前建成；逐条再过一次门禁，宁可少不可漏。
-      if (!this.isReachable(path)) continue;
-      const score = this.cosine(documentVector, queryVector);
-      if (score <= 0) continue;
-      const file = this.plugin.app.vault.getAbstractFileByPath(path);
-      let snippet = "";
-      if (file && "extension" in file) {
-        const text = await this.plugin.app.vault.cachedRead(file as import("obsidian").TFile);
-        const needle = tokenizeSemanticText(query)[0] ?? "";
-        const position = needle ? text.toLowerCase().indexOf(needle) : -1;
-        const start = Math.max(0, position - 60);
-        snippet = text.slice(start, start + 220).replace(/\s+/g, " ").trim();
-      }
-      results.push({ path, score, snippet, matchType: "semantic", matchSource: "tf-idf" });
+    const cap = Math.max(1, Math.min(limit, 50));
+    const settings = this.plugin.store.settings;
+    let ranked: SemanticHit[] = [];
+    if (settings.semanticEngine === "embedding" && !this.embeddingFailed && this.embeddingVectors.size > 0) {
+      ranked = await this.searchByEmbedding(query, cap, settings);
     }
-    const ranked = results.sort((a, b) => b.score - a.score).slice(0, Math.max(1, Math.min(limit, 50)));
+    if (ranked.length === 0) ranked = await this.searchByTfIdf(query, cap);
     const elapsed = performance.now() - started;
     if (elapsed > 80) {
       this.plugin.store.logDiagnostic(
@@ -197,5 +264,65 @@ export class SemanticIndex {
       );
     }
     return ranked;
+  }
+
+  private async searchByEmbedding(query: string, cap: number, settings: PulseSettings): Promise<SemanticHit[]> {
+    try {
+      const client = new OllamaEmbeddingClient(settings.embeddingEndpoint, settings.embeddingModel, this.request);
+      const [queryVector] = await client.embed([query.slice(0, 2000)]);
+      const hits: SemanticHit[] = [];
+      for (const [path, vector] of this.embeddingVectors) {
+        if (!this.isReachable(path)) continue;
+        const score = cosineSimilarity(vector, queryVector);
+        if (score <= 0) continue;
+        hits.push({
+          path,
+          score,
+          snippet: await this.snippetFor(path, query),
+          matchType: "semantic",
+          matchSource: "embedding",
+        });
+      }
+      return hits.sort((a, b) => b.score - a.score).slice(0, cap);
+    } catch (error) {
+      this.embeddingFailed = true;
+      this.plugin.store.logDiagnostic(
+        "performance",
+        tf("Embedding 不可用，已回退 TF-IDF：{error}", {
+          error: error instanceof Error ? error.message : String(error),
+        })
+      );
+      return [];
+    }
+  }
+
+  private async searchByTfIdf(query: string, cap: number): Promise<SemanticHit[]> {
+    const queryVector = this.vectorFor(tokenizeSemanticText(query));
+    if (queryVector.size === 0) return [];
+    const results: SemanticHit[] = [];
+    for (const [path, documentVector] of this.vectors) {
+      // 索引可能在设置收紧前建成；逐条再过一次门禁，宁可少不可漏。
+      if (!this.isReachable(path)) continue;
+      const score = this.cosine(documentVector, queryVector);
+      if (score <= 0) continue;
+      results.push({
+        path,
+        score,
+        snippet: await this.snippetFor(path, query),
+        matchType: "semantic",
+        matchSource: "tf-idf",
+      });
+    }
+    return results.sort((a, b) => b.score - a.score).slice(0, cap);
+  }
+
+  private async snippetFor(path: string, query: string): Promise<string> {
+    const file = this.plugin.app.vault.getAbstractFileByPath(path);
+    if (!file || !("extension" in file)) return "";
+    const text = await this.plugin.app.vault.cachedRead(file as import("obsidian").TFile);
+    const needle = tokenizeSemanticText(query)[0] ?? "";
+    const position = needle ? text.toLowerCase().indexOf(needle) : -1;
+    const start = Math.max(0, position - 60);
+    return text.slice(start, start + 220).replace(/\s+/g, " ").trim();
   }
 }

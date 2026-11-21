@@ -71,7 +71,13 @@ import {
   reviewBadgeCount,
 } from "../src/views/dashboard/review-queue";
 import { SETTINGS_SECTIONS, settingsSection } from "../src/ui/settings-sections";
-import { OllamaEmbeddingClient, cosineSimilarity, hashText, normalizeEndpoint } from "../src/agent/embedding";
+import {
+  OllamaEmbeddingClient,
+  cosineSimilarity,
+  hashText,
+  normalizeEndpoint,
+  type RequestFn,
+} from "../src/agent/embedding";
 import { renderYearly } from "../src/views/dashboard/sections/insights";
 import { scanKnowledgeState, type KnowledgeFile } from "../src/features/knowledge-state";
 import { delegateHealthIssues, HEALTH_LABEL, scanNoteHealth } from "../src/features/health";
@@ -3439,6 +3445,114 @@ test("embedding：余弦相似度与文本哈希稳定", () => {
   assert.equal(cosineSimilarity([1, 0], [1, 0]), 1);
   assert.equal(cosineSimilarity([1, 0], [0, 1]), 0);
   assert.equal(cosineSimilarity([0, 0], [1, 1]), 0);
+  assert.equal(cosineSimilarity([1, 0, 0], [1, 0]), 0, "维度不一致不得因截断而满分");
   assert.equal(hashText("abc"), hashText("abc"));
   assert.notEqual(hashText("abc"), hashText("abd"));
+});
+
+test("embedding：客户端拒绝非回环端点，回环地址照常构造", () => {
+  const fakeEmbed: RequestFn = async () => ({ status: 200, json: { embeddings: [] } });
+  assert.throws(
+    () => new OllamaEmbeddingClient("http://example.com:11434", "bge-m3", fakeEmbed),
+    /回环/
+  );
+  assert.ok(new OllamaEmbeddingClient("http://localhost:11434", "bge-m3", fakeEmbed));
+  assert.ok(new OllamaEmbeddingClient("http://127.0.0.1:11434", "bge-m3", fakeEmbed));
+});
+
+// ── 阶段三 Task 15：SemanticIndex embedding 集成 ──
+
+function fakeSemanticPlugin(files: Record<string, string>, partial: Partial<PulseSettings> = {}) {
+  const { store: fileStore, vault } = memoryVault(files);
+  const diagnostics: Array<{ category: string; message: string }> = [];
+  const plugin = {
+    store: {
+      settings: settings(partial),
+      logDiagnostic: (category: string, message: string) => {
+        diagnostics.push({ category, message });
+      },
+    },
+    app: { vault, metadataCache: { getFileCache: () => undefined } },
+  } as never;
+  return { plugin, fileStore, diagnostics };
+}
+
+const fakeEmbed: RequestFn = async (options) => {
+  const body = JSON.parse(options.body ?? "{}") as { input: string[] };
+  return {
+    status: 200,
+    json: {
+      embeddings: body.input.map((text) =>
+        text.includes("apple") ? [1, 0] : text.includes("banana") ? [0, 1] : [0.5, 0.5]
+      ),
+    },
+  };
+};
+
+test("SemanticIndex embedding：按余弦排序并标记 matchSource", async () => {
+  const ctx = fakeSemanticPlugin(
+    { "a.md": "apple pie", "b.md": "banana bread" },
+    { semanticEngine: "embedding" }
+  );
+  const index = new SemanticIndex(ctx.plugin, fakeEmbed);
+  const hits = await index.search("apple");
+  assert.equal(hits[0].path, "a.md");
+  assert.equal(hits[0].matchSource, "embedding");
+});
+
+test("SemanticIndex embedding：客户端失败自动回退 TF-IDF 并记诊断", async () => {
+  const ctx = fakeSemanticPlugin({ "a.md": "apple pie" }, { semanticEngine: "embedding" });
+  const failing: RequestFn = async () => {
+    throw new Error("connection refused");
+  };
+  const index = new SemanticIndex(ctx.plugin, failing);
+  const hits = await index.search("apple");
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].matchSource, "tf-idf");
+  assert.ok(ctx.diagnostics.some((item) => /回退 TF-IDF/.test(item.message)));
+});
+
+test("SemanticIndex embedding：增量缓存只 embed 变化文件", async () => {
+  const inputs: string[][] = [];
+  const counting: RequestFn = async (options) => {
+    const body = JSON.parse(options.body ?? "{}") as { input: string[] };
+    inputs.push(body.input);
+    return fakeEmbed(options);
+  };
+  const ctx = fakeSemanticPlugin({ "a.md": "apple", "b.md": "banana" }, { semanticEngine: "embedding" });
+  const index = new SemanticIndex(ctx.plugin, counting);
+  await index.search("apple");
+  assert.equal(inputs.length, 2, "文档批 + 查询向量各一次请求");
+  assert.deepEqual(
+    [...inputs[0]].sort(),
+    ["apple", "banana"],
+    "两篇同批一次请求（顺序随 vault）"
+  );
+  ctx.fileStore.set("b.md", "banana bread updated");
+  index.invalidate();
+  await index.search("apple");
+  assert.equal(inputs.length, 4, "第二次仅新增文档批 + 查询向量");
+  assert.deepEqual(inputs[2], ["banana bread updated"], "只 embed 变化的 b.md");
+});
+
+test("SemanticIndex：默认 TF-IDF 不发 embedding 请求；embedding 结果同样过门禁", async () => {
+  let calls = 0;
+  const counting: RequestFn = async (options) => {
+    calls += 1;
+    return fakeEmbed(options);
+  };
+  const tfidf = new SemanticIndex(fakeSemanticPlugin({ "a.md": "apple" }).plugin, counting);
+  const hits = await tfidf.search("apple");
+  assert.equal(hits[0].matchSource, "tf-idf");
+  assert.equal(calls, 0);
+
+  const denied = new SemanticIndex(
+    fakeSemanticPlugin(
+      { "a.md": "apple", "private/x.md": "apple secret" },
+      { semanticEngine: "embedding", deniedFolders: "private" }
+    ).plugin,
+    counting
+  );
+  const results = await denied.search("apple");
+  assert.equal(results.some((hit) => hit.path === "private/x.md"), false);
 });

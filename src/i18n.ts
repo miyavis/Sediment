@@ -717,6 +717,9 @@ const EN: Record<string, string> = {
   "Embedding 模型": "Embedding model",
   "需先 ollama pull，例如 bge-m3。更换模型会重建向量。": "Pull it first (e.g. ollama pull bge-m3). Changing the model rebuilds vectors.",
   "Embedding 只发文本到本机 Ollama，不访问外网；关闭即回到零依赖 TF-IDF。": "Embedding only sends text to your local Ollama, never to the internet; turn it off to return to dependency-free TF-IDF.",
+
+  // 阶段三 Task 15：embedding 回退诊断
+  "Embedding 不可用，已回退 TF-IDF：{error}": "Embedding unavailable; fell back to TF-IDF: {error}",
 };
 
 /** 取当前语言的文案；英文未收录时回退中文源串。 */

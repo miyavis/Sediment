@@ -19,11 +19,12 @@ export function normalizeEndpoint(endpoint: string): string {
 }
 
 export function cosineSimilarity(a: number[], b: number[]): number {
+  // 维度不一致直接判不相关：截断比较会让不同模型/不同长度的向量假满分。
+  if (a.length !== b.length) return 0;
   let dot = 0;
   let normA = 0;
   let normB = 0;
-  const length = Math.min(a.length, b.length);
-  for (let index = 0; index < length; index += 1) {
+  for (let index = 0; index < a.length; index += 1) {
     dot += a[index] * b[index];
     normA += a[index] * a[index];
     normB += b[index] * b[index];
@@ -41,12 +42,28 @@ export function hashText(text: string): string {
   return `${hash >>> 0}:${text.length}`;
 }
 
+/** 允许的 Ollama 主机：仅本机回环，避免笔记正文被发到远端。 */
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+
+function assertLoopback(endpoint: string): void {
+  const withScheme = endpoint.includes("://") ? endpoint : `http://${endpoint}`;
+  let host = "";
+  try {
+    host = new URL(withScheme).hostname.toLowerCase();
+  } catch {
+    throw new Error("Ollama 端点仅支持本机回环地址");
+  }
+  if (!LOOPBACK_HOSTS.has(host)) throw new Error("Ollama 端点仅支持本机回环地址");
+}
+
 export class OllamaEmbeddingClient {
   constructor(
     private endpoint: string,
     private model: string,
     private request: RequestFn
-  ) {}
+  ) {
+    assertLoopback(normalizeEndpoint(endpoint));
+  }
 
   async embed(texts: string[]): Promise<number[][]> {
     if (texts.length === 0) return [];
