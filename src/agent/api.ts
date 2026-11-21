@@ -207,6 +207,16 @@ export function applyFrontmatterUpdate(text: string, updates: Record<string, unk
     : ["---", ...block, "---", "", ...lines].join("\n");
 }
 
+/** 知识目录内的 Agent 新建笔记补登记来源；已有 source 时不覆盖（保留人工登记）。纯函数。 */
+export function stampAgentProvenance(content: string, agent: string, today: string): string {
+  const head = content.match(/^---\r?\n[\s\S]*?\r?\n---/);
+  if (head && /^source\s*:/m.test(head[0])) return content;
+  const updates: Record<string, unknown> = { source: "agent", sediment_status: "draft", agent };
+  if (!head || !/^type\s*:/m.test(head[0])) updates.type = "knowledge";
+  if (!head || !/^date\s*:/m.test(head[0])) updates.date = today;
+  return applyFrontmatterUpdate(content, updates);
+}
+
 /** 带机器可读错误码的 API 异常，HTTP 层据此返回 4xx。 */
 /** 对外 Agent API 版本；兼容策略见 README「Agent 接入」。 */
 export const AGENT_API_VERSION = 1;
@@ -611,18 +621,25 @@ export class AgentApi {
     const existing = this.vault.getAbstractFileByPath(safe);
     if (mode === "create" && existing) throw new Error(`笔记已存在：${safe}`);
 
+    // 知识目录内的 Agent 新建笔记补登记来源（预览与落盘同用 finalContent）。
+    const knowledgeBase = normalizeFolder(this.plugin.store.settings.knowledgeFolder);
+    const finalContent =
+      mode === "create" && knowledgeBase.length > 0 && safe.startsWith(`${knowledgeBase}/`)
+        ? stampAgentProvenance(content, this.currentAgent || "agent", dateKey(new Date()))
+        : content;
+
     if (!bypassConfirm && this.isConfirmMode()) {
       const previous = existing instanceof TFile ? await this.vault.read(existing) : "";
       const after =
         mode === "append" && existing instanceof TFile
-          ? `${previous.trimEnd()}\n\n${content}`
-          : content;
+          ? `${previous.trimEnd()}\n\n${finalContent}`
+          : finalContent;
       return {
         ...this.holdForConfirm(
           "write_note",
           safe,
           "write_note",
-          { path: safe, content, mode },
+          { path: safe, content: finalContent, mode },
           previous,
           after
         ),
@@ -635,14 +652,15 @@ export class AgentApi {
     if (mode === "append" && existing instanceof TFile) {
       const previous = await this.vault.read(existing);
       this.backupNote(safe, previous);
-      await this.vault.modify(existing, `${previous.trimEnd()}\n\n${content}`);
+      await this.vault.modify(existing, `${previous.trimEnd()}\n\n${finalContent}`);
     } else if (existing instanceof TFile) {
       const previous = await this.vault.read(existing);
       this.backupNote(safe, previous);
-      await this.vault.modify(existing, content);
+      await this.vault.modify(existing, finalContent);
     } else {
-      await this.vault.create(safe, content);
+      await this.vault.create(safe, finalContent);
     }
+    // R9：计入 AI 字数的仍是原始正文，登记用的 frontmatter 不算 AI 产出。
     this.plugin.store.updateDay(this.plugin.store.todayKey(), (day) => {
       day.aiWordsAdded += countWords(content);
     });

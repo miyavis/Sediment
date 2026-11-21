@@ -45,7 +45,7 @@ import { TaskManager } from "../src/features/tasks";
 import { buildStatsCsv, buildExportJson, DEFAULT_EXPORT_OPTIONS } from "../src/features/export";
 import { todayLine } from "../src/features/embed";
 import { Store } from "../src/data/store";
-import { AgentApi, ApiError, safeAgentPath } from "../src/agent/api";
+import { AgentApi, ApiError, safeAgentPath, stampAgentProvenance } from "../src/agent/api";
 import { reconcilePendingWrites, markStaleByPaths } from "../src/agent/reconcile";
 import { SemanticIndex, tokenizeSemanticText } from "../src/agent/semantic";
 import { AgentServer, sanitizeServerError, tokensMatch } from "../src/agent/server";
@@ -1521,6 +1521,37 @@ test("confirm 档：writeNote 挂起不落盘；采纳落盘、驳回丢弃、�
   assert.equal(denied.pendingWrites.length, 0, "越权写入不得转挂起");
 });
 
+test("stampAgentProvenance：补登记来源；已有 source 不覆盖；幂等", () => {
+  const stamped = stampAgentProvenance("# 标题\n正文", "qoder", "2026-11-21");
+  assert.match(stamped, /^---\n/);
+  assert.match(stamped, /source: "agent"/);
+  assert.match(stamped, /sediment_status: "draft"/);
+  assert.match(stamped, /agent: "qoder"/);
+  assert.ok(stamped.includes("# 标题\n正文"));
+  assert.equal(stampAgentProvenance(stamped, "other", "2026-11-22"), stamped, "幂等");
+  const human = "---\nsource: human\n---\nbody";
+  assert.equal(stampAgentProvenance(human, "qoder", "2026-11-21"), human, "已有 source 不覆盖");
+});
+
+test("writeNote：知识目录内新建自动登记来源，预览即含 frontmatter；目录外不 stamp", async () => {
+  const ctx = fakeConfirmPlugin({ agentWorkMode: "confirm", knowledgeFolder: "knowledge" });
+  const held = (await ctx.api.writeNote("knowledge/技术/x.md", "# 标题\n正文", "create")) as HoldResult;
+  pendingIdOf(held);
+  assert.match(ctx.pendingWrites[0].after, /source: "agent"/, "挂起预览就应看到登记属性");
+  await ctx.api.approvePendingWrite(ctx.pendingWrites[0].id);
+  assert.match(ctx.files.get("knowledge/技术/x.md") ?? "", /sediment_status: "draft"/);
+
+  const plain = (await ctx.api.writeNote("notes/y.md", "纯文本", "create")) as HoldResult;
+  pendingIdOf(plain);
+  assert.equal(ctx.pendingWrites[0].after, "纯文本", "知识目录外不 stamp");
+});
+
+test("writeNote：auto 档知识目录直写也带来源属性", async () => {
+  const ctx = fakeConfirmPlugin({ agentWorkMode: "auto", knowledgeFolder: "knowledge" });
+  await ctx.api.writeNote("knowledge/项目/z.md", "内容", "create");
+  assert.match(ctx.files.get("knowledge/项目/z.md") ?? "", /source: "agent"/);
+});
+
 test("confirm 档：patchNote 挂起并保留 before/after 预览，采纳后写入", async () => {
   const ctx = fakeConfirmPlugin({ agentWorkMode: "confirm" }, { "notes/a.md": "line1\nline2\n" });
   const res = (await ctx.api.patchNote({ path: "notes/a.md", find: "line1", content: "LINE-A" })) as HoldResult & {
@@ -1573,7 +1604,10 @@ test("工作模式四档矩阵：readonly 拒写 / draft 直写草稿 / confirm 
   const draft = fakeConfirmPlugin({ agentWorkMode: "draft", ...flags.draft });
   const draftRes = (await draft.api.writeNote("knowledge/d.md", "草稿")) as HoldResult;
   assert.equal(draftRes.pending, undefined, "draft 档写入直接落盘（草稿流），不挂起");
-  assert.equal(draft.files.get("knowledge/d.md"), "草稿");
+  // 知识目录内的新建笔记会自动补登记来源 frontmatter（任务 6），正文仍原样落盘。
+  const draftDoc = draft.files.get("knowledge/d.md") ?? "";
+  assert.match(draftDoc, /source: "agent"/);
+  assert.ok(draftDoc.endsWith("草稿"), "正文不得被 stamp 改动");
   await assert.rejects(draft.api.patchNote({ path: "knowledge/d.md", find: "草稿", content: "y" }), (error) => asApiError(error).code === "OPERATION_DENIED");
 
   const confirm = fakeConfirmPlugin({ agentWorkMode: "confirm", ...flags.confirm });
