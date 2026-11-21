@@ -1,6 +1,6 @@
 import type { Vault } from "obsidian";
 import type { Store } from "../data/store";
-import { countWords, noteDateKey } from "../tracking/tracker";
+import { countWords, noteDateKey } from "../tracker";
 import { normalizeFolder } from "../utils/vault";
 
 export interface RebuildResult {

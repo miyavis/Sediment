@@ -3,12 +3,11 @@ import type { SedimentPlugin } from "../main";
 import { buildWeeklyReview } from "../features/review";
 import type { PomodoroState } from "../features/pomodoro";
 import { toggleCheckboxLine } from "../features/tasks";
-import { countWords } from "../tracking/tracker";
+import { countWords } from "../tracker";
 import { restoreBackup } from "../features/audit";
 import type { DayRecord, MemoRecord, PendingWriteRecord, ToolCallRecord, WorkLogRecord } from "../types";
 import { addDays, dailyNotePath, dateKey, hhmm, lastNDays, parseKey } from "../utils/dates";
 import { ensureFolder, normalizeFolder } from "../utils/vault";
-import { contentHash } from "../utils/hash";
 import { logError } from "../utils/log-error";
 import { ensureDirectory, listDirectory, removeFile, writeTextFile } from "../utils/node";
 import { t, tf } from "../i18n";
@@ -22,7 +21,19 @@ import {
   splitList,
   type AgentOperation,
 } from "./access";
-import { bridgePendingId, type BridgeProposal, type BridgeRejectReason } from "./bridge-schema";
+import type { BridgeRejectReason } from "./bridge-schema";
+import { reviewMethods, type ReviewMethods } from "./api-review";
+import {
+  applyFrontmatterUpdate,
+  findSection,
+  lineChanges,
+  simpleDiff,
+  stampAgentProvenance,
+  versionOf,
+} from "./api-helpers";
+
+// 既有公开 API：测试与外部调用继续从 api.ts 导入这些纯函数。
+export { applyFrontmatterUpdate, stampAgentProvenance };
 
 export interface NoteSummary {
   path: string;
@@ -100,118 +111,6 @@ export function generateToken(): string {
   } catch {
     return Math.random().toString(36).slice(2) + Date.now().toString(36);
   }
-}
-
-function versionOf(text: string): string {
-  let hash = 2166136261;
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16);
-}
-
-/** 极简 unified diff：显示首个差异到末个差异之间的增删行。 */
-function simpleDiff(before: string, after: string): string {
-  const oldLines = before.split("\n");
-  const newLines = after.split("\n");
-  let start = 0;
-  while (start < oldLines.length && start < newLines.length && oldLines[start] === newLines[start]) {
-    start += 1;
-  }
-  let endOld = oldLines.length;
-  let endNew = newLines.length;
-  while (endOld > start && endNew > start && oldLines[endOld - 1] === newLines[endNew - 1]) {
-    endOld -= 1;
-    endNew -= 1;
-  }
-  const lines = ["--- before", "+++ after"];
-  for (let index = start; index < endOld; index += 1) lines.push(`-${oldLines[index]}`);
-  for (let index = start; index < endNew; index += 1) lines.push(`+${newLines[index]}`);
-  return lines.join("\n");
-}
-
-function lineChanges(before: string, after: string): { addedLines: number; removedLines: number } {
-  const oldLines = before.split("\n");
-  const newLines = after.split("\n");
-  return {
-    addedLines: newLines.filter((line) => !oldLines.includes(line)).length,
-    removedLines: oldLines.filter((line) => !newLines.includes(line)).length,
-  };
-}
-
-function findSection(
-  text: string,
-  heading: string,
-  index: number
-): { start: number; end: number; lines: string[] } | null {
-  const lines = text.split("\n");
-  const headingMatch = heading.match(/^(#{1,6})\s+(.*)$/);
-  const level = headingMatch ? headingMatch[1].length : 0;
-  const target = headingMatch ? headingMatch[2].trim() : heading.trim();
-  const matches: Array<{ line: number; level: number }> = [];
-  for (let i = 0; i < lines.length; i += 1) {
-    const match = lines[i].match(/^(#{1,6})\s+(.*)$/);
-    if (!match) continue;
-    if (match[2].trim() === target && (level === 0 || match[1].length === level)) {
-      matches.push({ line: i, level: match[1].length });
-    }
-  }
-  const chosen = matches[index];
-  if (!chosen) return null;
-  let end = lines.length;
-  for (let i = chosen.line + 1; i < lines.length; i += 1) {
-    const match = lines[i].match(/^(#{1,6})\s+/);
-    if (match && match[1].length <= chosen.level) {
-      end = i;
-      break;
-    }
-  }
-  return { start: chosen.line + 1, end, lines };
-}
-
-/** 纯函数：在笔记全文上应用 frontmatter 字段更新，供直接写与待审预览共用。 */
-export function applyFrontmatterUpdate(text: string, updates: Record<string, unknown>): string {
-  const lines = text.split("\n");
-  let start = -1;
-  let end = -1;
-  if (lines[0]?.trim() === "---") {
-    for (let i = 1; i < lines.length; i += 1) {
-      if (lines[i].trim() === "---") {
-        end = i;
-        break;
-      }
-    }
-    if (end < 0) throw new Error("frontmatter 未闭合");
-    start = 1;
-  }
-  const block = start >= 0 ? lines.slice(start, end) : [];
-  for (const [key, value] of Object.entries(updates)) {
-    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const targetIndex = block.findIndex((line) => new RegExp(`^${escaped}\\s*:`).test(line));
-    const replacement = Array.isArray(value)
-      ? value.length
-        ? [`${key}:`, ...value.map((item) => `  - ${JSON.stringify(String(item))}`)]
-        : [`${key}: []`]
-      : [`${key}: ${JSON.stringify(value)}`];
-    if (targetIndex >= 0) block.splice(targetIndex, 1, ...replacement);
-    else block.push(...replacement);
-  }
-  return start >= 0
-    ? [...lines.slice(0, start), ...block, ...lines.slice(end)].join("\n")
-    : ["---", ...block, "---", "", ...lines].join("\n");
-}
-
-/** 知识目录内的 Agent 新建笔记补登记来源；已有 source 时不覆盖（保留人工登记）。纯函数。 */
-export function stampAgentProvenance(content: string, agent: string, today: string): string {
-  const head = content.match(/^---\r?\n[\s\S]*?\r?\n---/);
-  // 首行像 frontmatter 但未闭合：不猜测结构，原样放行（交给人工整理）。
-  if (!head && /^---\r?\n/.test(content)) return content;
-  if (head && /^source\s*:/m.test(head[0])) return content;
-  const updates: Record<string, unknown> = { source: "agent", sediment_status: "draft", agent };
-  if (!head || !/^type\s*:/m.test(head[0])) updates.type = "knowledge";
-  if (!head || !/^date\s*:/m.test(head[0])) updates.date = today;
-  return applyFrontmatterUpdate(content, updates);
 }
 
 /** 带机器可读错误码的 API 异常，HTTP 层据此返回 4xx。 */
@@ -299,19 +198,19 @@ interface BridgeDecisionSink {
  * 同一实例同时挂在插件对象、window.Sediment 和本地 HTTP 服务上。
  */
 export class AgentApi {
-  constructor(private plugin: SedimentPlugin) {}
+  constructor(public plugin: SedimentPlugin) {}
 
-  private get vault() {
+  public get vault() {
     return this.plugin.app.vault;
   }
 
   /** 文件桥未启用（或尚未接入）时为 undefined，决策钩子退化成空操作。 */
-  private get bridgeSink(): BridgeDecisionSink | undefined {
+  public get bridgeSink(): BridgeDecisionSink | undefined {
     return (this.plugin as SedimentPlugin & { fileBridge?: BridgeDecisionSink }).fileBridge;
   }
 
   /** 正在采纳中的待审 id；防止并发双击 approve 导致同一请求落盘两次。 */
-  private approving = new Set<string>();
+  public approving = new Set<string>();
 
   /** 构造一次请求专属的写上下文。共享可变字段会让并发请求串上下文，故显式传参。 */
   callMeta(tool: string, agent: string, call: ToolCallRecord | null = null): WriteMeta {
@@ -384,7 +283,7 @@ export class AgentApi {
     }
   }
 
-  private assertPathAllowed(path: string, operation: AgentOperation): void {
+  public assertPathAllowed(path: string, operation: AgentOperation): void {
     this.assertOperation(operation);
     this.assertAllowed(path);
     const settings = this.plugin.store.settings;
@@ -403,278 +302,6 @@ export class AgentApi {
   // confirm 工作模式：写路径挂起为待审草稿（权限检查 → confirm 拦截 → 快照 → 落盘）
   // -------------------------------------------------------------------------
 
-  private isConfirmMode(): boolean {
-    return this.plugin.store.settings.agentWorkMode === "confirm";
-  }
-
-  /**
-   * 把一次写入挂起为待审条目并返回给调用方；不落盘、不建目录、不写快照。
-   * request 保存原请求，采纳时经 replayPending 走与直接写相同的落盘函数。
-   */
-  private holdForConfirm(
-    tool: string,
-    path: string,
-    kind: string,
-    args: Record<string, unknown>,
-    before: string,
-    after: string,
-    meta: WriteMeta = {}
-  ): AgentPendingResult {
-    const id = meta.id ?? `pw-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-    // 条目式写入（速记/工作日志/任务快照等）的 before 也为空串，不能当成「新建文件」。
-    const ENTRY_KINDS = new Set([
-      "memo", "task_snapshot", "task_complete", "delegate_task", "snapshot_tasks",
-      "claim_agent_task", "complete_agent_task", "agent_task_claim", "agent_task_complete",
-    ]);
-    const expectAbsent = before === "" && !ENTRY_KINDS.has(kind);
-    this.plugin.store.addPendingWrite({
-      id,
-      time: new Date().toISOString(),
-      tool,
-      agent: meta.agent || "agent",
-      path,
-      request: { kind, args },
-      before,
-      beforeHash: contentHash(before),
-      expectAbsent,
-      after,
-      ...(meta.source === "bridge" && meta.proposalId
-        ? { source: "bridge" as const, proposalId: meta.proposalId }
-        : {}),
-    });
-    // 文件桥导入不经过 HTTP 调用记录；仅把当前请求的调用标记为挂起，防止重复计数。
-    if (meta.source !== "bridge") {
-      this.plugin.store.markToolCallHeld(meta.call ?? null, id);
-    }
-    const message = tf("confirm 模式下写入已挂起待审：{path}", { path });
-    this.plugin.store.logDiagnostic("storage", message, `${id} · ${tool}`);
-    return { pending: true, pendingId: id, path, message };
-  }
-
-  /** 待审列表（不含大段预览内容，供 Agent / UI 展示）。 */
-  listPendingWrites(limit = 50): Array<{ id: string; time: string; tool: string; agent: string; path: string }> {
-    return (this.plugin.store.data.pendingWrites ?? [])
-      .slice(0, Math.max(1, Math.min(limit, 100)))
-      .map(({ id, time, tool, agent, path }) => ({ id, time, tool, agent, path }));
-  }
-
-  getPendingWrite(id: string): PendingWriteRecord | null {
-    return (this.plugin.store.data.pendingWrites ?? []).find((item) => item.id === id) ?? null;
-  }
-
-  /**
-   * 结算待审写入对应的调用流水：挂起期间它只属于「待审写入」。
-   * 采纳后转入「变更审查」（保留原记录与回滚能力）；驳回则整条移除，不留幽灵行。
-   * 文件桥导入没有 HTTP 调用记录，采纳时补一条但不重复计入客户端调用统计。
-   */
-  private settlePendingCall(record: PendingWriteRecord, landed: boolean): void {
-    if (!landed) {
-      this.plugin.store.dropPendingToolCall(record.id);
-      return;
-    }
-    if (this.plugin.store.releaseToolCall(record.id)) return;
-    this.plugin.store.logToolCall(
-      {
-        time: new Date().toISOString(),
-        tool: `POST ${record.tool}`,
-        agent: record.agent,
-        path: record.path,
-      },
-      false
-    );
-  }
-
-  /** 采纳前复验挂起目标：删除/移动 → STALE_PENDING；内容被改 → CONTENT_CHANGED。
-   *  这是「人工审批的预览」与「实际落盘内容」之间的绑定校验，防止批准 A 落盘 B。 */
-  private async assertPendingUnchanged(record: PendingWriteRecord): Promise<void> {
-    const file = this.vault.getAbstractFileByPath(record.path);
-    if (record.expectAbsent) {
-      // 新建类：挂起时目标不存在，采纳时若已存在说明被别人抢先创建。
-      if (file instanceof TFile) {
-        throw new ApiError(
-          "CONTENT_CHANGED",
-          tf("待审目标在挂起后被创建，请驳回后让 Agent 重发：{path}", { path: record.path }),
-          409
-        );
-      }
-      return;
-    }
-    // 条目式写入（before 为空）没有全文快照可校验，只需确认目标仍在。
-    if (record.before === "") return;
-    if (!(file instanceof TFile)) {
-      throw new ApiError(
-        "STALE_PENDING",
-        tf("待审写入已失效（目标被删除或移动）：{path}，请驳回后让 Agent 重发", { path: record.path }),
-        409
-      );
-    }
-    if (record.beforeHash) {
-      const current = await this.vault.read(file);
-      if (contentHash(current) !== record.beforeHash) {
-        throw new ApiError(
-          "CONTENT_CHANGED",
-          tf("待审目标内容在挂起后被修改，请驳回后让 Agent 重发：{path}", { path: record.path }),
-          409
-        );
-      }
-    }
-  }
-
-  /** 采纳：按挂起时保存的原请求重放对应的落盘函数（重放前再次过门禁）。
-   *  同一 id 的采纳在 in-flight 期间原子占位，杜绝并发双击落盘两次。 */
-  async approvePendingWrite(id: string): Promise<{ path: string }> {
-    if (this.approving.has(id)) {
-      throw new ApiError("PENDING_IN_FLIGHT", t("该待审写入正在采纳中，请稍候"), 409);
-    }
-    this.approving.add(id);
-    try {
-      const record = this.getPendingWrite(id);
-      if (!record) throw new ApiError("NOT_FOUND", tf("待审写入不存在：{id}", { id }), 404);
-      if (record.stale) {
-        throw new ApiError(
-          "STALE_PENDING",
-          tf("待审写入已失效（目标被删除或移动）：{path}，请驳回后让 Agent 重发", { path: record.path }),
-          409
-        );
-      }
-      await this.assertPendingUnchanged(record);
-      await this.replayPending(record.request, record.agent);
-      this.plugin.store.removePendingWrite(id);
-      this.settlePendingCall(record, true);
-      // 只有文件桥来源才写决策；MCP/HTTP 待审记录完全不受影响。
-      if (record.source === "bridge") {
-        this.bridgeSink?.notifyDecision(record, "approved", "user_approved");
-      }
-      const message = tf("待审写入已采纳并落盘：{path}", { path: record.path });
-      this.plugin.store.logDiagnostic("storage", message, id);
-      return { path: record.path };
-    } finally {
-      this.approving.delete(id);
-    }
-  }
-
-  /** 驳回：丢弃挂起请求（不落盘），并记安全诊断。 */
-  rejectPendingWrite(id: string): { ok: true; path: string } {
-    const removed = this.plugin.store.removePendingWrite(id);
-    if (!removed) throw new ApiError("NOT_FOUND", tf("待审写入不存在：{id}", { id }), 404);
-    this.settlePendingCall(removed, false);
-    if (removed.source === "bridge") {
-      this.bridgeSink?.notifyDecision(removed, "rejected", removed.stale ? "stale" : "user_rejected");
-    }
-    const message = tf("待审写入已驳回并丢弃：{path}", { path: removed.path });
-    this.plugin.store.logDiagnostic("security", message, `${removed.id} · ${removed.tool}`);
-    return { ok: true, path: removed.path };
-  }
-
-  /** 文件桥导入：校验 + 门禁 + 预览 + 无条件挂起；绝不直接落盘。 */
-  async importBridgeProposal(proposal: BridgeProposal): Promise<{ pendingId: string; path: string }> {
-    if (!proposal.id) throw new ApiError("INVALID_PROPOSAL", t("文件桥提案缺少 id"), 400);
-    const meta: WriteMeta = {
-      id: bridgePendingId(proposal.id),
-      hold: true,
-      agent: proposal.agent,
-      source: "bridge",
-      proposalId: proposal.id,
-    };
-    let result: { path: string; pending?: true; pendingId?: string } | undefined;
-    switch (proposal.tool) {
-      case "write_note":
-        result = await this.writeNote(
-          proposal.args.path,
-          proposal.args.content,
-          proposal.args.mode,
-          false,
-          meta
-        );
-        break;
-      case "patch_note":
-        result = await this.patchNote(proposal.args.input, false, meta);
-        break;
-      case "add_knowledge":
-        result = await this.addKnowledge(
-          { ...proposal.args.input, agent: proposal.agent },
-          false,
-          meta
-        );
-        break;
-    }
-    if (!result?.pending || !result.pendingId) {
-      throw new ApiError("INVALID_PROPOSAL", tf("文件桥提案未挂起：{id}", { id: proposal.id }), 400);
-    }
-    return { pendingId: result.pendingId, path: result.path };
-  }
-
-  /** 采纳时的重放分发：各 kind 与下方写方法一一对应，bypassConfirm=true。 */
-  private async replayPending(request: PendingWriteRecord["request"], agent = ""): Promise<void> {
-    const meta: WriteMeta = agent ? { agent, replay: true } : { replay: true };
-    const args = request.args;
-    const str = (value: unknown): string =>
-      typeof value === "string"
-        ? value
-        : typeof value === "number" || typeof value === "boolean"
-          ? String(value)
-          : "";
-    // 运行时校验：data.json 可能被旧版本/手工编辑写坏，不能靠 `as` 直接放行。
-    const requireRecord = (value: unknown): Record<string, unknown> => {
-      if (!value || typeof value !== "object" || Array.isArray(value)) {
-        throw new ApiError("INVALID_PENDING", t("待审写入参数损坏，请驳回后让 Agent 重发"), 400);
-      }
-      return value as Record<string, unknown>;
-    };
-    switch (request.kind) {
-      case "write_note":
-        await this.writeNote(
-          str(args.path),
-          str(args.content),
-          (str(args.mode) || "create") as "create" | "overwrite" | "append",
-          true,
-          meta
-        );
-        return;
-      case "patch_note":
-        await this.patchNote(requireRecord(args.input) as Parameters<AgentApi["patchNote"]>[0], true, meta);
-        return;
-      case "frontmatter":
-        await this.updateFrontmatter(
-          str(args.path),
-          requireRecord(args.updates ?? {}),
-          args.ifMatch ? str(args.ifMatch) : undefined,
-          true,
-          meta
-        );
-        return;
-      case "knowledge":
-        await this.addKnowledge(requireRecord(args.input) as unknown as KnowledgeInput, true, meta);
-        return;
-      case "memo":
-        await this.addMemo(
-          str(args.text),
-          Array.isArray(args.tags) ? args.tags.map(String) : [],
-          args.sourcePath ? str(args.sourcePath) : undefined,
-          typeof args.sourceLine === "number" ? args.sourceLine : undefined,
-          true,
-          meta
-        );
-        return;
-      case "worklog":
-        await this.recordWorkLog(requireRecord(args.input) as unknown as WorkLogInput, true, meta);
-        return;
-      case "task_complete":
-        await this.completeTask(str(args.path), Number(args.line), true, meta);
-        return;
-      case "task_snapshot":
-        await this.snapshotTasks(true, meta);
-        return;
-      case "claim_agent_task":
-        await this.claimAgentTask(str(args.id), false, meta);
-        return;
-      case "complete_agent_task":
-        await this.completeAgentTask(str(args.id), args.resultPath ? str(args.resultPath) : undefined, false, meta);
-        return;
-      default:
-        throw new ApiError("INVALID_PENDING", tf("未知的待审写入类型：{kind}", { kind: request.kind }), 400);
-    }
-  }
 
   private cacheTags(file: TFile): string[] {
     const cache = this.plugin.app.metadataCache.getFileCache(file);
@@ -1670,3 +1297,7 @@ export class AgentApi {
     return { date: dateKey(anchor), markdown: buildWeeklyReview(this.plugin.store, anchor) };
   }
 }
+
+// 审核队列方法以原型混入挂上，保持 AgentApi 对外 API 不变（见 api-review.ts）。
+export interface AgentApi extends ReviewMethods {}
+Object.assign(AgentApi.prototype, reviewMethods);

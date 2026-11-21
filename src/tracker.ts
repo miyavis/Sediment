@@ -1,7 +1,7 @@
 import { TFile, type Plugin } from "obsidian";
-import type { Store } from "../data/store";
-import { dateKey } from "../utils/dates";
-import { normalizeFolder } from "../utils/vault";
+import type { Store } from "./data/store";
+import { dateKey } from "./utils/dates";
+import { normalizeFolder } from "./utils/vault";
 
 interface FileBaseline {
   words: number;

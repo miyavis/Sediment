@@ -18,6 +18,8 @@ module.exports = {
     "@typescript-eslint/no-explicit-any": "off",
     "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     "@typescript-eslint/no-non-null-assertion": "off",
+    // AgentApi 用接口合并声明原型混入的方法（见 api-review.ts），这是有意为之。
+    "@typescript-eslint/no-unsafe-declaration-merging": "off",
     "no-console": "off",
   },
 };

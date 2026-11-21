@@ -22,7 +22,7 @@ import { normalizeFolder, ensureFolder } from "./utils/vault";
 import { addDays, dateKey, isSameLocalDay, parseKey, startOfWeek } from "./utils/dates";
 import { DashboardView, DASHBOARD_VIEW_TYPE } from "./views/dashboard-view";
 import { MemoView, MEMO_VIEW_TYPE } from "./views/memo-view";
-import { Tracker } from "./tracking/tracker";
+import { Tracker } from "./tracker";
 import { localeFromPersisted, resolveLocale, setLocale, t, tf } from "./i18n";
 import { appendSvg } from "./utils/dom";
 
