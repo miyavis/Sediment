@@ -3341,3 +3341,27 @@ test("EN locale：健康任务文本零 CJK", async () => {
     setLocale("zh");
   }
 });
+
+// ── 阶段二 Task 11：检索标题英文化 ──
+
+test("EN locale：searchNotes 的速记/工作日志/草稿标题零 CJK", async () => {
+  const ctx = fakeConfirmPlugin({});
+  ctx.plugin.store.data.memos.push({
+    id: "m1", date: "2026-11-21", time: "10:00", text: "english note", tags: [], converted: false,
+  });
+  ctx.plugin.store.data.workLogs.push({
+    id: "w1", date: "2026-11-21", time: "11:00", agent: "qoder",
+    task: "english task", summary: "english summary", decisions: "", files: [],
+    learnings: "", openQuestions: "", tags: [],
+  });
+  setLocale("en");
+  try {
+    const hits = await ctx.api.searchNotes("english");
+    assert.ok(hits.length >= 2);
+    for (const hit of hits) {
+      assert.equal(/[\u4e00-\u9fff]/.test(hit.title), false, hit.title);
+    }
+  } finally {
+    setLocale("zh");
+  }
+});

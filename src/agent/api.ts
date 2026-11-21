@@ -559,7 +559,7 @@ export class AgentApi {
       if (!memo.text.toLowerCase().includes(needle)) continue;
       results.push({
         path: "",
-        title: `速记 ${memo.date} ${memo.time}`,
+        title: tf("速记 {date} {time}", { date: memo.date, time: memo.time }),
         snippet: memo.text.slice(0, 220),
         matchType: "exact",
         matchSource: "memo",
@@ -572,7 +572,7 @@ export class AgentApi {
       if (!haystack.includes(needle)) continue;
       results.push({
         path: "",
-        title: `工作日志 ${log.date} ${log.time} · ${log.agent}`,
+        title: tf("工作日志 {date} {time} · {agent}", { date: log.date, time: log.time, agent: log.agent }),
         snippet: `${log.task} — ${log.summary}`.slice(0, 220),
         matchType: "exact",
         matchSource: "worklog",
@@ -588,7 +588,7 @@ export class AgentApi {
       results.push({
         path: file.path,
         title: file.basename,
-        snippet: "待审核的知识草稿",
+        snippet: t("待审核的知识草稿"),
         matchType: "exact",
         matchSource: "title",
         kind: "draft",

@@ -697,6 +697,11 @@ const EN: Record<string, string> = {
   "等 {n} 处": "and {n} more",
   "已 {days} 天未更新": "Untouched for {days} days",
   "【笔记健康】{label}：{path}（{detail}）。请整理：补双链/修断链/更新或归档，完成后用 complete_agent_task 关联产出。": "[Note health] {label}: {path} ({detail}). Please tidy up: add backlinks / fix broken links / update or archive, then link the result with complete_agent_task.",
+
+  // 阶段二 Task 11：检索标题
+  "速记 {date} {time}": "Memo {date} {time}",
+  "工作日志 {date} {time} · {agent}": "Work log {date} {time} · {agent}",
+  "待审核的知识草稿": "Knowledge draft pending review",
 };
 
 /** 取当前语言的文案；英文未收录时回退中文源串。 */
