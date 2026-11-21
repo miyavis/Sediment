@@ -9,6 +9,18 @@ Local-first Obsidian plugin: knowledge statistics, heatmaps, quick memos, weekly
 - "Configure agent clients" reads and writes MCP configuration files **outside the vault**, under your user home or `%APPDATA%` (for example `~/.claude.json`, `~/.cursor/mcp.json`, `~/.config/opencode/opencode.jsonc`). It only adds or removes the Sediment entry; "Uninstall MCP access" removes that entry again.
 - No telemetry, no cloud upload, no self-update, and no advertising.
 
+## Install
+
+Sediment is desktop-only (Obsidian 1.6.0+). Install it with [BRAT](https://github.com/TfTHacker/obsidian42-brat) using `miyavis/Sediment`, or download `main.js`, `manifest.json`, and `styles.css` from a release into `<vault>/.obsidian/plugins/sediment/` and enable it under **Community plugins**.
+
+## What it does
+
+- **Today** — daily goal, quick memos, pomodoro, local tasks, and agent activity.
+- **Knowledge** — heatmaps, writing trends, focus distribution, yearly profile, and periodic reviews.
+- **Agent** — draft review, task claiming, change review, snapshot restore, and work logs.
+
+The local Agent API and MCP bridge are optional and off by default. Core data stays in `.obsidian/plugins/sediment/data.json`.
+
 > 中文说明见下方 / Chinese documentation below.
 
 ---
@@ -19,7 +31,7 @@ Sediment 是一个本地优先的 Obsidian 插件，把知识工作统计、快�
 
 [![Obsidian](https://img.shields.io/badge/Obsidian-v1.6.0%2B-blue.svg)](https://obsidian.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v1.0.4-blue.svg)](https://github.com/miyavis/Sediment/releases)
+[![Version](https://img.shields.io/badge/version-v1.0.5-blue.svg)](https://github.com/miyavis/Sediment/releases)
 
 ## 核心入口
 
@@ -42,11 +54,11 @@ Sediment 是一个本地优先的 Obsidian 插件，把知识工作统计、快�
 
 ### 手动安装
 
-1. 从 [Releases](https://github.com/miyavis/Sediment/releases) 下载 `sediment-vX.Y.Z.zip` 并解压。
-2. 把整个 `sediment/` 目录复制到 `<vault>/.obsidian/plugins/`。
+1. 从 [Releases](https://github.com/miyavis/Sediment/releases) 下载 `main.js`、`manifest.json`、`styles.css` 三个文件。
+2. 放入 `<vault>/.obsidian/plugins/sediment/`。
 3. 在 Obsidian 设置 → 第三方插件中启用 Sediment。
 
-包内包含 `main.js`、`manifest.json`、`styles.css`、`mcp-server/index.mjs`（Agent 用，可不要）和 `安装说明.md`。也可只下单个文件，或复制仓库现成的 [`dist/sediment`](./dist/sediment)。
+Release 只提供 Obsidian 会安装的三个文件，并附带 GitHub build provenance attestations。需要整包（含 `mcp-server/index.mjs` 与 `安装说明.md`）可复制仓库现成的 [`dist/sediment`](./dist/sediment)；启用并配置 Agent API 时，插件会把桥接脚本写入插件目录的 `mcp-server/`。
 
 ### 怎么找到 `.obsidian`
 
@@ -247,15 +259,17 @@ npm run test:release
 **版本号只有一个源**：`package.json` 的 `version`。构建时 `version-bump.mjs` 自动同步到 `package-lock.json`、`manifest.json`、`versions.json`、`mcp-server/index.mjs` 的 `serverInfo` 和 README 版本徽章。发版流程：
 
 ```sh
-npm run release:prepare -- 0.9.3   # 自动把 CHANGELOG 的 [Unreleased] 定稿，并改 package.json 版本
+npm run release:prepare -- 1.0.5   # 自动把 CHANGELOG 的 [Unreleased] 定稿，并改 package.json 版本
 npm run build                      # 自动同步所有位置并生成 dist/sediment
 git add -A
-git commit -m "release: v0.9.3"
-git tag v0.9.3
+git commit -m "release: 1.0.5"
+git tag 1.0.5                      # 必须与 manifest 版本逐字一致，且不带 v 前缀
 git push origin main --tags
 ```
 
-`release:prepare` 只做两件事：把 `## [Unreleased]` 改成 `## [0.9.3] - 日期`，并把 `package.json` 的 `version` 改成 `0.9.3`。其余位置由 `npm run build` 自动同步。CI 打 tag 时也会自动执行这一步。
+`release:prepare` 只做两件事：把 `## [Unreleased]` 改成 `## [1.0.5] - 日期`，并把 `package.json` 的 `version` 改成 `1.0.5`。其余位置由 `npm run build` 自动同步。CI 打 tag 时也会自动执行这一步。
+
+社区目录要求 Release 标签与 `manifest.json` 的 `version` 完全一致且不带 `v` 前缀；带 `v` 的标签仍能触发发布工作流，但不要用于社区提交。
 
 项目结构：
 
@@ -270,7 +284,7 @@ mcp-server/          MCP stdio 桥接
 ## 已知边界
 
 - 没有云授权或云同步，核心内容不上传
-- 语义检索使用本地 TF-IDF，不依赖大型 embedding 模型
+- 语义检索默认使用本地 TF-IDF；可选接入本机 Ollama embedding（仅回环，不可用时自动回退 TF-IDF），不依赖云端模型
 - 桌面端专用：插件使用 Node 的文件系统与子进程能力（一键配置、快照、卸载），manifest 已标记 `isDesktopOnly`
 - 数据迁移、大 vault 性能仍需持续基准验证
 

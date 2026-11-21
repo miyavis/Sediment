@@ -2,6 +2,13 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [1.0.5] - 2026-11-21
+
+### 上架反馈
+- Release 资产只保留 Obsidian 会下载的 `main.js`、`manifest.json`、`styles.css`；不再上传 `mcp-server/index.mjs` 与整包 zip。
+- 发布工作流为三个资产生成 GitHub build provenance attestations（`actions/attest@v4`）。
+- README 手动安装改为下载三个文件；Agent 桥接脚本仍由插件在配置时写入。
+
 ## [1.0.4] - 2026-11-21
 
 ### 上架准备

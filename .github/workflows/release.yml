@@ -8,6 +8,9 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
 
 jobs:
   build:
@@ -36,8 +39,13 @@ jobs:
       - name: Verify release versions and files
         run: node scripts/verify-release.mjs ${{ github.ref_name }}
 
-      - name: Package install folder
-        run: cd dist && zip -r ../sediment-${{ github.ref_name }}.zip sediment
+      - name: Attest release assets
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            main.js
+            manifest.json
+            styles.css
 
       - name: Generate release notes from CHANGELOG.md
         run: node scripts/latest-changelog.mjs ${{ github.ref_name }} > RELEASE_NOTES.md
@@ -47,8 +55,6 @@ jobs:
         with:
           body_path: RELEASE_NOTES.md
           files: |
-            sediment-*.zip
             main.js
             manifest.json
             styles.css
-            mcp-server/index.mjs
