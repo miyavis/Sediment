@@ -1,7 +1,14 @@
 import type { SedimentPlugin } from "../main";
+import { t, tf } from "../i18n";
 import { normalizeFolder } from "../utils/vault";
 
-export type HealthKind = "orphan" | "broken-link" | "stale";
+export type HealthKind =
+  | "orphan"
+  | "broken-link"
+  | "stale"
+  | "draft-stale"
+  | "duplicate-title"
+  | "empty-note";
 
 export interface HealthIssue {
   kind: HealthKind;
@@ -10,11 +17,14 @@ export interface HealthIssue {
 }
 
 const STALE_DAYS = 90;
+const DRAFT_STALE_DAYS = 14;
+const EMPTY_NOTE_SIZE = 16;
 const MAX_ISSUES = 300;
 
 /**
  * 笔记健康度扫描：孤儿笔记（无出链也无入链）、断链（指向不存在的笔记）、
- * 久未更新（超过 90 天）。插件自身产出目录不参与扫描。
+ * 久未更新（超过 90 天）、草稿滞留（知识库草稿超过 14 天未采纳）、
+ * 疑似重复（同名笔记）、空壳笔记（内容几乎为空）。插件自身产出目录不参与扫描。
  * 发现的问题可一键转成 #to-agent 速记任务，交给智能体整理，形成闭环。
  */
 export function scanNoteHealth(plugin: SedimentPlugin): HealthIssue[] {
@@ -37,6 +47,16 @@ export function scanNoteHealth(plugin: SedimentPlugin): HealthIssue[] {
     }
   }
 
+  const titleCount = new Map<string, string[]>();
+  for (const file of plugin.app.vault.getMarkdownFiles()) {
+    if (excluded.some((folder) => file.path.startsWith(`${folder}/`))) continue;
+    const key = file.basename.toLowerCase();
+    const list = titleCount.get(key) ?? [];
+    list.push(file.path);
+    titleCount.set(key, list);
+  }
+  const knowledgeBase = normalizeFolder(settings.knowledgeFolder);
+
   const issues: HealthIssue[] = [];
   const staleBefore = Date.now() - STALE_DAYS * 86400000;
   for (const file of plugin.app.vault.getMarkdownFiles()) {
@@ -58,9 +78,37 @@ export function scanNoteHealth(plugin: SedimentPlugin): HealthIssue[] {
       const days = Math.floor((Date.now() - file.stat.mtime) / 86400000);
       issues.push({ kind: "stale", path: file.path, detail: `已 ${days} 天未更新` });
     }
+    if (
+      knowledgeBase &&
+      file.path.startsWith(`${knowledgeBase}/`) &&
+      plugin.app.metadataCache.getFileCache(file)?.frontmatter?.sediment_status === "draft" &&
+      file.stat.mtime < Date.now() - DRAFT_STALE_DAYS * 86400000
+    ) {
+      const days = Math.floor((Date.now() - file.stat.mtime) / 86400000);
+      issues.push({ kind: "draft-stale", path: file.path, detail: tf("草稿已滞留 {days} 天，待审核采纳", { days }) });
+    }
+    const sameTitle = titleCount.get(file.basename.toLowerCase()) ?? [];
+    if (sameTitle.length > 1) {
+      const others = sameTitle.filter((path) => path !== file.path).slice(0, 3);
+      issues.push({
+        kind: "duplicate-title",
+        path: file.path,
+        detail: tf("与 {others} 标题疑似重复", { others: others.join(", ") }),
+      });
+    }
+    if (file.stat.size < EMPTY_NOTE_SIZE) {
+      issues.push({ kind: "empty-note", path: file.path, detail: t("内容几乎为空") });
+    }
     if (issues.length >= MAX_ISSUES) break;
   }
-  const order: Record<HealthKind, number> = { "broken-link": 0, orphan: 1, stale: 2 };
+  const order: Record<HealthKind, number> = {
+    "broken-link": 0,
+    "draft-stale": 1,
+    "duplicate-title": 2,
+    orphan: 3,
+    "empty-note": 4,
+    stale: 5,
+  };
   return issues.sort((a, b) => order[a.kind] - order[b.kind]);
 }
 
@@ -68,6 +116,9 @@ export const HEALTH_LABEL: Record<HealthKind, string> = {
   orphan: "孤儿笔记",
   "broken-link": "断链",
   stale: "久未更新",
+  "draft-stale": "草稿滞留",
+  "duplicate-title": "疑似重复",
+  "empty-note": "空壳笔记",
 };
 
 /** 把健康问题转成 #to-agent 速记任务；已有相同未完成任务时跳过。返回新建数量。 */

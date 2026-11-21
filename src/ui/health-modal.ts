@@ -5,6 +5,7 @@ import {
   HEALTH_LABEL,
   scanNoteHealth,
   type HealthIssue,
+  type HealthKind,
 } from "../features/health";
 import { t, tf } from "../i18n";
 
@@ -25,19 +26,29 @@ export class HealthModal extends Modal {
     contentEl.createEl("h2", { text: t("笔记健康度") });
     contentEl.createDiv({
       cls: "sd-setup-hint",
-      text: t("孤儿笔记＝无出链无反链；断链＝链接指向不存在的笔记；久未更新＝90 天以上。勾选后转为 Agent 任务，智能体整理完成会标记 #agent-done。"),
+      text: t("孤儿笔记＝无出链无反链；断链＝链接指向不存在的笔记；草稿滞留＝知识库草稿超过 14 天未采纳；疑似重复＝同名笔记；空壳＝内容几乎为空；久未更新＝90 天以上。勾选后转为 Agent 任务，智能体整理完成会标记 #agent-done。"),
     });
     if (this.issues.length === 0) {
       contentEl.createDiv({ cls: "sd-empty", text: t("没有发现健康问题，库很整洁。") });
       return;
     }
-    const counts = { orphan: 0, "broken-link": 0, stale: 0 } as Record<string, number>;
+    const counts: Record<HealthKind, number> = {
+      orphan: 0,
+      "broken-link": 0,
+      stale: 0,
+      "draft-stale": 0,
+      "duplicate-title": 0,
+      "empty-note": 0,
+    };
     for (const issue of this.issues) counts[issue.kind] += 1;
     contentEl.createDiv({
       cls: "sd-health-summary",
-      text: tf("断链 {broken} · 孤儿 {orphan} · 久未更新 {stale}", {
+      text: tf("断链 {broken} · 草稿滞留 {draft} · 疑似重复 {dup} · 孤儿 {orphan} · 空壳 {empty} · 久未更新 {stale}", {
         broken: counts["broken-link"],
+        draft: counts["draft-stale"],
+        dup: counts["duplicate-title"],
         orphan: counts.orphan,
+        empty: counts["empty-note"],
         stale: counts.stale,
       }),
     });

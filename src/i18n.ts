@@ -640,6 +640,16 @@ const EN: Record<string, string> = {
   "这些知识笔记没有 source 属性（可能来自绕过 MCP 的直写或手动新建）。标记为人工后计入人工来源；不改动正文。": "These knowledge notes have no source property (possibly written directly, bypassing MCP, or created manually). Marking as human records them as human-sourced; the note body is untouched.",
   "标记为人工": "Mark as human",
   "已标记为人工来源": "Marked as human source",
+
+  // 阶段二 Task 8：健康度六项
+  "草稿滞留": "Draft stalled",
+  "疑似重复": "Near-duplicate",
+  "空壳笔记": "Empty note",
+  "草稿已滞留 {days} 天，待审核采纳": "Draft stalled for {days} days, awaiting review",
+  "与 {others} 标题疑似重复": "Title looks duplicated with {others}",
+  "内容几乎为空": "Content is almost empty",
+  "断链 {broken} · 草稿滞留 {draft} · 疑似重复 {dup} · 孤儿 {orphan} · 空壳 {empty} · 久未更新 {stale}": "Broken {broken} · Stalled drafts {draft} · Duplicates {dup} · Orphans {orphan} · Empty {empty} · Stale {stale}",
+  "孤儿笔记＝无出链无反链；断链＝链接指向不存在的笔记；草稿滞留＝知识库草稿超过 14 天未采纳；疑似重复＝同名笔记；空壳＝内容几乎为空；久未更新＝90 天以上。勾选后转为 Agent 任务，智能体整理完成会标记 #agent-done。": "Orphan = no outgoing or incoming links; broken = link target missing; stalled draft = knowledge draft older than 14 days; near-duplicate = same note title; empty = almost no content; stale = untouched for over 90 days. Tick items to convert them into agent tasks; the agent marks #agent-done when done.",
 };
 
 /** 取当前语言的文案；英文未收录时回退中文源串。 */

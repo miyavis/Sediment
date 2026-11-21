@@ -73,6 +73,7 @@ import {
 import { SETTINGS_SECTIONS, settingsSection } from "../src/ui/settings-sections";
 import { renderYearly } from "../src/views/dashboard/sections/insights";
 import { scanKnowledgeState, type KnowledgeFile } from "../src/features/knowledge-state";
+import { scanNoteHealth } from "../src/features/health";
 
 const day = (partial: Partial<DayRecord> = {}): DayRecord => ({ ...createEmptyDay(), ...partial });
 const settings = (partial: Partial<PulseSettings> = {}): PulseSettings => ({
@@ -3197,4 +3198,69 @@ test("i18n：来源未登记卡英文条目已收录", () => {
   } finally {
     setLocale("zh");
   }
+});
+
+// ── 阶段二 Task 8：健康度六项 ──
+
+function fakeHealthPlugin(
+  files: Array<{ path: string; mtime?: number; size?: number; frontmatter?: Record<string, unknown> }>,
+  links: { resolved?: Record<string, Record<string, number>>; unresolved?: Record<string, Record<string, number>> } = {},
+  partial: Partial<PulseSettings> = {}
+) {
+  const entries = files.map((entry) => {
+    const file = new TFile(entry.path);
+    file.stat = { ctime: 0, mtime: entry.mtime ?? Date.now(), size: entry.size ?? 100 };
+    return { file, frontmatter: entry.frontmatter };
+  });
+  const byPath = new Map(entries.map((entry) => [entry.file.path, entry]));
+  return {
+    store: { settings: settings(partial) },
+    app: {
+      vault: { getMarkdownFiles: () => entries.map((entry) => entry.file) },
+      metadataCache: {
+        resolvedLinks: links.resolved ?? {},
+        unresolvedLinks: links.unresolved ?? {},
+        getFileCache: (file: TFile) => {
+          const frontmatter = byPath.get(file.path)?.frontmatter;
+          return frontmatter ? { frontmatter } : undefined;
+        },
+      },
+    },
+  } as never;
+}
+
+test("健康度六项：草稿滞留 / 疑似重复 / 空壳；排序与上限不变", () => {
+  const old = Date.now() - 30 * 86400000;
+  const plugin = fakeHealthPlugin(
+    [
+      { path: "knowledge/技术/草稿.md", mtime: old, frontmatter: { sediment_status: "draft" } },
+      { path: "a/同名.md", size: 100 },
+      { path: "b/同名.md", size: 100 },
+      { path: "c/空.md", size: 4 },
+    ],
+    {},
+    { knowledgeFolder: "knowledge" }
+  );
+  const issues = scanNoteHealth(plugin);
+  const kinds = issues.map((issue) => issue.kind);
+  assert.ok(kinds.includes("draft-stale"));
+  assert.ok(kinds.includes("duplicate-title"));
+  assert.ok(kinds.includes("empty-note"));
+  const order = { "broken-link": 0, "draft-stale": 1, "duplicate-title": 2, orphan: 3, "empty-note": 4, stale: 5 } as Record<string, number>;
+  const sorted = [...issues].sort((a, b) => order[a.kind] - order[b.kind]);
+  assert.deepEqual(issues.map((issue) => issue.kind), sorted.map((issue) => issue.kind));
+  const draft = issues.find((issue) => issue.kind === "draft-stale");
+  assert.match(draft?.detail ?? "", /30 天/);
+  assert.equal(issues.filter((issue) => issue.kind === "duplicate-title").length, 2);
+});
+
+test("健康度：知识目录外的 draft 不触发草稿滞留", () => {
+  const old = Date.now() - 30 * 86400000;
+  const plugin = fakeHealthPlugin(
+    [{ path: "notes/draft.md", mtime: old, frontmatter: { sediment_status: "draft" } }],
+    {},
+    { knowledgeFolder: "knowledge" }
+  );
+  const issues = scanNoteHealth(plugin);
+  assert.equal(issues.some((issue) => issue.kind === "draft-stale"), false);
 });
