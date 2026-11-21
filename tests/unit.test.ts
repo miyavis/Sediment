@@ -16,6 +16,7 @@ import {
   type DayRecord,
   type FocusSessionRecord,
   type MemoRecord,
+  type PendingWriteRecord,
   type PersistedPomodoro,
   type PulseSettings,
 } from "../src/types";
@@ -3030,4 +3031,7 @@ test("store：reconcilePending / markPendingWritesStale 有标记才落盘", () 
   assert.equal(saves, 1);
   assert.equal(store.markPendingWritesStale(["notes/a.md"]), 0, "已 stale 不再计数也不落盘");
   assert.equal(saves, 1);
+  (store as any).data.pendingWrites = [pendingRecord({ id: "pw-2" })];
+  assert.equal(store.markPendingWritesStale(["notes/a.md"]), 1, "未标记项命中即计入");
+  assert.equal(saves, 2, "有标记时落盘");
 });
