@@ -650,6 +650,32 @@ const EN: Record<string, string> = {
   "内容几乎为空": "Content is almost empty",
   "断链 {broken} · 草稿滞留 {draft} · 疑似重复 {dup} · 孤儿 {orphan} · 空壳 {empty} · 久未更新 {stale}": "Broken {broken} · Stalled drafts {draft} · Duplicates {dup} · Orphans {orphan} · Empty {empty} · Stale {stale}",
   "孤儿笔记＝无出链无反链；断链＝链接指向不存在的笔记；草稿滞留＝知识库草稿超过 14 天未采纳；疑似重复＝同名笔记；空壳＝内容几乎为空；久未更新＝90 天以上。勾选后转为 Agent 任务，智能体整理完成会标记 #agent-done。": "Orphan = no outgoing or incoming links; broken = link target missing; stalled draft = knowledge draft older than 14 days; near-duplicate = same note title; empty = almost no content; stale = untouched for over 90 days. Tick items to convert them into agent tasks; the agent marks #agent-done when done.",
+
+  // 阶段二 Task 9：周复盘生成内容
+  "工作复盘 {start} ~ {end}": "Weekly review {start} ~ {end}",
+  "值得回看": "Worth revisiting",
+  "本期成果": "Highlights this week",
+  "未完成事项": "Unfinished",
+  "我的认识": "My takeaways",
+  "下一步行动": "Next actions",
+  "本期总览": "Overview",
+  "指标": "Metric",
+  "本期": "This week",
+  "上期": "Last week",
+  "变化": "Change",
+  "每日明细": "Daily detail",
+  "删除词": "Removed words",
+  "贡献最高的一天是 {day}（{score} 分）。": "Best day was {day} ({score} pts).",
+  "还有 {n} 条速记尚未转化。": "{n} memos are not yet converted.",
+  "有 {n} 条带 #to-agent 的待办等待处理。": "{n} #to-agent tasks are waiting.",
+  "本期记录较少，先把记录习惯保持住。": "Light week; keep the logging habit going.",
+  "_本期没有速记。_": "_No memos this week._",
+  "_没有未完成事项。_": "_Nothing unfinished._",
+  "速记：{text}": "Memo: {text}",
+  "Agent 任务：{text}": "Agent task: {text}",
+  "_在这里写下本期复盘。_": "_Write your review here._",
+  "，单日封顶 {cap}": ", daily cap {cap}",
+  "口径：贡献分 = 新建笔记×{n} + 编辑会话×{e} + 完成任务×{t} + 新增词数/{w} + 专注分钟/{f}{cap}；未记录日期不视作零。": "Formula: contribution = notes created ×{n} + edit sessions ×{e} + tasks done ×{t} + added words/{w} + focus minutes/{f}{cap}; days without records are not counted as zero.",
 };
 
 /** 取当前语言的文案；英文未收录时回退中文源串。 */

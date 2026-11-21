@@ -1,6 +1,7 @@
 import type { Store } from "../data/store";
 import type { DayRecord } from "../types";
 import { addDays, dateKey, eachDay, endOfWeek, startOfWeek } from "../utils/dates";
+import { t, tf } from "../i18n";
 
 const METRIC_ROWS: Array<[keyof DayRecord, string]> = [
   ["contribution", "贡献分"],
@@ -39,27 +40,27 @@ export function buildWeeklyReview(store: Store, anchor: Date): string {
   );
 
   const lines: string[] = [];
-  lines.push(`# 工作复盘 ${dateKey(start)} ~ ${dateKey(end)}`);
+  lines.push(`# ${tf("工作复盘 {start} ~ {end}", { start: dateKey(start), end: dateKey(end) })}`);
   lines.push("");
 
   // 1. 线索：先给可核对的事实
-  lines.push("## 值得回看");
+  lines.push(`## ${t("值得回看")}`);
   lines.push("");
   const clues: string[] = [];
   if (store.getDay(best).contribution > 0) {
-    clues.push(`贡献最高的一天是 ${best}（${store.getDay(best).contribution} 分）。`);
+    clues.push(tf("贡献最高的一天是 {day}（{score} 分）。", { day: best, score: store.getDay(best).contribution }));
   }
-  if (pendingMemos.length > 0) clues.push(`还有 ${pendingMemos.length} 条速记尚未转化。`);
-  if (agentTasks.length > 0) clues.push(`有 ${agentTasks.length} 条带 #to-agent 的待办等待处理。`);
-  if (clues.length === 0) clues.push("本期记录较少，先把记录习惯保持住。");
+  if (pendingMemos.length > 0) clues.push(tf("还有 {n} 条速记尚未转化。", { n: pendingMemos.length }));
+  if (agentTasks.length > 0) clues.push(tf("有 {n} 条带 #to-agent 的待办等待处理。", { n: agentTasks.length }));
+  if (clues.length === 0) clues.push(t("本期记录较少，先把记录习惯保持住。"));
   for (const clue of clues) lines.push(`- ${clue}`);
   lines.push("");
 
   // 2. 成果与未完成事项
-  lines.push("## 本期成果");
+  lines.push(`## ${t("本期成果")}`);
   lines.push("");
   if (memos.length === 0) {
-    lines.push("_本期没有速记。_");
+    lines.push(t("_本期没有速记。_"));
   } else {
     for (const memo of memos) {
       const tags = memo.tags.length ? ` ${memo.tags.map((tag) => `#${tag}`).join(" ")}` : "";
@@ -68,44 +69,46 @@ export function buildWeeklyReview(store: Store, anchor: Date): string {
   }
   lines.push("");
 
-  lines.push("## 未完成事项");
+  lines.push(`## ${t("未完成事项")}`);
   lines.push("");
   if (pendingMemos.length === 0 && agentTasks.length === 0) {
-    lines.push("_没有未完成事项。_");
+    lines.push(t("_没有未完成事项。_"));
   } else {
-    for (const memo of pendingMemos) lines.push(`- [ ] 速记：${memo.text.replace(/\n/g, " ")}`);
-    for (const memo of agentTasks) lines.push(`- [ ] Agent 任务：${memo.text.replace(/\n/g, " ")}`);
+    for (const memo of pendingMemos) lines.push(`- [ ] ${tf("速记：{text}", { text: memo.text.replace(/\n/g, " ") })}`);
+    for (const memo of agentTasks) lines.push(`- [ ] ${tf("Agent 任务：{text}", { text: memo.text.replace(/\n/g, " ") })}`);
   }
   lines.push("");
 
   // 3. 行动与归档
-  lines.push("## 我的认识");
+  lines.push(`## ${t("我的认识")}`);
   lines.push("");
-  lines.push("_在这里写下本期复盘。_");
+  lines.push(t("_在这里写下本期复盘。_"));
   lines.push("");
-  lines.push("## 下一步行动");
+  lines.push(`## ${t("下一步行动")}`);
   lines.push("");
   lines.push("- [ ] ");
   lines.push("");
 
   // 4. 详细数据与口径
-  lines.push("## 本期总览");
+  lines.push(`## ${t("本期总览")}`);
   lines.push("");
-  lines.push("| 指标 | 本期 | 上期 | 变化 |");
+  lines.push(`| ${t("指标")} | ${t("本期")} | ${t("上期")} | ${t("变化")} |`);
   lines.push("| --- | ---: | ---: | ---: |");
   for (const [key, label] of METRIC_ROWS) {
     const current = sum(keys, key);
     const previous = sum(prevKeys, key);
     const diff = current - previous;
     const pct = previous > 0 ? ` (${diff >= 0 ? "+" : ""}${Math.round((diff / previous) * 100)}%)` : "";
-    lines.push(`| ${label} | ${current} | ${previous} | ${diff >= 0 ? "+" : ""}${diff}${pct} |`);
+    lines.push(`| ${t(label)} | ${current} | ${previous} | ${diff >= 0 ? "+" : ""}${diff}${pct} |`);
   }
-  lines.push(`| 活跃天数 | ${activeDays} | ${prevActive} | ${activeDays - prevActive >= 0 ? "+" : ""}${activeDays - prevActive} |`);
+  lines.push(`| ${t("活跃天数")} | ${activeDays} | ${prevActive} | ${activeDays - prevActive >= 0 ? "+" : ""}${activeDays - prevActive} |`);
   lines.push("");
 
-  lines.push("## 每日明细");
+  lines.push(`## ${t("每日明细")}`);
   lines.push("");
-  lines.push("| 日期 | 贡献 | 新增词 | 删除词 | 编辑 | 新笔记 | 任务 | 专注 |");
+  lines.push(
+    `| ${t("日期")} | ${t("贡献")} | ${t("新增词")} | ${t("删除词")} | ${t("编辑")} | ${t("新笔记")} | ${t("任务")} | ${t("专注")} |`
+  );
   lines.push("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
   for (const day of keys) {
     const d = store.getDay(day);
@@ -116,9 +119,16 @@ export function buildWeeklyReview(store: Store, anchor: Date): string {
   lines.push("");
 
   const s = store.settings;
-  const capNote = s.contributionDailyCap > 0 ? `，单日封顶 ${s.contributionDailyCap}` : "";
+  const capNote = s.contributionDailyCap > 0 ? tf("，单日封顶 {cap}", { cap: s.contributionDailyCap }) : "";
   lines.push(
-    `> 口径：贡献分 = 新建笔记×${s.weightNotesCreated} + 编辑会话×${s.weightEdits} + 完成任务×${s.weightTasks} + 新增词数/${s.wordsPerPoint} + 专注分钟/${s.focusMinutesPerPoint}${capNote}；未记录日期不视作零。`
+    `> ${tf("口径：贡献分 = 新建笔记×{n} + 编辑会话×{e} + 完成任务×{t} + 新增词数/{w} + 专注分钟/{f}{cap}；未记录日期不视作零。", {
+      n: s.weightNotesCreated,
+      e: s.weightEdits,
+      t: s.weightTasks,
+      w: s.wordsPerPoint,
+      f: s.focusMinutesPerPoint,
+      cap: capNote,
+    })}`
   );
   return lines.join("\n");
 }

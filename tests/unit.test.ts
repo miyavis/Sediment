@@ -2202,6 +2202,30 @@ test("main：generateReview 文件已含本周区间标题时去重跳过", asyn
   assert.equal(modifyCalls, 1);
 });
 
+// ── 阶段二 Task 9：周复盘英文化 ──
+
+test("EN locale：周复盘生成内容零 CJK（zh 下仍为中文）", () => {
+  const fakeStore = {
+    settings: settings(),
+    data: {
+      memos: [
+        { id: "m1", date: dateKey(new Date()), time: "10:00", text: "english memo", tags: [], converted: false },
+      ],
+    },
+    getDay: () => day({ contribution: 5 }),
+  } as never;
+  setLocale("en");
+  try {
+    const md = buildWeeklyReview(fakeStore, new Date());
+    assert.equal(/[\u4e00-\u9fff]/.test(md), false, md);
+    assert.match(md, /Weekly review|review/i);
+  } finally {
+    setLocale("zh");
+  }
+  const zh = buildWeeklyReview(fakeStore, new Date());
+  assert.match(zh, /工作复盘/);
+});
+
 // ── Task 7：页签契约与设置 IA（审核队列纯函数口径 + 设置分区数据） ──
 
 test("reviewBadgeCount：徽章=草稿+变更+待审写入之和，为 0 或非法输入不显示", () => {
