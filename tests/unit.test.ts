@@ -79,6 +79,7 @@ import {
 } from "../src/agent/access";
 import {
   filterAgentTasks,
+  pendingChangeRows,
   pendingReviewChanges,
   reviewBadgeCount,
 } from "../src/views/dashboard/review-queue";
@@ -2378,6 +2379,17 @@ test("pendingReviewChanges：POST 去重 + 仅 md/json + 排除已审查，徽�
   const pending = pendingReviewChanges(calls, reviewed);
   assert.deepEqual(pending.map((call) => call.path), ["n.md"]);
   assert.equal(reviewBadgeCount({ drafts: 0, changes: pending.length, pendingWrites: 0 }), 1);
+});
+
+test("pendingChangeRows：目标缺失仍保留一行并标记 missing，徽章与列表不漂移", () => {
+  const calls = [
+    { time: "2026-11-21T10:06:52.895Z", tool: "POST note", agent: "a", path: "old/template.md" },
+    { time: "2026-11-21T10:06:43.602Z", tool: "POST note", agent: "a", path: "keep.md" },
+  ];
+  const rows = pendingChangeRows(calls, {}, (path) => path === "keep.md");
+  assert.deepEqual(rows.map((row) => row.call.path), ["old/template.md", "keep.md"]);
+  assert.deepEqual(rows.map((row) => row.missing), [true, false]);
+  assert.equal(rows.length, reviewBadgeCount({ drafts: 0, changes: rows.length, pendingWrites: 0 }));
 });
 
 test("SETTINGS_SECTIONS：基础区置顶，Agent 目录/黑名单归 Agent 区，键跨区不重复", () => {

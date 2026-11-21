@@ -658,6 +658,8 @@ const EN: Record<string, string> = {
   // 阶段一 Task 3：失效待审
   "目标已删除/移动": "Target deleted/moved",
   "失效项（目标被删除/移动）只能驳回，让 Agent 重发。": "Stale items (target deleted/moved) can only be rejected; ask the agent to resend.",
+  "标记已审查": "Mark as reviewed",
+  "已标记为已审查": "Marked as reviewed",
 
   // 阶段一 Task 5：知识库现状
   "知识库现状": "Knowledge base",

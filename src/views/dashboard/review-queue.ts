@@ -16,6 +16,25 @@ export function reviewBadgeCount(counts: Partial<ReviewQueueCounts> | null | und
   return parts.reduce((sum, part) => sum + part, 0);
 }
 
+export interface PendingChangeRow {
+  call: ToolCallRecord;
+  /** 目标文件已不存在（删除/移动）。仍保留一行，供 UI 展示并手动标记审查。 */
+  missing: boolean;
+}
+
+/** 变更审查行：在待审集合上附加目标存在性。exists 由调用方注入，保持纯函数可测。
+ *  目标缺失的旧记录不能静默丢弃，否则徽章计数会大于列表可见行（孤儿记录）。 */
+export function pendingChangeRows(
+  calls: ToolCallRecord[],
+  reviewed: Record<string, unknown>,
+  exists: (path: string) => boolean
+): PendingChangeRow[] {
+  return pendingReviewChanges(calls, reviewed).map((call) => ({
+    call,
+    missing: !exists(call.path),
+  }));
+}
+
 /** 待审的 Agent 变更：POST 调用、按路径去重、仅 md/json、排除已审查（kept/reverted）。 */
 export function pendingReviewChanges(
   calls: ToolCallRecord[],

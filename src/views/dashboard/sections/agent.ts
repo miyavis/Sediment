@@ -10,7 +10,7 @@ import { summarizeAgentUsage } from "../../../data/agent-usage";
 import { localStamp } from "../../../utils/dates";
 import { frontmatterOf, normalizeFolder } from "../../../utils/vault";
 import { t, tf } from "../../../i18n";
-import { pendingReviewChanges } from "../review-queue";
+import { pendingChangeRows } from "../review-queue";
 import type { DashboardView } from "../../dashboard-view";
 
 export function renderAgentHub(view: DashboardView, root: HTMLElement): void {
@@ -153,23 +153,35 @@ async function markHumanSource(view: DashboardView, path: string): Promise<void>
 export function renderAgentChanges(view: DashboardView, root: HTMLElement): void {
   const card = root.createDiv({ cls: "sd-card" });
   card.createDiv({ cls: "sd-card-title", text: t("Agent 变更审查") });
-  const calls = pendingReviewChanges(
+  const rows = pendingChangeRows(
     view.plugin.store.data.toolCalls,
-    view.plugin.store.data.reviewedChanges
+    view.plugin.store.data.reviewedChanges,
+    (path) => view.plugin.app.vault.getAbstractFileByPath(path) instanceof TFile
   ).slice(0, 8);
 
-  if (calls.length === 0) {
+  if (rows.length === 0) {
     card.createDiv({ cls: "sd-empty", text: t("暂无 Agent 变更记录。") });
     return;
   }
   const list = card.createDiv({ cls: "sd-feed-list" });
-  for (const call of calls) {
-    const file = view.plugin.app.vault.getAbstractFileByPath(call.path);
-    if (!(file instanceof TFile)) continue;
-    const backups = listBackups(view.plugin, call.path);
+  for (const { call, missing } of rows) {
     const row = list.createDiv({ cls: "sd-feed-row sd-feed-row-audit" });
     row.createSpan({ text: `${localStamp(call.time).slice(5)} · ${call.tool.replace(/^(GET|POST) /, "")}`, attr: { title: call.path } });
     const actions = row.createDiv({ cls: "sd-audit-actions" });
+    if (missing) {
+      // 目标已删除/移动：保留一行让用户能手动了结，避免徽章计数与列表可见行漂移。
+      actions.createSpan({ cls: "sd-audit-badge is-stale", text: t("目标已删除/移动") });
+      actions.createSpan({ text: call.path.split("/").pop() ?? call.path, attr: { title: call.path } });
+      actions.createEl("button", { text: t("标记已审查") }).onclick = () => {
+        view.plugin.store.reviewChange(`${call.time}|${call.path}`, "kept");
+        new Notice(t("已标记为已审查"));
+        view.render();
+      };
+      continue;
+    }
+    const file = view.plugin.app.vault.getAbstractFileByPath(call.path);
+    if (!(file instanceof TFile)) continue;
+    const backups = listBackups(view.plugin, call.path);
     const type = call.tool.includes("patch")
       ? t("局部修改")
       : call.tool.includes("frontmatter")
