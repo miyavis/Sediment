@@ -3035,3 +3035,32 @@ test("store：reconcilePending / markPendingWritesStale 有标记才落盘", () 
   assert.equal(store.markPendingWritesStale(["notes/a.md"]), 1, "未标记项命中即计入");
   assert.equal(saves, 2, "有标记时落盘");
 });
+
+// ── 阶段一 Task 2：采纳守卫 + main.ts 对账接线 ──
+
+test("confirm 档：目标被删除后采纳报 STALE_PENDING，失效项保留待驳回", async () => {
+  const ctx = fakeConfirmPlugin({ agentWorkMode: "confirm" }, { "notes/a.md": "line1\n" });
+  const held = (await ctx.api.patchNote({ path: "notes/a.md", find: "line1", content: "X" })) as HoldResult;
+  const id = pendingIdOf(held);
+  ctx.files.delete("notes/a.md");
+  await assert.rejects(ctx.api.approvePendingWrite(id), (error) => asApiError(error).code === "STALE_PENDING");
+  assert.equal(ctx.pendingWrites.length, 1, "失效项保留，等用户驳回");
+  ctx.api.rejectPendingWrite(id);
+  assert.equal(ctx.pendingWrites.length, 0);
+});
+
+test("confirm 档：已标记 stale 的待审项直接拒绝采纳", async () => {
+  const ctx = fakeConfirmPlugin({ agentWorkMode: "confirm" }, { "notes/a.md": "line1\n" });
+  const held = (await ctx.api.patchNote({ path: "notes/a.md", find: "line1", content: "X" })) as HoldResult;
+  const id = pendingIdOf(held);
+  ctx.pendingWrites[0].stale = true;
+  await assert.rejects(ctx.api.approvePendingWrite(id), (error) => asApiError(error).code === "STALE_PENDING");
+  assert.equal(ctx.files.get("notes/a.md"), "line1\n", "未落盘");
+});
+
+test("main.ts：删除/重命名标记失效待审项，启动时对账", () => {
+  const src = fs.readFileSync("src/main.ts", "utf8");
+  assert.ok(src.includes("markPendingWritesStale([file.path])"), "delete 事件须标记被删路径");
+  assert.ok(src.includes("markPendingWritesStale([oldPath])"), "rename 事件须标记旧路径");
+  assert.ok(src.includes("this.store.reconcilePending("), "启动须做一次对账");
+});

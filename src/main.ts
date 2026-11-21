@@ -81,6 +81,9 @@ export class SedimentPlugin extends Plugin {
 
     await this.tracker.start();
 
+    // 启动对账：挂起期间目标被删除/移动的待审写入标记失效（A 路线轻量对账）。
+    this.store.reconcilePending((path) => this.app.vault.getAbstractFileByPath(path) !== null);
+
     // Agent 通过 MCP 写入笔记后，自动刷新看板与速记面板。
     const vault = this.app.vault;
     const onVaultChange = (path: string): void => {
@@ -89,9 +92,15 @@ export class SedimentPlugin extends Plugin {
     };
     this.registerEvent(vault.on("create", (file) => onVaultChange(file.path)));
     this.registerEvent(vault.on("modify", (file) => onVaultChange(file.path)));
-    this.registerEvent(vault.on("delete", (file) => onVaultChange(file.path)));
+    this.registerEvent(
+      vault.on("delete", (file) => {
+        this.store.markPendingWritesStale([file.path]);
+        onVaultChange(file.path);
+      })
+    );
     this.registerEvent(
       vault.on("rename", (file, oldPath) => {
+        this.store.markPendingWritesStale([oldPath]);
         onVaultChange(file.path);
         onVaultChange(oldPath);
       })

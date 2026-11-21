@@ -405,6 +405,14 @@ export class AgentApi {
   async approvePendingWrite(id: string): Promise<{ path: string }> {
     const record = this.getPendingWrite(id);
     if (!record) throw new ApiError("NOT_FOUND", tf("待审写入不存在：{id}", { id }), 404);
+    const staleMessage = tf("待审写入已失效（目标被删除或移动）：{path}，请驳回后让 Agent 重发", {
+      path: record.path,
+    });
+    if (record.stale) throw new ApiError("STALE_PENDING", staleMessage, 409);
+    // 启动对账之后仍可能被删：采纳前再复验一次，防止把已删除的笔记"复活"。
+    if (record.before !== "" && !(this.vault.getAbstractFileByPath(record.path) instanceof TFile)) {
+      throw new ApiError("STALE_PENDING", staleMessage, 409);
+    }
     await this.replayPending(record.request);
     this.plugin.store.removePendingWrite(id);
     const message = tf("待审写入已采纳并落盘：{path}", { path: record.path });
@@ -1200,17 +1208,19 @@ export class AgentApi {
 
     if (!bypassConfirm && this.isConfirmMode()) {
       const abstract = this.vault.getAbstractFileByPath(path);
-      const previous =
-        abstract instanceof TFile
-          ? await this.vault.read(abstract)
-          : `# 工作日志 ${log.date}\n\n`;
+      const logExists = abstract instanceof TFile;
+      const previous = logExists ? await this.vault.read(abstract) : "";
+      // before 只记真实旧内容：目标不存在时留空串，对账/采纳守卫据此判断
+      // 「挂起时目标已存在」，避免把新建工作日志误判为失效。新建时的首行标题
+      // 由重放流程 create 时写入，仅用于 after 预览。
+      const preview = logExists ? previous : `# 工作日志 ${log.date}\n\n`;
       return this.holdForConfirm(
         "record_work_log",
         path,
         "worklog",
         { input },
         previous,
-        `${previous.trimEnd()}\n\n${block}`
+        `${preview.trimEnd()}\n\n${block}`
       );
     }
 

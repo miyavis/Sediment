@@ -424,6 +424,8 @@ const EN: Record<string, string> = {
   "待审写入已采纳并落盘：{path}": "Pending write accepted and applied: {path}",
   "待审写入已驳回并丢弃：{path}": "Pending write rejected and discarded: {path}",
   "待审写入不存在：{id}": "Pending write not found: {id}",
+  "待审写入已失效（目标被删除或移动）：{path}，请驳回后让 Agent 重发":
+    "Pending write is stale (target was deleted or moved): {path}. Reject it and ask the agent to resend.",
   "未知的待审写入类型：{kind}": "Unknown pending write kind: {kind}",
   "记一条速记到 {path}": "Add a memo to {path}",
   "将 {n} 条遗留待办写入 {path}": "Copy {n} overdue tasks into {path}",
