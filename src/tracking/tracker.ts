@@ -244,7 +244,7 @@ export class Tracker {
     try {
       const text = await this.plugin.app.vault.cachedRead(file);
       return { words: countWords(text), tasks: countCheckedTasks(text) };
-    } catch (error) {
+    } catch {
       return { words: 0, tasks: 0 };
     }
   }
@@ -276,7 +276,7 @@ export class Tracker {
     let text = "";
     try {
       text = await this.plugin.app.vault.cachedRead(file);
-    } catch (error) {
+    } catch {
       // 读不到就按空文件处理
     }
     const snap = { words: countWords(text), tasks: countCheckedTasks(text) };

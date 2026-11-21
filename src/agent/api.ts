@@ -1,3 +1,4 @@
+import { existsSync, mkdirSync, readdirSync, unlinkSync, writeFileSync } from "fs";
 import { normalizePath, TFile } from "obsidian";
 import type { SedimentPlugin } from "../main";
 import { buildWeeklyReview } from "../features/review";
@@ -95,7 +96,7 @@ export function generateToken(): string {
     return Array.from(crypto.getRandomValues(new Uint8Array(16)))
       .map((byte) => byte.toString(16).padStart(2, "0"))
       .join("");
-  } catch (error) {
+  } catch {
     return Math.random().toString(36).slice(2) + Date.now().toString(36);
   }
 }
@@ -136,14 +137,6 @@ function lineChanges(before: string, after: string): { addedLines: number; remov
     addedLines: newLines.filter((line) => !oldLines.includes(line)).length,
     removedLines: oldLines.filter((line) => !newLines.includes(line)).length,
   };
-}
-
-function yamlLines(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.length ? value.map((item) => `  - ${JSON.stringify(String(item))}`) : ["[]"];
-  }
-  if (value === null || value === undefined) return ["null"];
-  return [JSON.stringify(value)];
 }
 
 function findSection(
@@ -262,8 +255,8 @@ export interface WriteMeta {
   id?: string;
 }
 
-/** 阻止路径逃逸出库外。 */
-export function safeAgentPath(input: string): string {
+/** 阻止路径逃逸出库外；configDir 由调用方从 Vault#configDir 传入，不再假定固定目录名。 */
+export function safeAgentPath(input: string, configDir: string): string {
   const path = normalizePath(String(input ?? ""))
     .replace(/\\/g, "/")
     .replace(/^\/+/, "")
@@ -273,7 +266,9 @@ export function safeAgentPath(input: string): string {
     throw new ApiError("FORBIDDEN", "非法路径：不允许 . 或 ..");
   }
   const lower = path.toLowerCase();
-  if (lower === ".obsidian" || lower.startsWith(".obsidian/") || lower === ".git" || lower.startsWith(".git/")) {
+  const config = configDir.replace(/^\/+|\/+$/g, "").toLowerCase();
+  const inConfig = config.length > 0 && (lower === config || lower.startsWith(`${config}/`));
+  if (inConfig || lower === ".git" || lower.startsWith(".git/")) {
     throw new ApiError("FORBIDDEN", "系统目录禁止访问");
   }
   if (!lower.endsWith(".md")) throw new ApiError("INVALID_EXTENSION", "只支持 .md 笔记");
@@ -324,18 +319,17 @@ export class AgentApi {
         getFullPath?: (normalizedPath: string) => string;
       };
       if (!adapter.getFullPath) return "";
-      const fs = require("fs") as typeof import("fs");
       const directory = adapter.getFullPath(
         `${this.plugin.app.vault.configDir}/plugins/sediment/backups`
       );
-      fs.mkdirSync(directory, { recursive: true });
+      mkdirSync(directory, { recursive: true });
       const id = `${Date.now()}-${path.replace(/[\\/]/g, "_")}`;
-      fs.writeFileSync(`${directory}/${id}`, content, "utf8");
-      const files = fs.readdirSync(directory).sort();
+      writeFileSync(`${directory}/${id}`, content, "utf8");
+      const files = readdirSync(directory).sort();
       // 文件保留数与快照索引上限（200）一致，避免索引里有记录但文件已被清理。
       while (files.length > 200) {
         const old = files.shift();
-        if (old) fs.unlinkSync(`${directory}/${old}`);
+        if (old) unlinkSync(`${directory}/${old}`);
       }
       const remaining = new Set(files);
       this.plugin.store.data.snapshots = this.plugin.store.data.snapshots.filter(
@@ -525,7 +519,7 @@ export class AgentApi {
   /** 采纳时的重放分发：各 kind 与下方写方法一一对应，bypassConfirm=true。 */
   private async replayPending(request: PendingWriteRecord["request"], agent = ""): Promise<void> {
     const meta: WriteMeta = agent ? { agent } : {};
-    const args = request.args as Record<string, unknown>;
+    const args = request.args;
     const str = (value: unknown): string => String(value ?? "");
     switch (request.kind) {
       case "write_note":
@@ -579,7 +573,8 @@ export class AgentApi {
     const cache = this.plugin.app.metadataCache.getFileCache(file);
     const tags = new Set<string>();
     for (const tag of cache?.tags ?? []) tags.add(tag.tag.replace(/^#/, ""));
-    const frontmatterTags = cache?.frontmatter?.tags ?? cache?.frontmatter?.tag;
+    const frontmatter = (cache?.frontmatter ?? {}) as Record<string, unknown>;
+    const frontmatterTags = frontmatter.tags ?? frontmatter.tag;
     if (Array.isArray(frontmatterTags)) {
       for (const tag of frontmatterTags) tags.add(String(tag).replace(/^#/, ""));
     } else if (typeof frontmatterTags === "string") {
@@ -683,7 +678,7 @@ export class AgentApi {
 
   /** 读取笔记全文。 */
   async readNote(path: string): Promise<{ path: string; content: string }> {
-    const safe = safeAgentPath(path);
+    const safe = safeAgentPath(path, this.vault.configDir);
     this.assertPathAllowed(safe, "read");
     const file = this.vault.getAbstractFileByPath(safe);
     if (!(file instanceof TFile)) throw new Error(`笔记不存在：${safe}`);
@@ -699,7 +694,7 @@ export class AgentApi {
     bypassConfirm = false,
     meta?: WriteMeta
   ): Promise<{ path: string; pending?: true; pendingId?: string; message?: string }> {
-    const safe = safeAgentPath(path);
+    const safe = safeAgentPath(path, this.vault.configDir);
     this.assertPathAllowed(
       safe,
       mode === "overwrite" ? "overwrite" : mode === "append" ? "patch" : "create"
@@ -872,14 +867,14 @@ export class AgentApi {
     headings: string[];
     links: string[];
   }> {
-    const safe = safeAgentPath(path);
+    const safe = safeAgentPath(path, this.vault.configDir);
     this.assertPathAllowed(safe, "read");
     const file = this.vault.getAbstractFileByPath(safe);
     if (!(file instanceof TFile)) throw new Error(`笔记不存在：${safe}`);
     const cache = this.plugin.app.metadataCache.getFileCache(file);
     return {
       path: safe,
-      frontmatter: (cache?.frontmatter ?? {}) as Record<string, unknown>,
+      frontmatter: cache?.frontmatter ?? {},
       tags: this.cacheTags(file),
       headings: (cache?.headings ?? []).map((heading) => `${"#".repeat(heading.level)} ${heading.heading}`),
       links: (cache?.links ?? []).map((link) => link.link),
@@ -891,15 +886,12 @@ export class AgentApi {
     path: string,
     include: string[] = ["outgoing", "backlinks", "tags"]
   ): { path: string; outgoing: string[]; backlinks: string[]; sameTag: string[] } {
-    const safe = safeAgentPath(path);
+    const safe = safeAgentPath(path, this.vault.configDir);
     this.assertPathAllowed(safe, "read");
     const file = this.vault.getAbstractFileByPath(safe);
     if (!(file instanceof TFile)) throw new Error(`笔记不存在：${safe}`);
 
-    const resolved = (this.plugin.app.metadataCache.resolvedLinks ?? {}) as Record<
-      string,
-      Record<string, number>
-    >;
+    const resolved = this.plugin.app.metadataCache.resolvedLinks ?? {};
     const allowed = (target: string): boolean =>
       !this.isDeniedPath(target) && target !== safe;
 
@@ -948,7 +940,7 @@ export class AgentApi {
     pendingId?: string;
     message?: string;
   }> {
-    const safe = safeAgentPath(input.path);
+    const safe = safeAgentPath(input.path, this.vault.configDir);
     this.assertPathAllowed(safe, "patch");
     const file = this.vault.getAbstractFileByPath(safe);
     if (!(file instanceof TFile)) throw new ApiError("NOT_FOUND", `笔记不存在：${safe}`, 404);
@@ -965,7 +957,7 @@ export class AgentApi {
       let updates: Record<string, unknown>;
       try {
         updates = JSON.parse(String(input.content ?? "{}")) as Record<string, unknown>;
-      } catch (error) {
+      } catch {
         throw new ApiError("INVALID_JSON", "update_frontmatter 的 content 必须是 JSON 对象字符串");
       }
       // 挂起判断统一在 updateFrontmatter 内做，这里透传 bypass 避免双重挂起。
@@ -1068,7 +1060,7 @@ export class AgentApi {
     bypassConfirm = false,
     meta?: WriteMeta
   ): Promise<{ path: string; version: string; pending?: true; pendingId?: string; message?: string }> {
-    const safe = safeAgentPath(path);
+    const safe = safeAgentPath(path, this.vault.configDir);
     this.assertPathAllowed(safe, "patch");
     const file = this.vault.getAbstractFileByPath(safe);
     if (!(file instanceof TFile)) throw new Error(`笔记不存在：${safe}`);
@@ -1152,7 +1144,7 @@ export class AgentApi {
     line: number,
     bypassConfirm = false
   ): Promise<WithPending<{ ok: true }>> {
-    const safe = safeAgentPath(path);
+    const safe = safeAgentPath(path, this.vault.configDir);
     this.assertPathAllowed(safe, "patch");
     if (!bypassConfirm && this.isConfirmMode()) {
       const file = this.vault.getAbstractFileByPath(safe);
@@ -1173,7 +1165,7 @@ export class AgentApi {
     line: number,
     bypassConfirm = false
   ): Promise<WithPending<{ id: string }>> {
-    const safe = safeAgentPath(path);
+    const safe = safeAgentPath(path, this.vault.configDir);
     this.assertPathAllowed(safe, "read");
     // delegate 内部经 memos.add -> appendToDailyNote 直接写当天日记：
     // 日记目标路径必须过完整门禁（操作开关 + 黑名单 + 白名单），堵 readonly/越权旁路。
@@ -1234,7 +1226,7 @@ export class AgentApi {
   async revertAgentChange(snapshotId: string): Promise<{ path: string; reverted: true }> {
     const snapshot = this.plugin.store.data.snapshots.find((item) => item.id === snapshotId);
     if (!snapshot) throw new ApiError("NOT_FOUND", `快照不存在：${snapshotId}`, 404);
-    const safe = safeAgentPath(snapshot.path);
+    const safe = safeAgentPath(snapshot.path, this.vault.configDir);
     this.assertPathAllowed(safe, "overwrite");
     const file = this.vault.getAbstractFileByPath(safe);
     if (!(file instanceof TFile)) throw new ApiError("NOT_FOUND", `笔记不存在：${safe}`, 404);
@@ -1356,7 +1348,7 @@ export class AgentApi {
   ): Promise<{ path: string; note?: string; pending?: true; pendingId?: string; message?: string }> {
     const title = String(input.title || t("未命名笔记")).trim();
     const safeTitle =
-      title.replace(/[\\/:*?"<>|#\[\]]/g, "-").slice(0, 80) || t("未命名笔记");
+      title.replace(/[\\/:*?"<>|#[\]]/g, "-").slice(0, 80) || t("未命名笔记");
     const base = normalizeFolder(this.plugin.store.settings.knowledgeFolder);
     const categories = this.categories();
     const tags = Array.isArray(input.tags)

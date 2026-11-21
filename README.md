@@ -4,9 +4,9 @@
 
 Sediment is a local-first Obsidian plugin that turns daily work into a personal knowledge stratum: writing statistics, heatmaps, quick memos, periodic reviews, and controlled agent collaboration in one workflow.
 
-[![Obsidian](https://img.shields.io/badge/Obsidian-v1.6.0%2B-blue.svg)](https://obsidian.md)
+[![Obsidian](https://img.shields.io/badge/Obsidian-v1.8.7%2B-blue.svg)](https://obsidian.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v1.0.6-blue.svg)](https://github.com/miyavis/Sediment/releases)
+[![Version](https://img.shields.io/badge/version-v1.0.7-blue.svg)](https://github.com/miyavis/Sediment/releases)
 
 ## What it does
 

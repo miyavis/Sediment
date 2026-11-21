@@ -65,7 +65,7 @@ function mapImportError(error: unknown): { reason: BridgeRejectReason; message: 
 
 /**
  * 文件桥：轮询插件目录里的提案，导入待审队列，写回决策。
- * - 不使用 vault 事件（.obsidian 下没有事件），只走 adapter；
+ * - 不使用 vault 事件（配置文件夹下没有事件），只走 adapter；
  * - 提案永远不自动落盘；
  * - 禁用后停止轮询，但已挂起项仍可正常审批。
  */
@@ -249,7 +249,7 @@ export class FileBridge {
   }
 
   private bridgeRoot(): string {
-    const manifest = this.plugin.manifest as { id: string; dir?: string };
+    const manifest = this.plugin.manifest;
     const base = manifest.dir || `${this.plugin.app.vault.configDir}/plugins/${manifest.id}`;
     return `${base}/bridge`;
   }

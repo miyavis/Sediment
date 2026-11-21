@@ -1,26 +1,12 @@
+import { existsSync, readFileSync, writeFileSync, rmSync } from "fs";
 import type { SedimentPlugin } from "../main";
 import { detectAgents, type AgentTarget } from "../agent/setup";
 import { t, tf } from "../i18n";
 
-interface FsModule {
-  existsSync(path: string): boolean;
-  readFileSync(path: string, encoding: string): string;
-  writeFileSync(path: string, data: string, encoding: string): void;
-  rmSync(path: string, options: { recursive: boolean; force: boolean }): void;
-}
-
-function nodeFs(): FsModule | null {
-  try {
-    return require("fs") as FsModule;
-  } catch (error) {
-    return null;
-  }
-}
-
 function readJson(raw: string): Record<string, unknown> | null {
   try {
     return JSON.parse(raw) as Record<string, unknown>;
-  } catch (error) {
+  } catch {
     return null;
   }
 }
@@ -39,7 +25,6 @@ export function listMcpInstallations(plugin: SedimentPlugin): {
   bridgePath: string;
   bridgeExists: boolean;
 } {
-  const fs = nodeFs();
   const adapter = plugin.app.vault.adapter as unknown as { getFullPath?: (path: string) => string };
   const bridgePath = adapter?.getFullPath?.(
     `${plugin.app.vault.configDir}/plugins/sediment/mcp-server/index.mjs`
@@ -47,10 +32,11 @@ export function listMcpInstallations(plugin: SedimentPlugin): {
   const clients: McpInstallation[] = [];
   for (const target of detectAgents()) {
     let configured = false;
-    if (fs && fs.existsSync(target.configPath)) {
-      const data = readJson(fs.readFileSync(target.configPath, "utf8"));
+    if (existsSync(target.configPath)) {
+      const data = readJson(readFileSync(target.configPath, "utf8"));
       const root = (data?.[target.rootKey] ?? {}) as Record<string, unknown>;
-      configured = Boolean(root.sediment);
+      const servers = (root.servers ?? {}) as Record<string, unknown>;
+      configured = Boolean(root.sediment || servers.sediment);
     }
     clients.push({
       id: target.id,
@@ -60,21 +46,27 @@ export function listMcpInstallations(plugin: SedimentPlugin): {
       configured,
     });
   }
-  return { clients, bridgePath, bridgeExists: Boolean(fs && bridgePath && fs.existsSync(bridgePath)) };
+  return { clients, bridgePath, bridgeExists: Boolean(bridgePath && existsSync(bridgePath)) };
 }
 
 /** 从选中的客户端配置中移除 sediment 条目；写前备份为 .bak。 */
-function removeFromClient(target: AgentTarget, fs: FsModule): boolean {
-  if (!fs.existsSync(target.configPath)) return false;
-  const raw = fs.readFileSync(target.configPath, "utf8");
+function removeFromClient(target: AgentTarget): boolean {
+  if (!existsSync(target.configPath)) return false;
+  const raw = readFileSync(target.configPath, "utf8");
   const data = readJson(raw);
   if (!data) return false;
   const root = (data[target.rootKey] ?? {}) as Record<string, unknown>;
-  if (!root.sediment) return false;
+  const servers = (root.servers ?? {}) as Record<string, unknown>;
+  if (!root.sediment && !servers.sediment) return false;
   delete root.sediment;
+  if (servers.sediment) {
+    delete servers.sediment;
+    if (Object.keys(servers).length === 0) delete root.servers;
+    else root.servers = servers;
+  }
   data[target.rootKey] = root;
-  fs.writeFileSync(`${target.configPath}.bak`, raw, "utf8");
-  fs.writeFileSync(target.configPath, JSON.stringify(data, null, 2), "utf8");
+  writeFileSync(`${target.configPath}.bak`, raw, "utf8");
+  writeFileSync(target.configPath, JSON.stringify(data, null, 2), "utf8");
   return true;
 }
 
@@ -84,17 +76,15 @@ export function uninstallMcp(
   selectedClientIds: string[],
   removeBridge: boolean
 ): { clients: number; bridge: boolean; failures: string[] } {
-  const fs = nodeFs();
   const failures: string[] = [];
   let clients = 0;
   let bridge = false;
 
-  if (!fs) return { clients, bridge, failures: [t("当前环境不支持文件操作")] };
   const state = listMcpInstallations(plugin);
   for (const target of detectAgents()) {
     if (!selectedClientIds.includes(target.id)) continue;
     try {
-      if (removeFromClient(target, fs)) clients += 1;
+      if (removeFromClient(target)) clients += 1;
     } catch (error) {
       failures.push(tf("{name}：{detail}", { name: target.name, detail: error instanceof Error ? error.message : String(error) }));
     }
@@ -104,8 +94,8 @@ export function uninstallMcp(
     try {
       const sep = Math.max(state.bridgePath.lastIndexOf("/"), state.bridgePath.lastIndexOf("\\"));
       const dir = state.bridgePath.slice(0, sep);
-      fs.rmSync(state.bridgePath, { recursive: true, force: true });
-      fs.rmSync(dir, { recursive: true, force: true });
+      rmSync(state.bridgePath, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true });
       bridge = true;
     } catch (error) {
       failures.push(tf("桥接脚本：{detail}", { detail: error instanceof Error ? error.message : String(error) }));

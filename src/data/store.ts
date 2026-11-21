@@ -94,9 +94,10 @@ export class Store {
     try {
       const adapter = this.plugin.app?.vault?.adapter;
       if (!adapter?.write) return "";
-      await ensureFolder(this.plugin.app.vault, ".obsidian/plugins/sediment/recovery");
+      const recoveryDir = `${this.plugin.app.vault.configDir}/plugins/sediment/recovery`;
+      await ensureFolder(this.plugin.app.vault, recoveryDir);
       const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-      const path = `.obsidian/plugins/sediment/recovery/data-${stamp}.json`;
+      const path = `${recoveryDir}/data-${stamp}.json`;
       await adapter.write(path, JSON.stringify(raw, null, 2));
       return path;
     } catch (error) {
@@ -106,7 +107,7 @@ export class Store {
   }
 
   async load(): Promise<void> {
-    const raw = await this.plugin.loadData();
+    const raw = (await this.plugin.loadData()) as unknown;
     const loaded = isRecord(raw) ? (raw as Partial<PulseData>) : {};
     let recoveryPath = "";
     let migratedVersion = false;
@@ -154,13 +155,13 @@ export class Store {
       snapshots: Array.isArray(loaded.snapshots) ? loaded.snapshots : [],
       reviewedChanges:
         loaded.reviewedChanges && typeof loaded.reviewedChanges === "object" && !Array.isArray(loaded.reviewedChanges)
-          ? (loaded.reviewedChanges as Record<string, "kept" | "reverted">)
+          ? loaded.reviewedChanges
           : {},
       // 旧版 data.json 没有该字段时默认空数组，保证升级兼容。
       // 缺 request.kind 或 request.args 形状异常的畸形条目会让 approvePendingWrite
       // 抛裸 TypeError（HTTP 500），迁移时一并过滤。
       pendingWrites: Array.isArray(loaded.pendingWrites)
-        ? (loaded.pendingWrites as PendingWriteRecord[]).filter(
+        ? loaded.pendingWrites.filter(
             (item) =>
               item &&
               typeof item === "object" &&
@@ -270,7 +271,7 @@ export class Store {
       .filter((file) => file.extension === "json" && file.basename.startsWith("data-") &&
         file.path.startsWith(`${folder}/`) && !file.path.slice(folder.length + 1).includes("/"))
       .sort((a, b) => b.stat.mtime - a.stat.mtime);
-    for (const old of backups.slice(keep)) await this.plugin.app.vault.trash(old, false);
+    for (const old of backups.slice(keep)) await this.plugin.app.fileManager.trashFile(old);
     return 1;
   }
 
@@ -315,7 +316,7 @@ export class Store {
       throw new Error(tf("备份内容损坏，无法恢复：{name}", { name }));
     }
     // 恢复前保留当前 data.json，恢复错了也能回退。
-    const currentRaw = await this.plugin.loadData();
+    const currentRaw = (await this.plugin.loadData()) as unknown;
     let recoveryPath = "";
     let recovery: RestoreBackupResult["recovery"] = "none";
     if (currentRaw != null) {

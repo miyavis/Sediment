@@ -15,7 +15,8 @@ import {
 import { METRICS } from "../../../types";
 import { t, tf } from "../../../i18n";
 import { aggregateStrata, recentStrataRange, type StrataMonth } from "../../../utils/strata";
-import { normalizeFolder } from "../../../utils/vault";
+import { frontmatterOf, normalizeFolder } from "../../../utils/vault";
+import { appendSvg } from "../../../utils/dom";
 import { RANGE_OPTIONS, WEEKDAYS, startOfWeekFor } from "../constants";
 import type { DashboardView } from "../../dashboard-view";
 
@@ -111,9 +112,7 @@ export function renderKnowledgeState(view: DashboardView, root: HTMLElement): vo
   const files = plugin.app.vault.getMarkdownFiles().map((file) => ({
     path: file.path,
     mtime: file.stat.mtime,
-    frontmatter: plugin.app.metadataCache.getFileCache(file)?.frontmatter as
-      | Record<string, unknown>
-      | undefined,
+    frontmatter: frontmatterOf(plugin.app.metadataCache.getFileCache(file)),
   }));
   const state = scanKnowledgeState(files, knowledgeFolder);
   const card = root.createDiv({ cls: "sd-card sd-knowledge-state" });
@@ -177,9 +176,12 @@ export function renderOverview(view: DashboardView, root: HTMLElement): void {
   left.createDiv({ cls: "sd-metric-hint", text: tf("{active} 天有记录 · 日均 {avg} 分", { active, avg: keys.length ? Math.round(total / keys.length) : 0 }) });
   const overviewValues = keys.map((key) => view.value(key));
   const overviewMean = mean(overviewValues);
-  left.innerHTML += sparklineSvg(
-    overviewValues,
-    overviewMean > 0 ? [{ value: overviewMean, label: tf("均值 {n}", { n: Math.round(overviewMean) }) }] : []
+  appendSvg(
+    left,
+    sparklineSvg(
+      overviewValues,
+      overviewMean > 0 ? [{ value: overviewMean, label: tf("均值 {n}", { n: Math.round(overviewMean) }) }] : []
+    )
   );
 
   const right = grid.createDiv({ cls: "sd-overview-right" });
@@ -188,7 +190,7 @@ export function renderOverview(view: DashboardView, root: HTMLElement): void {
     item.createDiv({ cls: "sd-mini-label", text: label });
     item.createDiv({ cls: "sd-mini-value", text: value });
     item.createDiv({ cls: "sd-mini-hint", text: hint });
-    if (ring) item.createDiv({ cls: "sd-mini-ring" }).innerHTML = ring;
+    if (ring) appendSvg(item.createDiv({ cls: "sd-mini-ring" }), ring);
   };
   mini(t("活跃天数"), `${active} / ${keys.length}`, t("有记录的日子"), ringSvg(active, keys.length));
   mini(t("当前连续"), tf("{n} 天", { n: view.currentStreak() }), tf("最长 {n} 天 · 按全部历史", { n: view.longestStreak() }));
@@ -306,12 +308,14 @@ export function renderStrata(view: DashboardView, root: HTMLElement): void {
     ...totals,
   });
   const slot = card.createDiv({ cls: "sd-strata-slot" });
-  slot.innerHTML = `<svg class="sd-strata-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeAttr(ariaLabel)}">${bands}${monthLabels}${hits}</svg>`;
+  appendSvg(
+    slot,
+    `<svg class="sd-strata-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeAttr(ariaLabel)}">${bands}${monthLabels}${hits}</svg>`
+  );
 
   const showTip = (event: MouseEvent, month: StrataMonth): void => {
     view.hideHeatTooltip();
-    const tip = document.createElement("div");
-    tip.className = "sd-heat-tooltip";
+    const tip = document.body.createDiv({ cls: "sd-heat-tooltip" });
     tip.createDiv({ cls: "sd-tip-date", text: month.month });
     tip.createDiv({ cls: "sd-tip-metric", text: tf("人写 {human} 字 · AI 写 {agent} 字", { human: month.human, agent: month.agent }) });
     tip.createDiv({ cls: "sd-tip-metric", text: tf("完成任务 {tasks} 个 · 专注 {focus} 分钟", { tasks: month.tasks, focus: month.focus }) });
@@ -373,7 +377,6 @@ export function renderHeatmap(view: DashboardView, root: HTMLElement): void {
   }
   const main = grid.createDiv({ cls: "sd-main" });
   const months = main.createDiv({ cls: "sd-months" });
-  months.style.gridTemplateColumns = "repeat(53, 15px)";
   const columns = main.createDiv({ cls: "sd-columns" });
   const cells: Array<{ key: string; value: number; date: Date; el: HTMLElement }> = [];
 
@@ -411,7 +414,7 @@ export function renderHeatmap(view: DashboardView, root: HTMLElement): void {
     const column = Math.floor((cell.date.getTime() - start.getTime()) / (7 * 86400000));
     if (column < 0 || column >= 53) continue;
     const label = months.createDiv({ cls: "sd-month", text: tf("{n}月", { n: cell.date.getMonth() + 1 }) });
-    label.style.gridColumn = String(column + 1);
+    label.setCssStyles({ gridColumn: String(column + 1) });
   }
   const max = Math.max(1, ...cells.map((cell) => cell.value));
   for (const cell of cells) {
@@ -510,7 +513,7 @@ export function renderAnalytics(
       const writingRefs: ChartRef[] = [];
       if (goal > 0) writingRefs.push({ value: goal, label: tf("目标 {n}", { n: goal }), color: "var(--text-accent)" });
       if (writingMean > 0) writingRefs.push({ value: writingMean, label: tf("均值 {n}", { n: Math.round(writingMean) }) });
-      trendContent.innerHTML += barChartSvg(writingValues, "var(--interactive-accent)", writingRefs);
+      appendSvg(trendContent, barChartSvg(writingValues, "var(--interactive-accent)", writingRefs));
     } else if (view.trendTab === "changes") {
       const addedValues = days.map((day) => day.wordsAdded);
       const addedMean = mean(addedValues);
@@ -519,9 +522,12 @@ export function renderAnalytics(
         { values: days.map((day) => day.wordsRemoved), color: "var(--text-faint)", label: t("移除") },
         { values: days.map((day) => day.capturedWords), color: "var(--text-muted)", label: t("捕获") },
       ];
-      trendContent.innerHTML += multiLineSvg(
-        changeSeries,
-        addedMean > 0 ? [{ value: addedMean, label: tf("新增均值 {n}", { n: Math.round(addedMean) }) }] : []
+      appendSvg(
+        trendContent,
+        multiLineSvg(
+          changeSeries,
+          addedMean > 0 ? [{ value: addedMean, label: tf("新增均值 {n}", { n: Math.round(addedMean) }) }] : []
+        )
       );
       renderChartLegend(trendContent, changeSeries);
     } else if (view.trendTab === "time") {
@@ -531,9 +537,12 @@ export function renderAnalytics(
         { values: activeValues, color: "var(--interactive-accent)", label: t("活跃") },
         { values: days.map((day) => day.focusMinutes), color: "var(--text-faint)", label: t("专注") },
       ];
-      trendContent.innerHTML += multiLineSvg(
-        timeSeries,
-        activeMean > 0 ? [{ value: activeMean, label: tf("活跃均值 {n}", { n: Math.round(activeMean) }) }] : []
+      appendSvg(
+        trendContent,
+        multiLineSvg(
+          timeSeries,
+          activeMean > 0 ? [{ value: activeMean, label: tf("活跃均值 {n}", { n: Math.round(activeMean) }) }] : []
+        )
       );
       renderChartLegend(trendContent, timeSeries);
     } else {
@@ -541,8 +550,12 @@ export function renderAnalytics(
       const captured = days.reduce((sum, day) => sum + day.capturedWords, 0);
       const typed = Math.max(0, totalWords - captured);
       const bar = trendContent.createDiv({ cls: "sd-source-bar" });
-      bar.createDiv({ cls: "sd-source-typed" }).style.width = `${totalWords ? (typed / totalWords) * 100 : 0}%`;
-      bar.createDiv({ cls: "sd-source-capture" }).style.width = `${totalWords ? (captured / totalWords) * 100 : 0}%`;
+      bar.createDiv({ cls: "sd-source-typed" }).setCssStyles({
+        width: `${totalWords ? (typed / totalWords) * 100 : 0}%`,
+      });
+      bar.createDiv({ cls: "sd-source-capture" }).setCssStyles({
+        width: `${totalWords ? (captured / totalWords) * 100 : 0}%`,
+      });
       trendContent.createDiv({ cls: "sd-card-sub", text: tf("逐步写入 {typed} 字 · 大段捕获 {captured} 字", { typed, captured }) });
     }
   }
@@ -566,7 +579,7 @@ export function renderAnalytics(
       row.createSpan({ cls: "sd-folder-name", text: folder || "/", attr: { title: folder || "/" } });
       const track = row.createDiv({ cls: "sd-folder-track" });
       const percent = folderWordsTotal > 0 ? (words / folderWordsTotal) * 100 : 0;
-      track.createDiv({ cls: "sd-folder-fill" }).style.width = `${percent}%`;
+      track.createDiv({ cls: "sd-folder-fill" }).setCssStyles({ width: `${percent}%` });
       row.createEl("strong", { text: tf("{words} 字 · {percent}%", { words, percent: percent.toFixed(0) }) });
     }
     if (sortedFolders.length > 6) {
@@ -601,11 +614,11 @@ export function renderAnalytics(
         days.reduce((sum, day) => sum + (day.hourlyWords[hour] ?? 0), 0)
       );
       const hourlyMean = mean(hourly);
-      rhythm.createDiv({ cls: "sd-chart-slot" }).innerHTML = barChartSvg(
+      appendSvg(rhythm.createDiv({ cls: "sd-chart-slot" }), barChartSvg(
         hourly,
         "var(--interactive-accent)",
         hourlyMean > 0 ? [{ value: hourlyMean, label: tf("均值 {n}", { n: Math.round(hourlyMean) }) }] : []
-      );
+      ));
       const weekdayHour = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0));
       for (const key of keys) {
         const day = view.plugin.store.getDay(key);
@@ -708,7 +721,7 @@ export function renderYearly(view: DashboardView, root: HTMLElement): void {
       return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="var(--background-modifier-border)" stroke-width="1"/><text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-size="9" text-anchor="middle" dominant-baseline="middle" fill="var(--text-faint)">${tf("{n}月", { n: month + 1 })}</text>`;
     }).join("");
     const watermark = `<text x="110" y="116" text-anchor="middle" font-size="26" font-weight="600" fill="var(--text-faint)" opacity="0.18">${year}</text>`;
-    card.createDiv({ cls: "sd-chart-slot" }).innerHTML = `<svg viewBox="0 0 220 220" class="sd-wheel" role="img" aria-label="${escapeAttr(`${t("年轮")} · ${tf("{year} 年", { year })}`)}">${tracks}${monthTicks}${watermark}${petals}</svg>`;
+    appendSvg(card.createDiv({ cls: "sd-chart-slot" }), `<svg viewBox="0 0 220 220" class="sd-wheel" role="img" aria-label="${escapeAttr(`${t("年轮")} · ${tf("{year} 年", { year })}`)}">${tracks}${monthTicks}${watermark}${petals}</svg>`);
     return;
   }
 
@@ -721,7 +734,7 @@ export function renderYearly(view: DashboardView, root: HTMLElement): void {
       }).join("");
       return `<text x="0" y="${month * 20 + 11}" font-size="9" fill="var(--text-faint)">${month + 1}</text>${bars}`;
     }).join("");
-    card.createDiv({ cls: "sd-chart-slot" }).innerHTML = `<svg viewBox="0 0 420 248" class="sd-fingerprint" role="img" aria-label="${escapeAttr(`${t("知识指纹")} · ${t("每天一根色条")}`)}">${fingerprintSvg}</svg>`;
+    appendSvg(card.createDiv({ cls: "sd-chart-slot" }), `<svg viewBox="0 0 420 248" class="sd-fingerprint" role="img" aria-label="${escapeAttr(`${t("知识指纹")} · ${t("每天一根色条")}`)}">${fingerprintSvg}</svg>`);
     return;
   }
 

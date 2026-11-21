@@ -1,10 +1,11 @@
 import { ItemView, Notice, type WorkspaceLeaf } from "obsidian";
+import { confirmAction } from "../ui/confirm-modal";
 import type { SedimentPlugin } from "../main";
 import { exportMemoCard } from "../features/embed";
 import type { MemoRecord } from "../types";
 import { addDays, dateKey } from "../utils/dates";
 import { SEDIMENT_MEMO_ICON_ID } from "../ui/logo";
-import { ensureFolder, normalizeFolder } from "../utils/vault";
+import { ensureFolder, frontmatterOf, normalizeFolder } from "../utils/vault";
 import { t, tf } from "../i18n";
 
 export const MEMO_VIEW_TYPE = "sediment-memo";
@@ -232,7 +233,7 @@ export class MemoView extends ItemView {
     await ensureFolder(this.plugin.app.vault, folder);
     const path = folder ? `${folder}/${name}` : name;
     await this.plugin.app.vault.createBinary(path, buffer);
-    const area = this.contentEl.querySelector(".sd-memo-input") as HTMLTextAreaElement | null;
+    const area = this.contentEl.querySelector<HTMLTextAreaElement>(".sd-memo-input");
     if (area) {
       area.value += ` ![[${name}]]`;
       area.focus();
@@ -244,8 +245,7 @@ export class MemoView extends ItemView {
     // 在同级锚点处替换列表，而不是每次都追加到容器末尾——
     // 否则输入搜索词时结果会跳到知识/上下文区下面，看起来像「搜索没效果」。
     const existing = root.querySelector(".sd-memo-list");
-    const list = document.createElement("div");
-    list.className = "sd-memo-list";
+    const list = createDiv({ cls: "sd-memo-list" });
     if (existing) existing.replaceWith(list);
     else root.appendChild(list);
     let memos = this.plugin.store.data.memos.slice();
@@ -276,8 +276,7 @@ export class MemoView extends ItemView {
   }
 
   private memoCard(memo: MemoRecord): HTMLElement {
-    const card = document.createElement("div");
-    card.className = "sd-memo-card";
+    const card = createDiv({ cls: "sd-memo-card" });
     if (memo.archived) card.addClass("is-archived");
     card.createDiv({ cls: "sd-memo-time", text: memo.archived ? `${memo.time} · ${t("已归档")}` : memo.time });
     card.createDiv({
@@ -324,14 +323,12 @@ export class MemoView extends ItemView {
     };
     actions.createEl("button", { text: t("分享图") }).onclick = () => exportMemoCard(memo, "minimal");
     actions.createEl("button", { text: t("编辑") }).onclick = () => {
-      const area = document.createElement("textarea");
-      area.className = "sd-memo-edit";
+      const area = createEl("textarea", { cls: "sd-memo-edit" });
       area.value = memo.text;
       area.rows = Math.min(8, Math.max(3, memo.text.split("\n").length + 1));
       textEl.replaceWith(area);
       area.focus();
-      const bar = document.createElement("div");
-      bar.className = "sd-memo-edit-bar";
+      const bar = createDiv({ cls: "sd-memo-edit-bar" });
       const save = bar.createEl("button", { cls: "mod-cta", text: t("保存") });
       const cancel = bar.createEl("button", { text: t("取消") });
       area.after(bar);
@@ -357,8 +354,13 @@ export class MemoView extends ItemView {
       this.render();
     };
     actions.createEl("button", { cls: "sd-memo-delete", text: t("删除") }).onclick = () => {
-      if (!window.confirm(t("删除这条速记？日记中对应的速记记录也会一并移除。"))) return;
-      void this.plugin.memos.remove(memo.id).then(() => this.render());
+      void confirmAction(
+        this.app,
+        t("删除这条速记？日记中对应的速记记录也会一并移除。")
+      ).then((ok) => {
+        if (!ok) return;
+        void this.plugin.memos.remove(memo.id).then(() => this.render());
+      });
     };
     if (!memo.tags.includes("to-agent") && !memo.converted) {
       actions.createEl("button", { text: t("转 Agent") }).onclick = () => {
@@ -411,7 +413,7 @@ export class MemoView extends ItemView {
   }
 
   private tokens(text: string): string[] {
-    const clean = text.toLowerCase().replace(/[#\[\]()]/g, " ");
+    const clean = text.toLowerCase().replace(/[#[\]()]/g, " ");
     const chinese = clean.replace(/[^\u3400-\u9fff]/g, " ");
     const bigrams: string[] = [];
     for (let index = 0; index < chinese.length - 1; index += 1) {
@@ -527,7 +529,7 @@ export class MemoView extends ItemView {
         });
         button.onclick = () => void this.plugin.app.workspace.openLinkText(file.path, "", false);
         const cache = this.plugin.app.metadataCache.getFileCache(file);
-        const rawTags = cache?.frontmatter?.tags;
+        const rawTags = frontmatterOf(cache)?.tags;
         const tags = Array.isArray(rawTags)
           ? rawTags.slice(0, 3).map((tag) => `#${String(tag).replace(/^#/, "")}`)
           : [];

@@ -38,8 +38,8 @@ export function scanNoteHealth(plugin: SedimentPlugin): HealthIssue[] {
     .map(normalizeFolder)
     .filter((folder) => folder.length > 0);
 
-  const resolved = (plugin.app.metadataCache.resolvedLinks ?? {}) as Record<string, Record<string, number>>;
-  const unresolved = (plugin.app.metadataCache.unresolvedLinks ?? {}) as Record<string, Record<string, number>>;
+  const resolved = plugin.app.metadataCache.resolvedLinks ?? {};
+  const unresolved = plugin.app.metadataCache.unresolvedLinks ?? {};
   const backlinkCount = new Map<string, number>();
   for (const links of Object.values(resolved)) {
     for (const target of Object.keys(links)) {

@@ -2,11 +2,21 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
-## [Unreleased]
+## [1.0.7] - 2026-11-21
 
 ### 上架反馈
 - 主 `README.md` 改为纯英文文档，完整中文说明移到 `README.zh-CN.md`，两份文件顶部互链；修复自动审核「README 不含英文」的误判。
 - 版本徽章同步与发布校验同时覆盖两份 README，单测新增「主 README 不得含中文字面量」断言。
+
+### 审核整改
+- 移除全部 `innerHTML` / `insertAdjacentHTML` 写入：图表、横幅、热力图与提示改用 `createEl`/`createDiv` 与受信任 SVG 插入函数。
+- 用 Obsidian 原生确认弹窗替换全部 `window.confirm`，取消时恢复按钮与下拉框状态。
+- 移除 `require()` 动态加载：`fs`/`os`/`http`/`crypto` 改为静态导入，删除 `builtin-modules` 依赖并显式声明 Node 外部模块。
+- 不再硬编码 `.obsidian`：恢复副本、备份目录与 Agent 路径保护统一使用 `Vault#configDir`。
+- 删除文件改用 `FileManager.trashFile()`，速记草稿改用 `App#loadLocalStorage`/`saveLocalStorage`，内联样式改用 `setCssStyles()`。
+- 设置页标题改用 `Setting#setHeading()`，清理未使用变量、冗余断言与正则转义。
+- 清理 CSS 审核警告：移除重复的 `background` 回退、去掉全部 `!important`（改为更具体的按钮选择器）、移除部分支持的 `text-decoration-color`；热力图月份轨道改用格子尺寸变量，调整格子大小时标签仍对齐。
+- `minAppVersion` 提升到 `1.8.7`，与上述 API 的最低版本要求对齐。
 
 ## [1.0.6] - 2026-11-21
 

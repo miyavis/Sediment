@@ -1,4 +1,4 @@
-import { App, Modal, Notice } from "obsidian";
+import { Modal, Notice } from "obsidian";
 import type { SedimentPlugin } from "../main";
 import { listMcpInstallations, uninstallMcp } from "../features/uninstall";
 import { t, tf } from "../i18n";

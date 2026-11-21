@@ -109,16 +109,16 @@ async function ensureMigrationFolders(vault: MigrationVault, folders: string[]):
 /** 迁移后尽力清理空的源目录（含空子目录）；失败只保留原样，不影响迁移结果。 */
 async function cleanupEmptySource(vault: MigrationVault, folder: string): Promise<void> {
   const adapter = vault.adapter;
-  const list = adapter?.list;
-  const rmdir = adapter?.rmdir;
+  const list = adapter?.list?.bind(adapter);
+  const rmdir = adapter?.rmdir?.bind(adapter);
   if (!adapter || !list || !rmdir) return;
   const removeIfEmpty = async (path: string): Promise<void> => {
     try {
-      const first = await list.call(adapter, path);
+      const first = await list(path);
       for (const child of first.folders ?? []) await removeIfEmpty(child);
-      const fresh = await list.call(adapter, path);
+      const fresh = await list(path);
       if ((fresh.files?.length ?? 0) === 0 && (fresh.folders?.length ?? 0) === 0) {
-        await rmdir.call(adapter, path, false);
+        await rmdir(path, false);
       }
     } catch {
       // 目录已不存在或无法清理：保留原样。

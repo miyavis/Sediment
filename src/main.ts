@@ -24,6 +24,7 @@ import { DashboardView, DASHBOARD_VIEW_TYPE } from "./views/dashboard-view";
 import { MemoView, MEMO_VIEW_TYPE } from "./views/memo-view";
 import { Tracker } from "./tracking/tracker";
 import { localeFromPersisted, resolveLocale, setLocale, t, tf } from "./i18n";
+import { appendSvg } from "./utils/dom";
 
 export class SedimentPlugin extends Plugin {
   store!: Store;
@@ -76,7 +77,7 @@ export class SedimentPlugin extends Plugin {
 
     this.registerMarkdownCodeBlockProcessor("sediment-heatmap", (source, element) => {
       const options = parseEmbedOptions(source);
-      element.createDiv({ cls: "sd-embed" }).innerHTML = heatmapSvg(this.store, options);
+      appendSvg(element.createDiv({ cls: "sd-embed" }), heatmapSvg(this.store, options));
     });
     this.registerMarkdownCodeBlockProcessor("sediment-today", (_source, element) => {
       element.createDiv({ cls: "sd-embed-today", text: todayLine(this.store) });
@@ -264,15 +265,15 @@ export class SedimentPlugin extends Plugin {
   private serverRestartTimer: number | null = null;
   private refreshTimer: number | null = null;
 
-  async onunload(): Promise<void> {
+  onunload(): void {
     if (this.serverRestartTimer !== null) window.clearTimeout(this.serverRestartTimer);
     if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
     this.tracker?.stop();
     this.pomodoro?.shutdown();
-    await this.agentServer?.stop();
+    void this.agentServer?.stop();
     this.fileBridge?.stop();
     delete (window as Window & { Sediment?: unknown }).Sediment;
-    await this.store.save();
+    void this.store.save();
   }
 
   async saveSettings(): Promise<void> {
@@ -361,11 +362,11 @@ export class SedimentPlugin extends Plugin {
       // 看板始终用 root split 的新标签页；速记才放右侧栏。
       leaf =
         type === MEMO_VIEW_TYPE
-          ? workspace.getRightLeaf(false) ?? (await workspace.getLeaf(true))
-          : await workspace.getLeaf(true);
+          ? workspace.getRightLeaf(false) ?? workspace.getLeaf(true)
+          : workspace.getLeaf(true);
     }
     await leaf.setViewState({ type, active: true });
-    void workspace.revealLeaf(leaf);
+    workspace.setActiveLeaf(leaf, { focus: true });
   }
 
   private isSideLeaf(leaf: WorkspaceLeaf): boolean {

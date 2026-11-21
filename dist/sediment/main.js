@@ -28,9 +28,10 @@ __export(main_exports, {
   default: () => main_default
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian23 = require("obsidian");
+var import_obsidian24 = require("obsidian");
 
 // src/agent/api.ts
+var import_fs2 = require("fs");
 var import_obsidian3 = require("obsidian");
 
 // src/utils/vault.ts
@@ -51,6 +52,10 @@ async function ensureFolder(vault, path) {
       }
     }
   }
+}
+function frontmatterOf(cache) {
+  const value = cache == null ? void 0 : cache.frontmatter;
+  return value && typeof value === "object" ? value : void 0;
 }
 
 // src/utils/dates.ts
@@ -193,6 +198,8 @@ var EN = {
   "\u5DF2\u590D\u5236": "Copied",
   "\u4FDD\u5B58": "Save",
   "\u53D6\u6D88": "Cancel",
+  "\u7EE7\u7EED": "Continue",
+  "\u8BF7\u786E\u8BA4": "Please confirm",
   "\u5220\u9664": "Delete",
   "\u7F16\u8F91": "Edit",
   "\u5F52\u6863": "Archive",
@@ -394,7 +401,7 @@ var EN = {
   "\u4FEE\u6539\u524D\u5B58\u5FEB\u7167": "Snapshot before changes",
   "\u8986\u76D6\u6216 Patch \u524D\u4FDD\u5B58\u539F\u6587\uFF0C\u652F\u6301 Agent \u53D8\u66F4\u5BA1\u67E5\u4E0E\u4E00\u952E\u6062\u590D\u3002": "Save original before overwrite/patch; enables review and one-click restore.",
   "\u81EA\u52A8\u5907\u4EFD\u7EDF\u8BA1\u6570\u636E": "Auto-backup stats",
-  "\u628A data.json \u5FEB\u7167\u5199\u5165\u5E93\u5185\u666E\u901A\u6587\u4EF6\u5939\uFF0C\u907F\u514D .obsidian \u88AB\u540C\u6B65\u5DE5\u5177\u5FFD\u7565\u3002": "Write data.json snapshots to a normal vault folder, since .obsidian may be ignored by sync tools.",
+  "\u628A data.json \u5FEB\u7167\u5199\u5165\u5E93\u5185\u666E\u901A\u6587\u4EF6\u5939\uFF0C\u907F\u514D\u914D\u7F6E\u6587\u4EF6\u5939\u88AB\u540C\u6B65\u5DE5\u5177\u5FFD\u7565\u3002": "Write data.json snapshots to a normal vault folder, since the vault config folder may be ignored by sync tools.",
   "\u5907\u4EFD\u76EE\u5F55": "Backup folder",
   "\u5E93\u5185\u76F8\u5BF9\u8DEF\u5F84\uFF0C\u9ED8\u8BA4 Sediment/backups/\u3002": "Vault-relative path; default Sediment/backups/.",
   "\u65E7\u7248\u76EE\u5F55\u8FC1\u79FB": "Legacy folder migration",
@@ -1217,7 +1224,7 @@ var Tracker = class {
     try {
       const text = await this.plugin.app.vault.cachedRead(file);
       return { words: countWords(text), tasks: countCheckedTasks(text) };
-    } catch (error) {
+    } catch (e) {
       return { words: 0, tasks: 0 };
     }
   }
@@ -1245,7 +1252,7 @@ var Tracker = class {
     let text = "";
     try {
       text = await this.plugin.app.vault.cachedRead(file);
-    } catch (error) {
+    } catch (e) {
     }
     const snap = { words: countWords(text), tasks: countCheckedTasks(text) };
     this.baseline.set(file.path, snap);
@@ -1347,35 +1354,26 @@ var Tracker = class {
 };
 
 // src/features/audit.ts
-function nodeFs() {
-  try {
-    return require("fs");
-  } catch (error) {
-    return null;
-  }
-}
+var import_fs = require("fs");
 function backupDirectory(vault) {
   var _a2, _b;
   const adapter = vault.adapter;
-  return (_b = (_a2 = adapter.getFullPath) == null ? void 0 : _a2.call(adapter, ".obsidian/plugins/sediment/backups")) != null ? _b : null;
+  return (_b = (_a2 = adapter.getFullPath) == null ? void 0 : _a2.call(adapter, `${vault.configDir}/plugins/sediment/backups`)) != null ? _b : null;
 }
 function listBackups(plugin, path) {
-  const fs = nodeFs();
   const directory = backupDirectory(plugin.app.vault);
-  if (!fs || !directory || !fs.existsSync(directory)) return [];
+  if (!directory || !(0, import_fs.existsSync)(directory)) return [];
   const suffix = path.replace(/[\\/]/g, "_");
-  return fs.readdirSync(directory).filter((name) => name.endsWith(suffix)).map((name) => ({ name, mtimeMs: fs.statSync(`${directory}/${name}`).mtimeMs })).sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return (0, import_fs.readdirSync)(directory).filter((name) => name.endsWith(suffix)).map((name) => ({ name, mtimeMs: (0, import_fs.statSync)(`${directory}/${name}`).mtimeMs })).sort((a, b) => b.mtimeMs - a.mtimeMs);
 }
 function readBackup(plugin, name) {
-  const fs = nodeFs();
   const directory = backupDirectory(plugin.app.vault);
-  if (!fs || !directory) return "";
-  return fs.readFileSync(`${directory}/${name}`, "utf8");
+  if (!directory) return "";
+  return (0, import_fs.readFileSync)(`${directory}/${name}`, "utf8");
 }
 async function restoreBackup(plugin, file, name) {
-  const fs = nodeFs();
   const directory = backupDirectory(plugin.app.vault);
-  if (!fs || !directory || !fs.existsSync(`${directory}/${name}`)) {
+  if (!directory || !(0, import_fs.existsSync)(`${directory}/${name}`)) {
     throw new Error(`\u5FEB\u7167\u6587\u4EF6\u4E0D\u5B58\u5728\u6216\u5DF2\u88AB\u6E05\u7406\uFF1A${name}`);
   }
   const content = readBackup(plugin, name);
@@ -1494,7 +1492,11 @@ function normalizeBridgeAgent(value) {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   if (!trimmed || trimmed.length > BRIDGE_MAX_AGENT_LENGTH) return null;
-  const cleaned = trimmed.replace(/[\u0000-\u001f\u007f:#]/g, "-");
+  const cleaned = Array.from(trimmed, (char) => {
+    var _a2;
+    const code = (_a2 = char.codePointAt(0)) != null ? _a2 : 0;
+    return code < 32 || code === 127 || char === ":" || char === "#" ? "-" : char;
+  }).join("");
   return cleaned || null;
 }
 function buildBridgeDecision(input) {
@@ -1626,7 +1628,7 @@ function parseBridgeProposal(id, raw) {
 function generateToken() {
   try {
     return Array.from(crypto.getRandomValues(new Uint8Array(16))).map((byte) => byte.toString(16).padStart(2, "0")).join("");
-  } catch (error) {
+  } catch (e) {
     return Math.random().toString(36).slice(2) + Date.now().toString(36);
   }
 }
@@ -1731,14 +1733,16 @@ var ApiError = class extends Error {
     this.status = status;
   }
 };
-function safeAgentPath(input) {
+function safeAgentPath(input, configDir) {
   const path = (0, import_obsidian3.normalizePath)(String(input != null ? input : "")).replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+/g, "/");
   if (!path) throw new ApiError("EMPTY_PATH", "\u8DEF\u5F84\u4E0D\u80FD\u4E3A\u7A7A");
   if (path.split("/").some((part) => part === ".." || part === ".")) {
     throw new ApiError("FORBIDDEN", "\u975E\u6CD5\u8DEF\u5F84\uFF1A\u4E0D\u5141\u8BB8 . \u6216 ..");
   }
   const lower = path.toLowerCase();
-  if (lower === ".obsidian" || lower.startsWith(".obsidian/") || lower === ".git" || lower.startsWith(".git/")) {
+  const config = configDir.replace(/^\/+|\/+$/g, "").toLowerCase();
+  const inConfig = config.length > 0 && (lower === config || lower.startsWith(`${config}/`));
+  if (inConfig || lower === ".git" || lower.startsWith(".git/")) {
     throw new ApiError("FORBIDDEN", "\u7CFB\u7EDF\u76EE\u5F55\u7981\u6B62\u8BBF\u95EE");
   }
   if (!lower.endsWith(".md")) throw new ApiError("INVALID_EXTENSION", "\u53EA\u652F\u6301 .md \u7B14\u8BB0");
@@ -1767,17 +1771,16 @@ var AgentApi = class {
     try {
       const adapter = this.plugin.app.vault.adapter;
       if (!adapter.getFullPath) return "";
-      const fs = require("fs");
       const directory = adapter.getFullPath(
         `${this.plugin.app.vault.configDir}/plugins/sediment/backups`
       );
-      fs.mkdirSync(directory, { recursive: true });
+      (0, import_fs2.mkdirSync)(directory, { recursive: true });
       const id = `${Date.now()}-${path.replace(/[\\/]/g, "_")}`;
-      fs.writeFileSync(`${directory}/${id}`, content, "utf8");
-      const files = fs.readdirSync(directory).sort();
+      (0, import_fs2.writeFileSync)(`${directory}/${id}`, content, "utf8");
+      const files = (0, import_fs2.readdirSync)(directory).sort();
       while (files.length > 200) {
         const old = files.shift();
-        if (old) fs.unlinkSync(`${directory}/${old}`);
+        if (old) (0, import_fs2.unlinkSync)(`${directory}/${old}`);
       }
       const remaining = new Set(files);
       this.plugin.store.data.snapshots = this.plugin.store.data.snapshots.filter(
@@ -1990,11 +1993,12 @@ var AgentApi = class {
     }
   }
   cacheTags(file) {
-    var _a2, _b, _c, _d;
+    var _a2, _b, _c;
     const cache = this.plugin.app.metadataCache.getFileCache(file);
     const tags = /* @__PURE__ */ new Set();
     for (const tag of (_a2 = cache == null ? void 0 : cache.tags) != null ? _a2 : []) tags.add(tag.tag.replace(/^#/, ""));
-    const frontmatterTags = (_d = (_b = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _b.tags) != null ? _d : (_c = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _c.tag;
+    const frontmatter = (_b = cache == null ? void 0 : cache.frontmatter) != null ? _b : {};
+    const frontmatterTags = (_c = frontmatter.tags) != null ? _c : frontmatter.tag;
     if (Array.isArray(frontmatterTags)) {
       for (const tag of frontmatterTags) tags.add(String(tag).replace(/^#/, ""));
     } else if (typeof frontmatterTags === "string") {
@@ -2090,7 +2094,7 @@ var AgentApi = class {
   }
   /** 读取笔记全文。 */
   async readNote(path) {
-    const safe = safeAgentPath(path);
+    const safe = safeAgentPath(path, this.vault.configDir);
     this.assertPathAllowed(safe, "read");
     const file = this.vault.getAbstractFileByPath(safe);
     if (!(file instanceof import_obsidian3.TFile)) throw new Error(`\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`);
@@ -2099,7 +2103,7 @@ var AgentApi = class {
   }
   /** 新建、覆盖或追加笔记。confirm 档挂起为待审写入（bypassConfirm 仅采纳重放时使用）。 */
   async writeNote(path, content, mode = "create", bypassConfirm = false, meta) {
-    const safe = safeAgentPath(path);
+    const safe = safeAgentPath(path, this.vault.configDir);
     this.assertPathAllowed(
       safe,
       mode === "overwrite" ? "overwrite" : mode === "append" ? "patch" : "create"
@@ -2238,7 +2242,7 @@ ${String(text != null ? text : "").trim()}${tagStr}`
   /** 只读元数据，不返回正文，节省 Agent 的 Token。 */
   async getNoteMetadata(path) {
     var _a2, _b, _c;
-    const safe = safeAgentPath(path);
+    const safe = safeAgentPath(path, this.vault.configDir);
     this.assertPathAllowed(safe, "read");
     const file = this.vault.getAbstractFileByPath(safe);
     if (!(file instanceof import_obsidian3.TFile)) throw new Error(`\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`);
@@ -2254,7 +2258,7 @@ ${String(text != null ? text : "").trim()}${tagStr}`
   /** 1-hop 图谱：出链、反链与同标签笔记。 */
   getGraphNeighbors(path, include = ["outgoing", "backlinks", "tags"]) {
     var _a2, _b;
-    const safe = safeAgentPath(path);
+    const safe = safeAgentPath(path, this.vault.configDir);
     this.assertPathAllowed(safe, "read");
     const file = this.vault.getAbstractFileByPath(safe);
     if (!(file instanceof import_obsidian3.TFile)) throw new Error(`\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`);
@@ -2272,7 +2276,7 @@ ${String(text != null ? text : "").trim()}${tagStr}`
   /** 按标题或文本片段局部修改笔记；支持 dryRun、乐观锁、快照与 diff 统计。confirm 档挂起为待审写入。 */
   async patchNote(input, bypassConfirm = false, meta) {
     var _a2, _b, _c, _d, _e;
-    const safe = safeAgentPath(input.path);
+    const safe = safeAgentPath(input.path, this.vault.configDir);
     this.assertPathAllowed(safe, "patch");
     const file = this.vault.getAbstractFileByPath(safe);
     if (!(file instanceof import_obsidian3.TFile)) throw new ApiError("NOT_FOUND", `\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`, 404);
@@ -2287,7 +2291,7 @@ ${String(text != null ? text : "").trim()}${tagStr}`
       let updates;
       try {
         updates = JSON.parse(String((_a2 = input.content) != null ? _a2 : "{}"));
-      } catch (error) {
+      } catch (e) {
         throw new ApiError("INVALID_JSON", "update_frontmatter \u7684 content \u5FC5\u987B\u662F JSON \u5BF9\u8C61\u5B57\u7B26\u4E32");
       }
       const result2 = await this.updateFrontmatter(safe, updates, input.ifMatch, bypassConfirm, meta);
@@ -2375,7 +2379,7 @@ ${content}
   }
   /** 单独更新 frontmatter 字段，不动正文。confirm 档挂起为待审写入。 */
   async updateFrontmatter(path, updates, ifMatch, bypassConfirm = false, meta) {
-    const safe = safeAgentPath(path);
+    const safe = safeAgentPath(path, this.vault.configDir);
     this.assertPathAllowed(safe, "patch");
     const file = this.vault.getAbstractFileByPath(safe);
     if (!(file instanceof import_obsidian3.TFile)) throw new Error(`\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`);
@@ -2442,7 +2446,7 @@ ${content}
     });
   }
   async completeTask(path, line, bypassConfirm = false) {
-    const safe = safeAgentPath(path);
+    const safe = safeAgentPath(path, this.vault.configDir);
     this.assertPathAllowed(safe, "patch");
     if (!bypassConfirm && this.isConfirmMode()) {
       const file = this.vault.getAbstractFileByPath(safe);
@@ -2455,7 +2459,7 @@ ${content}
     return { ok: true };
   }
   async delegateTask(path, line, bypassConfirm = false) {
-    const safe = safeAgentPath(path);
+    const safe = safeAgentPath(path, this.vault.configDir);
     this.assertPathAllowed(safe, "read");
     const daily = dailyNotePath(this.plugin.store.settings, /* @__PURE__ */ new Date());
     const dailyExists = this.vault.getAbstractFileByPath(daily) instanceof import_obsidian3.TFile;
@@ -2498,7 +2502,7 @@ ${task.text}
   async revertAgentChange(snapshotId) {
     const snapshot = this.plugin.store.data.snapshots.find((item) => item.id === snapshotId);
     if (!snapshot) throw new ApiError("NOT_FOUND", `\u5FEB\u7167\u4E0D\u5B58\u5728\uFF1A${snapshotId}`, 404);
-    const safe = safeAgentPath(snapshot.path);
+    const safe = safeAgentPath(snapshot.path, this.vault.configDir);
     this.assertPathAllowed(safe, "overwrite");
     const file = this.vault.getAbstractFileByPath(safe);
     if (!(file instanceof import_obsidian3.TFile)) throw new ApiError("NOT_FOUND", `\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`, 404);
@@ -2600,7 +2604,7 @@ ${block}`);
   async addKnowledge(input, bypassConfirm = false, meta) {
     var _a2, _b, _c, _d, _e;
     const title = String(input.title || t("\u672A\u547D\u540D\u7B14\u8BB0")).trim();
-    const safeTitle = title.replace(/[\\/:*?"<>|#\[\]]/g, "-").slice(0, 80) || t("\u672A\u547D\u540D\u7B14\u8BB0");
+    const safeTitle = title.replace(/[\\/:*?"<>|#[\]]/g, "-").slice(0, 80) || t("\u672A\u547D\u540D\u7B14\u8BB0");
     const base = normalizeFolder(this.plugin.store.settings.knowledgeFolder);
     const categories = this.categories();
     const tags = Array.isArray(input.tags) ? input.tags.map((tag) => String(tag).replace(/^#/, "")) : [];
@@ -2749,6 +2753,8 @@ ${block}`);
 
 // src/agent/server.ts
 var import_obsidian4 = require("obsidian");
+var import_http = require("http");
+var import_crypto = require("crypto");
 
 // src/agent/security.ts
 function redactAuditPath(path) {
@@ -2756,22 +2762,10 @@ function redactAuditPath(path) {
 }
 
 // src/agent/server.ts
-function getHttp() {
-  try {
-    return require("http");
-  } catch (error) {
-    return null;
-  }
-}
 function tokensMatch(supplied, expected) {
-  try {
-    const crypto2 = require("crypto");
-    const a = crypto2.createHash("sha256").update(String(supplied), "utf8").digest();
-    const b = crypto2.createHash("sha256").update(String(expected), "utf8").digest();
-    return crypto2.timingSafeEqual(a, b);
-  } catch (error) {
-    return false;
-  }
+  const a = (0, import_crypto.createHash)("sha256").update(String(supplied), "utf8").digest();
+  const b = (0, import_crypto.createHash)("sha256").update(String(expected), "utf8").digest();
+  return (0, import_crypto.timingSafeEqual)(a, b);
 }
 var AgentServer = class {
   constructor(plugin) {
@@ -2790,12 +2784,7 @@ var AgentServer = class {
     if (unchanged) return;
     await this.stop();
     if (!desired.enabled) return;
-    const http = getHttp();
-    if (!http) {
-      new import_obsidian4.Notice(t("Agent API \u9700\u8981\u684C\u9762\u7248 Obsidian\uFF08\u79FB\u52A8\u7AEF\u65E0 Node http\uFF09"));
-      return;
-    }
-    const server = http.createServer((request, response) => {
+    const server = (0, import_http.createServer)((request, response) => {
       void this.handle(request, response);
     });
     try {
@@ -3293,7 +3282,8 @@ var SemanticIndex = class {
       if (!this.isReachable(file.path)) return false;
       const cache = this.plugin.app.metadataCache.getFileCache(file);
       const tags = [...((_a3 = cache == null ? void 0 : cache.tags) != null ? _a3 : []).map((tag) => tag.tag.replace(/^#/, ""))];
-      const frontmatterTags = (_b2 = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _b2.tags;
+      const frontmatter = (_b2 = cache == null ? void 0 : cache.frontmatter) != null ? _b2 : {};
+      const frontmatterTags = frontmatter.tags;
       if (Array.isArray(frontmatterTags)) tags.push(...frontmatterTags.map(String));
       return !tags.some((tag) => deniedTags.includes(tag.replace(/^#/, "")));
     });
@@ -3671,9 +3661,10 @@ var Store = class {
     try {
       const adapter = (_b = (_a2 = this.plugin.app) == null ? void 0 : _a2.vault) == null ? void 0 : _b.adapter;
       if (!(adapter == null ? void 0 : adapter.write)) return "";
-      await ensureFolder(this.plugin.app.vault, ".obsidian/plugins/sediment/recovery");
+      const recoveryDir = `${this.plugin.app.vault.configDir}/plugins/sediment/recovery`;
+      await ensureFolder(this.plugin.app.vault, recoveryDir);
       const stamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
-      const path = `.obsidian/plugins/sediment/recovery/data-${stamp}.json`;
+      const path = `${recoveryDir}/data-${stamp}.json`;
       await adapter.write(path, JSON.stringify(raw, null, 2));
       return path;
     } catch (error) {
@@ -3816,7 +3807,7 @@ var Store = class {
     if (!folder) return 1;
     const keep = Math.max(1, this.data.settings.backupKeep);
     const backups = this.plugin.app.vault.getFiles().filter((file) => file.extension === "json" && file.basename.startsWith("data-") && file.path.startsWith(`${folder}/`) && !file.path.slice(folder.length + 1).includes("/")).sort((a, b) => b.stat.mtime - a.stat.mtime);
-    for (const old of backups.slice(keep)) await this.plugin.app.vault.trash(old, false);
+    for (const old of backups.slice(keep)) await this.plugin.app.fileManager.trashFile(old);
     return 1;
   }
   /** 列出备份目录中的 data.json 快照，按时间倒序（供恢复 UI 使用）。 */
@@ -4739,13 +4730,13 @@ function wrapText(ctx, text, maxWidth) {
   return lines;
 }
 function download(canvas, name) {
-  const link = document.createElement("a");
+  const link = createEl("a");
   link.download = name;
   link.href = canvas.toDataURL("image/png");
   link.click();
 }
 function exportMemoCard(memo, template = "minimal") {
-  const canvas = document.createElement("canvas");
+  const canvas = createEl("canvas");
   canvas.width = 720;
   canvas.height = 420;
   const ctx = canvas.getContext("2d");
@@ -4778,7 +4769,7 @@ function exportMemoCard(memo, template = "minimal") {
   download(canvas, `sediment-memo-${memo.date}.png`);
 }
 function exportTodayReport(data) {
-  const canvas = document.createElement("canvas");
+  const canvas = createEl("canvas");
   canvas.width = 900;
   canvas.height = 560;
   const ctx = canvas.getContext("2d");
@@ -4824,7 +4815,7 @@ async function rebuildHistory(store, vault) {
     let text = "";
     try {
       text = await vault.cachedRead(file);
-    } catch (error) {
+    } catch (e) {
       continue;
     }
     if (/^source\s*:\s*agent\b/m.test(text.slice(0, 800))) continue;
@@ -5309,17 +5300,17 @@ var DiagnosticsModal = class extends import_obsidian12.Modal {
 // src/ui/mcp-uninstall-modal.ts
 var import_obsidian13 = require("obsidian");
 
-// src/agent/bridge-source.ts
-var BRIDGE_SOURCE = '#!/usr/bin/env node\r\n/**\r\n * Sediment MCP stdio bridge.\r\n * \u66B4\u9732\u4EFB\u52A1\u578B\u5DE5\u5177\u548C\u53EA\u8BFB\u5DE5\u4F5C\u533A\u805A\u5408\u5165\u53E3\uFF1B\u65E7\u7EC6\u7C92\u5EA6\u5DE5\u5177\u540D\u4E0D\u518D\u4FDD\u7559\u3002\r\n */\r\n\r\nimport process from "node:process";\r\nimport http from "node:http";\r\nimport https from "node:https";\r\n\r\nconst BASE = process.env.SEDIMENT_URL || "http://127.0.0.1:27123";\r\nconst TOKEN = process.env.SEDIMENT_TOKEN || "";\r\n\r\n/** HTTP \u8BF7\u6C42\u8D85\u65F6\u4E0E\u54CD\u5E94\u4F53/stdin \u7F13\u51B2\u4E0A\u9650\uFF0C\u9632\u6B62\u6302\u6B7B\u4E0E\u65E0\u754C\u5185\u5B58\u589E\u957F\u3002 */\r\nconst REQUEST_TIMEOUT_MS = 30_000;\r\nconst MAX_RESPONSE_CHARS = 8 * 1024 * 1024;\r\nconst MAX_STDIN_BUFFER_CHARS = 1024 * 1024;\r\n\r\nconst TOOLS = [\r\n  {\r\n    name: "get_daily_context",\r\n    description: "\u83B7\u53D6\u4ECA\u65E5\u72B6\u6001\u3001\u6700\u8FD1\u5DE5\u4F5C\u65E5\u5FD7\u3001\u901F\u8BB0\u3001\u7B14\u8BB0\u548C Agent \u5F85\u529E\u3002",\r\n    inputSchema: { type: "object", properties: { days: { type: "number", description: "\u56DE\u6EAF\u5929\u6570\uFF0C\u9ED8\u8BA4 7" } } },\r\n  },\r\n  {\r\n    name: "get_active_context",\r\n    description: "\u83B7\u53D6\u5F53\u524D\u7B14\u8BB0\u3001\u9009\u4E2D\u6587\u672C\u3001\u5149\u6807\u884C\u548C\u5149\u6807\u6BB5\u843D\u3002",\r\n    inputSchema: { type: "object", properties: {} },\r\n  },\r\n  {\r\n    name: "search_notes",\r\n    description: "\u5168\u6587\u6216\u672C\u5730\u8BED\u4E49\u68C0\u7D22\u7B14\u8BB0\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        query: { type: "string" },\r\n        limit: { type: "number", description: "\u6700\u591A\u8FD4\u56DE\u6761\u6570\uFF0C\u9ED8\u8BA4 10" },\r\n        mode: { type: "string", enum: ["text", "semantic"], description: "\u9ED8\u8BA4 text" },\r\n      },\r\n      required: ["query"],\r\n    },\r\n  },\r\n  {\r\n    name: "list_notes",\r\n    description: "\u5217\u51FA\u7B14\u8BB0\uFF0C\u53EF\u6309\u6587\u4EF6\u5939\u8FC7\u6EE4\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        folder: { type: "string" },\r\n        limit: { type: "number", description: "\u6700\u591A\u8FD4\u56DE\u6761\u6570\uFF0C\u9ED8\u8BA4 50" },\r\n      },\r\n    },\r\n  },\r\n  {\r\n    name: "read_note",\r\n    description: "\u8BFB\u53D6\u6307\u5B9A\u7B14\u8BB0\u5168\u6587\u6216\u53EA\u8BFB\u5143\u6570\u636E\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        path: { type: "string" },\r\n        metadataOnly: { type: "boolean", description: "\u53EA\u8FD4\u56DE frontmatter\u3001\u6807\u7B7E\u3001\u6807\u9898\u5927\u7EB2\u548C\u94FE\u63A5" },\r\n      },\r\n      required: ["path"],\r\n    },\r\n  },\r\n  {\r\n    name: "write_note",\r\n    description: "\u7EDF\u4E00\u5199\u5165\u7B14\u8BB0\uFF1Acreate\u3001append \u6216 overwrite\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        path: { type: "string" },\r\n        content: { type: "string" },\r\n        action: { type: "string", enum: ["create", "append", "overwrite"], description: "\u9ED8\u8BA4 create" },\r\n      },\r\n      required: ["path", "content"],\r\n    },\r\n  },\r\n  {\r\n    name: "patch_note",\r\n    description: "\u6309\u6807\u9898\u6216\u6587\u672C\u7247\u6BB5\u5C40\u90E8\u4FEE\u6539\uFF0C\u652F\u6301\u9884\u89C8\u3001\u7248\u672C\u51B2\u7A81\u548C\u5FEB\u7167\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        path: { type: "string" },\r\n        heading: { type: "string" },\r\n        find: { type: "string" },\r\n        content: { type: "string" },\r\n        mode: { type: "string", enum: ["replace", "append", "prepend"] },\r\n        operation: {\r\n          type: "string",\r\n          enum: ["append_under_heading", "prepend_under_heading", "replace_block", "update_frontmatter"],\r\n        },\r\n        index: { type: "number" },\r\n        ifMatch: { type: "string" },\r\n        expectedMtime: { type: "number" },\r\n        dryRun: { type: "boolean" },\r\n      },\r\n      required: ["path", "content"],\r\n    },\r\n  },\r\n  {\r\n    name: "add_memo",\r\n    description: "\u8BB0\u4E00\u6761\u901F\u8BB0\uFF0C\u53EF\u5173\u8054\u5F85\u529E\u6765\u6E90\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        text: { type: "string" },\r\n        tags: { type: "array", items: { type: "string" } },\r\n        sourcePath: { type: "string" },\r\n        sourceLine: { type: "number" },\r\n      },\r\n      required: ["text"],\r\n    },\r\n  },\r\n  {\r\n    name: "add_knowledge",\r\n    description: "\u6C89\u6DC0\u77E5\u8BC6\u7B14\u8BB0\u3001\u5206\u7C7B\u3001\u6807\u7B7E\u548C\u5173\u8054\u6765\u6E90\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        title: { type: "string" },\r\n        content: { type: "string" },\r\n        category: { type: "string" },\r\n        folder: { type: "string" },\r\n        tags: { type: "array", items: { type: "string" } },\r\n        agent: { type: "string" },\r\n        source: { type: "string" },\r\n        links: { type: "array", items: { type: "string" } },\r\n      },\r\n      required: ["title", "content"],\r\n    },\r\n  },\r\n  {\r\n    name: "record_work_log",\r\n    description: "\u8BB0\u5F55 Agent \u5DE5\u4F5C\u65E5\u5FD7\u3001\u51B3\u7B56\u3001\u6D89\u53CA\u6587\u4EF6\u3001\u5B66\u4E60\u548C\u5F85\u786E\u8BA4\u4E8B\u9879\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        agent: { type: "string" },\r\n        task: { type: "string" },\r\n        summary: { type: "string" },\r\n        decisions: { type: "string" },\r\n        learnings: { type: "string" },\r\n        openQuestions: { type: "string" },\r\n        files: { type: "array", items: { type: "string" } },\r\n        tags: { type: "array", items: { type: "string" } },\r\n      },\r\n      required: ["task", "summary"],\r\n    },\r\n  },\r\n  {\r\n    name: "manage_tasks",\r\n    description: "\u7EDF\u4E00\u7BA1\u7406\u4EFB\u52A1\uFF1Alist\u3001complete\u3001delegate\u3001snapshot\u3001claim \u6216 complete_agent\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        action: { type: "string", enum: ["list", "complete", "delegate", "snapshot", "claim", "complete_agent"] },\r\n        scope: { type: "string", enum: ["today", "overdue", "all", "agent"] },\r\n        id: { type: "string" },\r\n        path: { type: "string" },\r\n        line: { type: "number" },\r\n        resultPath: { type: "string" },\r\n      },\r\n      required: ["action"],\r\n    },\r\n  },\r\n  {\r\n    name: "get_workspace_state",\r\n    description: "\u6309\u9700\u805A\u5408\u53EA\u8BFB\u9AD8\u7EA7\u72B6\u6001\uFF1A\u7EDF\u8BA1\u3001\u56FE\u8C31\u3001\u756A\u8304\u949F\u3001\u5468\u590D\u76D8\u3001\u8C03\u7528\u6D3B\u52A8\u3001\u5DE5\u4F5C\u65E5\u5FD7\u6216\u5206\u7C7B\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        sections: {\r\n          type: "array",\r\n          items: {\r\n            type: "string",\r\n            enum: ["stats", "graph", "pomodoro", "weekly_review", "tool_activity", "work_logs", "categories"],\r\n          },\r\n          description: "\u7559\u7A7A\u65F6\u8FD4\u56DE today\u3001stats\u3001pomodoro\u3001work_logs\u3001categories \u548C tool_activity",\r\n        },\r\n        path: { type: "string", description: "graph section \u4F7F\u7528\u7684\u7B14\u8BB0\u8DEF\u5F84" },\r\n        types: { type: "string", description: "graph \u7C7B\u578B\uFF0C\u9ED8\u8BA4 outgoing,backlinks,tags" },\r\n        days: { type: "number", description: "stats/work_logs \u56DE\u6EAF\u5929\u6570" },\r\n        date: { type: "string", description: "weekly_review \u951A\u5B9A\u65E5\u671F YYYY-MM-DD" },\r\n        limit: { type: "number", description: "tool_activity \u6216 work_logs \u6570\u91CF\u4E0A\u9650" },\r\n      },\r\n    },\r\n  },\r\n  {\r\n    name: "manage_changes",\r\n    description: "\u7EDF\u4E00\u5BA1\u67E5 Agent \u4FEE\u6539\uFF1Alist \u6216 revert\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        action: { type: "string", enum: ["list", "revert"] },\r\n        snapshotId: { type: "string" },\r\n        limit: { type: "number" },\r\n      },\r\n      required: ["action"],\r\n    },\r\n  },\r\n];\r\n\r\nfunction request(url, method, payload, extraHeaders = {}) {\r\n  return new Promise((resolve, reject) => {\r\n    const transport = url.protocol === "https:" ? https : http;\r\n    const body = payload === undefined ? null : JSON.stringify(payload);\r\n    const headers = { ...extraHeaders };\r\n    if (body) {\r\n      headers["Content-Type"] = "application/json";\r\n      headers["Content-Length"] = Buffer.byteLength(body);\r\n    }\r\n    const req = transport.request(url, { method, headers }, (res) => {\r\n      let raw = "";\r\n      let oversized = false;\r\n      res.setEncoding("utf8");\r\n      res.on("data", (chunk) => {\r\n        raw += chunk;\r\n        if (raw.length > MAX_RESPONSE_CHARS) {\r\n          oversized = true;\r\n          req.destroy(new Error(`\u54CD\u5E94\u4F53\u8FC7\u5927\uFF08\u4E0A\u9650 ${MAX_RESPONSE_CHARS} \u5B57\u7B26\uFF09`));\r\n        }\r\n      });\r\n      res.on("end", () => {\r\n        if (oversized) return;\r\n        let data;\r\n        try { data = JSON.parse(raw); } catch { data = raw; }\r\n        if (res.statusCode >= 200 && res.statusCode < 300) resolve(data);\r\n        else reject(new Error(data?.error || `HTTP ${res.statusCode}`));\r\n      });\r\n    });\r\n    req.setTimeout(REQUEST_TIMEOUT_MS, () => {\r\n      req.destroy(new Error(`\u8BF7\u6C42\u8D85\u65F6\uFF08${REQUEST_TIMEOUT_MS / 1000}s\uFF09\uFF1A${url.pathname}`));\r\n    });\r\n    req.on("error", reject);\r\n    if (body) req.write(body);\r\n    req.end();\r\n  });\r\n}\r\n\r\nasync function call(path, params = {}, method = "GET") {\r\n  // \u4EE4\u724C\u7F3A\u5931\u4E0E\u4EE4\u724C\u9519\u8BEF\u5206\u5F00\u63D0\u793A\uFF1A\u7F3A\u5931\u662F\u914D\u7F6E\u95EE\u9898\uFF0C401 \u624D\u662F\u4EE4\u724C\u4E0D\u5339\u914D\u3002\r\n  if (!TOKEN) {\r\n    throw new Error("\u7F3A\u5C11\u4EE4\u724C\uFF1A\u8BF7\u8BBE\u7F6E SEDIMENT_TOKEN \u73AF\u5883\u53D8\u91CF\uFF08\u63D2\u4EF6\u8BBE\u7F6E \u2192 Agent \u63A5\u5165\u53EF\u590D\u5236\uFF09");\r\n  }\r\n  const url = new URL(path, BASE);\r\n  url.searchParams.set("agent", process.env.AGENT_NAME || "");\r\n  // \u4EE4\u724C\u53EA\u8D70 Authorization \u5934\uFF0C\u4E0D\u518D\u653E\u67E5\u8BE2\u4E32\uFF08\u4F1A\u843D\u5165\u65E5\u5FD7/\u4EE3\u7406\u7F13\u5B58\uFF09\u3002\r\n  const headers = { Authorization: `Bearer ${TOKEN}` };\r\n  if (method === "POST") return request(url, method, params, headers);\r\n  for (const [key, value] of Object.entries(params)) {\r\n    if (value !== undefined && value !== null) url.searchParams.set(key, String(value));\r\n  }\r\n  return request(url, method, undefined, headers);\r\n}\r\n\r\nasync function dispatch(name, args) {\r\n  const tool = TOOLS.find((candidate) => candidate.name === name);\r\n  if (!tool) throw new Error(`\u672A\u77E5\u5DE5\u5177\uFF1A${name}`);\r\n  const missing = (tool.inputSchema.required ?? []).filter(\r\n    (key) => args[key] === undefined || args[key] === null || args[key] === ""\r\n  );\r\n  if (missing.length > 0) throw new Error(`\u7F3A\u5C11\u5FC5\u586B\u53C2\u6570\uFF1A${missing.join(", ")}`);\r\n\r\n  switch (name) {\r\n    case "get_daily_context":\r\n      return call("/context", { days: args.days ?? 7 });\r\n    case "get_active_context":\r\n      return call("/active-context");\r\n    case "search_notes":\r\n      return call(args.mode === "semantic" ? "/semantic-search" : "/search", {\r\n        q: args.query ?? "",\r\n        query: args.query ?? "",\r\n        limit: args.limit ?? 10,\r\n      });\r\n    case "list_notes":\r\n      return call("/notes", { folder: args.folder ?? "", limit: args.limit ?? 50 });\r\n    case "read_note":\r\n      return args.metadataOnly\r\n        ? call("/note-metadata", { path: args.path })\r\n        : call("/note", { path: args.path });\r\n    case "write_note":\r\n      return call("/note", { path: args.path, content: args.content, mode: args.action ?? "create" }, "POST");\r\n    case "patch_note":\r\n      return call("/patch-note", {\r\n        path: args.path,\r\n        heading: args.heading ?? "",\r\n        find: args.find ?? "",\r\n        content: args.content,\r\n        mode: args.mode ?? "replace",\r\n        operation: args.operation ?? "",\r\n        index: args.index,\r\n        ifMatch: args.ifMatch ?? "",\r\n        expectedMtime: args.expectedMtime,\r\n        dryRun: args.dryRun === true,\r\n      }, "POST");\r\n    case "add_memo":\r\n      return call("/memo", {\r\n        text: args.text,\r\n        tags: args.tags ?? [],\r\n        sourcePath: args.sourcePath ?? "",\r\n        sourceLine: args.sourceLine ?? 0,\r\n      }, "POST");\r\n    case "add_knowledge":\r\n      return call("/knowledge", {\r\n        title: args.title,\r\n        content: args.content,\r\n        category: args.category ?? "",\r\n        folder: args.folder ?? "",\r\n        tags: args.tags ?? [],\r\n        agent: args.agent ?? "",\r\n        source: args.source ?? "",\r\n        links: args.links ?? [],\r\n      }, "POST");\r\n    case "record_work_log":\r\n      return call("/worklog", {\r\n        agent: args.agent ?? "",\r\n        task: args.task,\r\n        summary: args.summary,\r\n        decisions: args.decisions ?? "",\r\n        learnings: args.learnings ?? "",\r\n        openQuestions: args.openQuestions ?? "",\r\n        files: args.files ?? [],\r\n        tags: args.tags ?? [],\r\n      }, "POST");\r\n    case "manage_tasks":\r\n      switch (args.action) {\r\n        case "list": return call("/tasks", { scope: args.scope ?? "all" });\r\n        case "complete": return call("/tasks/complete", { path: args.path, line: args.line }, "POST");\r\n        case "delegate": return call("/tasks/delegate", { path: args.path, line: args.line }, "POST");\r\n        case "snapshot": return call("/tasks/snapshot", {}, "POST");\r\n        case "claim": return call("/agent-task/claim", { id: args.id }, "POST");\r\n        case "complete_agent":\r\n          return call("/agent-task/complete", { id: args.id, resultPath: args.resultPath ?? "" }, "POST");\r\n      }\r\n      throw new Error("manage_tasks.action \u65E0\u6548");\r\n    case "get_workspace_state":\r\n      {\r\n        const allowed = new Set(["stats", "graph", "pomodoro", "weekly_review", "tool_activity", "work_logs", "categories"]);\r\n        const requested = Array.isArray(args.sections)\r\n          ? args.sections.filter((section) => allowed.has(section))\r\n          : ["stats", "pomodoro", "tool_activity", "work_logs", "categories"];\r\n        const sections = [...new Set(requested)];\r\n        const state = {};\r\n        const reads = [];\r\n\r\n        if (sections.includes("stats")) {\r\n          reads.push(call("/stats", { days: args.days ?? 30 }).then((value) => { state.stats = value; }));\r\n        }\r\n        if (sections.includes("graph")) {\r\n          if (!args.path) {\r\n            state.graph = { skipped: true, reason: "graph \u9700\u8981 path \u53C2\u6570" };\r\n          } else {\r\n            reads.push(call("/graph", { path: args.path, types: args.types ?? "outgoing,backlinks,tags" })\r\n              .then((value) => { state.graph = value; }));\r\n          }\r\n        }\r\n        if (sections.includes("pomodoro")) {\r\n          reads.push(call("/pomodoro").then((value) => { state.pomodoro = value; }));\r\n        }\r\n        if (sections.includes("weekly_review")) {\r\n          reads.push(call("/review", { date: args.date ?? "" })\r\n            .then((value) => { state.weeklyReview = value; }));\r\n        }\r\n        if (sections.includes("tool_activity")) {\r\n          reads.push(call("/activity").then((value) => { state.toolActivity = value; }));\r\n        }\r\n        if (sections.includes("work_logs")) {\r\n          reads.push(call("/worklogs", { days: args.days ?? 7 })\r\n            .then((value) => { state.workLogs = value; }));\r\n        }\r\n        if (sections.includes("categories")) {\r\n          reads.push(call("/categories").then((value) => { state.categories = value; }));\r\n        }\r\n\r\n        await Promise.all(reads);\r\n        return state;\r\n      }\r\n    case "manage_changes":\r\n      if (args.action === "list") return call("/agent/audit", { limit: args.limit ?? 20 });\r\n      if (args.action === "revert") return call("/agent/revert", { snapshotId: args.snapshotId }, "POST");\r\n      throw new Error("manage_changes.action \u65E0\u6548");\r\n  }\r\n}\r\n\r\nfunction send(message) {\r\n  process.stdout.write(JSON.stringify(message) + "\\n");\r\n}\r\n\r\nasync function handle(message) {\r\n  if (message.id === undefined) return;\r\n  const { id, method, params } = message;\r\n  switch (method) {\r\n    case "initialize":\r\n      send({\r\n        jsonrpc: "2.0",\r\n        id,\r\n        result: {\r\n          protocolVersion: "2024-11-05",\r\n          capabilities: { tools: {} },\r\n          serverInfo: { name: "sediment", version: "1.0.6" },\r\n        },\r\n      });\r\n      break;\r\n    case "tools/list":\r\n      send({ jsonrpc: "2.0", id, result: { tools: TOOLS } });\r\n      break;\r\n    case "tools/call":\r\n      try {\r\n        const data = await dispatch(params?.name, params?.arguments ?? {});\r\n        send({\r\n          jsonrpc: "2.0",\r\n          id,\r\n          result: {\r\n            content: [{ type: "text", text: typeof data === "string" ? data : JSON.stringify(data, null, 2) }],\r\n          },\r\n        });\r\n      } catch (error) {\r\n        send({\r\n          jsonrpc: "2.0",\r\n          id,\r\n          result: { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true },\r\n        });\r\n      }\r\n      break;\r\n    case "ping":\r\n      send({ jsonrpc: "2.0", id, result: {} });\r\n      break;\r\n    default:\r\n      send({ jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${method}` } });\r\n  }\r\n}\r\n\r\nlet buffer = "";\r\nprocess.stdin.setEncoding("utf8");\r\nprocess.stdin.on("data", (chunk) => {\r\n  buffer += chunk;\r\n  if (buffer.length > MAX_STDIN_BUFFER_CHARS) {\r\n    process.stderr.write("sediment-mcp: stdin \u7F13\u51B2\u8D85\u8FC7 1MB \u4E0A\u9650\uFF0C\u65AD\u5F00\u8FDE\u63A5\\n");\r\n    process.exit(1);\r\n  }\r\n  let index;\r\n  while ((index = buffer.indexOf("\\n")) >= 0) {\r\n    const line = buffer.slice(0, index).trim();\r\n    buffer = buffer.slice(index + 1);\r\n    if (!line) continue;\r\n    let message;\r\n    try {\r\n      message = JSON.parse(line);\r\n    } catch (error) {\r\n      // \u7578\u5F62 JSON \u8BF4\u660E\u6D41\u5DF2\u4E0D\u53EF\u4FE1\uFF1A\u8BB0\u8BCA\u65AD\uFF08stderr\uFF09\u540E\u65AD\u5F00\uFF0C\u4E0D\u518D\u9759\u9ED8\u541E\u6389\u3002\r\n      process.stderr.write(`sediment-mcp: \u7578\u5F62 JSON \u8F93\u5165\uFF0C\u65AD\u5F00\u8FDE\u63A5\uFF1A${error.message}\\n`);\r\n      process.exit(1);\r\n    }\r\n    void handle(message);\r\n  }\r\n});\r\n';
+// src/features/uninstall.ts
+var import_fs4 = require("fs");
 
 // src/agent/setup.ts
-function nodeModule(name) {
-  try {
-    return require(name);
-  } catch (error) {
-    return null;
-  }
-}
+var import_fs3 = require("fs");
+var import_os = require("os");
+
+// src/agent/bridge-source.ts
+var BRIDGE_SOURCE = '#!/usr/bin/env node\r\n/**\r\n * Sediment MCP stdio bridge.\r\n * \u66B4\u9732\u4EFB\u52A1\u578B\u5DE5\u5177\u548C\u53EA\u8BFB\u5DE5\u4F5C\u533A\u805A\u5408\u5165\u53E3\uFF1B\u65E7\u7EC6\u7C92\u5EA6\u5DE5\u5177\u540D\u4E0D\u518D\u4FDD\u7559\u3002\r\n */\r\n\r\nimport process from "node:process";\r\nimport http from "node:http";\r\nimport https from "node:https";\r\n\r\nconst BASE = process.env.SEDIMENT_URL || "http://127.0.0.1:27123";\r\nconst TOKEN = process.env.SEDIMENT_TOKEN || "";\r\n\r\n/** HTTP \u8BF7\u6C42\u8D85\u65F6\u4E0E\u54CD\u5E94\u4F53/stdin \u7F13\u51B2\u4E0A\u9650\uFF0C\u9632\u6B62\u6302\u6B7B\u4E0E\u65E0\u754C\u5185\u5B58\u589E\u957F\u3002 */\r\nconst REQUEST_TIMEOUT_MS = 30_000;\r\nconst MAX_RESPONSE_CHARS = 8 * 1024 * 1024;\r\nconst MAX_STDIN_BUFFER_CHARS = 1024 * 1024;\r\n\r\nconst TOOLS = [\r\n  {\r\n    name: "get_daily_context",\r\n    description: "\u83B7\u53D6\u4ECA\u65E5\u72B6\u6001\u3001\u6700\u8FD1\u5DE5\u4F5C\u65E5\u5FD7\u3001\u901F\u8BB0\u3001\u7B14\u8BB0\u548C Agent \u5F85\u529E\u3002",\r\n    inputSchema: { type: "object", properties: { days: { type: "number", description: "\u56DE\u6EAF\u5929\u6570\uFF0C\u9ED8\u8BA4 7" } } },\r\n  },\r\n  {\r\n    name: "get_active_context",\r\n    description: "\u83B7\u53D6\u5F53\u524D\u7B14\u8BB0\u3001\u9009\u4E2D\u6587\u672C\u3001\u5149\u6807\u884C\u548C\u5149\u6807\u6BB5\u843D\u3002",\r\n    inputSchema: { type: "object", properties: {} },\r\n  },\r\n  {\r\n    name: "search_notes",\r\n    description: "\u5168\u6587\u6216\u672C\u5730\u8BED\u4E49\u68C0\u7D22\u7B14\u8BB0\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        query: { type: "string" },\r\n        limit: { type: "number", description: "\u6700\u591A\u8FD4\u56DE\u6761\u6570\uFF0C\u9ED8\u8BA4 10" },\r\n        mode: { type: "string", enum: ["text", "semantic"], description: "\u9ED8\u8BA4 text" },\r\n      },\r\n      required: ["query"],\r\n    },\r\n  },\r\n  {\r\n    name: "list_notes",\r\n    description: "\u5217\u51FA\u7B14\u8BB0\uFF0C\u53EF\u6309\u6587\u4EF6\u5939\u8FC7\u6EE4\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        folder: { type: "string" },\r\n        limit: { type: "number", description: "\u6700\u591A\u8FD4\u56DE\u6761\u6570\uFF0C\u9ED8\u8BA4 50" },\r\n      },\r\n    },\r\n  },\r\n  {\r\n    name: "read_note",\r\n    description: "\u8BFB\u53D6\u6307\u5B9A\u7B14\u8BB0\u5168\u6587\u6216\u53EA\u8BFB\u5143\u6570\u636E\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        path: { type: "string" },\r\n        metadataOnly: { type: "boolean", description: "\u53EA\u8FD4\u56DE frontmatter\u3001\u6807\u7B7E\u3001\u6807\u9898\u5927\u7EB2\u548C\u94FE\u63A5" },\r\n      },\r\n      required: ["path"],\r\n    },\r\n  },\r\n  {\r\n    name: "write_note",\r\n    description: "\u7EDF\u4E00\u5199\u5165\u7B14\u8BB0\uFF1Acreate\u3001append \u6216 overwrite\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        path: { type: "string" },\r\n        content: { type: "string" },\r\n        action: { type: "string", enum: ["create", "append", "overwrite"], description: "\u9ED8\u8BA4 create" },\r\n      },\r\n      required: ["path", "content"],\r\n    },\r\n  },\r\n  {\r\n    name: "patch_note",\r\n    description: "\u6309\u6807\u9898\u6216\u6587\u672C\u7247\u6BB5\u5C40\u90E8\u4FEE\u6539\uFF0C\u652F\u6301\u9884\u89C8\u3001\u7248\u672C\u51B2\u7A81\u548C\u5FEB\u7167\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        path: { type: "string" },\r\n        heading: { type: "string" },\r\n        find: { type: "string" },\r\n        content: { type: "string" },\r\n        mode: { type: "string", enum: ["replace", "append", "prepend"] },\r\n        operation: {\r\n          type: "string",\r\n          enum: ["append_under_heading", "prepend_under_heading", "replace_block", "update_frontmatter"],\r\n        },\r\n        index: { type: "number" },\r\n        ifMatch: { type: "string" },\r\n        expectedMtime: { type: "number" },\r\n        dryRun: { type: "boolean" },\r\n      },\r\n      required: ["path", "content"],\r\n    },\r\n  },\r\n  {\r\n    name: "add_memo",\r\n    description: "\u8BB0\u4E00\u6761\u901F\u8BB0\uFF0C\u53EF\u5173\u8054\u5F85\u529E\u6765\u6E90\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        text: { type: "string" },\r\n        tags: { type: "array", items: { type: "string" } },\r\n        sourcePath: { type: "string" },\r\n        sourceLine: { type: "number" },\r\n      },\r\n      required: ["text"],\r\n    },\r\n  },\r\n  {\r\n    name: "add_knowledge",\r\n    description: "\u6C89\u6DC0\u77E5\u8BC6\u7B14\u8BB0\u3001\u5206\u7C7B\u3001\u6807\u7B7E\u548C\u5173\u8054\u6765\u6E90\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        title: { type: "string" },\r\n        content: { type: "string" },\r\n        category: { type: "string" },\r\n        folder: { type: "string" },\r\n        tags: { type: "array", items: { type: "string" } },\r\n        agent: { type: "string" },\r\n        source: { type: "string" },\r\n        links: { type: "array", items: { type: "string" } },\r\n      },\r\n      required: ["title", "content"],\r\n    },\r\n  },\r\n  {\r\n    name: "record_work_log",\r\n    description: "\u8BB0\u5F55 Agent \u5DE5\u4F5C\u65E5\u5FD7\u3001\u51B3\u7B56\u3001\u6D89\u53CA\u6587\u4EF6\u3001\u5B66\u4E60\u548C\u5F85\u786E\u8BA4\u4E8B\u9879\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        agent: { type: "string" },\r\n        task: { type: "string" },\r\n        summary: { type: "string" },\r\n        decisions: { type: "string" },\r\n        learnings: { type: "string" },\r\n        openQuestions: { type: "string" },\r\n        files: { type: "array", items: { type: "string" } },\r\n        tags: { type: "array", items: { type: "string" } },\r\n      },\r\n      required: ["task", "summary"],\r\n    },\r\n  },\r\n  {\r\n    name: "manage_tasks",\r\n    description: "\u7EDF\u4E00\u7BA1\u7406\u4EFB\u52A1\uFF1Alist\u3001complete\u3001delegate\u3001snapshot\u3001claim \u6216 complete_agent\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        action: { type: "string", enum: ["list", "complete", "delegate", "snapshot", "claim", "complete_agent"] },\r\n        scope: { type: "string", enum: ["today", "overdue", "all", "agent"] },\r\n        id: { type: "string" },\r\n        path: { type: "string" },\r\n        line: { type: "number" },\r\n        resultPath: { type: "string" },\r\n      },\r\n      required: ["action"],\r\n    },\r\n  },\r\n  {\r\n    name: "get_workspace_state",\r\n    description: "\u6309\u9700\u805A\u5408\u53EA\u8BFB\u9AD8\u7EA7\u72B6\u6001\uFF1A\u7EDF\u8BA1\u3001\u56FE\u8C31\u3001\u756A\u8304\u949F\u3001\u5468\u590D\u76D8\u3001\u8C03\u7528\u6D3B\u52A8\u3001\u5DE5\u4F5C\u65E5\u5FD7\u6216\u5206\u7C7B\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        sections: {\r\n          type: "array",\r\n          items: {\r\n            type: "string",\r\n            enum: ["stats", "graph", "pomodoro", "weekly_review", "tool_activity", "work_logs", "categories"],\r\n          },\r\n          description: "\u7559\u7A7A\u65F6\u8FD4\u56DE today\u3001stats\u3001pomodoro\u3001work_logs\u3001categories \u548C tool_activity",\r\n        },\r\n        path: { type: "string", description: "graph section \u4F7F\u7528\u7684\u7B14\u8BB0\u8DEF\u5F84" },\r\n        types: { type: "string", description: "graph \u7C7B\u578B\uFF0C\u9ED8\u8BA4 outgoing,backlinks,tags" },\r\n        days: { type: "number", description: "stats/work_logs \u56DE\u6EAF\u5929\u6570" },\r\n        date: { type: "string", description: "weekly_review \u951A\u5B9A\u65E5\u671F YYYY-MM-DD" },\r\n        limit: { type: "number", description: "tool_activity \u6216 work_logs \u6570\u91CF\u4E0A\u9650" },\r\n      },\r\n    },\r\n  },\r\n  {\r\n    name: "manage_changes",\r\n    description: "\u7EDF\u4E00\u5BA1\u67E5 Agent \u4FEE\u6539\uFF1Alist \u6216 revert\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        action: { type: "string", enum: ["list", "revert"] },\r\n        snapshotId: { type: "string" },\r\n        limit: { type: "number" },\r\n      },\r\n      required: ["action"],\r\n    },\r\n  },\r\n];\r\n\r\nfunction request(url, method, payload, extraHeaders = {}) {\r\n  return new Promise((resolve, reject) => {\r\n    const transport = url.protocol === "https:" ? https : http;\r\n    const body = payload === undefined ? null : JSON.stringify(payload);\r\n    const headers = { ...extraHeaders };\r\n    if (body) {\r\n      headers["Content-Type"] = "application/json";\r\n      headers["Content-Length"] = Buffer.byteLength(body);\r\n    }\r\n    const req = transport.request(url, { method, headers }, (res) => {\r\n      let raw = "";\r\n      let oversized = false;\r\n      res.setEncoding("utf8");\r\n      res.on("data", (chunk) => {\r\n        raw += chunk;\r\n        if (raw.length > MAX_RESPONSE_CHARS) {\r\n          oversized = true;\r\n          req.destroy(new Error(`\u54CD\u5E94\u4F53\u8FC7\u5927\uFF08\u4E0A\u9650 ${MAX_RESPONSE_CHARS} \u5B57\u7B26\uFF09`));\r\n        }\r\n      });\r\n      res.on("end", () => {\r\n        if (oversized) return;\r\n        let data;\r\n        try { data = JSON.parse(raw); } catch { data = raw; }\r\n        if (res.statusCode >= 200 && res.statusCode < 300) resolve(data);\r\n        else reject(new Error(data?.error || `HTTP ${res.statusCode}`));\r\n      });\r\n    });\r\n    req.setTimeout(REQUEST_TIMEOUT_MS, () => {\r\n      req.destroy(new Error(`\u8BF7\u6C42\u8D85\u65F6\uFF08${REQUEST_TIMEOUT_MS / 1000}s\uFF09\uFF1A${url.pathname}`));\r\n    });\r\n    req.on("error", reject);\r\n    if (body) req.write(body);\r\n    req.end();\r\n  });\r\n}\r\n\r\nasync function call(path, params = {}, method = "GET") {\r\n  // \u4EE4\u724C\u7F3A\u5931\u4E0E\u4EE4\u724C\u9519\u8BEF\u5206\u5F00\u63D0\u793A\uFF1A\u7F3A\u5931\u662F\u914D\u7F6E\u95EE\u9898\uFF0C401 \u624D\u662F\u4EE4\u724C\u4E0D\u5339\u914D\u3002\r\n  if (!TOKEN) {\r\n    throw new Error("\u7F3A\u5C11\u4EE4\u724C\uFF1A\u8BF7\u8BBE\u7F6E SEDIMENT_TOKEN \u73AF\u5883\u53D8\u91CF\uFF08\u63D2\u4EF6\u8BBE\u7F6E \u2192 Agent \u63A5\u5165\u53EF\u590D\u5236\uFF09");\r\n  }\r\n  const url = new URL(path, BASE);\r\n  url.searchParams.set("agent", process.env.AGENT_NAME || "");\r\n  // \u4EE4\u724C\u53EA\u8D70 Authorization \u5934\uFF0C\u4E0D\u518D\u653E\u67E5\u8BE2\u4E32\uFF08\u4F1A\u843D\u5165\u65E5\u5FD7/\u4EE3\u7406\u7F13\u5B58\uFF09\u3002\r\n  const headers = { Authorization: `Bearer ${TOKEN}` };\r\n  if (method === "POST") return request(url, method, params, headers);\r\n  for (const [key, value] of Object.entries(params)) {\r\n    if (value !== undefined && value !== null) url.searchParams.set(key, String(value));\r\n  }\r\n  return request(url, method, undefined, headers);\r\n}\r\n\r\nasync function dispatch(name, args) {\r\n  const tool = TOOLS.find((candidate) => candidate.name === name);\r\n  if (!tool) throw new Error(`\u672A\u77E5\u5DE5\u5177\uFF1A${name}`);\r\n  const missing = (tool.inputSchema.required ?? []).filter(\r\n    (key) => args[key] === undefined || args[key] === null || args[key] === ""\r\n  );\r\n  if (missing.length > 0) throw new Error(`\u7F3A\u5C11\u5FC5\u586B\u53C2\u6570\uFF1A${missing.join(", ")}`);\r\n\r\n  switch (name) {\r\n    case "get_daily_context":\r\n      return call("/context", { days: args.days ?? 7 });\r\n    case "get_active_context":\r\n      return call("/active-context");\r\n    case "search_notes":\r\n      return call(args.mode === "semantic" ? "/semantic-search" : "/search", {\r\n        q: args.query ?? "",\r\n        query: args.query ?? "",\r\n        limit: args.limit ?? 10,\r\n      });\r\n    case "list_notes":\r\n      return call("/notes", { folder: args.folder ?? "", limit: args.limit ?? 50 });\r\n    case "read_note":\r\n      return args.metadataOnly\r\n        ? call("/note-metadata", { path: args.path })\r\n        : call("/note", { path: args.path });\r\n    case "write_note":\r\n      return call("/note", { path: args.path, content: args.content, mode: args.action ?? "create" }, "POST");\r\n    case "patch_note":\r\n      return call("/patch-note", {\r\n        path: args.path,\r\n        heading: args.heading ?? "",\r\n        find: args.find ?? "",\r\n        content: args.content,\r\n        mode: args.mode ?? "replace",\r\n        operation: args.operation ?? "",\r\n        index: args.index,\r\n        ifMatch: args.ifMatch ?? "",\r\n        expectedMtime: args.expectedMtime,\r\n        dryRun: args.dryRun === true,\r\n      }, "POST");\r\n    case "add_memo":\r\n      return call("/memo", {\r\n        text: args.text,\r\n        tags: args.tags ?? [],\r\n        sourcePath: args.sourcePath ?? "",\r\n        sourceLine: args.sourceLine ?? 0,\r\n      }, "POST");\r\n    case "add_knowledge":\r\n      return call("/knowledge", {\r\n        title: args.title,\r\n        content: args.content,\r\n        category: args.category ?? "",\r\n        folder: args.folder ?? "",\r\n        tags: args.tags ?? [],\r\n        agent: args.agent ?? "",\r\n        source: args.source ?? "",\r\n        links: args.links ?? [],\r\n      }, "POST");\r\n    case "record_work_log":\r\n      return call("/worklog", {\r\n        agent: args.agent ?? "",\r\n        task: args.task,\r\n        summary: args.summary,\r\n        decisions: args.decisions ?? "",\r\n        learnings: args.learnings ?? "",\r\n        openQuestions: args.openQuestions ?? "",\r\n        files: args.files ?? [],\r\n        tags: args.tags ?? [],\r\n      }, "POST");\r\n    case "manage_tasks":\r\n      switch (args.action) {\r\n        case "list": return call("/tasks", { scope: args.scope ?? "all" });\r\n        case "complete": return call("/tasks/complete", { path: args.path, line: args.line }, "POST");\r\n        case "delegate": return call("/tasks/delegate", { path: args.path, line: args.line }, "POST");\r\n        case "snapshot": return call("/tasks/snapshot", {}, "POST");\r\n        case "claim": return call("/agent-task/claim", { id: args.id }, "POST");\r\n        case "complete_agent":\r\n          return call("/agent-task/complete", { id: args.id, resultPath: args.resultPath ?? "" }, "POST");\r\n      }\r\n      throw new Error("manage_tasks.action \u65E0\u6548");\r\n    case "get_workspace_state":\r\n      {\r\n        const allowed = new Set(["stats", "graph", "pomodoro", "weekly_review", "tool_activity", "work_logs", "categories"]);\r\n        const requested = Array.isArray(args.sections)\r\n          ? args.sections.filter((section) => allowed.has(section))\r\n          : ["stats", "pomodoro", "tool_activity", "work_logs", "categories"];\r\n        const sections = [...new Set(requested)];\r\n        const state = {};\r\n        const reads = [];\r\n\r\n        if (sections.includes("stats")) {\r\n          reads.push(call("/stats", { days: args.days ?? 30 }).then((value) => { state.stats = value; }));\r\n        }\r\n        if (sections.includes("graph")) {\r\n          if (!args.path) {\r\n            state.graph = { skipped: true, reason: "graph \u9700\u8981 path \u53C2\u6570" };\r\n          } else {\r\n            reads.push(call("/graph", { path: args.path, types: args.types ?? "outgoing,backlinks,tags" })\r\n              .then((value) => { state.graph = value; }));\r\n          }\r\n        }\r\n        if (sections.includes("pomodoro")) {\r\n          reads.push(call("/pomodoro").then((value) => { state.pomodoro = value; }));\r\n        }\r\n        if (sections.includes("weekly_review")) {\r\n          reads.push(call("/review", { date: args.date ?? "" })\r\n            .then((value) => { state.weeklyReview = value; }));\r\n        }\r\n        if (sections.includes("tool_activity")) {\r\n          reads.push(call("/activity").then((value) => { state.toolActivity = value; }));\r\n        }\r\n        if (sections.includes("work_logs")) {\r\n          reads.push(call("/worklogs", { days: args.days ?? 7 })\r\n            .then((value) => { state.workLogs = value; }));\r\n        }\r\n        if (sections.includes("categories")) {\r\n          reads.push(call("/categories").then((value) => { state.categories = value; }));\r\n        }\r\n\r\n        await Promise.all(reads);\r\n        return state;\r\n      }\r\n    case "manage_changes":\r\n      if (args.action === "list") return call("/agent/audit", { limit: args.limit ?? 20 });\r\n      if (args.action === "revert") return call("/agent/revert", { snapshotId: args.snapshotId }, "POST");\r\n      throw new Error("manage_changes.action \u65E0\u6548");\r\n  }\r\n}\r\n\r\nfunction send(message) {\r\n  process.stdout.write(JSON.stringify(message) + "\\n");\r\n}\r\n\r\nasync function handle(message) {\r\n  if (message.id === undefined) return;\r\n  const { id, method, params } = message;\r\n  switch (method) {\r\n    case "initialize":\r\n      send({\r\n        jsonrpc: "2.0",\r\n        id,\r\n        result: {\r\n          protocolVersion: "2024-11-05",\r\n          capabilities: { tools: {} },\r\n          serverInfo: { name: "sediment", version: "1.0.7" },\r\n        },\r\n      });\r\n      break;\r\n    case "tools/list":\r\n      send({ jsonrpc: "2.0", id, result: { tools: TOOLS } });\r\n      break;\r\n    case "tools/call":\r\n      try {\r\n        const data = await dispatch(params?.name, params?.arguments ?? {});\r\n        send({\r\n          jsonrpc: "2.0",\r\n          id,\r\n          result: {\r\n            content: [{ type: "text", text: typeof data === "string" ? data : JSON.stringify(data, null, 2) }],\r\n          },\r\n        });\r\n      } catch (error) {\r\n        send({\r\n          jsonrpc: "2.0",\r\n          id,\r\n          result: { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true },\r\n        });\r\n      }\r\n      break;\r\n    case "ping":\r\n      send({ jsonrpc: "2.0", id, result: {} });\r\n      break;\r\n    default:\r\n      send({ jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${method}` } });\r\n  }\r\n}\r\n\r\nlet buffer = "";\r\nprocess.stdin.setEncoding("utf8");\r\nprocess.stdin.on("data", (chunk) => {\r\n  buffer += chunk;\r\n  if (buffer.length > MAX_STDIN_BUFFER_CHARS) {\r\n    process.stderr.write("sediment-mcp: stdin \u7F13\u51B2\u8D85\u8FC7 1MB \u4E0A\u9650\uFF0C\u65AD\u5F00\u8FDE\u63A5\\n");\r\n    process.exit(1);\r\n  }\r\n  let index;\r\n  while ((index = buffer.indexOf("\\n")) >= 0) {\r\n    const line = buffer.slice(0, index).trim();\r\n    buffer = buffer.slice(index + 1);\r\n    if (!line) continue;\r\n    let message;\r\n    try {\r\n      message = JSON.parse(line);\r\n    } catch (error) {\r\n      // \u7578\u5F62 JSON \u8BF4\u660E\u6D41\u5DF2\u4E0D\u53EF\u4FE1\uFF1A\u8BB0\u8BCA\u65AD\uFF08stderr\uFF09\u540E\u65AD\u5F00\uFF0C\u4E0D\u518D\u9759\u9ED8\u541E\u6389\u3002\r\n      process.stderr.write(`sediment-mcp: \u7578\u5F62 JSON \u8F93\u5165\uFF0C\u65AD\u5F00\u8FDE\u63A5\uFF1A${error.message}\\n`);\r\n      process.exit(1);\r\n    }\r\n    void handle(message);\r\n  }\r\n});\r\n';
+
+// src/agent/setup.ts
 function detectOpenCodeLayout(data, probe) {
   var _a2;
   const mcp = (_a2 = data.mcp) != null ? _a2 : {};
@@ -5350,10 +5341,7 @@ function agentCandidates(home, appdata) {
 }
 function detectAgents() {
   var _a2;
-  const fs = nodeModule("fs");
-  const os = nodeModule("os");
-  if (!fs || !os) return [];
-  return agentCandidates(os.homedir(), String((_a2 = process.env.APPDATA) != null ? _a2 : "")).filter((target) => fs.existsSync(target.configPath));
+  return agentCandidates((0, import_os.homedir)(), String((_a2 = process.env.APPDATA) != null ? _a2 : "")).filter((target) => (0, import_fs3.existsSync)(target.configPath));
 }
 function stripComments(raw) {
   return raw.replace(/^\s*\/\/.*$/gm, "").replace(/^\s*\/\*[\s\S]*?\*\//gm, "");
@@ -5361,61 +5349,58 @@ function stripComments(raw) {
 function readJson(raw) {
   try {
     return JSON.parse(raw);
-  } catch (error) {
+  } catch (e) {
     return JSON.parse(stripComments(raw));
   }
 }
 function isAgentConfigured(target) {
   var _a2, _b;
-  const fs = nodeModule("fs");
-  if (!fs || !fs.existsSync(target.configPath)) return false;
+  if (!(0, import_fs3.existsSync)(target.configPath)) return false;
   try {
-    const data = readJson(fs.readFileSync(target.configPath, "utf8"));
+    const data = readJson((0, import_fs3.readFileSync)(target.configPath, "utf8"));
     const root = (_a2 = data[target.rootKey]) != null ? _a2 : {};
     if (target.rootKey === "mcp") {
       const servers = (_b = root.servers) != null ? _b : {};
       return Boolean(root.sediment || servers.sediment);
     }
     return Boolean(root.sediment);
-  } catch (error) {
+  } catch (e) {
     return false;
   }
 }
 function resolveBridgePath(plugin, target) {
   var _a2, _b, _c;
-  const fs = nodeModule("fs");
-  if (!fs) return "";
   const adapter = plugin.app.vault.adapter;
   const vaultBridge = adapter.getFullPath ? adapter.getFullPath(`${plugin.app.vault.configDir}/plugins/sediment/mcp-server/index.mjs`) : "";
   const samePath = (a, b) => a.replace(/\\/g, "/").toLowerCase() === b.replace(/\\/g, "/").toLowerCase();
   const syncVaultBridge = () => {
     if (!vaultBridge) return "";
     try {
-      if (fs.existsSync(vaultBridge) && fs.readFileSync(vaultBridge, "utf8") === BRIDGE_SOURCE) return vaultBridge;
+      if ((0, import_fs3.existsSync)(vaultBridge) && (0, import_fs3.readFileSync)(vaultBridge, "utf8") === BRIDGE_SOURCE) return vaultBridge;
       const sep = Math.max(vaultBridge.lastIndexOf("/"), vaultBridge.lastIndexOf("\\"));
-      if (sep > 0) fs.mkdirSync(vaultBridge.slice(0, sep), { recursive: true });
-      fs.writeFileSync(vaultBridge, BRIDGE_SOURCE, "utf8");
-      return fs.existsSync(vaultBridge) ? vaultBridge : "";
-    } catch (error) {
+      if (sep > 0) (0, import_fs3.mkdirSync)(vaultBridge.slice(0, sep), { recursive: true });
+      (0, import_fs3.writeFileSync)(vaultBridge, BRIDGE_SOURCE, "utf8");
+      return (0, import_fs3.existsSync)(vaultBridge) ? vaultBridge : "";
+    } catch (e) {
       return "";
     }
   };
   if (target) {
     try {
-      const data = readJson(fs.readFileSync(target.configPath, "utf8"));
+      const data = readJson((0, import_fs3.readFileSync)(target.configPath, "utf8"));
       const root = (_a2 = data[target.rootKey]) != null ? _a2 : {};
       const servers = (_b = root.servers) != null ? _b : {};
       const entries = [root.sediment, servers.sediment].filter(Boolean);
       for (const entry of entries) {
         const command = Array.isArray(entry.command) ? entry.command.filter((x) => typeof x === "string") : [];
         const candidates = [...(_c = entry.args) != null ? _c : [], ...command];
-        const existing = candidates.find((arg) => arg.endsWith("index.mjs") && fs.existsSync(arg));
+        const existing = candidates.find((arg) => arg.endsWith("index.mjs") && (0, import_fs3.existsSync)(arg));
         if (existing) {
           if (vaultBridge && samePath(existing, vaultBridge)) return syncVaultBridge();
           return existing;
         }
       }
-    } catch (error) {
+    } catch (e) {
     }
   }
   return syncVaultBridge();
@@ -5465,11 +5450,9 @@ function configSnippet(plugin, id = "opencode") {
 }
 function configureAgent(plugin, target) {
   var _a2, _b, _c, _d;
-  const fs = nodeModule("fs");
-  if (!fs) throw new Error("\u4E00\u952E\u914D\u7F6E\u9700\u8981\u684C\u9762\u7248 Obsidian");
   const bridge = resolveBridgePath(plugin, target);
   if (!bridge) throw new Error("\u627E\u4E0D\u5230 mcp-server/index.mjs\uFF0C\u65E0\u6CD5\u914D\u7F6E");
-  const raw = fs.readFileSync(target.configPath, "utf8");
+  const raw = (0, import_fs3.readFileSync)(target.configPath, "utf8");
   const data = readJson(raw);
   if (target.rootKey === "mcp") {
     const layout = detectOpenCodeLayout(data);
@@ -5493,28 +5476,20 @@ function configureAgent(plugin, target) {
     root.sediment = buildEntry(plugin, target, bridge);
     data[target.rootKey] = root;
   }
-  fs.writeFileSync(`${target.configPath}.bak`, raw, "utf8");
-  fs.writeFileSync(target.configPath, JSON.stringify(data, null, 2), "utf8");
+  (0, import_fs3.writeFileSync)(`${target.configPath}.bak`, raw, "utf8");
+  (0, import_fs3.writeFileSync)(target.configPath, JSON.stringify(data, null, 2), "utf8");
 }
 
 // src/features/uninstall.ts
-function nodeFs2() {
-  try {
-    return require("fs");
-  } catch (error) {
-    return null;
-  }
-}
 function readJson2(raw) {
   try {
     return JSON.parse(raw);
-  } catch (error) {
+  } catch (e) {
     return null;
   }
 }
 function listMcpInstallations(plugin) {
-  var _a2, _b, _c;
-  const fs = nodeFs2();
+  var _a2, _b, _c, _d;
   const adapter = plugin.app.vault.adapter;
   const bridgePath = (_b = (_a2 = adapter == null ? void 0 : adapter.getFullPath) == null ? void 0 : _a2.call(
     adapter,
@@ -5523,10 +5498,11 @@ function listMcpInstallations(plugin) {
   const clients = [];
   for (const target of detectAgents()) {
     let configured = false;
-    if (fs && fs.existsSync(target.configPath)) {
-      const data = readJson2(fs.readFileSync(target.configPath, "utf8"));
+    if ((0, import_fs4.existsSync)(target.configPath)) {
+      const data = readJson2((0, import_fs4.readFileSync)(target.configPath, "utf8"));
       const root = (_c = data == null ? void 0 : data[target.rootKey]) != null ? _c : {};
-      configured = Boolean(root.sediment);
+      const servers = (_d = root.servers) != null ? _d : {};
+      configured = Boolean(root.sediment || servers.sediment);
     }
     clients.push({
       id: target.id,
@@ -5536,33 +5512,37 @@ function listMcpInstallations(plugin) {
       configured
     });
   }
-  return { clients, bridgePath, bridgeExists: Boolean(fs && bridgePath && fs.existsSync(bridgePath)) };
+  return { clients, bridgePath, bridgeExists: Boolean(bridgePath && (0, import_fs4.existsSync)(bridgePath)) };
 }
-function removeFromClient(target, fs) {
-  var _a2;
-  if (!fs.existsSync(target.configPath)) return false;
-  const raw = fs.readFileSync(target.configPath, "utf8");
+function removeFromClient(target) {
+  var _a2, _b;
+  if (!(0, import_fs4.existsSync)(target.configPath)) return false;
+  const raw = (0, import_fs4.readFileSync)(target.configPath, "utf8");
   const data = readJson2(raw);
   if (!data) return false;
   const root = (_a2 = data[target.rootKey]) != null ? _a2 : {};
-  if (!root.sediment) return false;
+  const servers = (_b = root.servers) != null ? _b : {};
+  if (!root.sediment && !servers.sediment) return false;
   delete root.sediment;
+  if (servers.sediment) {
+    delete servers.sediment;
+    if (Object.keys(servers).length === 0) delete root.servers;
+    else root.servers = servers;
+  }
   data[target.rootKey] = root;
-  fs.writeFileSync(`${target.configPath}.bak`, raw, "utf8");
-  fs.writeFileSync(target.configPath, JSON.stringify(data, null, 2), "utf8");
+  (0, import_fs4.writeFileSync)(`${target.configPath}.bak`, raw, "utf8");
+  (0, import_fs4.writeFileSync)(target.configPath, JSON.stringify(data, null, 2), "utf8");
   return true;
 }
 function uninstallMcp(plugin, selectedClientIds, removeBridge) {
-  const fs = nodeFs2();
   const failures = [];
   let clients = 0;
   let bridge = false;
-  if (!fs) return { clients, bridge, failures: [t("\u5F53\u524D\u73AF\u5883\u4E0D\u652F\u6301\u6587\u4EF6\u64CD\u4F5C")] };
   const state = listMcpInstallations(plugin);
   for (const target of detectAgents()) {
     if (!selectedClientIds.includes(target.id)) continue;
     try {
-      if (removeFromClient(target, fs)) clients += 1;
+      if (removeFromClient(target)) clients += 1;
     } catch (error) {
       failures.push(tf("{name}\uFF1A{detail}", { name: target.name, detail: error instanceof Error ? error.message : String(error) }));
     }
@@ -5571,8 +5551,8 @@ function uninstallMcp(plugin, selectedClientIds, removeBridge) {
     try {
       const sep = Math.max(state.bridgePath.lastIndexOf("/"), state.bridgePath.lastIndexOf("\\"));
       const dir = state.bridgePath.slice(0, sep);
-      fs.rmSync(state.bridgePath, { recursive: true, force: true });
-      fs.rmSync(dir, { recursive: true, force: true });
+      (0, import_fs4.rmSync)(state.bridgePath, { recursive: true, force: true });
+      (0, import_fs4.rmSync)(dir, { recursive: true, force: true });
       bridge = true;
     } catch (error) {
       failures.push(tf("\u6865\u63A5\u811A\u672C\uFF1A{detail}", { detail: error instanceof Error ? error.message : String(error) }));
@@ -5648,7 +5628,7 @@ var McpUninstallModal = class extends import_obsidian13.Modal {
 };
 
 // src/ui/settings-tab.ts
-var import_obsidian14 = require("obsidian");
+var import_obsidian15 = require("obsidian");
 
 // src/features/folder-migration.ts
 var LEGACY_FOLDER_MIGRATIONS = [
@@ -5690,18 +5670,19 @@ async function ensureMigrationFolders(vault, folders) {
   }
 }
 async function cleanupEmptySource(vault, folder) {
+  var _a2, _b;
   const adapter = vault.adapter;
-  const list = adapter == null ? void 0 : adapter.list;
-  const rmdir = adapter == null ? void 0 : adapter.rmdir;
+  const list = (_a2 = adapter == null ? void 0 : adapter.list) == null ? void 0 : _a2.bind(adapter);
+  const rmdir = (_b = adapter == null ? void 0 : adapter.rmdir) == null ? void 0 : _b.bind(adapter);
   if (!adapter || !list || !rmdir) return;
   const removeIfEmpty = async (path) => {
-    var _a2, _b, _c, _d, _e;
+    var _a3, _b2, _c, _d, _e;
     try {
-      const first = await list.call(adapter, path);
-      for (const child of (_a2 = first.folders) != null ? _a2 : []) await removeIfEmpty(child);
-      const fresh = await list.call(adapter, path);
-      if (((_c = (_b = fresh.files) == null ? void 0 : _b.length) != null ? _c : 0) === 0 && ((_e = (_d = fresh.folders) == null ? void 0 : _d.length) != null ? _e : 0) === 0) {
-        await rmdir.call(adapter, path, false);
+      const first = await list(path);
+      for (const child of (_a3 = first.folders) != null ? _a3 : []) await removeIfEmpty(child);
+      const fresh = await list(path);
+      if (((_c = (_b2 = fresh.files) == null ? void 0 : _b2.length) != null ? _c : 0) === 0 && ((_e = (_d = fresh.folders) == null ? void 0 : _d.length) != null ? _e : 0) === 0) {
+        await rmdir(path, false);
       }
     } catch (e) {
     }
@@ -5784,6 +5765,38 @@ async function migrateLegacyFolders(options) {
   return outcome;
 }
 
+// src/ui/confirm-modal.ts
+var import_obsidian14 = require("obsidian");
+function confirmAction(app, message, cta = t("\u7EE7\u7EED")) {
+  return new Promise((resolve) => new ConfirmModal(app, message, cta, resolve).open());
+}
+var ConfirmModal = class extends import_obsidian14.Modal {
+  constructor(app, message, cta, resolve) {
+    super(app);
+    this.message = message;
+    this.cta = cta;
+    this.resolve = resolve;
+    this.settled = false;
+  }
+  onOpen() {
+    this.setTitle(t("\u8BF7\u786E\u8BA4"));
+    this.contentEl.createEl("p", { text: this.message });
+    new import_obsidian14.Setting(this.contentEl).addButton((button) => button.setButtonText(t("\u53D6\u6D88")).onClick(() => this.finish(false))).addButton((button) => button.setButtonText(this.cta).setCta().onClick(() => this.finish(true)));
+  }
+  onClose() {
+    this.contentEl.empty();
+    if (!this.settled) {
+      this.settled = true;
+      this.resolve(false);
+    }
+  }
+  finish(result) {
+    this.settled = true;
+    this.resolve(result);
+    this.close();
+  }
+};
+
 // src/ui/settings-sections.ts
 var SETTINGS_SECTIONS = [
   {
@@ -5865,7 +5878,7 @@ var WORK_MODE_LABELS = {
   confirm: "\u786E\u8BA4\u540E\u5199\u5165",
   auto: "\u81EA\u52A8\u6267\u884C"
 };
-var PulseSettingTab = class extends import_obsidian14.PluginSettingTab {
+var PulseSettingTab = class extends import_obsidian15.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -5880,7 +5893,7 @@ var PulseSettingTab = class extends import_obsidian14.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: t("Sediment \u8BBE\u7F6E") });
+    new import_obsidian15.Setting(containerEl).setName(t("Sediment \u8BBE\u7F6E")).setHeading();
     const onboarding = containerEl.createDiv({ cls: "sd-onboarding" });
     onboarding.createDiv({ cls: "sd-card-title", text: t("\u9996\u6B21\u4F7F\u7528\u68C0\u67E5") });
     onboarding.createDiv({
@@ -5890,7 +5903,7 @@ var PulseSettingTab = class extends import_obsidian14.PluginSettingTab {
     const settings = this.plugin.store.settings;
     const save = () => void this.plugin.saveSettings();
     for (const section of SETTINGS_SECTIONS) {
-      containerEl.createEl("h3", { text: t(section.title) });
+      new import_obsidian15.Setting(containerEl).setName(t(section.title)).setHeading();
       if (section.id === "basics") this.renderBasics(containerEl, settings, save);
       else if (section.id === "agent") this.renderAgent(containerEl, settings, save);
       else if (section.id === "backup") this.renderBackup(containerEl, settings, save);
@@ -5901,7 +5914,7 @@ var PulseSettingTab = class extends import_obsidian14.PluginSettingTab {
     }
   }
   renderBasics(containerEl, settings, save) {
-    new import_obsidian14.Setting(containerEl).setName(t("\u754C\u9762\u8BED\u8A00")).setDesc(t("\u8DDF\u968F Obsidian\uFF08auto\uFF09\uFF0C\u6216\u5F3A\u5236\u4E2D\u6587 / \u82F1\u6587\u3002")).addDropdown(
+    new import_obsidian15.Setting(containerEl).setName(t("\u754C\u9762\u8BED\u8A00")).setDesc(t("\u8DDF\u968F Obsidian\uFF08auto\uFF09\uFF0C\u6216\u5F3A\u5236\u4E2D\u6587 / \u82F1\u6587\u3002")).addDropdown(
       (dropdown) => dropdown.addOption("auto", t("\u8DDF\u968F\u7CFB\u7EDF")).addOption("zh", t("\u4E2D\u6587")).addOption("en", t("\u82F1\u6587")).setValue(settings.language).onChange((value) => {
         settings.language = value;
         setLocale(resolveLocale(settings.language));
@@ -5910,32 +5923,32 @@ var PulseSettingTab = class extends import_obsidian14.PluginSettingTab {
         this.display();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("\u65E5\u8BB0\u6587\u4EF6\u5939")).setDesc(t("\u901F\u8BB0\u5199\u5165\u7684\u76EE\u5F55\uFF0C\u7559\u7A7A\u8868\u793A\u5E93\u6839\u76EE\u5F55\u3002")).addText(
+    new import_obsidian15.Setting(containerEl).setName(t("\u65E5\u8BB0\u6587\u4EF6\u5939")).setDesc(t("\u901F\u8BB0\u5199\u5165\u7684\u76EE\u5F55\uFF0C\u7559\u7A7A\u8868\u793A\u5E93\u6839\u76EE\u5F55\u3002")).addText(
       (text) => text.setPlaceholder("Sediment/daily").setValue(settings.dailyNoteFolder).onChange((value) => {
         settings.dailyNoteFolder = value;
         save();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("\u65E5\u8BB0\u6587\u4EF6\u540D\u683C\u5F0F")).setDesc(t("\u652F\u6301 YYYY / MM / DD \u5360\u4F4D\u7B26\u3002")).addText(
+    new import_obsidian15.Setting(containerEl).setName(t("\u65E5\u8BB0\u6587\u4EF6\u540D\u683C\u5F0F")).setDesc(t("\u652F\u6301 YYYY / MM / DD \u5360\u4F4D\u7B26\u3002")).addText(
       (text) => text.setPlaceholder("YYYY-MM-DD").setValue(settings.dailyNoteFormat).onChange((value) => {
         settings.dailyNoteFormat = value || "YYYY-MM-DD";
         save();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("\u901F\u8BB0\u6BB5\u843D\u6807\u9898")).addText(
+    new import_obsidian15.Setting(containerEl).setName(t("\u901F\u8BB0\u6BB5\u843D\u6807\u9898")).addText(
       (text) => text.setPlaceholder("## \u901F\u8BB0").setValue(settings.memoHeading).onChange((value) => {
         settings.memoHeading = value || "## \u901F\u8BB0";
         save();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("\u6BCF\u5468\u8D77\u59CB\u65E5")).addDropdown(
+    new import_obsidian15.Setting(containerEl).setName(t("\u6BCF\u5468\u8D77\u59CB\u65E5")).addDropdown(
       (dropdown) => dropdown.addOption("1", t("\u5468\u4E00")).addOption("0", t("\u5468\u65E5")).setValue(String(settings.weekStart)).onChange((value) => {
         settings.weekStart = value === "0" ? 0 : 1;
         save();
         this.plugin.refreshViews();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("\u70ED\u529B\u56FE\u9ED8\u8BA4\u6307\u6807")).addDropdown((dropdown) => {
+    new import_obsidian15.Setting(containerEl).setName(t("\u70ED\u529B\u56FE\u9ED8\u8BA4\u6307\u6807")).addDropdown((dropdown) => {
       for (const metric of METRICS) dropdown.addOption(metric.key, t(metric.label));
       dropdown.setValue(settings.heatmapMetric).onChange((value) => {
         settings.heatmapMetric = value;
@@ -5943,31 +5956,31 @@ var PulseSettingTab = class extends import_obsidian14.PluginSettingTab {
         this.plugin.refreshViews();
       });
     });
-    new import_obsidian14.Setting(containerEl).setName(t("\u7EDF\u8BA1\u6709\u6548\u7F16\u8F91\u4F1A\u8BDD")).setDesc(t("\u540C\u4E00\u6587\u4EF6\u540C\u4E00\u5929\u6700\u591A\u8BB0\u4E00\u6B21\uFF0C\u907F\u514D\u8FDE\u7EED\u952E\u5165\u5237\u5206\u3002")).addToggle(
+    new import_obsidian15.Setting(containerEl).setName(t("\u7EDF\u8BA1\u6709\u6548\u7F16\u8F91\u4F1A\u8BDD")).setDesc(t("\u540C\u4E00\u6587\u4EF6\u540C\u4E00\u5929\u6700\u591A\u8BB0\u4E00\u6B21\uFF0C\u907F\u514D\u8FDE\u7EED\u952E\u5165\u5237\u5206\u3002")).addToggle(
       (toggle) => toggle.setValue(settings.trackEdits).onChange((value) => {
         settings.trackEdits = value;
         save();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("\u590D\u76D8\u5F52\u6863\u6587\u4EF6\u5939")).addText(
+    new import_obsidian15.Setting(containerEl).setName(t("\u590D\u76D8\u5F52\u6863\u6587\u4EF6\u5939")).addText(
       (text) => text.setPlaceholder("Sediment/reviews").setValue(settings.reviewFolder).onChange((value) => {
         settings.reviewFolder = value;
         save();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("\u65E7\u7248\u76EE\u5F55\u8FC1\u79FB")).setDesc(
+    new import_obsidian15.Setting(containerEl).setName(t("\u65E7\u7248\u76EE\u5F55\u8FC1\u79FB")).setDesc(
       t("\u628A\u65E7\u9ED8\u8BA4\u76EE\u5F55\uFF08daily\u3001reviews\u3001agent-logs\u3001knowledge\u3001sediment-backup\uFF09\u6574\u4F53\u79FB\u5165 Sediment/\uFF0C\u907F\u514D\u4E0E\u5E93\u5185\u5DF2\u6709\u76EE\u5F55\u649E\u540D\u3002\u4EC5\u8FC1\u79FB\u4ECD\u662F\u65E7\u9ED8\u8BA4\u503C\u7684\u76EE\u5F55\uFF0C\u81EA\u5B9A\u4E49\u8DEF\u5F84\u4E0D\u53D7\u5F71\u54CD\u3002")
     ).addButton(
       (button) => button.setButtonText(t("\u4E00\u952E\u8FC1\u79FB")).onClick(() => void this.runLegacyFolderMigration())
     );
-    new import_obsidian14.Setting(containerEl).setName(t("\u770B\u677F\u753B\u98CE")).setDesc(t("\u50CF\u7D20\u6E56\u9762 / \u6C34\u58A8\u5C71\u6C34 / \u50CF\u7D20\u57CE\u5E02\uFF0C\u4E5F\u53EF\u5728\u770B\u677F\u9875\u811A\u70B9\u300C\u6362\u753B\u98CE\u300D\u3002")).addDropdown(
+    new import_obsidian15.Setting(containerEl).setName(t("\u770B\u677F\u753B\u98CE")).setDesc(t("\u50CF\u7D20\u6E56\u9762 / \u6C34\u58A8\u5C71\u6C34 / \u50CF\u7D20\u57CE\u5E02\uFF0C\u4E5F\u53EF\u5728\u770B\u677F\u9875\u811A\u70B9\u300C\u6362\u753B\u98CE\u300D\u3002")).addDropdown(
       (dropdown) => dropdown.addOption("lake", t("\u50CF\u7D20\u6E56\u9762")).addOption("ink", t("\u6C34\u58A8\u5C71\u6C34")).addOption("city", t("\u50CF\u7D20\u57CE\u5E02")).setValue(settings.artStyle).onChange((value) => {
         settings.artStyle = value;
         save();
         this.plugin.refreshViews();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("\u6BCF\u65E5\u5199\u4F5C\u76EE\u6807")).setDesc(t("\u770B\u677F\u4ECA\u5929\u5361\u7247\u663E\u793A\u8FDB\u5EA6\uFF0C0 \u8868\u793A\u5173\u95ED\u3002")).addText(
+    new import_obsidian15.Setting(containerEl).setName(t("\u6BCF\u65E5\u5199\u4F5C\u76EE\u6807")).setDesc(t("\u770B\u677F\u4ECA\u5929\u5361\u7247\u663E\u793A\u8FDB\u5EA6\uFF0C0 \u8868\u793A\u5173\u95ED\u3002")).addText(
       (text) => text.setPlaceholder("1000").setValue(String(settings.dailyWordGoal)).onChange((value) => {
         const goal = Number(value);
         settings.dailyWordGoal = Number.isFinite(goal) && goal >= 0 ? goal : 1e3;
@@ -5975,14 +5988,14 @@ var PulseSettingTab = class extends import_obsidian14.PluginSettingTab {
         this.plugin.refreshViews();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("\u754C\u9762\u5BC6\u5EA6")).setDesc(t("\u7CBE\u7B80\u6A21\u5F0F\u4F18\u5148\u663E\u793A\u6355\u83B7\u3001\u4EFB\u52A1\u548C\u6458\u8981\u3002")).addDropdown(
+    new import_obsidian15.Setting(containerEl).setName(t("\u754C\u9762\u5BC6\u5EA6")).setDesc(t("\u7CBE\u7B80\u6A21\u5F0F\u4F18\u5148\u663E\u793A\u6355\u83B7\u3001\u4EFB\u52A1\u548C\u6458\u8981\u3002")).addDropdown(
       (dropdown) => dropdown.addOption("compact", t("\u7CBE\u7B80")).addOption("standard", t("\u6807\u51C6")).addOption("full", t("\u5B8C\u6574")).setValue(settings.layoutDensity).onChange((value) => {
         settings.layoutDensity = value;
         save();
         this.plugin.refreshViews();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("\u51CF\u5C11\u52A8\u6001\u6548\u679C")).setDesc(t("\u5173\u95ED\u6A2A\u5E45\u548C\u5361\u7247\u52A8\u753B\uFF0C\u4FDD\u7559\u5FC5\u8981\u72B6\u6001\u53CD\u9988\u3002")).addToggle(
+    new import_obsidian15.Setting(containerEl).setName(t("\u51CF\u5C11\u52A8\u6001\u6548\u679C")).setDesc(t("\u5173\u95ED\u6A2A\u5E45\u548C\u5361\u7247\u52A8\u753B\uFF0C\u4FDD\u7559\u5FC5\u8981\u72B6\u6001\u53CD\u9988\u3002")).addToggle(
       (toggle) => toggle.setValue(settings.reducedMotion).onChange((value) => {
         settings.reducedMotion = value;
         save();
@@ -5991,109 +6004,112 @@ var PulseSettingTab = class extends import_obsidian14.PluginSettingTab {
     );
   }
   renderAgent(containerEl, settings, save) {
-    new import_obsidian14.Setting(containerEl).setName(t("Agent \u5DE5\u4F5C\u6A21\u5F0F")).setDesc(t("\u9009\u62E9\u53EA\u8BFB\u3001\u8349\u7A3F\u3001\u786E\u8BA4\u540E\u5199\u5165\u6216\u81EA\u52A8\u6267\u884C\uFF1B\u300C\u786E\u8BA4\u540E\u5199\u5165\u300D\u6863\u4E0B Agent \u7684\u5199\u64CD\u4F5C\u4F1A\u6302\u8D77\u4E3A\u5F85\u5BA1\u9879\uFF0C\u5728\u770B\u677F\u300C\u5F85\u5BA1\u5199\u5165\u300D\u4E2D\u91C7\u7EB3\u540E\u624D\u843D\u76D8\u3002\u5B9E\u9645\u6743\u9650\u4ECD\u53D7\u4E0B\u65B9\u5F00\u5173\u7EA6\u675F\u3002")).addDropdown(
+    new import_obsidian15.Setting(containerEl).setName(t("Agent \u5DE5\u4F5C\u6A21\u5F0F")).setDesc(t("\u9009\u62E9\u53EA\u8BFB\u3001\u8349\u7A3F\u3001\u786E\u8BA4\u540E\u5199\u5165\u6216\u81EA\u52A8\u6267\u884C\uFF1B\u300C\u786E\u8BA4\u540E\u5199\u5165\u300D\u6863\u4E0B Agent \u7684\u5199\u64CD\u4F5C\u4F1A\u6302\u8D77\u4E3A\u5F85\u5BA1\u9879\uFF0C\u5728\u770B\u677F\u300C\u5F85\u5BA1\u5199\u5165\u300D\u4E2D\u91C7\u7EB3\u540E\u624D\u843D\u76D8\u3002\u5B9E\u9645\u6743\u9650\u4ECD\u53D7\u4E0B\u65B9\u5F00\u5173\u7EA6\u675F\u3002")).addDropdown(
       (dropdown) => dropdown.addOption("readonly", t("\u53EA\u8BFB")).addOption("draft", t("\u8349\u7A3F")).addOption("confirm", t("\u786E\u8BA4\u540E\u5199\u5165")).addOption("auto", t("\u81EA\u52A8\u6267\u884C")).setValue(settings.agentWorkMode).onChange((value) => {
         var _a2;
         const next = value;
-        if (next !== settings.agentWorkMode && !window.confirm(tf(
+        if (next === settings.agentWorkMode) return;
+        void confirmAction(this.app, tf(
           "\u5207\u6362\u4E3A\u300C{mode}\u300D\u5C06\u91CD\u7F6E 5 \u4E2A\u6743\u9650\u5F00\u5173\uFF1A\u5141\u8BB8\u8BFB\u53D6\u3001\u5141\u8BB8\u65B0\u5EFA\u3001\u5141\u8BB8\u5C40\u90E8\u4FEE\u6539\u3001\u5141\u8BB8\u5168\u91CF\u8986\u76D6\u3001\u5141\u8BB8\u5220\u9664\uFF08\u5220\u9664\u59CB\u7EC8\u5173\u95ED\uFF09\u3002\u662F\u5426\u7EE7\u7EED\uFF1F",
           { mode: t((_a2 = WORK_MODE_LABELS[next]) != null ? _a2 : next) }
-        ))) {
-          dropdown.setValue(settings.agentWorkMode);
-          return;
-        }
-        settings.agentWorkMode = next;
-        if (settings.agentWorkMode === "readonly") {
-          settings.agentAllowRead = true;
-          settings.agentAllowCreate = false;
-          settings.agentAllowPatch = false;
-          settings.agentAllowOverwrite = false;
-          settings.agentAllowDelete = false;
-        } else if (settings.agentWorkMode === "draft") {
-          settings.agentAllowRead = true;
-          settings.agentAllowCreate = true;
-          settings.agentAllowPatch = false;
-          settings.agentAllowOverwrite = false;
-          settings.agentAllowDelete = false;
-        } else {
-          settings.agentAllowRead = true;
-          settings.agentAllowCreate = true;
-          settings.agentAllowPatch = true;
-          settings.agentAllowOverwrite = true;
-          settings.agentAllowDelete = false;
-        }
-        save();
-        this.display();
+        )).then((ok) => {
+          if (!ok) {
+            dropdown.setValue(settings.agentWorkMode);
+            return;
+          }
+          settings.agentWorkMode = next;
+          if (settings.agentWorkMode === "readonly") {
+            settings.agentAllowRead = true;
+            settings.agentAllowCreate = false;
+            settings.agentAllowPatch = false;
+            settings.agentAllowOverwrite = false;
+            settings.agentAllowDelete = false;
+          } else if (settings.agentWorkMode === "draft") {
+            settings.agentAllowRead = true;
+            settings.agentAllowCreate = true;
+            settings.agentAllowPatch = false;
+            settings.agentAllowOverwrite = false;
+            settings.agentAllowDelete = false;
+          } else {
+            settings.agentAllowRead = true;
+            settings.agentAllowCreate = true;
+            settings.agentAllowPatch = true;
+            settings.agentAllowOverwrite = true;
+            settings.agentAllowDelete = false;
+          }
+          save();
+          this.display();
+        });
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("\u8BBF\u95EE\u6A21\u5F0F")).setDesc(t("allowlist \u6A21\u5F0F\u4E0B Agent \u53EA\u80FD\u8BBF\u95EE\u4E0B\u65B9\u767D\u540D\u5355\u76EE\u5F55\u3002\u9ED8\u8BA4\u5168\u5E93\uFF0C\u4F46\u7CFB\u7EDF\u76EE\u5F55\u59CB\u7EC8\u7981\u6B62\u3002")).addDropdown(
+    new import_obsidian15.Setting(containerEl).setName(t("\u8BBF\u95EE\u6A21\u5F0F")).setDesc(t("allowlist \u6A21\u5F0F\u4E0B Agent \u53EA\u80FD\u8BBF\u95EE\u4E0B\u65B9\u767D\u540D\u5355\u76EE\u5F55\u3002\u9ED8\u8BA4\u5168\u5E93\uFF0C\u4F46\u7CFB\u7EDF\u76EE\u5F55\u59CB\u7EC8\u7981\u6B62\u3002")).addDropdown(
       (dropdown) => dropdown.addOption("allow-all", t("\u5168\u5E93\u53EF\u8BBF\u95EE\uFF08\u9ED8\u8BA4\uFF09")).addOption("allowlist", t("\u4EC5\u767D\u540D\u5355\u76EE\u5F55")).setValue(settings.agentAccessMode).onChange((value) => {
         settings.agentAccessMode = value;
         save();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("\u767D\u540D\u5355\u76EE\u5F55")).setDesc(t("\u9017\u53F7\u5206\u9694\uFF0C\u4F8B\u5982 knowledge,projects,agent-logs\u3002")).addText(
+    new import_obsidian15.Setting(containerEl).setName(t("\u767D\u540D\u5355\u76EE\u5F55")).setDesc(t("\u9017\u53F7\u5206\u9694\uFF0C\u4F8B\u5982 knowledge,projects,agent-logs\u3002")).addText(
       (text) => text.setPlaceholder("knowledge,projects").setValue(settings.agentAllowedFolders).onChange((value) => {
         settings.agentAllowedFolders = value;
         save();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("\u5141\u8BB8\u8BFB\u53D6")).addToggle(
+    new import_obsidian15.Setting(containerEl).setName(t("\u5141\u8BB8\u8BFB\u53D6")).addToggle(
       (toggle) => toggle.setValue(settings.agentAllowRead).onChange((value) => {
         settings.agentAllowRead = value;
         save();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("\u5141\u8BB8\u65B0\u5EFA")).addToggle(
+    new import_obsidian15.Setting(containerEl).setName(t("\u5141\u8BB8\u65B0\u5EFA")).addToggle(
       (toggle) => toggle.setValue(settings.agentAllowCreate).onChange((value) => {
         settings.agentAllowCreate = value;
         save();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("\u5141\u8BB8\u5C40\u90E8\u4FEE\u6539")).addToggle(
+    new import_obsidian15.Setting(containerEl).setName(t("\u5141\u8BB8\u5C40\u90E8\u4FEE\u6539")).addToggle(
       (toggle) => toggle.setValue(settings.agentAllowPatch).onChange((value) => {
         settings.agentAllowPatch = value;
         save();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("\u5141\u8BB8\u5168\u91CF\u8986\u76D6")).setDesc(t("\u9ED8\u8BA4\u5F00\u542F\u4EE5\u517C\u5BB9\u65E7\u5DE5\u4F5C\u6D41\uFF1B\u5173\u95ED\u540E Agent \u5FC5\u987B\u7528 patch_note\u3002")).addToggle(
+    new import_obsidian15.Setting(containerEl).setName(t("\u5141\u8BB8\u5168\u91CF\u8986\u76D6")).setDesc(t("\u9ED8\u8BA4\u5F00\u542F\u4EE5\u517C\u5BB9\u65E7\u5DE5\u4F5C\u6D41\uFF1B\u5173\u95ED\u540E Agent \u5FC5\u987B\u7528 patch_note\u3002")).addToggle(
       (toggle) => toggle.setValue(settings.agentAllowOverwrite).onChange((value) => {
         settings.agentAllowOverwrite = value;
         save();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("\u4FEE\u6539\u524D\u5B58\u5FEB\u7167")).setDesc(t("\u8986\u76D6\u6216 Patch \u524D\u4FDD\u5B58\u539F\u6587\uFF0C\u652F\u6301 Agent \u53D8\u66F4\u5BA1\u67E5\u4E0E\u4E00\u952E\u6062\u590D\u3002")).addToggle(
+    new import_obsidian15.Setting(containerEl).setName(t("\u4FEE\u6539\u524D\u5B58\u5FEB\u7167")).setDesc(t("\u8986\u76D6\u6216 Patch \u524D\u4FDD\u5B58\u539F\u6587\uFF0C\u652F\u6301 Agent \u53D8\u66F4\u5BA1\u67E5\u4E0E\u4E00\u952E\u6062\u590D\u3002")).addToggle(
       (toggle) => toggle.setValue(settings.enableAuditSnapshot).onChange((value) => {
         settings.enableAuditSnapshot = value;
         save();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("Agent \u5DE5\u4F5C\u65E5\u5FD7\u76EE\u5F55")).setDesc(t("\u667A\u80FD\u4F53\u6BCF\u6B21\u5DE5\u4F5C\u7684\u6C89\u6DC0\u65E5\u5FD7\uFF0C\u9ED8\u8BA4\u6309\u5929\u5199\u5165\u4E00\u4E2A\u6587\u4EF6\u3002")).addText(
+    new import_obsidian15.Setting(containerEl).setName(t("Agent \u5DE5\u4F5C\u65E5\u5FD7\u76EE\u5F55")).setDesc(t("\u667A\u80FD\u4F53\u6BCF\u6B21\u5DE5\u4F5C\u7684\u6C89\u6DC0\u65E5\u5FD7\uFF0C\u9ED8\u8BA4\u6309\u5929\u5199\u5165\u4E00\u4E2A\u6587\u4EF6\u3002")).addText(
       (text) => text.setPlaceholder("Sediment/agent-logs").setValue(settings.workLogFolder).onChange((value) => {
         settings.workLogFolder = value;
         save();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("\u77E5\u8BC6\u6C89\u6DC0\u76EE\u5F55")).setDesc(t("\u667A\u80FD\u4F53\u901A\u8FC7 add_knowledge \u5199\u5165\u7684\u957F\u671F\u7B14\u8BB0\u76EE\u5F55\u3002")).addText(
+    new import_obsidian15.Setting(containerEl).setName(t("\u77E5\u8BC6\u6C89\u6DC0\u76EE\u5F55")).setDesc(t("\u667A\u80FD\u4F53\u901A\u8FC7 add_knowledge \u5199\u5165\u7684\u957F\u671F\u7B14\u8BB0\u76EE\u5F55\u3002")).addText(
       (text) => text.setPlaceholder("Sediment/knowledge").setValue(settings.knowledgeFolder).onChange((value) => {
         settings.knowledgeFolder = value;
         save();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("\u77E5\u8BC6\u5E93\u5206\u7C7B")).setDesc(t("\u9017\u53F7\u5206\u9694\uFF0C\u667A\u80FD\u4F53\u6C89\u6DC0\u7B14\u8BB0\u65F6\u4F1A\u6309\u5206\u7C7B\u5EFA\u5B50\u76EE\u5F55\u3002")).addText(
+    new import_obsidian15.Setting(containerEl).setName(t("\u77E5\u8BC6\u5E93\u5206\u7C7B")).setDesc(t("\u9017\u53F7\u5206\u9694\uFF0C\u667A\u80FD\u4F53\u6C89\u6DC0\u7B14\u8BB0\u65F6\u4F1A\u6309\u5206\u7C7B\u5EFA\u5B50\u76EE\u5F55\u3002")).addText(
       (text) => text.setPlaceholder("\u6280\u672F,\u9879\u76EE,\u65B9\u6CD5,\u7075\u611F,\u590D\u76D8").setValue(settings.knowledgeCategories).onChange((value) => {
         settings.knowledgeCategories = value;
         save();
         this.plugin.refreshViews();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("Agent \u7981\u6B62\u8BBF\u95EE\u7684\u6587\u4EF6\u5939")).setDesc(t("\u9017\u53F7\u5206\u9694\uFF1B\u8FD9\u4E9B\u76EE\u5F55\u5BF9 Agent \u7684\u8BFB\u5199\u548C\u641C\u7D22\u5168\u90E8\u9690\u85CF\u3002")).addText(
+    new import_obsidian15.Setting(containerEl).setName(t("Agent \u7981\u6B62\u8BBF\u95EE\u7684\u6587\u4EF6\u5939")).setDesc(t("\u9017\u53F7\u5206\u9694\uFF1B\u8FD9\u4E9B\u76EE\u5F55\u5BF9 Agent \u7684\u8BFB\u5199\u548C\u641C\u7D22\u5168\u90E8\u9690\u85CF\u3002")).addText(
       (text) => text.setPlaceholder("\u4F8B\u5982\uFF1A\u8D22\u52A1,\u79C1\u4EBA\u65E5\u8BB0").setValue(settings.deniedFolders).onChange((value) => {
         settings.deniedFolders = value;
         save();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("Agent \u7981\u6B62\u8BBF\u95EE\u7684\u6807\u7B7E")).setDesc(t("\u9017\u53F7\u5206\u9694\uFF1B\u5E26\u8FD9\u4E9B\u6807\u7B7E\u7684\u7B14\u8BB0\u5BF9 Agent \u4E0D\u53EF\u8BFB\u3002")).addText(
+    new import_obsidian15.Setting(containerEl).setName(t("Agent \u7981\u6B62\u8BBF\u95EE\u7684\u6807\u7B7E")).setDesc(t("\u9017\u53F7\u5206\u9694\uFF1B\u5E26\u8FD9\u4E9B\u6807\u7B7E\u7684\u7B14\u8BB0\u5BF9 Agent \u4E0D\u53EF\u8BFB\u3002")).addText(
       (text) => text.setPlaceholder("\u4F8B\u5982\uFF1A\u79C1\u5BC6,\u5BC6\u7801").setValue(settings.deniedTags).onChange((value) => {
         settings.deniedTags = value;
         save();
@@ -6105,11 +6121,12 @@ var PulseSettingTab = class extends import_obsidian14.PluginSettingTab {
     const settings = this.plugin.store.settings;
     const plan = planFolderMigrations(settings);
     if (plan.length === 0) {
-      new import_obsidian14.Notice(t("\u6CA1\u6709\u9700\u8981\u8FC1\u79FB\u7684\u65E7\u9ED8\u8BA4\u76EE\u5F55\u3002"));
+      new import_obsidian15.Notice(t("\u6CA1\u6709\u9700\u8981\u8FC1\u79FB\u7684\u65E7\u9ED8\u8BA4\u76EE\u5F55\u3002"));
       return;
     }
     const list = plan.map((item) => `  ${item.from} \u2192 ${item.to}`).join("\n");
-    const confirmed = window.confirm(
+    const confirmed = await confirmAction(
+      this.app,
       tf(
         "\u5C06\u8FC1\u79FB\u4EE5\u4E0B\u65E7\u9ED8\u8BA4\u76EE\u5F55\u5230 Sediment/\uFF1A\n{list}\n\n\u6587\u4EF6\u4F1A\u9010\u4E2A\u79FB\u52A8\uFF08Obsidian \u5185\u7684\u94FE\u63A5\u81EA\u52A8\u66F4\u65B0\uFF09\uFF1B\u76EE\u6807\u5DF2\u6709\u540C\u540D\u6587\u4EF6\u7684\u76EE\u5F55\u4F1A\u6574\u4F53\u8DF3\u8FC7\u3002\u82E5 Obsidian \u6838\u5FC3\u300C\u65E5\u8BB0\u300D\u63D2\u4EF6\u6307\u5411 daily\uFF0C\u8FC1\u79FB\u540E\u8BF7\u540C\u6B65\u4FEE\u6539\u5B83\u7684\u8BBE\u7F6E\u3002\u786E\u5B9A\u7EE7\u7EED\uFF1F",
         { list }
@@ -6124,7 +6141,7 @@ var PulseSettingTab = class extends import_obsidian14.PluginSettingTab {
         fileManager: this.app.fileManager
       });
     } catch (error) {
-      new import_obsidian14.Notice(
+      new import_obsidian15.Notice(
         tf("\u76EE\u5F55\u8FC1\u79FB\u5931\u8D25\uFF1A{error}", { error: error instanceof Error ? error.message : String(error) }),
         1e4
       );
@@ -6149,28 +6166,28 @@ var PulseSettingTab = class extends import_obsidian14.PluginSettingTab {
     for (const item of outcome.failed) {
       parts.push(tf("\u5931\u8D25 {from}\uFF08{reason}\uFF09", { from: item.from, reason: item.reason }));
     }
-    new import_obsidian14.Notice(parts.join("\uFF1B"), outcome.failed.length > 0 ? 15e3 : 6e3);
+    new import_obsidian15.Notice(parts.join("\uFF1B"), outcome.failed.length > 0 ? 15e3 : 6e3);
     if (outcome.migrated.length > 0) this.display();
   }
   renderBackup(containerEl, settings, save) {
-    new import_obsidian14.Setting(containerEl).setName(t("\u81EA\u52A8\u5907\u4EFD\u7EDF\u8BA1\u6570\u636E")).setDesc(t("\u628A data.json \u5FEB\u7167\u5199\u5165\u5E93\u5185\u666E\u901A\u6587\u4EF6\u5939\uFF0C\u907F\u514D .obsidian \u88AB\u540C\u6B65\u5DE5\u5177\u5FFD\u7565\u3002")).addToggle(
+    new import_obsidian15.Setting(containerEl).setName(t("\u81EA\u52A8\u5907\u4EFD\u7EDF\u8BA1\u6570\u636E")).setDesc(t("\u628A data.json \u5FEB\u7167\u5199\u5165\u5E93\u5185\u666E\u901A\u6587\u4EF6\u5939\uFF0C\u907F\u514D\u914D\u7F6E\u6587\u4EF6\u5939\u88AB\u540C\u6B65\u5DE5\u5177\u5FFD\u7565\u3002")).addToggle(
       (toggle) => toggle.setValue(settings.backupEnabled).onChange((value) => {
         settings.backupEnabled = value;
         save();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("\u5907\u4EFD\u76EE\u5F55")).setDesc(t("\u5E93\u5185\u76F8\u5BF9\u8DEF\u5F84\uFF0C\u9ED8\u8BA4 Sediment/backups/\u3002")).addText(
+    new import_obsidian15.Setting(containerEl).setName(t("\u5907\u4EFD\u76EE\u5F55")).setDesc(t("\u5E93\u5185\u76F8\u5BF9\u8DEF\u5F84\uFF0C\u9ED8\u8BA4 Sediment/backups/\u3002")).addText(
       (text) => text.setPlaceholder("Sediment/backups").setValue(settings.backupFolder).onChange((value) => {
         settings.backupFolder = value;
         save();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("\u4FDD\u7559\u5907\u4EFD\u4EFD\u6570")).addText(
+    new import_obsidian15.Setting(containerEl).setName(t("\u4FDD\u7559\u5907\u4EFD\u4EFD\u6570")).addText(
       (text) => text.setPlaceholder("10").setValue(String(settings.backupKeep)).onChange((value) => {
         const count = Number(value);
         const valid = Number.isInteger(count) && count > 0;
         settings.backupKeep = valid ? count : 10;
-        if (!valid) new import_obsidian14.Notice(t("\u4FDD\u7559\u4EFD\u6570\u9700\u4E3A\u6B63\u6574\u6570\uFF0C\u5DF2\u56DE\u9000\u4E3A 10"));
+        if (!valid) new import_obsidian15.Notice(t("\u4FDD\u7559\u4EFD\u6570\u9700\u4E3A\u6B63\u6574\u6570\uFF0C\u5DF2\u56DE\u9000\u4E3A 10"));
         save();
       })
     );
@@ -6209,19 +6226,24 @@ var PulseSettingTab = class extends import_obsidian14.PluginSettingTab {
       });
       const actions = row.createDiv({ cls: "sd-audit-actions" });
       actions.createEl("button", { text: t("\u6062\u590D") }).onclick = () => {
-        if (!window.confirm(t("\u786E\u8BA4\u4ECE\u8BE5\u5FEB\u7167\u6062\u590D\u7EDF\u8BA1\u6570\u636E\uFF1F\u5F53\u524D\u6570\u636E\u4F1A\u5148\u53E6\u5B58\u4E3A\u6062\u590D\u526F\u672C\uFF0C\u6062\u590D\u540E\u770B\u677F\u7ACB\u5373\u91CD\u8F7D\u3002"))) return;
-        void this.plugin.store.restoreDataBackup(backup.name).then((result) => {
-          if (result.recovery === "failed") {
-            new import_obsidian14.Notice(t("\u6062\u590D\u526F\u672C\u521B\u5EFA\u5931\u8D25\uFF1A\u5907\u4EFD\u5DF2\u6062\u590D\uFF0C\u4F46\u5F53\u524D\u6570\u636E\u672A\u80FD\u53E6\u5B58\u526F\u672C\u3002\u8BF7\u7ACB\u5373\u624B\u52A8\u5907\u4EFD data.json\uFF0C\u907F\u514D\u518D\u6B21\u6062\u590D\u65F6\u65E0\u6CD5\u56DE\u9000\u3002"), 15e3);
-          } else if (result.recovery === "none") {
-            new import_obsidian14.Notice(tf("\u5DF2\u4ECE {name} \u6062\u590D\uFF08\u6B64\u524D\u65E0\u6570\u636E\uFF0C\u65E0\u9700\u6062\u590D\u526F\u672C\uFF09", { name: backup.name }));
-          } else {
-            new import_obsidian14.Notice(tf("\u5DF2\u4ECE {name} \u6062\u590D\uFF0C\u6062\u590D\u526F\u672C\uFF1A{path}", { name: backup.name, path: result.recoveryPath }));
-          }
-          this.plugin.refreshViews();
-          this.display();
-        }).catch((error) => {
-          new import_obsidian14.Notice(error instanceof Error ? error.message : String(error));
+        void confirmAction(
+          this.app,
+          t("\u786E\u8BA4\u4ECE\u8BE5\u5FEB\u7167\u6062\u590D\u7EDF\u8BA1\u6570\u636E\uFF1F\u5F53\u524D\u6570\u636E\u4F1A\u5148\u53E6\u5B58\u4E3A\u6062\u590D\u526F\u672C\uFF0C\u6062\u590D\u540E\u770B\u677F\u7ACB\u5373\u91CD\u8F7D\u3002")
+        ).then((ok) => {
+          if (!ok) return;
+          void this.plugin.store.restoreDataBackup(backup.name).then((result) => {
+            if (result.recovery === "failed") {
+              new import_obsidian15.Notice(t("\u6062\u590D\u526F\u672C\u521B\u5EFA\u5931\u8D25\uFF1A\u5907\u4EFD\u5DF2\u6062\u590D\uFF0C\u4F46\u5F53\u524D\u6570\u636E\u672A\u80FD\u53E6\u5B58\u526F\u672C\u3002\u8BF7\u7ACB\u5373\u624B\u52A8\u5907\u4EFD data.json\uFF0C\u907F\u514D\u518D\u6B21\u6062\u590D\u65F6\u65E0\u6CD5\u56DE\u9000\u3002"), 15e3);
+            } else if (result.recovery === "none") {
+              new import_obsidian15.Notice(tf("\u5DF2\u4ECE {name} \u6062\u590D\uFF08\u6B64\u524D\u65E0\u6570\u636E\uFF0C\u65E0\u9700\u6062\u590D\u526F\u672C\uFF09", { name: backup.name }));
+            } else {
+              new import_obsidian15.Notice(tf("\u5DF2\u4ECE {name} \u6062\u590D\uFF0C\u6062\u590D\u526F\u672C\uFF1A{path}", { name: backup.name, path: result.recoveryPath }));
+            }
+            this.plugin.refreshViews();
+            this.display();
+          }).catch((error) => {
+            new import_obsidian15.Notice(error instanceof Error ? error.message : String(error));
+          });
         });
       };
     }
@@ -6233,7 +6255,7 @@ var PulseSettingTab = class extends import_obsidian14.PluginSettingTab {
     };
     const numberSetting = (name, desc, key, fallback, min = 0, target = containerEl) => {
       let debounceTimer = null;
-      new import_obsidian14.Setting(target).setName(t(name)).setDesc(t(desc)).addText(
+      new import_obsidian15.Setting(target).setName(t(name)).setDesc(t(desc)).addText(
         (text) => text.setPlaceholder(String(fallback)).setValue(String(settings[key])).onChange((value) => {
           if (debounceTimer !== null) {
             window.clearTimeout(debounceTimer);
@@ -6268,21 +6290,21 @@ var PulseSettingTab = class extends import_obsidian14.PluginSettingTab {
   }
   renderSearch(containerEl, settings, save) {
     const invalidate = () => this.plugin.semantic.invalidate();
-    new import_obsidian14.Setting(containerEl).setName(t("\u8BED\u4E49\u68C0\u7D22\u5F15\u64CE")).setDesc(t("\u9ED8\u8BA4 TF-IDF \u7EAF\u672C\u5730\u3002\u9009 Embedding \u9700\u672C\u673A\u8FD0\u884C Ollama\uFF0C\u4E0D\u53EF\u7528\u65F6\u81EA\u52A8\u56DE\u9000 TF-IDF\u3002")).addDropdown(
+    new import_obsidian15.Setting(containerEl).setName(t("\u8BED\u4E49\u68C0\u7D22\u5F15\u64CE")).setDesc(t("\u9ED8\u8BA4 TF-IDF \u7EAF\u672C\u5730\u3002\u9009 Embedding \u9700\u672C\u673A\u8FD0\u884C Ollama\uFF0C\u4E0D\u53EF\u7528\u65F6\u81EA\u52A8\u56DE\u9000 TF-IDF\u3002")).addDropdown(
       (dropdown) => dropdown.addOption("tfidf", t("TF-IDF\uFF08\u7EAF\u672C\u5730\uFF09")).addOption("embedding", t("Embedding\uFF08Ollama\uFF09")).setValue(settings.semanticEngine).onChange((value) => {
         settings.semanticEngine = value;
         save();
         invalidate();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("Ollama \u5730\u5740")).setDesc(t("\u9ED8\u8BA4 http://127.0.0.1:11434\uFF0C\u4EC5\u672C\u673A\u56DE\u73AF\u3002")).addText(
+    new import_obsidian15.Setting(containerEl).setName(t("Ollama \u5730\u5740")).setDesc(t("\u9ED8\u8BA4 http://127.0.0.1:11434\uFF0C\u4EC5\u672C\u673A\u56DE\u73AF\u3002")).addText(
       (text) => text.setPlaceholder("http://127.0.0.1:11434").setValue(settings.embeddingEndpoint).onChange((value) => {
         settings.embeddingEndpoint = value.trim() || "http://127.0.0.1:11434";
         save();
         invalidate();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("Embedding \u6A21\u578B")).setDesc(t("\u9700\u5148 ollama pull\uFF0C\u4F8B\u5982 bge-m3\u3002\u66F4\u6362\u6A21\u578B\u4F1A\u91CD\u5EFA\u5411\u91CF\u3002")).addText(
+    new import_obsidian15.Setting(containerEl).setName(t("Embedding \u6A21\u578B")).setDesc(t("\u9700\u5148 ollama pull\uFF0C\u4F8B\u5982 bge-m3\u3002\u66F4\u6362\u6A21\u578B\u4F1A\u91CD\u5EFA\u5411\u91CF\u3002")).addText(
       (text) => text.setPlaceholder("bge-m3").setValue(settings.embeddingModel).onChange((value) => {
         settings.embeddingModel = value.trim() || "bge-m3";
         save();
@@ -6295,13 +6317,13 @@ var PulseSettingTab = class extends import_obsidian14.PluginSettingTab {
     });
   }
   renderConnection(containerEl, settings, save) {
-    new import_obsidian14.Setting(containerEl).setName(t("\u542F\u7528\u672C\u5730 Agent API")).setDesc(t("\u53EA\u76D1\u542C 127.0.0.1\uFF0C\u4F9B MCP \u6865\u63A5\u548C\u672C\u5730\u811A\u672C\u8C03\u7528\u4E2A\u4EBA\u77E5\u8BC6\u5E93\u3002")).addToggle(
+    new import_obsidian15.Setting(containerEl).setName(t("\u542F\u7528\u672C\u5730 Agent API")).setDesc(t("\u53EA\u76D1\u542C 127.0.0.1\uFF0C\u4F9B MCP \u6865\u63A5\u548C\u672C\u5730\u811A\u672C\u8C03\u7528\u4E2A\u4EBA\u77E5\u8BC6\u5E93\u3002")).addToggle(
       (toggle) => toggle.setValue(settings.agentServerEnabled).onChange((value) => {
         settings.agentServerEnabled = value;
         save();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("\u7AEF\u53E3")).setDesc(t("\u9ED8\u8BA4 27123\uFF0C\u4FEE\u6539\u540E\u670D\u52A1\u4F1A\u81EA\u52A8\u91CD\u542F\u3002")).addText(
+    new import_obsidian15.Setting(containerEl).setName(t("\u7AEF\u53E3")).setDesc(t("\u9ED8\u8BA4 27123\uFF0C\u4FEE\u6539\u540E\u670D\u52A1\u4F1A\u81EA\u52A8\u91CD\u542F\u3002")).addText(
       (text) => text.setPlaceholder("27123").setValue(String(settings.agentServerPort)).onChange((value) => {
         const port = Number(value);
         if (Number.isInteger(port) && port > 0 && port < 65536) {
@@ -6310,20 +6332,20 @@ var PulseSettingTab = class extends import_obsidian14.PluginSettingTab {
         }
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("\u8BBF\u95EE\u4EE4\u724C")).setDesc(t("HTTP \u8BF7\u6C42\u4E0E MCP \u6865\u63A5\u90FD\u5FC5\u987B\u643A\u5E26\u6B64\u4EE4\u724C\u3002")).addText(
+    new import_obsidian15.Setting(containerEl).setName(t("\u8BBF\u95EE\u4EE4\u724C")).setDesc(t("HTTP \u8BF7\u6C42\u4E0E MCP \u6865\u63A5\u90FD\u5FC5\u987B\u643A\u5E26\u6B64\u4EE4\u724C\u3002")).addText(
       (text) => text.setPlaceholder(t("\u70B9\u51FB\u53F3\u4FA7\u6309\u94AE\u751F\u6210")).setValue(settings.agentServerToken).onChange((value) => {
         settings.agentServerToken = value.trim();
         save();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("\u91CD\u65B0\u751F\u6210\u4EE4\u724C")).setDesc(t("\u6CC4\u9732\u6216\u9057\u5FD8\u65F6\u70B9\u51FB\uFF0C\u65E7\u4EE4\u724C\u7ACB\u5373\u5931\u6548\u3002")).addButton(
+    new import_obsidian15.Setting(containerEl).setName(t("\u91CD\u65B0\u751F\u6210\u4EE4\u724C")).setDesc(t("\u6CC4\u9732\u6216\u9057\u5FD8\u65F6\u70B9\u51FB\uFF0C\u65E7\u4EE4\u724C\u7ACB\u5373\u5931\u6548\u3002")).addButton(
       (button) => button.setButtonText(t("\u751F\u6210\u65B0\u4EE4\u724C")).onClick(() => {
         settings.agentServerToken = generateToken();
         save();
         this.display();
       })
     );
-    new import_obsidian14.Setting(containerEl).setName(t("\u542F\u7528\u6587\u4EF6\u6865\uFF08\u5B9E\u9A8C\uFF09")).setDesc(
+    new import_obsidian15.Setting(containerEl).setName(t("\u542F\u7528\u6587\u4EF6\u6865\uFF08\u5B9E\u9A8C\uFF09")).setDesc(
       t(
         "\u975E MCP \u667A\u80FD\u4F53\u53EF\u628A write_note / patch_note / add_knowledge \u63D0\u6848\u653E\u8FDB\u63D2\u4EF6\u76EE\u5F55 bridge/proposals/\uFF0C\u5728\u5DE5\u574A\u9884\u89C8\u540E\u91C7\u7EB3\u6216\u9A73\u56DE\uFF1B\u7ED3\u679C\u5199\u5230 bridge/decisions/\u3002\u9ED8\u8BA4\u5173\u95ED\uFF0C\u63D0\u6848\u4E0D\u4F1A\u81EA\u52A8\u843D\u76D8\u3002"
       )
@@ -6345,14 +6367,14 @@ var PulseSettingTab = class extends import_obsidian14.PluginSettingTab {
     }
     for (const agent of agents) {
       const configured = isAgentConfigured(agent);
-      new import_obsidian14.Setting(containerEl).setName(`${agent.name}${configured ? ` \xB7 ${t("\u5DF2\u914D\u7F6E")}` : ""}`).setDesc(agent.configPath).addButton(
+      new import_obsidian15.Setting(containerEl).setName(`${agent.name}${configured ? ` \xB7 ${t("\u5DF2\u914D\u7F6E")}` : ""}`).setDesc(agent.configPath).addButton(
         (button) => button.setButtonText(configured ? t("\u91CD\u65B0\u5199\u5165") : t("\u4E00\u952E\u914D\u7F6E")).onClick(() => {
           try {
             configureAgent(this.plugin, agent);
-            new import_obsidian14.Notice(tfAgentConfigured(agent.name));
+            new import_obsidian15.Notice(tfAgentConfigured(agent.name));
             this.display();
           } catch (error) {
-            new import_obsidian14.Notice(`${t("\u914D\u7F6E\u5931\u8D25")}: ${error instanceof Error ? error.message : String(error)}`);
+            new import_obsidian15.Notice(`${t("\u914D\u7F6E\u5931\u8D25")}: ${error instanceof Error ? error.message : String(error)}`);
           }
         })
       ).addButton((button) => {
@@ -6360,19 +6382,19 @@ var PulseSettingTab = class extends import_obsidian14.PluginSettingTab {
         button.setDisabled(!configured);
         button.onClick(() => {
           const result = uninstallMcp(this.plugin, [agent.id], false);
-          new import_obsidian14.Notice(
+          new import_obsidian15.Notice(
             result.failures.length > 0 ? `${t("\u5378\u8F7D\u5931\u8D25")}: ${result.failures.join("\uFF1B")}` : `${agent.name} ${t("MCP \u914D\u7F6E\u5DF2\u79FB\u9664\uFF0C\u91CD\u542F\u5BA2\u6237\u7AEF\u540E\u751F\u6548")}`
           );
           this.display();
         });
       });
     }
-    new import_obsidian14.Setting(containerEl).setName(t("\u4E00\u952E\u5378\u8F7D MCP \u63A5\u5165")).setDesc(t("\u9009\u62E9\u8981\u79FB\u9664\u7684\u5BA2\u6237\u7AEF\u914D\u7F6E\u548C\u6865\u63A5\u811A\u672C\uFF1B\u4E0D\u4F1A\u5220\u9664\u7B14\u8BB0\u6216\u7EDF\u8BA1\u6570\u636E\u3002")).addButton(
+    new import_obsidian15.Setting(containerEl).setName(t("\u4E00\u952E\u5378\u8F7D MCP \u63A5\u5165")).setDesc(t("\u9009\u62E9\u8981\u79FB\u9664\u7684\u5BA2\u6237\u7AEF\u914D\u7F6E\u548C\u6865\u63A5\u811A\u672C\uFF1B\u4E0D\u4F1A\u5220\u9664\u7B14\u8BB0\u6216\u7EDF\u8BA1\u6570\u636E\u3002")).addButton(
       (button) => button.setButtonText(t("\u6253\u5F00\u5378\u8F7D\u5411\u5BFC")).onClick(() => new McpUninstallModal(this.plugin).open())
     );
-    new import_obsidian14.Setting(containerEl).setName(t("\u590D\u5236\u914D\u7F6E JSON")).setDesc(t("\u624B\u52A8\u7C98\u8D34\u5230\u5BA2\u6237\u7AEF\u7684 MCP \u914D\u7F6E\u6587\u4EF6\u4E2D\u3002")).addButton(
+    new import_obsidian15.Setting(containerEl).setName(t("\u590D\u5236\u914D\u7F6E JSON")).setDesc(t("\u624B\u52A8\u7C98\u8D34\u5230\u5BA2\u6237\u7AEF\u7684 MCP \u914D\u7F6E\u6587\u4EF6\u4E2D\u3002")).addButton(
       (button) => button.setButtonText(t("\u590D\u5236")).onClick(() => {
-        void navigator.clipboard.writeText(configSnippet(this.plugin)).then(() => new import_obsidian14.Notice(t("\u914D\u7F6E\u5DF2\u590D\u5236")));
+        void navigator.clipboard.writeText(configSnippet(this.plugin)).then(() => new import_obsidian15.Notice(t("\u914D\u7F6E\u5DF2\u590D\u5236")));
       })
     );
   }
@@ -6382,16 +6404,16 @@ function tfAgentConfigured(name) {
 }
 
 // src/ui/changelog-modal.ts
-var import_obsidian15 = require("obsidian");
+var import_obsidian16 = require("obsidian");
 
 // src/changelog.ts
-var CHANGELOG = "# \u66F4\u65B0\u8BB0\u5F55\r\n\r\n\u672C\u6587\u4EF6\u8BB0\u5F55\u6BCF\u4E2A\u7248\u672C\u7684\u589E\u91CF\u53D8\u5316\uFF0C\u683C\u5F0F\u9075\u5FAA [Keep a Changelog](https://keepachangelog.com/)\u3002\u6784\u5EFA\u65F6\u7531 `scripts/sync-changelog.mjs` \u540C\u6B65\u5230\u63D2\u4EF6\u5185\uFF0C\u53EF\u5728\u770B\u677F\u9875\u811A\u7684\u300C\u66F4\u65B0\u8BB0\u5F55\u300D\u91CC\u67E5\u770B\u3002\r\n\r\n## [Unreleased]\r\n\r\n### \u4E0A\u67B6\u53CD\u9988\r\n- \u4E3B `README.md` \u6539\u4E3A\u7EAF\u82F1\u6587\u6587\u6863\uFF0C\u5B8C\u6574\u4E2D\u6587\u8BF4\u660E\u79FB\u5230 `README.zh-CN.md`\uFF0C\u4E24\u4EFD\u6587\u4EF6\u9876\u90E8\u4E92\u94FE\uFF1B\u4FEE\u590D\u81EA\u52A8\u5BA1\u6838\u300CREADME \u4E0D\u542B\u82F1\u6587\u300D\u7684\u8BEF\u5224\u3002\r\n- \u7248\u672C\u5FBD\u7AE0\u540C\u6B65\u4E0E\u53D1\u5E03\u6821\u9A8C\u540C\u65F6\u8986\u76D6\u4E24\u4EFD README\uFF0C\u5355\u6D4B\u65B0\u589E\u300C\u4E3B README \u4E0D\u5F97\u542B\u4E2D\u6587\u5B57\u9762\u91CF\u300D\u65AD\u8A00\u3002\r\n\r\n## [1.0.6] - 2026-11-21\r\n\r\n### \u4E0A\u67B6\u53CD\u9988\r\n- \u79FB\u9664 OpenCode \u7248\u672C\u547D\u4EE4\u63A2\u6D4B\uFF1A\u63D2\u4EF6\u4E0D\u518D\u8C03\u7528\u5B50\u8FDB\u7A0B\u6A21\u5757\uFF1B\u65B0\u914D\u7F6E\u7EDF\u4E00\u6309 OpenCode v2 \u5E03\u5C40\u5199\u5165\uFF0C\u5DF2\u6709\u914D\u7F6E\u4ECD\u6309\u5F62\u72B6\u5224\u5B9A v1/v2\u3002\r\n- README \u660E\u786E Node `fs` \u7684\u7528\u9014\u8FB9\u754C\uFF08MCP \u5BA2\u6237\u7AEF\u914D\u7F6E\u3001\u63D2\u4EF6\u5185\u6865\u63A5\u811A\u672C\u3001\u5FEB\u7167\u76EE\u5F55\uFF09\uFF0C\u5E76\u58F0\u660E\u4E0D\u6267\u884C shell \u547D\u4EE4\u3002\r\n\r\n## [1.0.5] - 2026-11-21\r\n\r\n### \u4E0A\u67B6\u53CD\u9988\r\n- Release \u8D44\u4EA7\u53EA\u4FDD\u7559 Obsidian \u4F1A\u4E0B\u8F7D\u7684 `main.js`\u3001`manifest.json`\u3001`styles.css`\uFF1B\u4E0D\u518D\u4E0A\u4F20 `mcp-server/index.mjs` \u4E0E\u6574\u5305 zip\u3002\r\n- \u53D1\u5E03\u5DE5\u4F5C\u6D41\u4E3A\u4E09\u4E2A\u8D44\u4EA7\u751F\u6210 GitHub build provenance attestations\uFF08`actions/attest@v4`\uFF09\u3002\r\n- README \u624B\u52A8\u5B89\u88C5\u6539\u4E3A\u4E0B\u8F7D\u4E09\u4E2A\u6587\u4EF6\uFF1BAgent \u6865\u63A5\u811A\u672C\u4ECD\u7531\u63D2\u4EF6\u5728\u914D\u7F6E\u65F6\u5199\u5165\u3002\r\n\r\n## [1.0.4] - 2026-11-21\r\n\r\n### \u4E0A\u67B6\u51C6\u5907\r\n- `manifest.json` \u6807\u8BB0 `isDesktopOnly: true`\uFF1A\u4E00\u952E\u914D\u7F6E\u3001\u5FEB\u7167\u4E0E\u5378\u8F7D\u4F9D\u8D56 Node \u6587\u4EF6\u7CFB\u7EDF\u4E0E\u5B50\u8FDB\u7A0B\uFF0C\u79FB\u52A8\u7AEF\u4E0D\u518D\u5B89\u88C5\u3002\r\n- README \u8865\u5145\u7F51\u7EDC\u4F7F\u7528\u4E0E\u5E93\u5916\u6587\u4EF6\u8BBF\u95EE\u62AB\u9732\uFF1A\u672C\u5730 Agent API \u4EC5\u76D1\u542C `127.0.0.1`\u3001Ollama \u8D70\u672C\u673A\u56DE\u73AF\u5E76\u53EF\u56DE\u9000\u3001\u5BA2\u6237\u7AEF\u914D\u7F6E\u8BFB\u5199\u4F4D\u4E8E\u7528\u6237\u4E3B\u76EE\u5F55/APPDATA\u3001\u65E0\u9065\u6D4B\u4E0E\u4E91\u4E0A\u4F20\u3002\r\n- \u53D1\u5E03\u6807\u7B7E\u6539\u7528\u4E0D\u5E26 `v` \u524D\u7F00\u7684\u7248\u672C\u53F7\uFF0C\u6EE1\u8DB3\u793E\u533A\u76EE\u5F55\u7684 Release \u7248\u672C\u5339\u914D\uFF1B\u53D1\u5E03\u5DE5\u4F5C\u6D41\u540C\u65F6\u63A5\u53D7 `v*` \u4E0E\u6570\u5B57\u5F00\u5934\u6807\u7B7E\u3002\r\n\r\n## [1.0.3] - 2026-11-21\r\n\r\n### \u4FEE\u590D\r\n- \u300C\u4E00\u952E\u8FC1\u79FB\u300D\u5728\u76EE\u6807 `Sediment/` \u5C1A\u672A\u521B\u5EFA\u65F6\u5931\u8D25\uFF1AObsidian \u7684 rename \u4E0D\u4F1A\u81EA\u52A8\u521B\u5EFA\u76EE\u6807\u76EE\u5F55\uFF0C\u73B0\u5728\u79FB\u52A8\u524D\u9010\u7EA7\u8865\u5EFA\u76EE\u6807\u76EE\u5F55\uFF08\u542B\u5D4C\u5957\u5B50\u76EE\u5F55\uFF09\u3002\r\n- \u5FEB\u901F\u91CD\u5F00 Obsidian \u65F6\u756A\u8304\u949F\u88AB\u8BEF\u5224\u4E3A\u300C\u53E6\u4E00\u5B9E\u4F8B\u6B63\u5728\u4F7F\u7528\u300D\u800C\u7981\u7528\uFF1A\u6B63\u5E38\u5173\u7A97/\u91CD\u8F7D\u4F1A\u5199\u540C\u6B65\u91CA\u653E\u6807\u8BB0\uFF0C\u4E0B\u6B21\u542F\u52A8\u7ACB\u5373\u63A5\u7BA1\uFF1B\u771F\u6B63\u591A\u5F00\u4E0E\u5D29\u6E83\u6B8B\u7559\u4ECD\u7531\u5FC3\u8DF3\u7A97\u53E3\u4FDD\u62A4\u3002\r\n\r\n## [1.0.2] - 2026-11-21\r\n\r\n### \u65B0\u589E\r\n- \u5F85\u5BA1\u5199\u5165\u5931\u6548\u68C0\u6D4B\uFF1A\u76EE\u6807\u88AB\u5220\u9664/\u79FB\u52A8\u540E\u6807\u8BB0 stale\uFF08\u542F\u52A8\u5BF9\u8D26 + \u5220\u9664/\u91CD\u547D\u540D\u5373\u65F6\u6807\u8BB0 + \u91C7\u7EB3\u524D\u590D\u9A8C\uFF09\uFF0C\u5931\u6548\u9879\u53EA\u5141\u8BB8\u9A73\u56DE\u540E\u7531 Agent \u91CD\u53D1\u3002\r\n- \u770B\u677F\u300C\u77E5\u8BC6\u5E93\u73B0\u72B6\u300D\u5361\uFF1A\u5B9E\u65F6\u626B\u63CF\u77E5\u8BC6\u5E93\u603B\u91CF\u3001\u5F85\u5BA1\u8349\u7A3F\u3001\u5DF2\u91C7\u7EB3\u3001\u6765\u6E90\u672A\u767B\u8BB0\uFF0C\u4E0E\u5386\u53F2\u6D3B\u52A8\u7EDF\u8BA1\u53E3\u5F84\u4E92\u8865\u3002\r\n- Agent \u5728\u77E5\u8BC6\u5E93\u76EE\u5F55\u65B0\u5EFA\u7B14\u8BB0\u81EA\u52A8\u767B\u8BB0 `source: agent` \u7B49\u6765\u6E90\u5C5E\u6027\uFF1B\u5DE5\u574A\u65B0\u589E\u300C\u6765\u6E90\u672A\u767B\u8BB0\u300D\u5361\uFF0C\u53EF\u4E00\u952E\u6807\u8BB0\u4E3A\u4EBA\u5DE5\u6765\u6E90\u3002\r\n- \u7B14\u8BB0\u5065\u5EB7\u5EA6\u6269\u4E3A\u516D\u9879\uFF1A\u65B0\u589E\u8349\u7A3F\u6EDE\u7559\uFF0814 \u5929\uFF09\u3001\u7591\u4F3C\u91CD\u590D\u6807\u9898\u3001\u7A7A\u58F3\u7B14\u8BB0\u3002\r\n- \u5468\u590D\u76D8\u3001\u77E5\u8BC6\u7B14\u8BB0\u3001\u5DE5\u4F5C\u65E5\u5FD7\u3001\u5065\u5EB7\u4EFB\u52A1\u4E0E\u68C0\u7D22\u6807\u9898\u652F\u6301\u82F1\u6587\u8F93\u51FA\u3002\r\n- \u53EF\u9009 Ollama embedding \u8BED\u4E49\u68C0\u7D22\uFF08\u9ED8\u8BA4\u5173\u95ED\uFF0C\u4E0D\u53EF\u7528\u81EA\u52A8\u56DE\u9000 TF-IDF\uFF09\uFF1B\u8BBE\u7F6E\u65B0\u589E\u300C\u68C0\u7D22\u589E\u5F3A\u300D\u5206\u533A\u3002\r\n- \u793E\u533A\u5E02\u573A\u63D0\u4EA4\u6E05\u5355\u6539\u4E3A\u672C\u5730\u7EF4\u62A4\uFF08\u4E0D\u5165\u5E93\uFF09\uFF0Cmanifest \u63CF\u8FF0\u6539\u82F1\u6587\u3002\r\n- \u6587\u4EF6\u6865\uFF08\u5B9E\u9A8C\uFF0C\u9ED8\u8BA4\u5173\u95ED\uFF09\uFF1A\u975E MCP \u667A\u80FD\u4F53\u53EF\u628A `write_note` / `patch_note` / `add_knowledge` \u63D0\u6848\u5199\u5165\u63D2\u4EF6\u76EE\u5F55 `bridge/proposals/`\uFF0C\u5BFC\u5165\u5DE5\u574A\u5F85\u5BA1\u961F\u5217\uFF1B\u91C7\u7EB3/\u9A73\u56DE\u7ED3\u679C\u5199\u5165 `bridge/decisions/` \u4F9B\u667A\u80FD\u4F53\u8F6E\u8BE2\u3002\u73B0\u6709 MCP \u901A\u9053\u4E0E\u5DE5\u5177\u4E0D\u53D8\u3002\r\n\r\n### \u6539\u8FDB\r\n- \u7EDF\u8BA1\u53E3\u5F84\u533A\u7684 5 \u9879\u6743\u91CD\u6536\u8FDB\u300C\u9AD8\u7EA7\u6743\u91CD\u300D\u6298\u53E0\u533A\uFF0C\u5C01\u9876\u4E24\u9879\u4FDD\u6301\u53EF\u89C1\u3002\r\n- \u4E94\u9879\u9ED8\u8BA4\u76EE\u5F55\u7EDF\u4E00\u6536\u8FDB `Sediment/`\uFF08\u65E5\u8BB0\u3001\u590D\u76D8\u3001Agent \u65E5\u5FD7\u3001\u77E5\u8BC6\u6C89\u6DC0\u3001\u5907\u4EFD\uFF09\uFF0C\u907F\u514D\u4E0E\u5E93\u5185\u65E2\u6709\u76EE\u5F55\u649E\u540D\uFF1B\u8BBE\u7F6E\u9875\u65B0\u589E\u300C\u65E7\u7248\u76EE\u5F55\u8FC1\u79FB\u300D\u6309\u94AE\uFF0C\u6309\u6587\u4EF6\u9010\u4E2A\u79FB\u52A8\u5E76\u4FDD\u7559 Obsidian \u94FE\u63A5\uFF0C\u51B2\u7A81\u76EE\u5F55\u6574\u4F53\u8DF3\u8FC7\u3001\u5931\u8D25\u81EA\u52A8\u56DE\u6EDA\uFF0C\u4EC5\u8FC1\u79FB\u4ECD\u662F\u65E7\u9ED8\u8BA4\u503C\u7684\u76EE\u5F55\u3002\r\n\r\n## [1.0.1] - 2026-11-20\r\n\r\n### \u6539\u8FDB\r\n- \u53D1\u5E03\u6D41\u6C34\u7EBF\u5347\u7EA7 Node 24 \u8FD0\u884C\u65F6\uFF1Acheckout v7\u3001setup-node v7\u3001action-gh-release v3\uFF08v3 \u4EC5\u8FD0\u884C\u65F6\u8FC1\u79FB\uFF0C\u8F93\u5165\u4E0D\u53D8\uFF09\uFF0C\u6D88\u9664 GitHub Actions Node 20 \u5F03\u7528\u8B66\u544A\r\n- CI \u6784\u5EFA Node 18\uFF08\u5DF2 EOL\uFF09\u5347\u7EA7 22 LTS\r\n\r\n## [1.0.0] - 2026-11-21\r\n\r\n### \u65B0\u589E\r\n- OpenCode \u4E00\u952E\u914D\u7F6E v1/v2 \u53CC\u5E03\u5C40\u9002\u914D\uFF1A\u6309\u914D\u7F6E\u5F62\u72B6\u5224\u5B9A\uFF08v1 \u76F4\u6302\u6761\u76EE\u4F18\u5148\uFF0C\u5176\u6B21 mcp.servers\uFF09\uFF0C\u5F62\u72B6\u65E0\u7EBF\u7D22\u65F6\u6309\u672C\u673A OpenCode \u7248\u672C\u63A2\u6D4B\uFF0C\u63A2\u6D4B\u5931\u8D25\u9ED8\u8BA4 v2\uFF1B\u5199\u5165\u539F\u751F\u7ED3\u6784\uFF08type:local + command \u6570\u7EC4 + environment\uFF09\uFF0Cv2 \u7528\u5BF9\u8C61 timeout\u3001v1 \u7528 enabled + \u6570\u5B57 timeout\r\n- \u914D\u7F6E\u8FC1\u79FB\u81EA\u6108\uFF1A\u5199\u5165 v2 \u65F6\u6E05\u7406 v1 \u76F4\u6302\u6B8B\u7559\uFF0C\u5199\u5165 v1 \u65F6\u6E05\u7406 servers \u5185\u65E7\u6761\u76EE\u5E76\u79FB\u9664\u7A7A servers \u952E\uFF0C\u907F\u514D\u65E7\u7248\u8BEF\u8BFB\r\n- Windsurf Next \u5BA2\u6237\u7AEF\u5019\u9009\uFF08~/.codeium/windsurf-next/mcp_config.json\uFF09\r\n- \u4E00\u952E\u914D\u7F6E\u5355\u5143\u6D4B\u8BD5 +12\uFF08\u5E03\u5C40\u5224\u5B9A\u3001\u53CC\u5E03\u5C40\u5199\u5165\u3001\u8FC1\u79FB\u6E05\u7406\u3001\u6865\u63A5\u590D\u7528\u3001\u7247\u6BB5\u8F93\u51FA\u3001\u5019\u9009\u8DEF\u5F84\uFF09\uFF1B\u53E6\u52A0\u5BA1\u6838\u884C\u53EF\u8BFB\u6027\u4E0E\u6062\u590D\u5165\u53E3\u8FC1\u79FB\u56DE\u5F52 2 \u9879\uFF0C\u5168\u91CF 153 \u9879\r\n\r\n### \u6539\u8FDB\r\n- \u6570\u636E\u5FEB\u7167\u6062\u590D\u5217\u8868\u4ECE\u667A\u80FD\u4F53\u5DE5\u574A\u632A\u5230\u8BBE\u7F6E\u9875\u5907\u4EFD\u5206\u533A\uFF08\u4FDD\u7559\u4EFD\u6570\u4E0B\u65B9\uFF09\uFF0C\u5DE5\u574A\u56DE\u5F52\u7EAF\u5BA1\u6838\u961F\u5217\uFF08\u8349\u7A3F/\u5F85\u5BA1\u5199\u5165/\u53D8\u66F4\u5BA1\u67E5/Agent \u5F85\u529E\uFF09\uFF1B\u6062\u590D\u5B89\u5168\u6D41\u7A0B\u4E0D\u53D8\uFF1A\u4E8C\u6B21\u786E\u8BA4\u2192\u6062\u590D\u526F\u672C\u2192\u683C\u5F0F\u6821\u9A8C\u2192\u5199\u56DE\u91CD\u8F7D\r\n\r\n### \u4FEE\u590D\r\n- OpenCode \u4E00\u952E\u914D\u7F6E\u4E0D\u751F\u6548\uFF1A\u6B64\u524D\u5BF9\u6240\u6709\u5BA2\u6237\u7AEF\u5199 Claude \u98CE\u683C\u6761\u76EE\uFF08command \u5B57\u7B26\u4E32 + args\uFF09\uFF0COpenCode v1/v2 \u5747\u4E0D\u8BC6\u522B\uFF1B\u73B0\u6309\u5BA2\u6237\u7AEF\u539F\u751F schema \u5199\u5165\uFF0C\u5B9E\u6D4B `opencode mcp list` \u8FDE\u63A5\u6210\u529F\r\n- Cline \u914D\u7F6E\u8DEF\u5F84\u4FEE\u6B63\uFF1ACLI \u4E3A ~/.cline/data/settings/cline_mcp_settings.json\uFF0CVS Code \u6269\u5C55\u4E3A globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json\uFF0C\u539F ~/.cline/mcp_settings.json \u4E24\u8005\u7686\u975E\r\n- Cline \u6761\u76EE\u4E0D\u518D\u5199 timeout\uFF1ACline \u6309\u79D2\u89E3\u91CA\uFF0C\u5199 60000 \u4F1A\u88AB\u8BEF\u8BFB\u4E3A 60000 \u79D2\uFF1B\u5176\u4F59\u5BA2\u6237\u7AEF\u4FDD\u6301 60000 \u6BEB\u79D2\r\n- \u79FB\u9664\u65E0\u6548\u5019\u9009 ~/.opencode.json\uFF1AOpenCode \u4EFB\u4F55\u7248\u672C\u90FD\u4E0D\u8BFB\u53D6\u8BE5\u4F4D\u7F6E\r\n- isAgentConfigured \u517C\u5BB9 OpenCode \u53CC\u4F4D\u7F6E\uFF08v1 \u76F4\u6302\u4E0E v2 servers\uFF09\uFF0C\u5DF2\u914D\u7F6E\u72B6\u6001\u4E0D\u518D\u6F0F\u62A5\r\n- \u5BA1\u6838\u884C\u53EF\u8BFB\u6027\uFF1A\u5BA1\u6279\u6309\u94AE mod-cta \u767D\u5B57\u843D\u6D45\u5E95\uFF08\u5BF9\u6BD4\u5EA6 1.1:1 \u5168\u9690\u5F62\uFF09\u6062\u590D\u5F3A\u8C03\u5E95+\u663E\u5F0F\u5B57\u8272\uFF085.70:1\uFF09\uFF1B\u5F85\u5BA1\u5199\u5165/\u53D8\u66F4\u5BA1\u67E5/\u5FEB\u7167\u6062\u590D\u884C\u4E0D\u518D\u590D\u7528 112px \u5143\u4FE1\u606F\u5217\u4E0E faint 10px\uFF08485px \u5185\u5BB9\u622A\u5230 112px\u30012.85:1\uFF09\uFF0C\u6539\u72EC\u7ACB\u5E03\u5C40\u5360\u6EE1\u5269\u4F59\u5BBD + muted 11px\uFF085.74:1\uFF09+ \u60AC\u505C\u5168\u6587\u63D0\u793A\r\n\r\n## [0.9.8] - 2026-11-20\r\n\r\n### \u65B0\u589E\r\n- \u786E\u8BA4\uFF08confirm\uFF09\u5DE5\u4F5C\u6A21\u5F0F\u771F\u5B9E\u751F\u6548\uFF1AAgent \u5199\u8BF7\u6C42\u6302\u8D77\u4E3A\u300C\u5F85\u5BA1\u5199\u5165\u300D\uFF0C\u5728\u667A\u80FD\u4F53\u5DE5\u574A\u9010\u6761\u5DEE\u5F02\u9884\u89C8\u3001\u91C7\u7EB3\u6216\u9A73\u56DE\uFF1B\u76EE\u6807\u6587\u4EF6\u5728\u6302\u8D77\u540E\u88AB\u4FEE\u6539\u65F6\u91C7\u7EB3\u62A5\u7248\u672C\u51B2\u7A81\uFF0C\u907F\u514D\u8986\u76D6\u4EBA\u5DE5\u7F16\u8F91\u3002\u9ED8\u8BA4\u5DE5\u4F5C\u6A21\u5F0F\u5373 confirm\uFF0C\u6B64\u524D\u7248\u672C\u8BE5\u884C\u4E3A\u672A\u843D\u5730\uFF0C\u672C\u7248\u8D77\u5F3A\u5236\u6267\u884C\r\n- data.json \u6570\u636E\u5FEB\u7167\uFF1A\u5907\u4EFD\u5FEB\u7167\u5217\u8868\u4E0E\u4E00\u952E\u6062\u590D\uFF08\u6062\u590D\u524D\u4E8C\u6B21\u786E\u8BA4\u3001\u81EA\u52A8\u521B\u5EFA\u6062\u590D\u526F\u672C\u3001\u5931\u8D25\u663E\u8457\u544A\u8B66\uFF09\r\n- \u77E5\u8BC6\u5730\u5C42\u5256\u9762\u4E3B\u89C6\u56FE\uFF1A\u4EBA/AI/\u4EFB\u52A1/\u4E13\u6CE8\u6309\u6708\u5806\u53E0\u6210\u5730\u5C42\u6A2A\u622A\u9762\uFF0C\u70ED\u529B\u56FE\u964D\u4E3A\u9644\u5C5E\u89C6\u56FE\r\n- Agent \u9875\u7B7E\u5F85\u5BA1\u6570\u91CF\u5FBD\u7AE0\uFF08\u8349\u7A3F+\u53D8\u66F4+\u5F85\u5BA1\u5199\u5165\u4E4B\u548C\uFF0C\u4E3A 0 \u4E0D\u663E\u793A\uFF09\r\n- \u4E00\u952E\u914D\u7F6E\u81EA\u6108\uFF1A\u5E93\u5185\u65E7\u7248\u6865\u63A5\u811A\u672C\u81EA\u52A8\u5237\u65B0\u4E3A\u63D2\u4EF6\u5185\u5D4C\u7248\u672C\uFF0C\u534F\u8BAE\u5347\u7EA7\u540E\u65E0\u9700\u624B\u5DE5\u6E05\u7406\r\n\r\n### \u6539\u8FDB\r\n- Agent \u6743\u9650\u95E8\u7981\u7EDF\u4E00\uFF1A\u9ED1\u540D\u5355/\u767D\u540D\u5355/\u64CD\u4F5C\u6743\u9650\u6536\u655B\u5230 access.ts \u5355\u4E00\u89C4\u5219\u6E90\uFF0C\u8986\u76D6\u7B14\u8BB0/\u901F\u8BB0/\u59D4\u6258/\u5DE5\u4F5C\u65E5\u5FD7/\u4EFB\u52A1\u5FEB\u7167/\u65E5\u8BB0\u7B49\u5168\u90E8\u5199\u8DEF\u5F84\uFF1B\u4EBA\u7528 UI \u64CD\u4F5C\u4E0D\u53D7 Agent \u95E8\u7981\u5F71\u54CD\r\n- \u8BBE\u7F6E\u9762\u677F\u6309\u5206\u533A\u91CD\u7EC4\uFF1B\u5207\u6362\u5DE5\u4F5C\u6A21\u5F0F\u63D0\u793A\u5C06\u91CD\u7F6E\u6743\u9650\u5F00\u5173\uFF0C\u6743\u91CD\u8F93\u5165\u9632\u6296\uFF0C\u79FB\u9664\u65E0\u6548\u7684\u300C\u5141\u8BB8\u5220\u9664\u300D\u5F00\u5173\r\n- i18n \u8865\u9F50\uFF1A\u6A21\u6001\u6846\u3001\u547D\u4EE4\u540D\u3001\u542F\u52A8\u4E0E\u5931\u8D25\u63D0\u793A\u7B49\u5168\u90E8\u8D70\u7FFB\u8BD1\uFF1B\u65B0\u589E CI \u68C0\u67E5\u9632\u6B62\u672A\u7FFB\u8BD1\u4E2D\u6587\u5B57\u9762\u91CF\u518D\u8FDB UI\r\n- \u56FE\u8868\u53EF\u8BBF\u95EE\u6027\uFF1ASVG \u8F93\u51FA\u8865 role/aria-label\uFF0C\u591A\u5E8F\u5217\u8D8B\u52BF\u56FE\u52A0\u56FE\u4F8B\uFF0C\u70ED\u529B\u56FE\u683C\u5B50\u6539\u7528\u81EA\u5B9A\u4E49 tooltip\r\n- \u672C\u5730 API \u4F20\u8F93\u52A0\u56FA\uFF1A\u4EE4\u724C\u53EA\u8D70 Authorization \u5934\u5E76\u5E38\u91CF\u65F6\u95F4\u6BD4\u8F83\uFF0C\u8BF7\u6C42\u4F53\u8D85\u9650\u8FD4\u56DE 413\uFF0C\u7578\u5F62 URL \u8FD4\u56DE 400\uFF0C500 \u9519\u8BEF\u4FE1\u606F\u767D\u540D\u5355\u5316\uFF1B\u6865\u63A5\u811A\u672C\u52A0\u8BF7\u6C42\u8D85\u65F6\u3001\u54CD\u5E94\u4F53\u4E0E stdin \u7F13\u51B2\u4E0A\u9650\uFF0C\u7578\u5F62 JSON \u65AD\u5F00\u8FDE\u63A5\r\n- \u5B58\u50A8\u53EF\u9760\u6027\uFF1A\u52A0\u8F7D\u65F6\u635F\u574F\u5B57\u6BB5\u9632\u62A4\uFF08\u542B\u5F85\u5BA1\u5199\u5165\uFF09\u3001\u4FDD\u5B58\u5931\u8D25\u63D0\u793A\u8282\u6D41\u3001\u5907\u4EFD\u5199\u5165\u5931\u8D25\u4E0D\u518D\u9759\u9ED8\u5F53\u4F5C\u6210\u529F\r\n- \u756A\u8304\u949F\uFF1A\u591A\u5B9E\u4F8B\u63A5\u7BA1\u3001\u8BA1\u65F6\u6F02\u79FB\u6821\u6B63\u3001\u8DE8\u5929\u7ED3\u7B97\r\n- \u5173\u952E catch \u70B9\u6539\u7528 logError \u7EDF\u4E00\u8BB0\u5F55\uFF08\u63A7\u5236\u53F0+\u5E26\u4E0A\u9650\u7684\u8BCA\u65AD\u5217\u8868\uFF09\uFF0C\u4E0D\u518D\u9759\u9ED8\u541E\u9519\r\n- \u53D1\u5E03\u6821\u9A8C\u65B0\u589E README \u7248\u672C\u5FBD\u7AE0\u4E0E versions.json \u7248\u672C\u952E\u65AD\u8A00\r\n- \u54C1\u724C\u56FE\u6807\u66F4\u65B0\uFF0C\u901F\u8BB0\u89C6\u56FE\u72EC\u7ACB\u56FE\u6807\uFF1B\u6DF1\u8272\u4E3B\u9898\u5BFC\u822A\u4E0E\u6D45\u8272\u4E3B\u9898\u5FBD\u7AE0\u5BF9\u6BD4\u5EA6\u4FEE\u590D\uFF1B\u79FB\u52A8\u7AEF/\u89E6\u63A7\u53EF\u7528\u6027\u6539\u8FDB\r\n\r\n### \u4FEE\u590D\r\n- \u4E00\u952E\u914D\u7F6E\u56DE\u5F52\uFF1A\u9274\u6743\u5347\u7EA7\u540E\u5E93\u5185\u65E7\u6865\u63A5\u4E0E\u65B0\u670D\u52A1\u7AEF\u4E0D\u5339\u914D\u5BFC\u81F4\u5168\u90E8 401\uFF0C\u300C\u91CD\u65B0\u5199\u5165\u300D\u65F6\u81EA\u52A8\u5237\u65B0\u6865\u63A5\r\n- \u5730\u5C42\u4E13\u6CE8\u5C42\u6539\u6309\u6BCF\u65E5\u4E13\u6CE8\u5206\u949F\u805A\u5408\uFF0C\u65E9\u671F\u6708\u4EFD\u4E0D\u518D\u56E0\u4F1A\u8BDD\u8BB0\u5F55\u622A\u65AD\u800C\u865A\u5047\u5F52\u96F6\r\n- \u6D1E\u5BDF\u9875\u6B7B\u4EA4\u4E92\u3001aria \u8F6C\u4E49\u3001\u6D77\u62A5\u8DE8\u5E74\u6708\u4EFD\u5FAA\u73AF\u3001\u753B\u5E03\u4E3B\u9898\u8272\u8BFB\u53D6\u7B49\u89C6\u56FE\u95EE\u9898\r\n- \u901F\u8BB0\u5F39\u7A97\u652F\u6301 Ctrl+Enter \u63D0\u4EA4\u3001\u7A7A\u6587\u672C\u4FDD\u5B58\u63D0\u793A\uFF1B\u4EFB\u52A1\u5B8C\u6210\u6309\u94AE\u9632\u53CC\u51FB\uFF1B\u901F\u8BB0\u957F\u6587\u672C\u884C\u6570\u94B3\u5236\r\n\r\n## [0.9.7] - 2026-11-20\r\n\r\n### \u6539\u8FDB\uFF08\u4EE3\u7801\u7ED3\u6784\uFF09\r\n- \u770B\u677F\u4E3B\u89C6\u56FE\u6309\u9875\u7B7E\u62C6\u5206\uFF1A`views/dashboard/sections/` \u4E0B today / insights / agent \u4E09\u4E2A\u6E32\u67D3\u6A21\u5757\uFF0C\u4E3B\u89C6\u56FE\u4ECE ~1300 \u884C\u964D\u5230 523 \u884C\uFF0C\u4EC5\u4FDD\u7559\u751F\u547D\u5468\u671F\u4E0E\u5171\u4EAB\u8F85\u52A9\u65B9\u6CD5\r\n- \u62BD\u51FA\u7EAF SVG \u56FE\u8868\u51FD\u6570\u5230 `utils/charts.ts`\uFF0C\u770B\u677F\u4E0D\u518D\u5185\u8054\u751F\u6210\u56FE\u8868\u903B\u8F91\r\n- \u62BD\u51FA Agent \u8BBF\u95EE\u7B56\u7565\u7EAF\u89C4\u5219\u5230 `agent/access.ts`\uFF08\u9ED1\u540D\u5355/\u767D\u540D\u5355/\u64CD\u4F5C\u6743\u9650/\u5206\u7C7B\u63A8\u65AD\uFF09\uFF0C\u53EF\u5355\u6D4B\r\n- `main.ts` \u7684 16 \u4E2A\u547D\u4EE4\u6CE8\u518C\u62BD\u6210 `registerCommands()`\uFF0C`onload` \u66F4\u6E05\u6670\r\n- \u7EDF\u4E00\u751F\u6210\u6587\u4EF6\u7B56\u7565\uFF1A`changelog.ts` \u4E0E `bridge-source.ts` \u5747\u7531\u6784\u5EFA\u751F\u6210\u5E76\u52A0\u5165 `.gitignore`\r\n\r\n### \u4FEE\u590D\r\n- \u4FEE\u590D\u7248\u672C\u53F7\u5FBD\u7AE0\u5728\u591A\u6BB5\u7248\u672C\u53F7\u4E0B\u6BCF\u6B21\u6784\u5EFA\u91CD\u590D\u8FFD\u52A0\u5C3E\u53F7\u7684 bug\r\n- \u5DE6\u4FA7\u529F\u80FD\u680F\u56FE\u6807\u6539\u7528\u65B0\u7684 Sediment \u54C1\u724C\u56FE\u6807\r\n\r\n## [0.9.6.1] - 2026-11-20\r\n\r\n### \u4FEE\u590D\r\n- \u901F\u8BB0\u641C\u7D22\u6846\uFF1A\u4FEE\u590D\u8F93\u5165\u65F6\u7ED3\u679C\u88AB\u8FFD\u52A0\u5230\u5217\u8868\u672B\u5C3E\u3001\u8DF3\u5230\u77E5\u8BC6\u533A\u4E0B\u65B9\u7684 bug\uFF1B\u65B0\u589E\u300C\u5339\u914D N \u6761\u300D\u5B9E\u65F6\u8BA1\u6570\uFF0C\u641C\u7D22\u6548\u679C\u53EF\u89C1\r\n- \u5207\u6362\u9875\u7B7E\u65F6\u6EDA\u52A8\u4F4D\u7F6E\u5F52\u96F6\uFF0C\u907F\u514D\u5185\u5BB9\u88AB\u5438\u9876\u5BFC\u822A\u6321\u4F4F\r\n- \u6A2A\u5E45\u4E0D\u518D\u88AB\u5438\u9876\u5BFC\u822A\u906E\u76D6\r\n- \u65B0\u589E Sediment \u5C42\u7406\u54C1\u724C\u56FE\u6807\uFF0C\u63A5\u5165\u5BFC\u822A\u680F\u4E0E\u89C6\u56FE\u56FE\u6807\r\n\r\n## [0.9.6] - 2026-11-20\r\n\r\n### \u4FEE\u590D\r\n- Agent \u65F6\u95F4\u663E\u793A\u6539\u4E3A\u672C\u5730\u65F6\u533A\uFF1A\u5DE5\u5177\u8C03\u7528/\u53D8\u66F4\u5BA1\u67E5/\u6700\u8FD1\u8C03\u7528/\u8BCA\u65AD\u65E5\u5FD7\u7684\u65F6\u95F4\u4E0D\u518D\u663E\u793A\u6210 UTC\uFF08\u5982 05:30 \u5B9E\u4E3A\u672C\u5730 13:30\uFF09\uFF0C\u300C\u4ECA\u65E5\u300D\u7EDF\u8BA1\u4E5F\u6309\u672C\u5730\u65E5\u671F\u5224\u5B9A\r\n- \u9876\u90E8\u5BFC\u822A\u5438\u9876\uFF1A\u4E3B\u5BFC\u822A\u680F\u56FA\u5B9A\u5728\u9876\u90E8\uFF0C\u5B50\u9875\u7B7E\uFF08\u77E5\u8BC6\u5730\u5C42\uFF09\u4E0E\u300C\u4ECA\u65E5\u300D\u64CD\u4F5C\u680F\u9489\u5728\u5176\u4E0B\u65B9\uFF0C\u6EDA\u52A8\u65F6\u59CB\u7EC8\u53EF\u89C1\r\n- \u5468\u590D\u76D8\u300C\u672A\u5B8C\u6210\u4E8B\u9879\u300D\u53BB\u91CD\uFF1A\u5E26 #to-agent \u7684\u901F\u8BB0\u4E0D\u518D\u540C\u65F6\u51FA\u73B0\u5728\u300C\u901F\u8BB0\u300D\u548C\u300CAgent \u4EFB\u52A1\u300D\u4E24\u5904\r\n- \u4FEE\u590D\u300C\u8282\u5F8B\u77E9\u9635/\u6D3B\u8DC3\u65F6\u6BB5\u300D\u300C\u5E74\u8F6E/\u6307\u7EB9/\u6708\u76F8\u300D\u9875\u7B7E\u70B9\u51FB\u5931\u6548\uFF1A\u6539\u7528\u5185\u90E8\u5BB9\u5668\u63D2\u5165 SVG\uFF0C\u907F\u514D innerHTML += \u51B2\u6389\u6309\u94AE\u4E8B\u4EF6\r\n\r\n## [0.9.5] - 2026-11-20\r\n\r\n### \u6539\u8FDB\r\n- \u77E5\u8BC6\u5730\u5C42\u5206\u9875\u5316\uFF1A\u9876\u90E8\u80F6\u56CA\u6539\u4E3A\u771F\u6B63\u7684\u9875\u7B7E\uFF0C\u4E00\u6B21\u53EA\u663E\u793A\u4E00\u4E2A\u6A21\u5757\uFF08\u8109\u51B2\u6982\u89C8/\u70ED\u529B\u56FE/\u5199\u4F5C\u8D8B\u52BF/\u6295\u5165\u5206\u5E03/\u5E74\u5EA6\u753B\u50CF/\u672C\u5468\u590D\u76D8\uFF09\uFF0C\u4E0D\u518D\u662F\u957F\u9875\u9762\u8DF3\u8F6C\r\n\r\n### \u4FEE\u590D\r\n- \u951A\u70B9/\u5FEB\u6377\u8DF3\u8F6C\u6539\u56DE\u6D4F\u89C8\u5668\u539F\u751F scrollIntoView + CSS scroll-margin\uFF0C\u4FEE\u590D\u300C\u6709\u7684\u8DF3\u6709\u7684\u4E0D\u8DF3\u300D\uFF1B\u7528\u6237\u4E3B\u52A8\u6EDA\u52A8\u65F6\u53D6\u6D88\u6392\u961F\u4E2D\u7684\u6EDA\u52A8\u6062\u590D\uFF0C\u907F\u514D\u4E92\u76F8\u6253\u65AD\r\n\r\n## [0.9.4] - 2026-11-20\r\n\r\n### \u4FEE\u590D\r\n- \u300C\u67E5\u770B\u4ECA\u65E5\u4EFB\u52A1\u300D\u300C\u8BB0\u4E00\u6761\u901F\u8BB0\u300D\u6539\u7528\u5E26\u504F\u79FB\u7684\u5E73\u6ED1\u6EDA\u52A8\u5E76\u963B\u6B62 focus \u81EA\u52A8\u8DF3\u5C4F\uFF0C\u4E0D\u518D\u786C\u8DF3\r\n\r\n### \u4FEE\u590D\r\n- \u951A\u70B9\u8DF3\u8F6C\u6309\u5438\u9876\u5BFC\u822A\u9AD8\u5EA6\u7559\u504F\u79FB\uFF0C\u907F\u514D\u76EE\u6807\u6807\u9898\u88AB\u5BFC\u822A\u6761\u76D6\u4F4F\u9020\u6210\u7684\u89C6\u89C9\u8DF3\u52A8\r\n\r\n## [0.9.3] - 2026-11-20\r\n\r\n### \u4FEE\u590D\r\n- \u64CD\u4F5C\u540E\u6574\u9875\u91CD\u7ED8\u5BFC\u81F4\u7684\u6EDA\u52A8\u6296\u52A8\uFF1A\u91CD\u7ED8\u65F6\u4FDD\u5B58/\u5EF6\u8FDF\u6062\u590D\u6EDA\u52A8\u4F4D\u7F6E\uFF0C\u5E76\u5728\u540C\u4E00\u9875\u7B7E\u7684\u8F6F\u5237\u65B0\u4E2D\u5173\u95ED\u5361\u7247\u5165\u573A\u52A8\u753B\r\n\r\n### \u6539\u8FDB\r\n- \u65B0\u589E `npm run release:prepare -- X.Y.Z`\uFF1A\u81EA\u52A8\u5B9A\u7A3F CHANGELOG \u7248\u672C\u6807\u9898\u5E76\u66F4\u65B0 package.json \u7248\u672C\u6E90\uFF1BCI \u6253 tag \u65F6\u4E5F\u4F1A\u81EA\u52A8\u6267\u884C\r\n\r\n## [0.9.2] - 2026-11-20\r\n\r\n### \u4FEE\u590D\r\n- Agent \u53D8\u66F4\u5BA1\u67E5\u300C\u4FDD\u7559\u5F53\u524D\u5E76\u5173\u95ED\u300D\u73B0\u5728\u4F1A\u8BB0\u5F55\u5BA1\u67E5\u51B3\u5B9A\uFF08kept\uFF09\uFF0C\u8BE5\u53D8\u66F4\u4ECE\u5F85\u5BA1\u5217\u8868\u79FB\u9664\uFF1B\u300C\u91C7\u7528\u5907\u4EFD / \u6062\u590D\u300D\u8BB0\u5F55\u4E3A reverted\r\n- \u53D8\u66F4\u5BA1\u67E5\u53EA\u5217\u51FA POST \u5199\u64CD\u4F5C\uFF1BGET \u53EA\u8BFB\u8C03\u7528\uFF08\u5982 graph\uFF09\u4E0D\u518D\u51FA\u73B0\u5728\u5F85\u5BA1\u5217\u8868\r\n\r\n### \u65B0\u589E\r\n- MCP \u4E00\u952E\u5378\u8F7D\uFF1A\u8BBE\u7F6E\u9875\u6BCF\u4E2A\u5DF2\u914D\u7F6E\u5BA2\u6237\u7AEF\u52A0\u300C\u5378\u8F7D\u300D\u6309\u94AE\uFF0C\u5E76\u63D0\u4F9B\u300C\u6253\u5F00\u5378\u8F7D\u5411\u5BFC\u300D\uFF1B\u53EA\u79FB\u9664\u5BA2\u6237\u7AEF\u914D\u7F6E\u4E0E\u6865\u63A5\u811A\u672C\uFF0C\u5199\u524D\u5907\u4EFD `.bak`\uFF0C\u4E0D\u52A8\u7B14\u8BB0\u548C\u7EDF\u8BA1\u6570\u636E\r\n\r\n### \u6587\u6863\r\n- README \u8865\u5145\u300C\u5982\u4F55\u627E\u5230 .obsidian \u76EE\u5F55\u300D\u4E0E zip \u624B\u5DE5\u5B89\u88C5\u6B65\u9AA4\uFF0C\u793A\u4F8B\u8DEF\u5F84\u6539\u4E3A `<vault>` \u901A\u7528\u5199\u6CD5\uFF0C\u5E76\u8BF4\u660E BRAT \u5B89\u88C5\u65F6\u6865\u63A5\u811A\u672C\u7531\u4E00\u952E\u914D\u7F6E\u81EA\u52A8\u843D\u76D8\r\n\r\n### \u6539\u8FDB\r\n- \u65B0\u589E\u5B89\u88C5\u6574\u5305 `dist/sediment/`\uFF1A\u5305\u542B main.js\u3001manifest.json\u3001styles.css\u3001mcp-server/index.mjs \u4E0E\u5B89\u88C5\u8BF4\u660E\uFF1BRelease \u81EA\u52A8\u9644\u52A0 `sediment-vX.Y.Z.zip`\uFF0C\u4E0B\u8F7D\u89E3\u538B\u5373\u53EF\u590D\u5236\r\n\r\n### \u6539\u8FDB\r\n- \u7248\u672C\u53F7\u7EDF\u4E00\u5230 `package.json` \u5355\u4E00\u6E90\uFF1A`version-bump.mjs` \u5728\u6784\u5EFA\u65F6\u540C\u6B65 lockfile\u3001manifest\u3001versions\u3001MCP bridge \u548C README \u5FBD\u7AE0\uFF1B\u53D1\u7248\u53EA\u6539\u4E00\u5904\r\n\r\n## [0.9.1] - 2026-11-20\r\n\r\n### \u6539\u8FDB\r\n- Agent \u53D8\u66F4 Diff \u91CD\u505A\uFF1ALCS \u9010\u884C\u6807\u8BB0\u589E\u5220\u3001\u53CC\u680F\u6EDA\u52A8\u8054\u52A8\u3001\u53D8\u5316\u884C\u6570\u7EDF\u8BA1\uFF0C\u53EF\u5728\u5F39\u7A97\u5185\u300C\u91C7\u7528\u5907\u4EFD\uFF08\u64A4\u9500\uFF09\u300D\u6216\u300C\u4FDD\u7559\u5F53\u524D\u300D\r\n- AI \u6C89\u6DC0\u5BA1\u6838\uFF1A\u663E\u793A\u5F53\u524D\u5DE5\u4F5C\u6A21\u5F0F\uFF0C\u65B0\u589E\u300C\u67E5\u770B\u539F\u6587\u300D\u53EA\u8BFB\u9884\u89C8\uFF0C\u6309\u94AE\u542B\u4E49\u660E\u786E\r\n- \u5355\u6D4B\u589E\u81F3 41 \u4F8B\uFF08\u9010\u884C Diff\u3001\u5E42\u7B49\u952E\u3001\u5BA1\u8BA1\u8131\u654F\u3001400 \u5929\u6279\u91CF\u6570\u636E\u89C4\u8303\u5316\uFF09\r\n- \u7EAF\u51FD\u6570\u6027\u80FD\u57FA\u51C6 `npm run test:bench`\uFF1A1k/10k/100k \u5929\u8D21\u732E\u8BA1\u7B97\u7684\u8017\u65F6\u4E0E\u5806\u5185\u5B58\u91CF\u5316\r\n- Agent \u5B89\u5168\u8F85\u52A9\uFF1A\u5E42\u7B49\u952E `idempotencyKey`\u3001\u5BA1\u8BA1\u8DEF\u5F84\u8131\u654F `redactAuditPath`\u3001\u654F\u611F\u4E32\u66FF\u6362 `redactSecrets`\uFF1B\u5BA1\u8BA1\u65E5\u5FD7\u843D\u76D8\u524D\u8131\u654F\u67E5\u8BE2\u4E32\r\n- \u77E5\u8BC6\u9875\u6458\u8981\u4F18\u5148 + \u8BE6\u7EC6\u56FE\u8868\u6298\u53E0\u5F00\u5173\uFF1B\u4EBA\u673A\u53CC\u8272\u70ED\u529B\u56FE\u79FB\u5165\u77E5\u8BC6\u9875\r\n- \u5468\u590D\u76D8\u91CD\u6392\u4E3A\u300C\u7EBF\u7D22\u2014\u6210\u679C\u2014\u884C\u52A8\u2014\u5F52\u6863\u2014\u8BE6\u7EC6\u6570\u636E\u300D\r\n- \u901F\u8BB0\u4FA7\u680F\u300C\u5168\u90E8 + \u66F4\u591A\u300D\u6B21\u7EA7\u5165\u53E3\uFF0C\u56DE\u987E/\u6F2B\u6B65/\u6807\u7B7E/\u6C89\u6DC0\u6536\u8FDB\u66F4\u591A\u83DC\u5355\r\n- \u7EDF\u4E00\u641C\u7D22\u5165\u53E3\uFF1A`search_notes` \u540C\u65F6\u68C0\u7D22\u7B14\u8BB0\u3001\u901F\u8BB0\u3001\u5DE5\u4F5C\u65E5\u5FD7\u548C\u8349\u7A3F\uFF0C\u5E76\u6807\u6CE8\u6765\u6E90\u7C7B\u578B\r\n- \u9996\u6B21\u4F7F\u7528\u8F7B\u91CF\u4E0A\u4E0B\u6587\u63D0\u793A\uFF0C\u53EF\u5173\u95ED\r\n- Agent API \u7248\u672C\u58F0\u660E\uFF1A`AGENT_API_VERSION = 1`\uFF0C`/health` \u8FD4\u56DE `agentApiVersion`\uFF0CREADME \u5199\u660E\u517C\u5BB9\u7B56\u7565\r\n- \u8BCA\u65AD\u65E5\u5FD7\uFF1A\u8BB0\u5F55\u8FC1\u79FB\u3001\u5B89\u5168\u62D2\u7EDD\u3001\u6162\u67E5\u8BE2\u4E0E\u5B58\u50A8\u4E8B\u4EF6\uFF0C\u547D\u4EE4\u300C\u67E5\u770B\u8BCA\u65AD\u65E5\u5FD7\u300D\u53EF\u67E5\u770B\uFF1B\u771F\u5B9E\u73AF\u5883\u9A8C\u8BC1\u624B\u518C\u89C1 `docs/real-environment-verification.md`\r\n- \u7EC4\u4EF6\u547D\u540D\u7EDF\u4E00\uFF1A\u6240\u6709 `kp-*` \u524D\u7F00\u6539\u4E3A `sd-*`\uFF0C\u6784\u5EFA\u4E0E 41 \u4F8B\u5355\u6D4B\u901A\u8FC7\r\n\r\n## [0.9.0] - 2026-11-20\r\n\r\n### \u65B0\u589E\r\n- \u4ECA\u65E5\u9875\u589E\u52A0\u901F\u8BB0\u3001\u4ECA\u65E5\u4EFB\u52A1\u548C\u5F00\u59CB\u4E13\u6CE8\u5FEB\u6377\u64CD\u4F5C\uFF1B\u7A84\u5C4F\u6539\u4E3A\u7EB5\u5411\u5E03\u5C40\u3002\r\n- \u8BBE\u7F6E\u65B0\u589E Agent \u5DE5\u4F5C\u6A21\u5F0F\uFF1A\u53EA\u8BFB\u3001\u8349\u7A3F\u3001\u786E\u8BA4\u540E\u5199\u5165\u3001\u81EA\u52A8\u6267\u884C\u3002\r\n- \u901F\u8BB0\u5361\u7247\u663E\u793A\u672A\u5904\u7406\u3001\u5DF2\u59D4\u6D3E Agent\u3001\u5DF2\u6C89\u6DC0\u6216\u5DF2\u5F52\u6863\u72B6\u6001\u3002\r\n- \u5FEB\u901F\u901F\u8BB0\u652F\u6301\u8349\u7A3F\u6062\u590D\u3001\u4FDD\u5B58\u4E2D\u3001\u4FDD\u5B58\u6210\u529F\u548C\u4FDD\u5B58\u5931\u8D25\u53CD\u9988\u3002\r\n\r\n### \u6539\u8FDB\r\n- MCP \u5DE5\u5177\u7531\u5206\u6563\u7684\u7EC6\u7C92\u5EA6\u80FD\u529B\u6536\u655B\u4E3A\u4EFB\u52A1\u578B\u5165\u53E3\uFF1B\u65B0\u589E\u53EA\u8BFB\u805A\u5408 `get_workspace_state`\uFF0C\u65E7\u5DE5\u5177\u540D\u5DF2\u5220\u9664\uFF0C\u4E0D\u518D\u4FDD\u7559\u517C\u5BB9\u5165\u53E3\u3002\r\n- Agent \u9875\u4F18\u5148\u5C55\u793A\u8349\u7A3F\u3001\u4EFB\u52A1\u3001\u53D8\u66F4\u5BA1\u67E5\u548C\u5DE5\u4F5C\u65E5\u5FD7\uFF0C\u8FDE\u63A5\u8BCA\u65AD\u4E0E\u7EDF\u8BA1\u79FB\u81F3\u6B21\u7EA7\u4F4D\u7F6E\u3002\r\n- \u5F85\u529E\u5361\u7247\u53EF\u76F4\u63A5\u5B8C\u6210\u672C\u5730\u4EFB\u52A1\uFF0C\u4E5F\u53EF\u8BA4\u9886\u6216\u5B8C\u6210 Agent \u4EFB\u52A1\u3002\r\n- \u77E5\u8BC6\u6982\u89C8\u6295\u5165\u65F6\u95F4\u7531\u771F\u5B9E\u6D3B\u8DC3\u5206\u949F\u4E0E\u4E13\u6CE8\u5206\u949F\u8BA1\u7B97\uFF0C\u4E0D\u518D\u56FA\u5B9A\u663E\u793A\u5360\u4F4D\u6570\u636E\u3002\r\n- \u770B\u677F\u9875\u7B7E\u3001\u901F\u8BB0\u9875\u7B7E\u8865\u5145\u53EF\u8BBF\u95EE\u6027\u72B6\u6001\uFF1B\u7A84\u5C4F\u9875\u7B7E\u53EF\u6A2A\u5411\u6EDA\u52A8\u3002\r\n- \u77E5\u8BC6\u65E5\u5FD7\u4E0E\u6C89\u6DC0\u5199\u5165\u7EDF\u4E00\u53D7 Agent \u64CD\u4F5C\u6743\u9650\u548C\u76EE\u5F55\u9650\u5236\u7EA6\u675F\u3002\r\n- README \u66F4\u65B0 0.9.0\u300112 \u4E2A\u516C\u5F00 MCP \u5DE5\u5177\u5165\u53E3\u3001\u624B\u52A8\u5B89\u88C5\u6587\u4EF6\u548C\u6D4B\u8BD5\u547D\u4EE4\u3002\r\n\r\n### \u4FEE\u590D\r\n- \u8349\u7A3F\u5408\u5E76\u3001\u9A73\u56DE\u548C\u5FEB\u7167\u6062\u590D\u589E\u52A0\u786E\u8BA4\u53CA\u660E\u786E\u53CD\u9988\u3002\r\n- \u786E\u4FDD\u6570\u636E\u6587\u6863\u3001\u8BBE\u7F6E\u8BF4\u660E\u548C\u5B9E\u9645\u754C\u9762\u80FD\u529B\u4E00\u81F4\u3002\r\n\r\n## [0.8.8] - 2026-11-20\r\n\r\n### \u65B0\u589E\r\n- \u53D1\u5E03\u6D41\u6C34\u7EBF\u65B0\u589E\u5B8C\u6574\u56DE\u5F52\u6D4B\u8BD5\u3001\u7248\u672C\u4E00\u81F4\u6027\u6821\u9A8C\u548C\u8131\u654F\u7F3A\u9677\u53CD\u9988\u6A21\u677F\u3002\r\n- \u8BBE\u7F6E\u65B0\u589E\u7CBE\u7B80\u3001\u6807\u51C6\u3001\u5B8C\u6574\u5E03\u5C40\u5BC6\u5EA6\uFF0C\u4EE5\u53CA\u51CF\u5C11\u52A8\u6001\u6548\u679C\u9009\u9879\u3002\r\n- \u68C0\u7D22\u7ED3\u679C\u589E\u52A0\u7CBE\u786E\u5339\u914D\u4E0E\u672C\u5730 TF-IDF \u8BED\u4E49\u5339\u914D\u8BF4\u660E\u3002\r\n\r\n### \u6539\u8FDB\r\n- \u672A\u77E5\u6570\u636E\u7248\u672C\u52A0\u8F7D\u65F6\u6682\u505C\u5199\u5165\u5E76\u4FDD\u7559\u6062\u590D\u526F\u672C\uFF1B\u521D\u59CB\u5316\u3001\u8D1F\u503C\u4E0E\u5F02\u5E38\u5B57\u6BB5\u589E\u52A0\u89C4\u8303\u5316\u3002\r\n- Agent HTTP \u5199\u5165\u6536\u7D27\u6A21\u5F0F\u6821\u9A8C\uFF0C\u8865\u5145\u8DEF\u5F84\u7A7F\u8D8A\u3001\u7CFB\u7EDF\u76EE\u5F55\u3001\u975E\u6CD5 JSON \u548C\u5FC5\u586B\u53C2\u6570\u4FDD\u62A4\u3002\r\n- \u6587\u4EF6\u4FEE\u6539\u4E8B\u4EF6\u589E\u52A0\u53BB\u6296\uFF0C\u5378\u8F7D\u65F6\u6E05\u7406\u5B9A\u65F6\u5668\uFF0C\u8BED\u4E49\u7D22\u5F15\u5408\u5E76\u5E76\u53D1\u91CD\u5EFA\u3002\r\n- \u901F\u8BB0\u3001\u5DE5\u4F5C\u65E5\u5FD7\u3001\u5FEB\u7167\u4E0E\u5DE5\u5177\u8C03\u7528\u7B49\u6301\u4E45\u6570\u636E\u589E\u52A0\u4FDD\u7559\u4E0A\u9650\u3002\r\n- \u4FEE\u6B63 TypeScript \u914D\u7F6E\u4E2D\u7684\u5DF2\u79FB\u9664 `baseUrl` \u548C `node10` \u6A21\u5757\u89E3\u6790\u9009\u9879\u3002\r\n\r\n### \u4FEE\u590D\r\n- \u5B8C\u5584\u5347\u7EA7\u3001\u5378\u8F7D\u3001\u6062\u590D\u548C\u672C\u5730 Agent \u6743\u9650\u8BF4\u660E\u3002\r\n- \u53D1\u5E03\u6821\u9A8C\u8986\u76D6 package.json\u3001manifest\u3001MCP bridge\u3001CHANGELOG \u4E0E\u53D1\u5E03\u4EA7\u7269\u4E00\u81F4\u6027\u3002\r\n\r\n## [0.8.7] - 2026-11-20\r\n\r\n### \u4FEE\u590D\r\n- \u4E00\u952E\u914D\u7F6E Agent \u4E0D\u518D\u5199\u51FA\u4E0D\u5B58\u5728\u7684\u6865\u63A5\u8DEF\u5F84\uFF1A\u5E93\u5185\u7F3A `mcp-server/index.mjs` \u65F6\u7528\u6784\u5EFA\u65F6\u5D4C\u5165\u7684\u6E90\u7801\u81EA\u52A8\u843D\u76D8\uFF08Obsidian \u53EA\u5B89\u88C5\u4E09\u4EF6\u5957\uFF0C\u6B64\u524D\u65B0\u88C5\u7528\u6237\u5FC5\u8E29 MCP \u8FDB\u7A0B\u9000\u51FA\u7801 1\uFF09\r\n- MCP \u6865\u63A5 `serverInfo` \u7248\u672C\u968F\u63D2\u4EF6\u7248\u672C\u540C\u6B65\uFF08version-bump \u8054\u52A8\uFF09\uFF0C\u4E0D\u518D\u786C\u7F16\u7801\u65E7\u7248\u672C\r\n\r\n### \u6539\u8FDB\r\n- \u53D1\u5E03\u5305\u65B0\u589E `mcp-server/index.mjs`\uFF0C\u624B\u52A8\u5B89\u88C5\u53EF\u76F4\u63A5\u53D6\u7528\u6865\u63A5\u811A\u672C\r\n- \u5355\u6D4B\u65B0\u589E 2 \u4F8B\uFF1A\u6865\u63A5\u7248\u672C\u4E00\u81F4\u6027\u3001\u7F3A\u5931\u81EA\u52A8\u843D\u76D8\uFF0Binitialize \u63E1\u624B\uFF08\u5171 29 \u4F8B\uFF09\r\n\r\n## [0.8.6] - 2026-11-20\r\n\r\n### \u6539\u8FDB\r\n- \u77E5\u8BC6\u5730\u5C42\u7CBE\u7B80\uFF1A13 \u5F20\u5361\u7247\u5408\u5E76\u4E3A 7 \u5F20\uFF0C\u6D88\u9664\u540C\u4E00\u6570\u636E\u7684\u91CD\u590D\u53EF\u89C6\u5316\r\n  - \u5E74\u8F6E / \u77E5\u8BC6\u6307\u7EB9 / \u6708\u76F8\u65E5\u5386\u5408\u5E76\u4E3A\u300C\u5E74\u5EA6\u753B\u50CF\u300D\u5206\u6BB5\u5207\u6362\u5361\uFF08\u9ED8\u8BA4\u5E74\u8F6E\uFF09\r\n  - \u79FB\u9664\u88C5\u9970\u6027\u5730\u5E73\u7EBF\u5361\uFF08\u4FE1\u606F\u5DF2\u88AB\u70ED\u529B\u56FE\u4E0E\u8D8B\u52BF\u8986\u76D6\uFF09\r\n  - \u5199\u4F5C\u6765\u6E90\u5E76\u5165\u300C\u5199\u4F5C\u4E0E\u65F6\u95F4\u8D8B\u52BF\u300D\u7B2C 4 \u4E2A tab\uFF1B\u6D3B\u8DC3\u65F6\u6BB5\u5E76\u5165\u8282\u5F8B\u77E9\u9635\u5361\u5207\u6362\r\n  - \u6708\u62A5\u6D77\u62A5\u4ECE\u5E38\u9A7B\u5361\u7247\u6539\u4E3A\u9875\u811A\u300C\u6708\u62A5\u300D\u6309\u94AE\u5F39\u7A97\uFF0C\u5BFC\u51FA PNG \u4FDD\u7559\r\n\r\n## [0.8.5] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- \u7EDF\u8BA1\u53E3\u5F84\uFF1AAgent \u7ECF API \u5199\u5165\u7684\u5185\u5BB9\u4E0D\u518D\u91CD\u590D\u8BA1\u5165\u4EBA\u7C7B\u5199\u4F5C\u6307\u6807\uFF08\u6765\u6E90\u6807\u8BB0 + \u6291\u5236\u7A97\u53E3\uFF09\uFF0C\u53EA\u8BA1 `aiWordsAdded`\r\n- \u7B14\u8BB0\u5F52\u5C5E\u65E5\u671F\u4F18\u5148\u8BFB frontmatter \u7684 `created` / `date`\uFF0C\u5BFC\u5165\u7684\u65E7\u7B14\u8BB0\u80FD\u5F52\u5230\u6B63\u786E\u7684\u65E5\u5B50\r\n- \u8D21\u732E\u5206\u6309\u53EF\u914D\u6743\u91CD\u8BA1\u7B97\u5E76\u652F\u6301\u5355\u65E5\u5C01\u9876\uFF0C\u63D0\u4F9B\u5168\u91CF\u91CD\u7B97\u4E0E\u5168\u5E93\u5386\u53F2\u91CD\u5EFA\u547D\u4EE4\r\n\r\n### \u65B0\u589E\r\n- \u901F\u8BB0\u652F\u6301\u7F16\u8F91 / \u5220\u9664 / \u5F52\u6863\uFF0C\u5E76\u4E0E\u65E5\u8BB0 Callout \u53CC\u5199\u540C\u6B65\r\n- \u7B14\u8BB0\u5065\u5EB7\u5EA6\u68C0\u67E5\uFF08\u5B64\u513F / \u65AD\u94FE / \u4E45\u672A\u66F4\u65B0\uFF09\uFF0C\u53EF\u4E00\u952E\u8F6C\u4E3A `#to-agent` \u4EFB\u52A1\r\n- \u6570\u636E\u5BFC\u51FA CSV / JSON\uFF0C\u9ED8\u8BA4\u8131\u654F\uFF08\u4E0D\u542B\u901F\u8BB0\u6B63\u6587\u3001\u6587\u4EF6\u8DEF\u5F84\u4E0E\u4EFB\u4F55\u4EE4\u724C\uFF09\uFF0C\u9700\u663E\u5F0F\u52FE\u9009\u624D\u5305\u542B\r\n- \u756A\u8304\u949F\u72B6\u6001\u6301\u4E45\u5316\u4E0E\u4F1A\u8BDD\u65E5\u5FD7\r\n- \u56FE\u8868\u53C2\u7167\u7EBF\uFF08\u5747\u503C / \u76EE\u6807\uFF09\u3001\u540C\u9875\u5237\u65B0\u4FDD\u7559\u6EDA\u52A8\u4F4D\u7F6E\u3001\u6BCF\u9875\u4E3B\u8272\u4E0E\u5361\u7247\u6750\u8D28\u3001\u70ED\u529B\u56FE\u65B9\u5411\u952E\u5BFC\u822A\r\n- \u754C\u9762\u8BED\u8A00\u5207\u6362\uFF08\u8DDF\u968F\u7CFB\u7EDF / \u4E2D\u6587 / English\uFF09\uFF0C\u8986\u76D6\u547D\u4EE4\u3001\u8BBE\u7F6E\u3001\u901F\u8BB0\u3001\u770B\u677F\u4E0E\u5F39\u7A97\r\n- \u7EAF\u51FD\u6570\u5355\u5143\u6D4B\u8BD5\u6846\u67B6\uFF08Node \u5185\u7F6E `node:test` + fake obsidian\uFF0C\u65E0\u65B0\u589E\u4F9D\u8D56\uFF09\uFF1A`npm run test:unit`\uFF0C`npm test` \u4E32\u8054\u5355\u6D4B\u4E0E MCP \u5192\u70DF\r\n\r\n## [0.8.4] - 2026-11-19\r\n\r\n### \u6539\u8FDB\r\n- \u6570\u636E\u4E0D\u8DB3 14 \u5929\u65F6\u6982\u89C8\u4E0E\u8D8B\u52BF\u56FE\u9ED8\u8BA4\u805A\u7126\u6700\u8FD1 14 \u5929\uFF1B\u6298\u7EBF\u52A0\u9762\u79EF\u6E10\u53D8\u3001\u975E\u96F6\u6563\u70B9\u4E0E\u5CF0\u503C\u6C14\u6CE1\r\n- \u5E74\u8F6E\u8865\u5168\u4E09\u5C42\u73AF\u5F62\u5E95\u8F68\u300112 \u6708\u523B\u5EA6\u4E0E\u5E74\u4EFD\u6C34\u5370\uFF0C\u5C04\u7EBF\u8BBE\u6700\u5C0F\u957F\u5EA6\r\n- \u5730\u5E73\u7EBF\u589E\u52A0\u8FDC\u666F\u5C71\u810A\u4E0E\u6C34\u6CE2\u5149\u5F71\r\n- \u4E09\u5F20\u6298\u7EBF\u56FE\u5408\u5E76\u4E3A\u300C\u5199\u4F5C\u4E0E\u65F6\u95F4\u8D8B\u52BF\u300D\u5206\u6BB5\u63A7\u4EF6\uFF0C\u77E5\u8BC6\u5730\u5C42\u52A0\u5438\u9876\u951A\u70B9\u5BFC\u822A\r\n- \u6295\u5165\u53BB\u5411\u6539\u4E3A\u6392\u540D\u8FDB\u5EA6\u6761\uFF08\u663E\u793A\u5B8C\u6574\u8DEF\u5F84\u3001\u5360\u6BD4\u4E0E\u5C55\u5F00\uFF09\r\n- \u8282\u5F8B\u77E9\u9635\u9ED8\u8BA4\u4EC5\u663E\u793A\u6D3B\u8DC3\u65E5\u671F\uFF0C\u7A7A\u884C\u538B\u7F29\u4E3A 4px\r\n- \u4ECA\u5929\u5361\u7247\u52A0\u76EE\u6807\u8FBE\u6210\u7387\u5706\u73AF\uFF0CAgent \u52A8\u6001\u884C\u5C3E\u663E\u793A\u76EE\u6807\u6587\u4EF6\u540D\uFF0C\u53D8\u66F4\u5BA1\u67E5\u52A0\u64CD\u4F5C\u7C7B\u578B\u5FBD\u7AE0\r\n\r\n### \u65B0\u589E\r\n- Agent \u6743\u9650\uFF1A\u7CFB\u7EDF\u76EE\u5F55 `.obsidian/` / `.git/` \u786C\u7F16\u7801\u62E6\u622A\uFF1B\u53EF\u9009\u767D\u540D\u5355\u6A21\u5F0F\u3001\u6309\u64CD\u4F5C\uFF08\u8BFB/\u5EFA/Patch/\u8986\u76D6/\u5220\u9664\uFF09\u5F00\u5173\uFF1B\u4FEE\u6539\u524D\u5FEB\u7167\u5F00\u5173\r\n- `patch_note` \u65B0\u589E `operation`\uFF08append/prepend/replace/update_frontmatter\uFF09\u3001`dryRun` Diff \u9884\u89C8\u3001`expectedMtime` \u4E50\u89C2\u9501\u3001`diffSummary`\u3001`createdHeading`\r\n- `replace_block` \u591A\u5904\u5339\u914D\u8FD4\u56DE `AMBIGUOUS_MATCH`\uFF1B\u6807\u9898\u4E0D\u5B58\u5728\u65F6\u81EA\u52A8\u521B\u5EFA\r\n- \u65B0\u589E MCP \u5DE5\u5177 `list_agent_changes` / `revert_agent_change` \u4E0E\u5BF9\u5E94 HTTP \u63A5\u53E3\uFF0CAgent \u53EF\u81EA\u67E5\u53D8\u66F4\u5E76\u56DE\u6EDA\r\n\r\n## [0.8.3] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- data.json \u81EA\u52A8\u5907\u4EFD\u5230\u5E93\u5185\u666E\u901A\u6587\u4EF6\u5939\uFF08\u9ED8\u8BA4 `sediment-backup/`\uFF09\uFF0C\u6309\u4EFD\u6570\u4FDD\u7559\uFF1B\u65B0\u589E\u300C\u5907\u4EFD\u7EDF\u8BA1\u6570\u636E\u5230\u5E93\u5185\u300D\u547D\u4EE4\r\n- Style Settings \u9002\u914D\uFF1A\u53EF\u53EF\u89C6\u5316\u8C03\u8282\u5361\u7247\u5706\u89D2\u3001\u5185\u8FB9\u8DDD\u3001\u6B63\u6587\u5B57\u53F7\u3001\u70ED\u529B\u56FE\u683C\u5B50\u5C3A\u5BF8\r\n- \u4EE3\u7801\u5757\u5D4C\u5165\uFF1A```sediment-heatmap``` \u4E0E ```sediment-today``` \u53EF\u5199\u8FDB Home.md\r\n- \u70ED\u529B\u56FE\u5BCC Tooltip\uFF08\u5F53\u5929\u7B14\u8BB0\u6807\u9898\u4E0E\u901F\u8BB0\u6458\u8981\uFF09\u3001\u6700\u957F\u8FDE\u7EED\u5929\u6570\u5FBD\u7AE0\r\n- \u901F\u8BB0\u5361\u7247 hover \u64CD\u4F5C\u680F\uFF08\u590D\u5236 / \u5206\u4EAB\u56FE / \u8F6C Agent\uFF09\u3001\u53CC\u51FB\u5165\u53E3\u9884\u7559\r\n- \u901F\u8BB0\u5206\u4EAB\u5361\u4E0E\u300C\u4ECA\u65E5\u6218\u62A5\u300DPNG \u5BFC\u51FA\uFF08\u6781\u7B80 / \u7968\u636E / \u6C34\u58A8\u4E09\u6A21\u677F\uFF09\r\n- Agent \u53D8\u66F4\u5BA1\u67E5\uFF1A\u6700\u8FD1\u53D8\u66F4\u5217\u8868\u3001\u5907\u4EFD Diff \u5E76\u6392\u5BF9\u6BD4\u3001\u4E00\u952E\u6062\u590D\r\n\r\n### \u4FEE\u590D\r\n- \u5F85\u529E\u6807\u9898\u8FC7\u957F\u65F6\u4E0D\u518D\u6491\u7834\u5361\u7247\uFF0C\u6539\u4E3A\u7701\u7565\u53F7\u622A\u65AD\r\n- \u4ECA\u65E5\u9875 bento \u5361\u7247\u7B49\u9AD8\u5BF9\u9F50\uFF1BAgent \u52A8\u6001\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\u6539\u4E3A\u5355\u5217\u4FE1\u606F\u6D41\uFF0C\u4E0D\u518D\u6324\u6210\u591A\u5217\u7A84\u6761\r\n- \u901F\u8BB0\u4FA7\u680F\u6C89\u6DC0\u5217\u8868\u6807\u9898\u5DE6\u5BF9\u9F50\u5E76\u53BB\u6389\u9ED8\u8BA4\u6309\u94AE\u767D\u5E95\u65B9\u5757\uFF0C\u5143\u4FE1\u606F\u66F4\u7D27\u51D1\r\n\r\n## [0.8.2] - 2026-11-19\r\n\r\n### \u6539\u8FDB\r\n- \u7ED3\u6784\u6027\u7F8E\u5316\uFF1A\u4ECA\u65E5\u8109\u51B2\u6539\u4E3A bento \u7F51\u683C\uFF08\u4ECA\u65E5/\u901F\u8BB0/\u5F85\u529E/Agent \u52A8\u6001\u9519\u843D\u6392\u5E03\uFF09\uFF0C\u6A2A\u5E45\u52A0\u5929\u7A7A\u6E10\u53D8\u3001\u4E91\u96FE\u3001\u5149\u6655\u4E0E\u9897\u7C92\u8D28\u611F\uFF0C\u4FA7\u680F\u6807\u7B7E\u4E0E\u8F93\u5165\u533A\u7EDF\u4E00\u4E3A\u80F6\u56CA\u5206\u6BB5\u63A7\u4EF6\u4E0E\u5185\u5D4C\u9762\u677F\uFF0C\u4E3B\u8981\u5361\u7247\u91C7\u7528\u53CC\u5C42\u5185\u5D4C\u8D28\u611F\r\n- \u770B\u677F\u89C6\u89C9\u5347\u7EA7\uFF1A\u7B49\u5BBD\u6570\u5B57\u3001\u66F4\u6E05\u6670\u7684\u6807\u9898\u5C42\u7EA7\u3001\u5217\u8868\u4E24\u680F\u5BF9\u9F50\u4E0E\u60AC\u505C\u53CD\u9988\u3001\u7A7A\u72B6\u6001\u91CD\u505A\u3001\u5361\u7247\u9519\u843D\u5165\u573A\u52A8\u753B\r\n- `#to-agent` \u901F\u8BB0\u8BB0\u4F4F\u539F\u5F85\u529E\u7684 `sourcePath` / `sourceLine`\uFF0C\u901F\u8BB0\u5361\u7247\u548C\u5F85\u529E\u6A21\u5757\u53EF\u4E00\u952E\u8DF3\u56DE\u539F\u590D\u9009\u6846\u5E76\u5B9A\u4F4D\u884C\u53F7\r\n- `add_memo` \u652F\u6301\u4F20\u5165\u6765\u6E90\u8DEF\u5F84\u4E0E\u884C\u53F7\r\n\r\n## [0.8.1] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u5F85\u529E\u6A21\u5757\uFF1A\u626B\u63CF vault \u539F\u751F `- [ ]` \u5F85\u529E\uFF0C\u5206\u4ECA\u65E5 / \u9057\u7559 / Agent \u4E09\u7C7B\u5C55\u793A\r\n- MCP \u5DE5\u5177 `list_tasks` / `complete_task` / `delegate_task` / `snapshot_tasks`\uFF0831 \u4E2A\u5DE5\u5177\uFF09\r\n- \u547D\u4EE4\u300C\u8BB0\u5F55\u4ECA\u65E5\u9057\u7559\u5F85\u529E\u5230\u65E5\u8BB0\u300D\uFF0C\u6309\u9700\u5199\u5165\uFF0C\u4E0D\u9ED8\u8BA4\u6539\u7B14\u8BB0\r\n\r\n### \u6539\u8FDB\r\n- \u6C89\u6DC0\u5217\u8868\u89C6\u89C9\uFF1A\u53BB\u6389\u6807\u9898\u65E5\u671F\u524D\u7F00\u3001\u5206\u7C7B\u5FBD\u7AE0\u4E0E\u8BA1\u6570\u3001\u76EE\u5F55/\u6807\u7B7E\u5143\u4FE1\u606F\u3001\u60AC\u505C\u9AD8\u4EAE\r\n\r\n## [0.8.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u672C\u5730\u8BED\u4E49\u641C\u7D22 `semantic_search`\uFF1ATF-IDF \u5411\u91CF + \u4E2D\u6587\u53CC\u5B57\u5207\u5206 + \u8F7B\u91CF\u540C\u4E49\u8BCD\u6269\u5C55\uFF0C\u6309\u610F\u4E49\u68C0\u7D22\u7B14\u8BB0\uFF0C\u4E0D\u8054\u7F51\u3001\u4E0D\u4E0B\u8F7D\u6A21\u578B\r\n- \u7D22\u5F15\u5E38\u9A7B\u5185\u5B58\uFF0Cvault \u53D8\u5316\u65F6\u81EA\u52A8\u5931\u6548\u91CD\u5EFA\uFF0C\u5E76\u9075\u5B88\u6587\u4EF6\u5939/\u6807\u7B7E\u9ED1\u540D\u5355\r\n- AGENTS.md \u5DE5\u4F5C\u6D41\u8865\u5145\u8BED\u4E49\u63A2\u7D22\u6B65\u9AA4\r\n\r\n## [0.7.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u8BBE\u7F6E\u9875\u300C\u4E00\u952E\u914D\u7F6E\u667A\u80FD\u4F53\u5BA2\u6237\u7AEF\u300D\uFF1A\u81EA\u52A8\u63A2\u6D4B OpenCode / Qoder / Claude Desktop / Cursor / Cline / Gemini CLI / Windsurf \u7B49\u914D\u7F6E\u6587\u4EF6\r\n- \u9009\u62E9\u5BA2\u6237\u7AEF\u540E\u4E00\u952E\u5199\u5165 MCP \u914D\u7F6E\uFF08\u81EA\u52A8\u5907\u4EFD\u539F\u6587\u4EF6\u3001\u4FDD\u7559\u5DF2\u6709\u914D\u7F6E\u3001\u590D\u7528\u5DF2\u5B58\u5728\u7684\u6865\u63A5\u8DEF\u5F84\uFF09\r\n- \u300C\u590D\u5236\u914D\u7F6E JSON\u300D\u6309\u94AE\uFF0C\u4FBF\u4E8E\u624B\u52A8\u7C98\u8D34\r\n\r\n## [0.6.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- P2 UI\uFF1A\u4E09\u6BB5\u5F0F\u4E3B\u770B\u677F\uFF08\u4ECA\u65E5\u8109\u51B2 / \u77E5\u8BC6\u5730\u5C42 / \u667A\u80FD\u4F53\u5DE5\u574A\uFF09\uFF0C\u77E5\u8BC6\u590D\u76D8\u79FB\u5165\u77E5\u8BC6\u5730\u5C42\r\n- \u667A\u80FD\u4F53\u5DE5\u574A\uFF1A\u8FDE\u63A5\u4E0E\u8C03\u7528\u72B6\u6001\u3001AI \u8349\u7A3F\u5BA1\u6838\u6D41\uFF08\u91C7\u7EB3 / \u5408\u5E76\u5230\u5173\u8054\u7B14\u8BB0 / \u9A73\u56DE\u5220\u9664\uFF09\u3001\u5DE5\u4F5C\u65E5\u5FD7\u5217\u8868\r\n- \u4EBA\u673A\u53CC\u8272\u70ED\u529B\u56FE\uFF1A\u6309 `aiWordsAdded` \u5360\u6BD4\u7528\u6E10\u53D8\u533A\u5206\u4EBA\u7C7B\u7F16\u8F91\u4E0E AI \u6C89\u6DC0\r\n- \u4ECA\u65E5\u8109\u51B2\u9875\u65B0\u589E\u5FEB\u901F\u901F\u8BB0\u6846\u4E0E\u300C\u4ECA\u65E5 Agent \u52A8\u6001\u300D\r\n- \u901F\u8BB0\u4FA7\u680F\u65B0\u589E\u300C\u4E0E\u5F53\u524D\u7B14\u8BB0\u76F8\u5173\u300D\u533A\u5757\uFF0C\u968F\u6253\u5F00\u7684\u6587\u4EF6\u81EA\u52A8\u66F4\u65B0\r\n\r\n## [0.5.1] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- `get_active_context` \u5728\u4E3B\u533A\u6253\u5F00\u770B\u677F/\u56FE\u8C31\u65F6\u56DE\u9000\u5230\u6700\u8FD1\u4E00\u4E2A Markdown \u6807\u7B7E\u9875\uFF0C\u4E0D\u518D\u8FD4\u56DE\u7A7A\u7ED3\u679C\r\n\r\n## [0.5.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- P1 \u7CBE\u51C6\u5199\u5165\uFF1A`patch_note`\uFF08\u6309\u6807\u9898/\u6587\u672C\u7247\u6BB5\u5C40\u90E8\u4FEE\u6539\u3001`vault.process` \u539F\u5B50\u5199\u5165\u3001\u5199\u524D\u81EA\u52A8\u5907\u4EFD\u3001`ifMatch` \u7248\u672C\u6821\u9A8C\uFF09\u4E0E `update_frontmatter`\r\n- `#to-agent` \u4EFB\u52A1\u95ED\u73AF\uFF1A`get_daily_context` \u8FD4\u56DE `agentTasks`\uFF0C\u65B0\u589E `claim_agent_task` / `complete_agent_task`\uFF0C\u72B6\u6001\u4ECE `#to-agent` \u2192 `#agent-in-progress` \u2192 `#agent-done`\r\n- \u5728 vault \u6839\u76EE\u5F55\u5199\u5165 `AGENTS.md` \u4E09\u9636\u6BB5\u534F\u4F5C\u534F\u8BAE\uFF08\u5F00\u5DE5\u5BF9\u9F50 / \u7CBE\u51C6\u8BFB\u5199 / \u6536\u5DE5\u6C89\u6DC0\uFF09\r\n- MCP \u5DE5\u5177\u589E\u81F3 26 \u4E2A\r\n\r\n## [0.4.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- P0 \u5DE5\u5177\u5C42\uFF1A`get_active_context`\uFF08\u5F53\u524D\u7B14\u8BB0/\u9009\u4E2D\u6587\u672C/\u5149\u6807\u6BB5\u843D\uFF09\u3001`get_note_metadata`\uFF08\u53EA\u8BFB\u5143\u6570\u636E\u7701 Token\uFF09\u3001`get_graph_neighbors`\uFF08\u51FA\u94FE/\u53CD\u94FE/\u540C\u6807\u7B7E\uFF09\u3001`get_tool_activity`\uFF08\u8C03\u7528\u7EDF\u8BA1\uFF09\r\n- \u65B0\u589E\u6587\u4EF6\u5939/\u6807\u7B7E\u9ED1\u540D\u5355\uFF0CAgent \u7684\u8BFB\u5199\u4E0E\u641C\u7D22\u5168\u90E8\u53D7\u63A7\r\n- Agent \u5199\u5165\u7684\u5185\u5BB9\u5355\u72EC\u8BA1\u5165 `aiWordsAdded`\uFF0C\u4E3A\u540E\u7EED\u4EBA\u673A\u53CC\u8272\u70ED\u529B\u56FE\u6253\u57FA\u7840\r\n- MCP/HTTP \u8C03\u7528\u5BA1\u8BA1\u65E5\u5FD7\uFF08\u9650 500 \u6761\uFF09\uFF0C\u5E76\u8BB0\u5F55\u5BA2\u6237\u7AEF\u540D `AGENT_NAME`\r\n- AI \u6C89\u6DC0\u7B14\u8BB0\u9ED8\u8BA4\u5E26 `sediment_status: draft`\r\n\r\n## [0.3.4] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u589E\u91CF\u53D8\u66F4\u8BB0\u5F55\uFF1A\u65B0\u589E `CHANGELOG.md`\uFF0C\u6309\u7248\u672C\u5206\u7EC4\u8BB0\u5F55\u65B0\u589E / \u53D8\u66F4 / \u4FEE\u590D\r\n- \u6784\u5EFA\u65F6\u81EA\u52A8\u540C\u6B65\u5230\u63D2\u4EF6\u5185\uFF0C\u770B\u677F\u9875\u811A\u300C\u66F4\u65B0\u8BB0\u5F55\u300D\u548C\u547D\u4EE4\u300C\u67E5\u770B\u66F4\u65B0\u8BB0\u5F55\u300D\u53EF\u968F\u65F6\u67E5\u770B\r\n- \u5347\u7EA7\u540E\u81EA\u52A8\u63D0\u793A\u65B0\u7248\u672C\u53F7\r\n- GitHub Release \u6B63\u6587\u4ECE\u5BF9\u5E94\u7248\u672C\u7684 CHANGELOG \u7AE0\u8282\u81EA\u52A8\u751F\u6210\uFF0C\u53D1\u5E03\u9875\u4E0E\u63D2\u4EF6\u5185\u8BF4\u660E\u4E00\u81F4\r\n\r\n## [0.3.3] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- Agent \u901A\u8FC7 MCP \u5199\u5165\u7B14\u8BB0\u540E\uFF0C\u770B\u677F\u4E0E\u901F\u8BB0\u9762\u677F 400ms \u5185\u81EA\u52A8\u5237\u65B0\uFF0C\u4E14\u4E0D\u6E05\u7A7A\u6B63\u5728\u8F93\u5165\u7684\u6587\u5B57\r\n- \u76D1\u542C create / modify / delete / rename \u4E8B\u4EF6\uFF0C\u8986\u76D6\u77E5\u8BC6\u5E93\u3001\u5DE5\u4F5C\u65E5\u5FD7\u4E0E\u65E5\u8BB0\u76EE\u5F55\r\n\r\n## [0.3.2] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- \u901F\u8BB0\u9762\u677F\u300C\u5168\u90E8\u300D\u9875\u7B7E\u4E0B\u7684\u6C89\u6DC0\u5217\u8868\u6539\u4E3A\u663E\u793A\u5168\u90E8\u7B14\u8BB0\uFF0C\u4E0D\u518D\u53EA\u663E\u793A 5 \u6761\r\n\r\n## [0.3.1] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u901F\u8BB0\u9762\u677F\u300C\u5168\u90E8\u300D\u9875\u7B7E\u4E0B\u65B9\u76F4\u63A5\u663E\u793A\u300C\u77E5\u8BC6\u6C89\u6DC0\u300D\u5C0F\u533A\u5757\uFF0C\u4E0D\u7528\u5207\u9875\u7B7E\u5373\u53EF\u770B\u5230\uFF0C\u5E26\u300C\u5168\u90E8\u300D\u8DF3\u8F6C\u6309\u94AE\r\n\r\n## [0.3.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u6C89\u6DC0\u9875\u7B7E\u6309\u5206\u7C7B\u5206\u7EC4\u663E\u793A\uFF08\u6280\u672F / \u65B9\u6CD5 / \u5DE5\u4F5C\u65E5\u5FD7\uFF09\r\n- \u667A\u80FD\u5206\u7C7B\uFF1AAgent \u4E0D\u4F20 category \u65F6\u6839\u636E\u6807\u9898\u3001\u6807\u7B7E\u3001\u6B63\u6587\u5173\u952E\u8BCD\u81EA\u52A8\u63A8\u65AD\uFF1B\u4E5F\u53EF\u4F20\u4EFB\u610F\u81EA\u5B9A\u4E49\u5206\u7C7B\u540D\r\n- \u65B0\u589E MCP \u5DE5\u5177 `list_categories`\r\n\r\n## [0.2.9] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u77E5\u8BC6\u5E93\u5206\u7C7B\uFF1A\u9ED8\u8BA4\u300C\u6280\u672F / \u9879\u76EE / \u65B9\u6CD5 / \u7075\u611F / \u590D\u76D8\u300D\uFF0C\u6C89\u6DC0\u65F6\u6309\u5206\u7C7B\u5EFA\u5B50\u76EE\u5F55\r\n- \u77E5\u8BC6\u7B14\u8BB0\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\u7684\u7248\u5F0F\u7F8E\u5316\uFF1Afrontmatter\u3001\u901F\u89C8 Callout\u3001\u6B63\u6587\u3001\u5173\u8054\u6765\u6E90\u3001\u6C89\u6DC0\u4FE1\u606F\r\n- \u5DF2\u6709 7 \u7BC7\u7B14\u8BB0\u6309\u5206\u7C7B\u91CD\u65B0\u6392\u7248\u5F52\u4F4D\r\n\r\n## [0.2.8] - 2026-11-19\r\n\r\n### \u53D8\u66F4\r\n- \u300C\u77E5\u8BC6\u6C89\u6DC0\u300D\u4ECE\u770B\u677F\u5E95\u90E8\u79FB\u5230\u901F\u8BB0\u9762\u677F\uFF0C\u4F5C\u4E3A\u7B2C\u4E94\u4E2A\u9875\u7B7E\r\n\r\n## [0.2.7] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u770B\u677F\u5E95\u90E8\u5217\u51FA Agent \u5199\u5165\u7684\u77E5\u8BC6\u7B14\u8BB0\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\uFF0C\u53EF\u70B9\u51FB\u6253\u5F00\r\n\r\n## [0.2.6] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- Obsidian \u91CD\u542F\u65F6\u4E3A\u5DF2\u6709\u6587\u4EF6\u8865\u53D1 create \u4E8B\u4EF6\uFF0C\u65E7\u7248\u4F1A\u8BEF\u7B97\u6210\u65B0\u5EFA\u7B14\u8BB0\uFF0822 \u7BC7 / 5512 \u5B57 / 121 \u5206\uFF09\r\n\r\n## [0.2.5] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- MCP \u6865\u63A5\u7684 GET \u5DE5\u5177\u53C2\u6570\u672A\u62FC\u8FDB URL\uFF0C\u5BFC\u81F4\u641C\u7D22\u65E0\u7ED3\u679C\u3001\u8BFB\u7B14\u8BB0\u62A5\u300C\u8DEF\u5F84\u4E0D\u80FD\u4E3A\u7A7A\u300D\r\n\r\n## [0.2.4] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- MCP \u6865\u63A5\u5728 Node 16 \u4E0B\u62A5 `fetch is not defined`\uFF0C\u6539\u7528 node:http\r\n\r\n## [0.2.3] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u5185\u7F6E\u756A\u8304\u949F\uFF0825/5/15 \u5206\u949F\uFF09\uFF0C\u72B6\u6001\u680F\u5012\u8BA1\u65F6\uFF0C\u5B8C\u6210\u8BB0\u5165 focusMinutes\uFF0CAgent \u4E5F\u53EF\u901A\u8FC7 MCP \u63A7\u5236\r\n- \u65B0\u589E `get_pomodoro` / `control_pomodoro`\r\n\r\n### \u4FEE\u590D\r\n- \u5730\u5E73\u7EBF\u91CD\u505A\u4E3A\u5C71\u810A + \u6E56\u9762\u5012\u5F71 + \u65E5\u6708 + \u5B63\u8282\u6811 + \u4E13\u6CE8\u65F6\u5E06\u8239\r\n- \u9875\u811A\u7248\u672C\u53F7\u6539\u4E3A\u52A8\u6001\u8BFB\u53D6 manifest\r\n\r\n## [0.2.2] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- \u77E5\u8BC6\u590D\u76D8\u4ECE\u539F\u59CB Markdown \u6539\u4E3A\u6E32\u67D3\u9884\u89C8\uFF0C\u5E76\u52A0\u590D\u5236\u6309\u94AE\r\n\r\n## [0.2.1] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u901F\u8BB0\uFF1A\u7C98\u8D34\u56FE\u7247\u81EA\u52A8\u5165\u5E93\u3001\u6BCF\u65E5\u56DE\u987E\uFF08\u53BB\u5E74\u4ECA\u65E5 / \u4E0A\u6708\u4ECA\u65E5\uFF09\u3001\u672C\u5730\u76F8\u4F3C\u5EA6\u6F2B\u6B65\u3001\u6807\u7B7E\u6811\r\n\r\n## [0.2.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u6570\u636E\u5206\u6790\u9875\uFF1A\u5199\u4F5C\u67F1\u72B6\u56FE\u3001\u5199\u4F5C\u53D8\u5316\u6298\u7EBF\u3001\u65F6\u95F4\u6295\u5165\u3001\u5199\u4F5C\u6765\u6E90\u3001\u6295\u5165\u53BB\u5411\u3001\u6D3B\u8DC3\u65F6\u6BB5\u3001\u6295\u5165\u8282\u5F8B\u77E9\u9635\r\n- \u5E74\u5EA6\u753B\u50CF\uFF1A\u5E74\u8F6E\u3001\u77E5\u8BC6\u6307\u7EB9\u3001\u6708\u76F8\u65E5\u5386\u3001\u77E5\u8BC6\u5730\u5C42\u3001\u6708\u62A5\u6D77\u62A5 PNG \u5BFC\u51FA\r\n- \u4E09\u79CD\u753B\u98CE\uFF08\u50CF\u7D20\u6E56\u9762 / \u6C34\u58A8\u5C71\u6C34 / \u50CF\u7D20\u57CE\u5E02\uFF09\u4E0E\u968F\u65F6\u6BB5\u79FB\u52A8\u7684\u65E5\u6708\u6A2A\u5E45\r\n\r\n## [0.1.3] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- \u65E7\u7248\u6B8B\u7559\u5728\u4FA7\u680F\u7684\u770B\u677F\u6807\u7B7E\u88AB\u590D\u7528\u5BFC\u81F4\u4E00\u76F4\u7A84\u5C4F\uFF0C\u6539\u4E3A\u5F3A\u5236\u5728\u4E3B\u533A\u65B0\u5F00\u6807\u7B7E\u9875\r\n\r\n## [0.1.2] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u5B8C\u6574\u4E3B\u89C6\u56FE\uFF1A\u901A\u680F\u6A2A\u5E45\u3001\u4ECA\u5929\u5361\u7247\u3001\u6982\u89C8\u5361 + SVG \u8D8B\u52BF\u300153 \u5468\u70ED\u529B\u56FE\u3001\u5730\u5E73\u7EBF\u3001\u56DB\u4E2A\u9875\u7B7E\r\n\r\n## [0.1.1] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- \u770B\u677F\u6539\u5230\u4E3B\u7F16\u8F91\u533A\u6253\u5F00\uFF0C\u901F\u8BB0\u7559\u5728\u53F3\u4FA7\u680F\r\n\r\n## [0.1.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u9996\u4E2A\u7248\u672C\uFF1A\u70ED\u529B\u56FE\u770B\u677F\u3001\u5199\u4F5C\u7EDF\u8BA1\u3001flomo \u5F0F\u901F\u8BB0\u3001\u5468\u590D\u76D8\r\n- \u672C\u5730 HTTP API + MCP \u6865\u63A5\uFF0CAgent \u53EF\u8BFB\u5199\u77E5\u8BC6\u5E93\r\n- \u5DE5\u4F5C\u65E5\u5FD7\u4E0E\u77E5\u8BC6\u7B14\u8BB0\u6C89\u6DC0\uFF0CAgent \u4EA7\u51FA\u8BA1\u5165\u7EDF\u8BA1\r\n";
+var CHANGELOG = "# \u66F4\u65B0\u8BB0\u5F55\n\n\u672C\u6587\u4EF6\u8BB0\u5F55\u6BCF\u4E2A\u7248\u672C\u7684\u589E\u91CF\u53D8\u5316\uFF0C\u683C\u5F0F\u9075\u5FAA [Keep a Changelog](https://keepachangelog.com/)\u3002\u6784\u5EFA\u65F6\u7531 `scripts/sync-changelog.mjs` \u540C\u6B65\u5230\u63D2\u4EF6\u5185\uFF0C\u53EF\u5728\u770B\u677F\u9875\u811A\u7684\u300C\u66F4\u65B0\u8BB0\u5F55\u300D\u91CC\u67E5\u770B\u3002\n\n## [1.0.7] - 2026-11-21\n\n### \u4E0A\u67B6\u53CD\u9988\n- \u4E3B `README.md` \u6539\u4E3A\u7EAF\u82F1\u6587\u6587\u6863\uFF0C\u5B8C\u6574\u4E2D\u6587\u8BF4\u660E\u79FB\u5230 `README.zh-CN.md`\uFF0C\u4E24\u4EFD\u6587\u4EF6\u9876\u90E8\u4E92\u94FE\uFF1B\u4FEE\u590D\u81EA\u52A8\u5BA1\u6838\u300CREADME \u4E0D\u542B\u82F1\u6587\u300D\u7684\u8BEF\u5224\u3002\n- \u7248\u672C\u5FBD\u7AE0\u540C\u6B65\u4E0E\u53D1\u5E03\u6821\u9A8C\u540C\u65F6\u8986\u76D6\u4E24\u4EFD README\uFF0C\u5355\u6D4B\u65B0\u589E\u300C\u4E3B README \u4E0D\u5F97\u542B\u4E2D\u6587\u5B57\u9762\u91CF\u300D\u65AD\u8A00\u3002\n\n### \u5BA1\u6838\u6574\u6539\n- \u79FB\u9664\u5168\u90E8 `innerHTML` / `insertAdjacentHTML` \u5199\u5165\uFF1A\u56FE\u8868\u3001\u6A2A\u5E45\u3001\u70ED\u529B\u56FE\u4E0E\u63D0\u793A\u6539\u7528 `createEl`/`createDiv` \u4E0E\u53D7\u4FE1\u4EFB SVG \u63D2\u5165\u51FD\u6570\u3002\n- \u7528 Obsidian \u539F\u751F\u786E\u8BA4\u5F39\u7A97\u66FF\u6362\u5168\u90E8 `window.confirm`\uFF0C\u53D6\u6D88\u65F6\u6062\u590D\u6309\u94AE\u4E0E\u4E0B\u62C9\u6846\u72B6\u6001\u3002\n- \u79FB\u9664 `require()` \u52A8\u6001\u52A0\u8F7D\uFF1A`fs`/`os`/`http`/`crypto` \u6539\u4E3A\u9759\u6001\u5BFC\u5165\uFF0C\u5220\u9664 `builtin-modules` \u4F9D\u8D56\u5E76\u663E\u5F0F\u58F0\u660E Node \u5916\u90E8\u6A21\u5757\u3002\n- \u4E0D\u518D\u786C\u7F16\u7801 `.obsidian`\uFF1A\u6062\u590D\u526F\u672C\u3001\u5907\u4EFD\u76EE\u5F55\u4E0E Agent \u8DEF\u5F84\u4FDD\u62A4\u7EDF\u4E00\u4F7F\u7528 `Vault#configDir`\u3002\n- \u5220\u9664\u6587\u4EF6\u6539\u7528 `FileManager.trashFile()`\uFF0C\u901F\u8BB0\u8349\u7A3F\u6539\u7528 `App#loadLocalStorage`/`saveLocalStorage`\uFF0C\u5185\u8054\u6837\u5F0F\u6539\u7528 `setCssStyles()`\u3002\n- \u8BBE\u7F6E\u9875\u6807\u9898\u6539\u7528 `Setting#setHeading()`\uFF0C\u6E05\u7406\u672A\u4F7F\u7528\u53D8\u91CF\u3001\u5197\u4F59\u65AD\u8A00\u4E0E\u6B63\u5219\u8F6C\u4E49\u3002\n- \u6E05\u7406 CSS \u5BA1\u6838\u8B66\u544A\uFF1A\u79FB\u9664\u91CD\u590D\u7684 `background` \u56DE\u9000\u3001\u53BB\u6389\u5168\u90E8 `!important`\uFF08\u6539\u4E3A\u66F4\u5177\u4F53\u7684\u6309\u94AE\u9009\u62E9\u5668\uFF09\u3001\u79FB\u9664\u90E8\u5206\u652F\u6301\u7684 `text-decoration-color`\uFF1B\u70ED\u529B\u56FE\u6708\u4EFD\u8F68\u9053\u6539\u7528\u683C\u5B50\u5C3A\u5BF8\u53D8\u91CF\uFF0C\u8C03\u6574\u683C\u5B50\u5927\u5C0F\u65F6\u6807\u7B7E\u4ECD\u5BF9\u9F50\u3002\n- `minAppVersion` \u63D0\u5347\u5230 `1.8.7`\uFF0C\u4E0E\u4E0A\u8FF0 API \u7684\u6700\u4F4E\u7248\u672C\u8981\u6C42\u5BF9\u9F50\u3002\n\n## [1.0.6] - 2026-11-21\n\n### \u4E0A\u67B6\u53CD\u9988\n- \u79FB\u9664 OpenCode \u7248\u672C\u547D\u4EE4\u63A2\u6D4B\uFF1A\u63D2\u4EF6\u4E0D\u518D\u8C03\u7528\u5B50\u8FDB\u7A0B\u6A21\u5757\uFF1B\u65B0\u914D\u7F6E\u7EDF\u4E00\u6309 OpenCode v2 \u5E03\u5C40\u5199\u5165\uFF0C\u5DF2\u6709\u914D\u7F6E\u4ECD\u6309\u5F62\u72B6\u5224\u5B9A v1/v2\u3002\n- README \u660E\u786E Node `fs` \u7684\u7528\u9014\u8FB9\u754C\uFF08MCP \u5BA2\u6237\u7AEF\u914D\u7F6E\u3001\u63D2\u4EF6\u5185\u6865\u63A5\u811A\u672C\u3001\u5FEB\u7167\u76EE\u5F55\uFF09\uFF0C\u5E76\u58F0\u660E\u4E0D\u6267\u884C shell \u547D\u4EE4\u3002\n\n## [1.0.5] - 2026-11-21\n\n### \u4E0A\u67B6\u53CD\u9988\n- Release \u8D44\u4EA7\u53EA\u4FDD\u7559 Obsidian \u4F1A\u4E0B\u8F7D\u7684 `main.js`\u3001`manifest.json`\u3001`styles.css`\uFF1B\u4E0D\u518D\u4E0A\u4F20 `mcp-server/index.mjs` \u4E0E\u6574\u5305 zip\u3002\n- \u53D1\u5E03\u5DE5\u4F5C\u6D41\u4E3A\u4E09\u4E2A\u8D44\u4EA7\u751F\u6210 GitHub build provenance attestations\uFF08`actions/attest@v4`\uFF09\u3002\n- README \u624B\u52A8\u5B89\u88C5\u6539\u4E3A\u4E0B\u8F7D\u4E09\u4E2A\u6587\u4EF6\uFF1BAgent \u6865\u63A5\u811A\u672C\u4ECD\u7531\u63D2\u4EF6\u5728\u914D\u7F6E\u65F6\u5199\u5165\u3002\n\n## [1.0.4] - 2026-11-21\n\n### \u4E0A\u67B6\u51C6\u5907\n- `manifest.json` \u6807\u8BB0 `isDesktopOnly: true`\uFF1A\u4E00\u952E\u914D\u7F6E\u3001\u5FEB\u7167\u4E0E\u5378\u8F7D\u4F9D\u8D56 Node \u6587\u4EF6\u7CFB\u7EDF\u4E0E\u5B50\u8FDB\u7A0B\uFF0C\u79FB\u52A8\u7AEF\u4E0D\u518D\u5B89\u88C5\u3002\n- README \u8865\u5145\u7F51\u7EDC\u4F7F\u7528\u4E0E\u5E93\u5916\u6587\u4EF6\u8BBF\u95EE\u62AB\u9732\uFF1A\u672C\u5730 Agent API \u4EC5\u76D1\u542C `127.0.0.1`\u3001Ollama \u8D70\u672C\u673A\u56DE\u73AF\u5E76\u53EF\u56DE\u9000\u3001\u5BA2\u6237\u7AEF\u914D\u7F6E\u8BFB\u5199\u4F4D\u4E8E\u7528\u6237\u4E3B\u76EE\u5F55/APPDATA\u3001\u65E0\u9065\u6D4B\u4E0E\u4E91\u4E0A\u4F20\u3002\n- \u53D1\u5E03\u6807\u7B7E\u6539\u7528\u4E0D\u5E26 `v` \u524D\u7F00\u7684\u7248\u672C\u53F7\uFF0C\u6EE1\u8DB3\u793E\u533A\u76EE\u5F55\u7684 Release \u7248\u672C\u5339\u914D\uFF1B\u53D1\u5E03\u5DE5\u4F5C\u6D41\u540C\u65F6\u63A5\u53D7 `v*` \u4E0E\u6570\u5B57\u5F00\u5934\u6807\u7B7E\u3002\n\n## [1.0.3] - 2026-11-21\n\n### \u4FEE\u590D\n- \u300C\u4E00\u952E\u8FC1\u79FB\u300D\u5728\u76EE\u6807 `Sediment/` \u5C1A\u672A\u521B\u5EFA\u65F6\u5931\u8D25\uFF1AObsidian \u7684 rename \u4E0D\u4F1A\u81EA\u52A8\u521B\u5EFA\u76EE\u6807\u76EE\u5F55\uFF0C\u73B0\u5728\u79FB\u52A8\u524D\u9010\u7EA7\u8865\u5EFA\u76EE\u6807\u76EE\u5F55\uFF08\u542B\u5D4C\u5957\u5B50\u76EE\u5F55\uFF09\u3002\n- \u5FEB\u901F\u91CD\u5F00 Obsidian \u65F6\u756A\u8304\u949F\u88AB\u8BEF\u5224\u4E3A\u300C\u53E6\u4E00\u5B9E\u4F8B\u6B63\u5728\u4F7F\u7528\u300D\u800C\u7981\u7528\uFF1A\u6B63\u5E38\u5173\u7A97/\u91CD\u8F7D\u4F1A\u5199\u540C\u6B65\u91CA\u653E\u6807\u8BB0\uFF0C\u4E0B\u6B21\u542F\u52A8\u7ACB\u5373\u63A5\u7BA1\uFF1B\u771F\u6B63\u591A\u5F00\u4E0E\u5D29\u6E83\u6B8B\u7559\u4ECD\u7531\u5FC3\u8DF3\u7A97\u53E3\u4FDD\u62A4\u3002\n\n## [1.0.2] - 2026-11-21\n\n### \u65B0\u589E\n- \u5F85\u5BA1\u5199\u5165\u5931\u6548\u68C0\u6D4B\uFF1A\u76EE\u6807\u88AB\u5220\u9664/\u79FB\u52A8\u540E\u6807\u8BB0 stale\uFF08\u542F\u52A8\u5BF9\u8D26 + \u5220\u9664/\u91CD\u547D\u540D\u5373\u65F6\u6807\u8BB0 + \u91C7\u7EB3\u524D\u590D\u9A8C\uFF09\uFF0C\u5931\u6548\u9879\u53EA\u5141\u8BB8\u9A73\u56DE\u540E\u7531 Agent \u91CD\u53D1\u3002\n- \u770B\u677F\u300C\u77E5\u8BC6\u5E93\u73B0\u72B6\u300D\u5361\uFF1A\u5B9E\u65F6\u626B\u63CF\u77E5\u8BC6\u5E93\u603B\u91CF\u3001\u5F85\u5BA1\u8349\u7A3F\u3001\u5DF2\u91C7\u7EB3\u3001\u6765\u6E90\u672A\u767B\u8BB0\uFF0C\u4E0E\u5386\u53F2\u6D3B\u52A8\u7EDF\u8BA1\u53E3\u5F84\u4E92\u8865\u3002\n- Agent \u5728\u77E5\u8BC6\u5E93\u76EE\u5F55\u65B0\u5EFA\u7B14\u8BB0\u81EA\u52A8\u767B\u8BB0 `source: agent` \u7B49\u6765\u6E90\u5C5E\u6027\uFF1B\u5DE5\u574A\u65B0\u589E\u300C\u6765\u6E90\u672A\u767B\u8BB0\u300D\u5361\uFF0C\u53EF\u4E00\u952E\u6807\u8BB0\u4E3A\u4EBA\u5DE5\u6765\u6E90\u3002\n- \u7B14\u8BB0\u5065\u5EB7\u5EA6\u6269\u4E3A\u516D\u9879\uFF1A\u65B0\u589E\u8349\u7A3F\u6EDE\u7559\uFF0814 \u5929\uFF09\u3001\u7591\u4F3C\u91CD\u590D\u6807\u9898\u3001\u7A7A\u58F3\u7B14\u8BB0\u3002\n- \u5468\u590D\u76D8\u3001\u77E5\u8BC6\u7B14\u8BB0\u3001\u5DE5\u4F5C\u65E5\u5FD7\u3001\u5065\u5EB7\u4EFB\u52A1\u4E0E\u68C0\u7D22\u6807\u9898\u652F\u6301\u82F1\u6587\u8F93\u51FA\u3002\n- \u53EF\u9009 Ollama embedding \u8BED\u4E49\u68C0\u7D22\uFF08\u9ED8\u8BA4\u5173\u95ED\uFF0C\u4E0D\u53EF\u7528\u81EA\u52A8\u56DE\u9000 TF-IDF\uFF09\uFF1B\u8BBE\u7F6E\u65B0\u589E\u300C\u68C0\u7D22\u589E\u5F3A\u300D\u5206\u533A\u3002\n- \u793E\u533A\u5E02\u573A\u63D0\u4EA4\u6E05\u5355\u6539\u4E3A\u672C\u5730\u7EF4\u62A4\uFF08\u4E0D\u5165\u5E93\uFF09\uFF0Cmanifest \u63CF\u8FF0\u6539\u82F1\u6587\u3002\n- \u6587\u4EF6\u6865\uFF08\u5B9E\u9A8C\uFF0C\u9ED8\u8BA4\u5173\u95ED\uFF09\uFF1A\u975E MCP \u667A\u80FD\u4F53\u53EF\u628A `write_note` / `patch_note` / `add_knowledge` \u63D0\u6848\u5199\u5165\u63D2\u4EF6\u76EE\u5F55 `bridge/proposals/`\uFF0C\u5BFC\u5165\u5DE5\u574A\u5F85\u5BA1\u961F\u5217\uFF1B\u91C7\u7EB3/\u9A73\u56DE\u7ED3\u679C\u5199\u5165 `bridge/decisions/` \u4F9B\u667A\u80FD\u4F53\u8F6E\u8BE2\u3002\u73B0\u6709 MCP \u901A\u9053\u4E0E\u5DE5\u5177\u4E0D\u53D8\u3002\n\n### \u6539\u8FDB\n- \u7EDF\u8BA1\u53E3\u5F84\u533A\u7684 5 \u9879\u6743\u91CD\u6536\u8FDB\u300C\u9AD8\u7EA7\u6743\u91CD\u300D\u6298\u53E0\u533A\uFF0C\u5C01\u9876\u4E24\u9879\u4FDD\u6301\u53EF\u89C1\u3002\n- \u4E94\u9879\u9ED8\u8BA4\u76EE\u5F55\u7EDF\u4E00\u6536\u8FDB `Sediment/`\uFF08\u65E5\u8BB0\u3001\u590D\u76D8\u3001Agent \u65E5\u5FD7\u3001\u77E5\u8BC6\u6C89\u6DC0\u3001\u5907\u4EFD\uFF09\uFF0C\u907F\u514D\u4E0E\u5E93\u5185\u65E2\u6709\u76EE\u5F55\u649E\u540D\uFF1B\u8BBE\u7F6E\u9875\u65B0\u589E\u300C\u65E7\u7248\u76EE\u5F55\u8FC1\u79FB\u300D\u6309\u94AE\uFF0C\u6309\u6587\u4EF6\u9010\u4E2A\u79FB\u52A8\u5E76\u4FDD\u7559 Obsidian \u94FE\u63A5\uFF0C\u51B2\u7A81\u76EE\u5F55\u6574\u4F53\u8DF3\u8FC7\u3001\u5931\u8D25\u81EA\u52A8\u56DE\u6EDA\uFF0C\u4EC5\u8FC1\u79FB\u4ECD\u662F\u65E7\u9ED8\u8BA4\u503C\u7684\u76EE\u5F55\u3002\n\n## [1.0.1] - 2026-11-20\n\n### \u6539\u8FDB\n- \u53D1\u5E03\u6D41\u6C34\u7EBF\u5347\u7EA7 Node 24 \u8FD0\u884C\u65F6\uFF1Acheckout v7\u3001setup-node v7\u3001action-gh-release v3\uFF08v3 \u4EC5\u8FD0\u884C\u65F6\u8FC1\u79FB\uFF0C\u8F93\u5165\u4E0D\u53D8\uFF09\uFF0C\u6D88\u9664 GitHub Actions Node 20 \u5F03\u7528\u8B66\u544A\n- CI \u6784\u5EFA Node 18\uFF08\u5DF2 EOL\uFF09\u5347\u7EA7 22 LTS\n\n## [1.0.0] - 2026-11-21\n\n### \u65B0\u589E\n- OpenCode \u4E00\u952E\u914D\u7F6E v1/v2 \u53CC\u5E03\u5C40\u9002\u914D\uFF1A\u6309\u914D\u7F6E\u5F62\u72B6\u5224\u5B9A\uFF08v1 \u76F4\u6302\u6761\u76EE\u4F18\u5148\uFF0C\u5176\u6B21 mcp.servers\uFF09\uFF0C\u5F62\u72B6\u65E0\u7EBF\u7D22\u65F6\u6309\u672C\u673A OpenCode \u7248\u672C\u63A2\u6D4B\uFF0C\u63A2\u6D4B\u5931\u8D25\u9ED8\u8BA4 v2\uFF1B\u5199\u5165\u539F\u751F\u7ED3\u6784\uFF08type:local + command \u6570\u7EC4 + environment\uFF09\uFF0Cv2 \u7528\u5BF9\u8C61 timeout\u3001v1 \u7528 enabled + \u6570\u5B57 timeout\n- \u914D\u7F6E\u8FC1\u79FB\u81EA\u6108\uFF1A\u5199\u5165 v2 \u65F6\u6E05\u7406 v1 \u76F4\u6302\u6B8B\u7559\uFF0C\u5199\u5165 v1 \u65F6\u6E05\u7406 servers \u5185\u65E7\u6761\u76EE\u5E76\u79FB\u9664\u7A7A servers \u952E\uFF0C\u907F\u514D\u65E7\u7248\u8BEF\u8BFB\n- Windsurf Next \u5BA2\u6237\u7AEF\u5019\u9009\uFF08~/.codeium/windsurf-next/mcp_config.json\uFF09\n- \u4E00\u952E\u914D\u7F6E\u5355\u5143\u6D4B\u8BD5 +12\uFF08\u5E03\u5C40\u5224\u5B9A\u3001\u53CC\u5E03\u5C40\u5199\u5165\u3001\u8FC1\u79FB\u6E05\u7406\u3001\u6865\u63A5\u590D\u7528\u3001\u7247\u6BB5\u8F93\u51FA\u3001\u5019\u9009\u8DEF\u5F84\uFF09\uFF1B\u53E6\u52A0\u5BA1\u6838\u884C\u53EF\u8BFB\u6027\u4E0E\u6062\u590D\u5165\u53E3\u8FC1\u79FB\u56DE\u5F52 2 \u9879\uFF0C\u5168\u91CF 153 \u9879\n\n### \u6539\u8FDB\n- \u6570\u636E\u5FEB\u7167\u6062\u590D\u5217\u8868\u4ECE\u667A\u80FD\u4F53\u5DE5\u574A\u632A\u5230\u8BBE\u7F6E\u9875\u5907\u4EFD\u5206\u533A\uFF08\u4FDD\u7559\u4EFD\u6570\u4E0B\u65B9\uFF09\uFF0C\u5DE5\u574A\u56DE\u5F52\u7EAF\u5BA1\u6838\u961F\u5217\uFF08\u8349\u7A3F/\u5F85\u5BA1\u5199\u5165/\u53D8\u66F4\u5BA1\u67E5/Agent \u5F85\u529E\uFF09\uFF1B\u6062\u590D\u5B89\u5168\u6D41\u7A0B\u4E0D\u53D8\uFF1A\u4E8C\u6B21\u786E\u8BA4\u2192\u6062\u590D\u526F\u672C\u2192\u683C\u5F0F\u6821\u9A8C\u2192\u5199\u56DE\u91CD\u8F7D\n\n### \u4FEE\u590D\n- OpenCode \u4E00\u952E\u914D\u7F6E\u4E0D\u751F\u6548\uFF1A\u6B64\u524D\u5BF9\u6240\u6709\u5BA2\u6237\u7AEF\u5199 Claude \u98CE\u683C\u6761\u76EE\uFF08command \u5B57\u7B26\u4E32 + args\uFF09\uFF0COpenCode v1/v2 \u5747\u4E0D\u8BC6\u522B\uFF1B\u73B0\u6309\u5BA2\u6237\u7AEF\u539F\u751F schema \u5199\u5165\uFF0C\u5B9E\u6D4B `opencode mcp list` \u8FDE\u63A5\u6210\u529F\n- Cline \u914D\u7F6E\u8DEF\u5F84\u4FEE\u6B63\uFF1ACLI \u4E3A ~/.cline/data/settings/cline_mcp_settings.json\uFF0CVS Code \u6269\u5C55\u4E3A globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json\uFF0C\u539F ~/.cline/mcp_settings.json \u4E24\u8005\u7686\u975E\n- Cline \u6761\u76EE\u4E0D\u518D\u5199 timeout\uFF1ACline \u6309\u79D2\u89E3\u91CA\uFF0C\u5199 60000 \u4F1A\u88AB\u8BEF\u8BFB\u4E3A 60000 \u79D2\uFF1B\u5176\u4F59\u5BA2\u6237\u7AEF\u4FDD\u6301 60000 \u6BEB\u79D2\n- \u79FB\u9664\u65E0\u6548\u5019\u9009 ~/.opencode.json\uFF1AOpenCode \u4EFB\u4F55\u7248\u672C\u90FD\u4E0D\u8BFB\u53D6\u8BE5\u4F4D\u7F6E\n- isAgentConfigured \u517C\u5BB9 OpenCode \u53CC\u4F4D\u7F6E\uFF08v1 \u76F4\u6302\u4E0E v2 servers\uFF09\uFF0C\u5DF2\u914D\u7F6E\u72B6\u6001\u4E0D\u518D\u6F0F\u62A5\n- \u5BA1\u6838\u884C\u53EF\u8BFB\u6027\uFF1A\u5BA1\u6279\u6309\u94AE mod-cta \u767D\u5B57\u843D\u6D45\u5E95\uFF08\u5BF9\u6BD4\u5EA6 1.1:1 \u5168\u9690\u5F62\uFF09\u6062\u590D\u5F3A\u8C03\u5E95+\u663E\u5F0F\u5B57\u8272\uFF085.70:1\uFF09\uFF1B\u5F85\u5BA1\u5199\u5165/\u53D8\u66F4\u5BA1\u67E5/\u5FEB\u7167\u6062\u590D\u884C\u4E0D\u518D\u590D\u7528 112px \u5143\u4FE1\u606F\u5217\u4E0E faint 10px\uFF08485px \u5185\u5BB9\u622A\u5230 112px\u30012.85:1\uFF09\uFF0C\u6539\u72EC\u7ACB\u5E03\u5C40\u5360\u6EE1\u5269\u4F59\u5BBD + muted 11px\uFF085.74:1\uFF09+ \u60AC\u505C\u5168\u6587\u63D0\u793A\n\n## [0.9.8] - 2026-11-20\n\n### \u65B0\u589E\n- \u786E\u8BA4\uFF08confirm\uFF09\u5DE5\u4F5C\u6A21\u5F0F\u771F\u5B9E\u751F\u6548\uFF1AAgent \u5199\u8BF7\u6C42\u6302\u8D77\u4E3A\u300C\u5F85\u5BA1\u5199\u5165\u300D\uFF0C\u5728\u667A\u80FD\u4F53\u5DE5\u574A\u9010\u6761\u5DEE\u5F02\u9884\u89C8\u3001\u91C7\u7EB3\u6216\u9A73\u56DE\uFF1B\u76EE\u6807\u6587\u4EF6\u5728\u6302\u8D77\u540E\u88AB\u4FEE\u6539\u65F6\u91C7\u7EB3\u62A5\u7248\u672C\u51B2\u7A81\uFF0C\u907F\u514D\u8986\u76D6\u4EBA\u5DE5\u7F16\u8F91\u3002\u9ED8\u8BA4\u5DE5\u4F5C\u6A21\u5F0F\u5373 confirm\uFF0C\u6B64\u524D\u7248\u672C\u8BE5\u884C\u4E3A\u672A\u843D\u5730\uFF0C\u672C\u7248\u8D77\u5F3A\u5236\u6267\u884C\n- data.json \u6570\u636E\u5FEB\u7167\uFF1A\u5907\u4EFD\u5FEB\u7167\u5217\u8868\u4E0E\u4E00\u952E\u6062\u590D\uFF08\u6062\u590D\u524D\u4E8C\u6B21\u786E\u8BA4\u3001\u81EA\u52A8\u521B\u5EFA\u6062\u590D\u526F\u672C\u3001\u5931\u8D25\u663E\u8457\u544A\u8B66\uFF09\n- \u77E5\u8BC6\u5730\u5C42\u5256\u9762\u4E3B\u89C6\u56FE\uFF1A\u4EBA/AI/\u4EFB\u52A1/\u4E13\u6CE8\u6309\u6708\u5806\u53E0\u6210\u5730\u5C42\u6A2A\u622A\u9762\uFF0C\u70ED\u529B\u56FE\u964D\u4E3A\u9644\u5C5E\u89C6\u56FE\n- Agent \u9875\u7B7E\u5F85\u5BA1\u6570\u91CF\u5FBD\u7AE0\uFF08\u8349\u7A3F+\u53D8\u66F4+\u5F85\u5BA1\u5199\u5165\u4E4B\u548C\uFF0C\u4E3A 0 \u4E0D\u663E\u793A\uFF09\n- \u4E00\u952E\u914D\u7F6E\u81EA\u6108\uFF1A\u5E93\u5185\u65E7\u7248\u6865\u63A5\u811A\u672C\u81EA\u52A8\u5237\u65B0\u4E3A\u63D2\u4EF6\u5185\u5D4C\u7248\u672C\uFF0C\u534F\u8BAE\u5347\u7EA7\u540E\u65E0\u9700\u624B\u5DE5\u6E05\u7406\n\n### \u6539\u8FDB\n- Agent \u6743\u9650\u95E8\u7981\u7EDF\u4E00\uFF1A\u9ED1\u540D\u5355/\u767D\u540D\u5355/\u64CD\u4F5C\u6743\u9650\u6536\u655B\u5230 access.ts \u5355\u4E00\u89C4\u5219\u6E90\uFF0C\u8986\u76D6\u7B14\u8BB0/\u901F\u8BB0/\u59D4\u6258/\u5DE5\u4F5C\u65E5\u5FD7/\u4EFB\u52A1\u5FEB\u7167/\u65E5\u8BB0\u7B49\u5168\u90E8\u5199\u8DEF\u5F84\uFF1B\u4EBA\u7528 UI \u64CD\u4F5C\u4E0D\u53D7 Agent \u95E8\u7981\u5F71\u54CD\n- \u8BBE\u7F6E\u9762\u677F\u6309\u5206\u533A\u91CD\u7EC4\uFF1B\u5207\u6362\u5DE5\u4F5C\u6A21\u5F0F\u63D0\u793A\u5C06\u91CD\u7F6E\u6743\u9650\u5F00\u5173\uFF0C\u6743\u91CD\u8F93\u5165\u9632\u6296\uFF0C\u79FB\u9664\u65E0\u6548\u7684\u300C\u5141\u8BB8\u5220\u9664\u300D\u5F00\u5173\n- i18n \u8865\u9F50\uFF1A\u6A21\u6001\u6846\u3001\u547D\u4EE4\u540D\u3001\u542F\u52A8\u4E0E\u5931\u8D25\u63D0\u793A\u7B49\u5168\u90E8\u8D70\u7FFB\u8BD1\uFF1B\u65B0\u589E CI \u68C0\u67E5\u9632\u6B62\u672A\u7FFB\u8BD1\u4E2D\u6587\u5B57\u9762\u91CF\u518D\u8FDB UI\n- \u56FE\u8868\u53EF\u8BBF\u95EE\u6027\uFF1ASVG \u8F93\u51FA\u8865 role/aria-label\uFF0C\u591A\u5E8F\u5217\u8D8B\u52BF\u56FE\u52A0\u56FE\u4F8B\uFF0C\u70ED\u529B\u56FE\u683C\u5B50\u6539\u7528\u81EA\u5B9A\u4E49 tooltip\n- \u672C\u5730 API \u4F20\u8F93\u52A0\u56FA\uFF1A\u4EE4\u724C\u53EA\u8D70 Authorization \u5934\u5E76\u5E38\u91CF\u65F6\u95F4\u6BD4\u8F83\uFF0C\u8BF7\u6C42\u4F53\u8D85\u9650\u8FD4\u56DE 413\uFF0C\u7578\u5F62 URL \u8FD4\u56DE 400\uFF0C500 \u9519\u8BEF\u4FE1\u606F\u767D\u540D\u5355\u5316\uFF1B\u6865\u63A5\u811A\u672C\u52A0\u8BF7\u6C42\u8D85\u65F6\u3001\u54CD\u5E94\u4F53\u4E0E stdin \u7F13\u51B2\u4E0A\u9650\uFF0C\u7578\u5F62 JSON \u65AD\u5F00\u8FDE\u63A5\n- \u5B58\u50A8\u53EF\u9760\u6027\uFF1A\u52A0\u8F7D\u65F6\u635F\u574F\u5B57\u6BB5\u9632\u62A4\uFF08\u542B\u5F85\u5BA1\u5199\u5165\uFF09\u3001\u4FDD\u5B58\u5931\u8D25\u63D0\u793A\u8282\u6D41\u3001\u5907\u4EFD\u5199\u5165\u5931\u8D25\u4E0D\u518D\u9759\u9ED8\u5F53\u4F5C\u6210\u529F\n- \u756A\u8304\u949F\uFF1A\u591A\u5B9E\u4F8B\u63A5\u7BA1\u3001\u8BA1\u65F6\u6F02\u79FB\u6821\u6B63\u3001\u8DE8\u5929\u7ED3\u7B97\n- \u5173\u952E catch \u70B9\u6539\u7528 logError \u7EDF\u4E00\u8BB0\u5F55\uFF08\u63A7\u5236\u53F0+\u5E26\u4E0A\u9650\u7684\u8BCA\u65AD\u5217\u8868\uFF09\uFF0C\u4E0D\u518D\u9759\u9ED8\u541E\u9519\n- \u53D1\u5E03\u6821\u9A8C\u65B0\u589E README \u7248\u672C\u5FBD\u7AE0\u4E0E versions.json \u7248\u672C\u952E\u65AD\u8A00\n- \u54C1\u724C\u56FE\u6807\u66F4\u65B0\uFF0C\u901F\u8BB0\u89C6\u56FE\u72EC\u7ACB\u56FE\u6807\uFF1B\u6DF1\u8272\u4E3B\u9898\u5BFC\u822A\u4E0E\u6D45\u8272\u4E3B\u9898\u5FBD\u7AE0\u5BF9\u6BD4\u5EA6\u4FEE\u590D\uFF1B\u79FB\u52A8\u7AEF/\u89E6\u63A7\u53EF\u7528\u6027\u6539\u8FDB\n\n### \u4FEE\u590D\n- \u4E00\u952E\u914D\u7F6E\u56DE\u5F52\uFF1A\u9274\u6743\u5347\u7EA7\u540E\u5E93\u5185\u65E7\u6865\u63A5\u4E0E\u65B0\u670D\u52A1\u7AEF\u4E0D\u5339\u914D\u5BFC\u81F4\u5168\u90E8 401\uFF0C\u300C\u91CD\u65B0\u5199\u5165\u300D\u65F6\u81EA\u52A8\u5237\u65B0\u6865\u63A5\n- \u5730\u5C42\u4E13\u6CE8\u5C42\u6539\u6309\u6BCF\u65E5\u4E13\u6CE8\u5206\u949F\u805A\u5408\uFF0C\u65E9\u671F\u6708\u4EFD\u4E0D\u518D\u56E0\u4F1A\u8BDD\u8BB0\u5F55\u622A\u65AD\u800C\u865A\u5047\u5F52\u96F6\n- \u6D1E\u5BDF\u9875\u6B7B\u4EA4\u4E92\u3001aria \u8F6C\u4E49\u3001\u6D77\u62A5\u8DE8\u5E74\u6708\u4EFD\u5FAA\u73AF\u3001\u753B\u5E03\u4E3B\u9898\u8272\u8BFB\u53D6\u7B49\u89C6\u56FE\u95EE\u9898\n- \u901F\u8BB0\u5F39\u7A97\u652F\u6301 Ctrl+Enter \u63D0\u4EA4\u3001\u7A7A\u6587\u672C\u4FDD\u5B58\u63D0\u793A\uFF1B\u4EFB\u52A1\u5B8C\u6210\u6309\u94AE\u9632\u53CC\u51FB\uFF1B\u901F\u8BB0\u957F\u6587\u672C\u884C\u6570\u94B3\u5236\n\n## [0.9.7] - 2026-11-20\n\n### \u6539\u8FDB\uFF08\u4EE3\u7801\u7ED3\u6784\uFF09\n- \u770B\u677F\u4E3B\u89C6\u56FE\u6309\u9875\u7B7E\u62C6\u5206\uFF1A`views/dashboard/sections/` \u4E0B today / insights / agent \u4E09\u4E2A\u6E32\u67D3\u6A21\u5757\uFF0C\u4E3B\u89C6\u56FE\u4ECE ~1300 \u884C\u964D\u5230 523 \u884C\uFF0C\u4EC5\u4FDD\u7559\u751F\u547D\u5468\u671F\u4E0E\u5171\u4EAB\u8F85\u52A9\u65B9\u6CD5\n- \u62BD\u51FA\u7EAF SVG \u56FE\u8868\u51FD\u6570\u5230 `utils/charts.ts`\uFF0C\u770B\u677F\u4E0D\u518D\u5185\u8054\u751F\u6210\u56FE\u8868\u903B\u8F91\n- \u62BD\u51FA Agent \u8BBF\u95EE\u7B56\u7565\u7EAF\u89C4\u5219\u5230 `agent/access.ts`\uFF08\u9ED1\u540D\u5355/\u767D\u540D\u5355/\u64CD\u4F5C\u6743\u9650/\u5206\u7C7B\u63A8\u65AD\uFF09\uFF0C\u53EF\u5355\u6D4B\n- `main.ts` \u7684 16 \u4E2A\u547D\u4EE4\u6CE8\u518C\u62BD\u6210 `registerCommands()`\uFF0C`onload` \u66F4\u6E05\u6670\n- \u7EDF\u4E00\u751F\u6210\u6587\u4EF6\u7B56\u7565\uFF1A`changelog.ts` \u4E0E `bridge-source.ts` \u5747\u7531\u6784\u5EFA\u751F\u6210\u5E76\u52A0\u5165 `.gitignore`\n\n### \u4FEE\u590D\n- \u4FEE\u590D\u7248\u672C\u53F7\u5FBD\u7AE0\u5728\u591A\u6BB5\u7248\u672C\u53F7\u4E0B\u6BCF\u6B21\u6784\u5EFA\u91CD\u590D\u8FFD\u52A0\u5C3E\u53F7\u7684 bug\n- \u5DE6\u4FA7\u529F\u80FD\u680F\u56FE\u6807\u6539\u7528\u65B0\u7684 Sediment \u54C1\u724C\u56FE\u6807\n\n## [0.9.6.1] - 2026-11-20\n\n### \u4FEE\u590D\n- \u901F\u8BB0\u641C\u7D22\u6846\uFF1A\u4FEE\u590D\u8F93\u5165\u65F6\u7ED3\u679C\u88AB\u8FFD\u52A0\u5230\u5217\u8868\u672B\u5C3E\u3001\u8DF3\u5230\u77E5\u8BC6\u533A\u4E0B\u65B9\u7684 bug\uFF1B\u65B0\u589E\u300C\u5339\u914D N \u6761\u300D\u5B9E\u65F6\u8BA1\u6570\uFF0C\u641C\u7D22\u6548\u679C\u53EF\u89C1\n- \u5207\u6362\u9875\u7B7E\u65F6\u6EDA\u52A8\u4F4D\u7F6E\u5F52\u96F6\uFF0C\u907F\u514D\u5185\u5BB9\u88AB\u5438\u9876\u5BFC\u822A\u6321\u4F4F\n- \u6A2A\u5E45\u4E0D\u518D\u88AB\u5438\u9876\u5BFC\u822A\u906E\u76D6\n- \u65B0\u589E Sediment \u5C42\u7406\u54C1\u724C\u56FE\u6807\uFF0C\u63A5\u5165\u5BFC\u822A\u680F\u4E0E\u89C6\u56FE\u56FE\u6807\n\n## [0.9.6] - 2026-11-20\n\n### \u4FEE\u590D\n- Agent \u65F6\u95F4\u663E\u793A\u6539\u4E3A\u672C\u5730\u65F6\u533A\uFF1A\u5DE5\u5177\u8C03\u7528/\u53D8\u66F4\u5BA1\u67E5/\u6700\u8FD1\u8C03\u7528/\u8BCA\u65AD\u65E5\u5FD7\u7684\u65F6\u95F4\u4E0D\u518D\u663E\u793A\u6210 UTC\uFF08\u5982 05:30 \u5B9E\u4E3A\u672C\u5730 13:30\uFF09\uFF0C\u300C\u4ECA\u65E5\u300D\u7EDF\u8BA1\u4E5F\u6309\u672C\u5730\u65E5\u671F\u5224\u5B9A\n- \u9876\u90E8\u5BFC\u822A\u5438\u9876\uFF1A\u4E3B\u5BFC\u822A\u680F\u56FA\u5B9A\u5728\u9876\u90E8\uFF0C\u5B50\u9875\u7B7E\uFF08\u77E5\u8BC6\u5730\u5C42\uFF09\u4E0E\u300C\u4ECA\u65E5\u300D\u64CD\u4F5C\u680F\u9489\u5728\u5176\u4E0B\u65B9\uFF0C\u6EDA\u52A8\u65F6\u59CB\u7EC8\u53EF\u89C1\n- \u5468\u590D\u76D8\u300C\u672A\u5B8C\u6210\u4E8B\u9879\u300D\u53BB\u91CD\uFF1A\u5E26 #to-agent \u7684\u901F\u8BB0\u4E0D\u518D\u540C\u65F6\u51FA\u73B0\u5728\u300C\u901F\u8BB0\u300D\u548C\u300CAgent \u4EFB\u52A1\u300D\u4E24\u5904\n- \u4FEE\u590D\u300C\u8282\u5F8B\u77E9\u9635/\u6D3B\u8DC3\u65F6\u6BB5\u300D\u300C\u5E74\u8F6E/\u6307\u7EB9/\u6708\u76F8\u300D\u9875\u7B7E\u70B9\u51FB\u5931\u6548\uFF1A\u6539\u7528\u5185\u90E8\u5BB9\u5668\u63D2\u5165 SVG\uFF0C\u907F\u514D innerHTML += \u51B2\u6389\u6309\u94AE\u4E8B\u4EF6\n\n## [0.9.5] - 2026-11-20\n\n### \u6539\u8FDB\n- \u77E5\u8BC6\u5730\u5C42\u5206\u9875\u5316\uFF1A\u9876\u90E8\u80F6\u56CA\u6539\u4E3A\u771F\u6B63\u7684\u9875\u7B7E\uFF0C\u4E00\u6B21\u53EA\u663E\u793A\u4E00\u4E2A\u6A21\u5757\uFF08\u8109\u51B2\u6982\u89C8/\u70ED\u529B\u56FE/\u5199\u4F5C\u8D8B\u52BF/\u6295\u5165\u5206\u5E03/\u5E74\u5EA6\u753B\u50CF/\u672C\u5468\u590D\u76D8\uFF09\uFF0C\u4E0D\u518D\u662F\u957F\u9875\u9762\u8DF3\u8F6C\n\n### \u4FEE\u590D\n- \u951A\u70B9/\u5FEB\u6377\u8DF3\u8F6C\u6539\u56DE\u6D4F\u89C8\u5668\u539F\u751F scrollIntoView + CSS scroll-margin\uFF0C\u4FEE\u590D\u300C\u6709\u7684\u8DF3\u6709\u7684\u4E0D\u8DF3\u300D\uFF1B\u7528\u6237\u4E3B\u52A8\u6EDA\u52A8\u65F6\u53D6\u6D88\u6392\u961F\u4E2D\u7684\u6EDA\u52A8\u6062\u590D\uFF0C\u907F\u514D\u4E92\u76F8\u6253\u65AD\n\n## [0.9.4] - 2026-11-20\n\n### \u4FEE\u590D\n- \u300C\u67E5\u770B\u4ECA\u65E5\u4EFB\u52A1\u300D\u300C\u8BB0\u4E00\u6761\u901F\u8BB0\u300D\u6539\u7528\u5E26\u504F\u79FB\u7684\u5E73\u6ED1\u6EDA\u52A8\u5E76\u963B\u6B62 focus \u81EA\u52A8\u8DF3\u5C4F\uFF0C\u4E0D\u518D\u786C\u8DF3\n\n### \u4FEE\u590D\n- \u951A\u70B9\u8DF3\u8F6C\u6309\u5438\u9876\u5BFC\u822A\u9AD8\u5EA6\u7559\u504F\u79FB\uFF0C\u907F\u514D\u76EE\u6807\u6807\u9898\u88AB\u5BFC\u822A\u6761\u76D6\u4F4F\u9020\u6210\u7684\u89C6\u89C9\u8DF3\u52A8\n\n## [0.9.3] - 2026-11-20\n\n### \u4FEE\u590D\n- \u64CD\u4F5C\u540E\u6574\u9875\u91CD\u7ED8\u5BFC\u81F4\u7684\u6EDA\u52A8\u6296\u52A8\uFF1A\u91CD\u7ED8\u65F6\u4FDD\u5B58/\u5EF6\u8FDF\u6062\u590D\u6EDA\u52A8\u4F4D\u7F6E\uFF0C\u5E76\u5728\u540C\u4E00\u9875\u7B7E\u7684\u8F6F\u5237\u65B0\u4E2D\u5173\u95ED\u5361\u7247\u5165\u573A\u52A8\u753B\n\n### \u6539\u8FDB\n- \u65B0\u589E `npm run release:prepare -- X.Y.Z`\uFF1A\u81EA\u52A8\u5B9A\u7A3F CHANGELOG \u7248\u672C\u6807\u9898\u5E76\u66F4\u65B0 package.json \u7248\u672C\u6E90\uFF1BCI \u6253 tag \u65F6\u4E5F\u4F1A\u81EA\u52A8\u6267\u884C\n\n## [0.9.2] - 2026-11-20\n\n### \u4FEE\u590D\n- Agent \u53D8\u66F4\u5BA1\u67E5\u300C\u4FDD\u7559\u5F53\u524D\u5E76\u5173\u95ED\u300D\u73B0\u5728\u4F1A\u8BB0\u5F55\u5BA1\u67E5\u51B3\u5B9A\uFF08kept\uFF09\uFF0C\u8BE5\u53D8\u66F4\u4ECE\u5F85\u5BA1\u5217\u8868\u79FB\u9664\uFF1B\u300C\u91C7\u7528\u5907\u4EFD / \u6062\u590D\u300D\u8BB0\u5F55\u4E3A reverted\n- \u53D8\u66F4\u5BA1\u67E5\u53EA\u5217\u51FA POST \u5199\u64CD\u4F5C\uFF1BGET \u53EA\u8BFB\u8C03\u7528\uFF08\u5982 graph\uFF09\u4E0D\u518D\u51FA\u73B0\u5728\u5F85\u5BA1\u5217\u8868\n\n### \u65B0\u589E\n- MCP \u4E00\u952E\u5378\u8F7D\uFF1A\u8BBE\u7F6E\u9875\u6BCF\u4E2A\u5DF2\u914D\u7F6E\u5BA2\u6237\u7AEF\u52A0\u300C\u5378\u8F7D\u300D\u6309\u94AE\uFF0C\u5E76\u63D0\u4F9B\u300C\u6253\u5F00\u5378\u8F7D\u5411\u5BFC\u300D\uFF1B\u53EA\u79FB\u9664\u5BA2\u6237\u7AEF\u914D\u7F6E\u4E0E\u6865\u63A5\u811A\u672C\uFF0C\u5199\u524D\u5907\u4EFD `.bak`\uFF0C\u4E0D\u52A8\u7B14\u8BB0\u548C\u7EDF\u8BA1\u6570\u636E\n\n### \u6587\u6863\n- README \u8865\u5145\u300C\u5982\u4F55\u627E\u5230 .obsidian \u76EE\u5F55\u300D\u4E0E zip \u624B\u5DE5\u5B89\u88C5\u6B65\u9AA4\uFF0C\u793A\u4F8B\u8DEF\u5F84\u6539\u4E3A `<vault>` \u901A\u7528\u5199\u6CD5\uFF0C\u5E76\u8BF4\u660E BRAT \u5B89\u88C5\u65F6\u6865\u63A5\u811A\u672C\u7531\u4E00\u952E\u914D\u7F6E\u81EA\u52A8\u843D\u76D8\n\n### \u6539\u8FDB\n- \u65B0\u589E\u5B89\u88C5\u6574\u5305 `dist/sediment/`\uFF1A\u5305\u542B main.js\u3001manifest.json\u3001styles.css\u3001mcp-server/index.mjs \u4E0E\u5B89\u88C5\u8BF4\u660E\uFF1BRelease \u81EA\u52A8\u9644\u52A0 `sediment-vX.Y.Z.zip`\uFF0C\u4E0B\u8F7D\u89E3\u538B\u5373\u53EF\u590D\u5236\n\n### \u6539\u8FDB\n- \u7248\u672C\u53F7\u7EDF\u4E00\u5230 `package.json` \u5355\u4E00\u6E90\uFF1A`version-bump.mjs` \u5728\u6784\u5EFA\u65F6\u540C\u6B65 lockfile\u3001manifest\u3001versions\u3001MCP bridge \u548C README \u5FBD\u7AE0\uFF1B\u53D1\u7248\u53EA\u6539\u4E00\u5904\n\n## [0.9.1] - 2026-11-20\n\n### \u6539\u8FDB\n- Agent \u53D8\u66F4 Diff \u91CD\u505A\uFF1ALCS \u9010\u884C\u6807\u8BB0\u589E\u5220\u3001\u53CC\u680F\u6EDA\u52A8\u8054\u52A8\u3001\u53D8\u5316\u884C\u6570\u7EDF\u8BA1\uFF0C\u53EF\u5728\u5F39\u7A97\u5185\u300C\u91C7\u7528\u5907\u4EFD\uFF08\u64A4\u9500\uFF09\u300D\u6216\u300C\u4FDD\u7559\u5F53\u524D\u300D\n- AI \u6C89\u6DC0\u5BA1\u6838\uFF1A\u663E\u793A\u5F53\u524D\u5DE5\u4F5C\u6A21\u5F0F\uFF0C\u65B0\u589E\u300C\u67E5\u770B\u539F\u6587\u300D\u53EA\u8BFB\u9884\u89C8\uFF0C\u6309\u94AE\u542B\u4E49\u660E\u786E\n- \u5355\u6D4B\u589E\u81F3 41 \u4F8B\uFF08\u9010\u884C Diff\u3001\u5E42\u7B49\u952E\u3001\u5BA1\u8BA1\u8131\u654F\u3001400 \u5929\u6279\u91CF\u6570\u636E\u89C4\u8303\u5316\uFF09\n- \u7EAF\u51FD\u6570\u6027\u80FD\u57FA\u51C6 `npm run test:bench`\uFF1A1k/10k/100k \u5929\u8D21\u732E\u8BA1\u7B97\u7684\u8017\u65F6\u4E0E\u5806\u5185\u5B58\u91CF\u5316\n- Agent \u5B89\u5168\u8F85\u52A9\uFF1A\u5E42\u7B49\u952E `idempotencyKey`\u3001\u5BA1\u8BA1\u8DEF\u5F84\u8131\u654F `redactAuditPath`\u3001\u654F\u611F\u4E32\u66FF\u6362 `redactSecrets`\uFF1B\u5BA1\u8BA1\u65E5\u5FD7\u843D\u76D8\u524D\u8131\u654F\u67E5\u8BE2\u4E32\n- \u77E5\u8BC6\u9875\u6458\u8981\u4F18\u5148 + \u8BE6\u7EC6\u56FE\u8868\u6298\u53E0\u5F00\u5173\uFF1B\u4EBA\u673A\u53CC\u8272\u70ED\u529B\u56FE\u79FB\u5165\u77E5\u8BC6\u9875\n- \u5468\u590D\u76D8\u91CD\u6392\u4E3A\u300C\u7EBF\u7D22\u2014\u6210\u679C\u2014\u884C\u52A8\u2014\u5F52\u6863\u2014\u8BE6\u7EC6\u6570\u636E\u300D\n- \u901F\u8BB0\u4FA7\u680F\u300C\u5168\u90E8 + \u66F4\u591A\u300D\u6B21\u7EA7\u5165\u53E3\uFF0C\u56DE\u987E/\u6F2B\u6B65/\u6807\u7B7E/\u6C89\u6DC0\u6536\u8FDB\u66F4\u591A\u83DC\u5355\n- \u7EDF\u4E00\u641C\u7D22\u5165\u53E3\uFF1A`search_notes` \u540C\u65F6\u68C0\u7D22\u7B14\u8BB0\u3001\u901F\u8BB0\u3001\u5DE5\u4F5C\u65E5\u5FD7\u548C\u8349\u7A3F\uFF0C\u5E76\u6807\u6CE8\u6765\u6E90\u7C7B\u578B\n- \u9996\u6B21\u4F7F\u7528\u8F7B\u91CF\u4E0A\u4E0B\u6587\u63D0\u793A\uFF0C\u53EF\u5173\u95ED\n- Agent API \u7248\u672C\u58F0\u660E\uFF1A`AGENT_API_VERSION = 1`\uFF0C`/health` \u8FD4\u56DE `agentApiVersion`\uFF0CREADME \u5199\u660E\u517C\u5BB9\u7B56\u7565\n- \u8BCA\u65AD\u65E5\u5FD7\uFF1A\u8BB0\u5F55\u8FC1\u79FB\u3001\u5B89\u5168\u62D2\u7EDD\u3001\u6162\u67E5\u8BE2\u4E0E\u5B58\u50A8\u4E8B\u4EF6\uFF0C\u547D\u4EE4\u300C\u67E5\u770B\u8BCA\u65AD\u65E5\u5FD7\u300D\u53EF\u67E5\u770B\uFF1B\u771F\u5B9E\u73AF\u5883\u9A8C\u8BC1\u624B\u518C\u89C1 `docs/real-environment-verification.md`\n- \u7EC4\u4EF6\u547D\u540D\u7EDF\u4E00\uFF1A\u6240\u6709 `kp-*` \u524D\u7F00\u6539\u4E3A `sd-*`\uFF0C\u6784\u5EFA\u4E0E 41 \u4F8B\u5355\u6D4B\u901A\u8FC7\n\n## [0.9.0] - 2026-11-20\n\n### \u65B0\u589E\n- \u4ECA\u65E5\u9875\u589E\u52A0\u901F\u8BB0\u3001\u4ECA\u65E5\u4EFB\u52A1\u548C\u5F00\u59CB\u4E13\u6CE8\u5FEB\u6377\u64CD\u4F5C\uFF1B\u7A84\u5C4F\u6539\u4E3A\u7EB5\u5411\u5E03\u5C40\u3002\n- \u8BBE\u7F6E\u65B0\u589E Agent \u5DE5\u4F5C\u6A21\u5F0F\uFF1A\u53EA\u8BFB\u3001\u8349\u7A3F\u3001\u786E\u8BA4\u540E\u5199\u5165\u3001\u81EA\u52A8\u6267\u884C\u3002\n- \u901F\u8BB0\u5361\u7247\u663E\u793A\u672A\u5904\u7406\u3001\u5DF2\u59D4\u6D3E Agent\u3001\u5DF2\u6C89\u6DC0\u6216\u5DF2\u5F52\u6863\u72B6\u6001\u3002\n- \u5FEB\u901F\u901F\u8BB0\u652F\u6301\u8349\u7A3F\u6062\u590D\u3001\u4FDD\u5B58\u4E2D\u3001\u4FDD\u5B58\u6210\u529F\u548C\u4FDD\u5B58\u5931\u8D25\u53CD\u9988\u3002\n\n### \u6539\u8FDB\n- MCP \u5DE5\u5177\u7531\u5206\u6563\u7684\u7EC6\u7C92\u5EA6\u80FD\u529B\u6536\u655B\u4E3A\u4EFB\u52A1\u578B\u5165\u53E3\uFF1B\u65B0\u589E\u53EA\u8BFB\u805A\u5408 `get_workspace_state`\uFF0C\u65E7\u5DE5\u5177\u540D\u5DF2\u5220\u9664\uFF0C\u4E0D\u518D\u4FDD\u7559\u517C\u5BB9\u5165\u53E3\u3002\n- Agent \u9875\u4F18\u5148\u5C55\u793A\u8349\u7A3F\u3001\u4EFB\u52A1\u3001\u53D8\u66F4\u5BA1\u67E5\u548C\u5DE5\u4F5C\u65E5\u5FD7\uFF0C\u8FDE\u63A5\u8BCA\u65AD\u4E0E\u7EDF\u8BA1\u79FB\u81F3\u6B21\u7EA7\u4F4D\u7F6E\u3002\n- \u5F85\u529E\u5361\u7247\u53EF\u76F4\u63A5\u5B8C\u6210\u672C\u5730\u4EFB\u52A1\uFF0C\u4E5F\u53EF\u8BA4\u9886\u6216\u5B8C\u6210 Agent \u4EFB\u52A1\u3002\n- \u77E5\u8BC6\u6982\u89C8\u6295\u5165\u65F6\u95F4\u7531\u771F\u5B9E\u6D3B\u8DC3\u5206\u949F\u4E0E\u4E13\u6CE8\u5206\u949F\u8BA1\u7B97\uFF0C\u4E0D\u518D\u56FA\u5B9A\u663E\u793A\u5360\u4F4D\u6570\u636E\u3002\n- \u770B\u677F\u9875\u7B7E\u3001\u901F\u8BB0\u9875\u7B7E\u8865\u5145\u53EF\u8BBF\u95EE\u6027\u72B6\u6001\uFF1B\u7A84\u5C4F\u9875\u7B7E\u53EF\u6A2A\u5411\u6EDA\u52A8\u3002\n- \u77E5\u8BC6\u65E5\u5FD7\u4E0E\u6C89\u6DC0\u5199\u5165\u7EDF\u4E00\u53D7 Agent \u64CD\u4F5C\u6743\u9650\u548C\u76EE\u5F55\u9650\u5236\u7EA6\u675F\u3002\n- README \u66F4\u65B0 0.9.0\u300112 \u4E2A\u516C\u5F00 MCP \u5DE5\u5177\u5165\u53E3\u3001\u624B\u52A8\u5B89\u88C5\u6587\u4EF6\u548C\u6D4B\u8BD5\u547D\u4EE4\u3002\n\n### \u4FEE\u590D\n- \u8349\u7A3F\u5408\u5E76\u3001\u9A73\u56DE\u548C\u5FEB\u7167\u6062\u590D\u589E\u52A0\u786E\u8BA4\u53CA\u660E\u786E\u53CD\u9988\u3002\n- \u786E\u4FDD\u6570\u636E\u6587\u6863\u3001\u8BBE\u7F6E\u8BF4\u660E\u548C\u5B9E\u9645\u754C\u9762\u80FD\u529B\u4E00\u81F4\u3002\n\n## [0.8.8] - 2026-11-20\n\n### \u65B0\u589E\n- \u53D1\u5E03\u6D41\u6C34\u7EBF\u65B0\u589E\u5B8C\u6574\u56DE\u5F52\u6D4B\u8BD5\u3001\u7248\u672C\u4E00\u81F4\u6027\u6821\u9A8C\u548C\u8131\u654F\u7F3A\u9677\u53CD\u9988\u6A21\u677F\u3002\n- \u8BBE\u7F6E\u65B0\u589E\u7CBE\u7B80\u3001\u6807\u51C6\u3001\u5B8C\u6574\u5E03\u5C40\u5BC6\u5EA6\uFF0C\u4EE5\u53CA\u51CF\u5C11\u52A8\u6001\u6548\u679C\u9009\u9879\u3002\n- \u68C0\u7D22\u7ED3\u679C\u589E\u52A0\u7CBE\u786E\u5339\u914D\u4E0E\u672C\u5730 TF-IDF \u8BED\u4E49\u5339\u914D\u8BF4\u660E\u3002\n\n### \u6539\u8FDB\n- \u672A\u77E5\u6570\u636E\u7248\u672C\u52A0\u8F7D\u65F6\u6682\u505C\u5199\u5165\u5E76\u4FDD\u7559\u6062\u590D\u526F\u672C\uFF1B\u521D\u59CB\u5316\u3001\u8D1F\u503C\u4E0E\u5F02\u5E38\u5B57\u6BB5\u589E\u52A0\u89C4\u8303\u5316\u3002\n- Agent HTTP \u5199\u5165\u6536\u7D27\u6A21\u5F0F\u6821\u9A8C\uFF0C\u8865\u5145\u8DEF\u5F84\u7A7F\u8D8A\u3001\u7CFB\u7EDF\u76EE\u5F55\u3001\u975E\u6CD5 JSON \u548C\u5FC5\u586B\u53C2\u6570\u4FDD\u62A4\u3002\n- \u6587\u4EF6\u4FEE\u6539\u4E8B\u4EF6\u589E\u52A0\u53BB\u6296\uFF0C\u5378\u8F7D\u65F6\u6E05\u7406\u5B9A\u65F6\u5668\uFF0C\u8BED\u4E49\u7D22\u5F15\u5408\u5E76\u5E76\u53D1\u91CD\u5EFA\u3002\n- \u901F\u8BB0\u3001\u5DE5\u4F5C\u65E5\u5FD7\u3001\u5FEB\u7167\u4E0E\u5DE5\u5177\u8C03\u7528\u7B49\u6301\u4E45\u6570\u636E\u589E\u52A0\u4FDD\u7559\u4E0A\u9650\u3002\n- \u4FEE\u6B63 TypeScript \u914D\u7F6E\u4E2D\u7684\u5DF2\u79FB\u9664 `baseUrl` \u548C `node10` \u6A21\u5757\u89E3\u6790\u9009\u9879\u3002\n\n### \u4FEE\u590D\n- \u5B8C\u5584\u5347\u7EA7\u3001\u5378\u8F7D\u3001\u6062\u590D\u548C\u672C\u5730 Agent \u6743\u9650\u8BF4\u660E\u3002\n- \u53D1\u5E03\u6821\u9A8C\u8986\u76D6 package.json\u3001manifest\u3001MCP bridge\u3001CHANGELOG \u4E0E\u53D1\u5E03\u4EA7\u7269\u4E00\u81F4\u6027\u3002\n\n## [0.8.7] - 2026-11-20\n\n### \u4FEE\u590D\n- \u4E00\u952E\u914D\u7F6E Agent \u4E0D\u518D\u5199\u51FA\u4E0D\u5B58\u5728\u7684\u6865\u63A5\u8DEF\u5F84\uFF1A\u5E93\u5185\u7F3A `mcp-server/index.mjs` \u65F6\u7528\u6784\u5EFA\u65F6\u5D4C\u5165\u7684\u6E90\u7801\u81EA\u52A8\u843D\u76D8\uFF08Obsidian \u53EA\u5B89\u88C5\u4E09\u4EF6\u5957\uFF0C\u6B64\u524D\u65B0\u88C5\u7528\u6237\u5FC5\u8E29 MCP \u8FDB\u7A0B\u9000\u51FA\u7801 1\uFF09\n- MCP \u6865\u63A5 `serverInfo` \u7248\u672C\u968F\u63D2\u4EF6\u7248\u672C\u540C\u6B65\uFF08version-bump \u8054\u52A8\uFF09\uFF0C\u4E0D\u518D\u786C\u7F16\u7801\u65E7\u7248\u672C\n\n### \u6539\u8FDB\n- \u53D1\u5E03\u5305\u65B0\u589E `mcp-server/index.mjs`\uFF0C\u624B\u52A8\u5B89\u88C5\u53EF\u76F4\u63A5\u53D6\u7528\u6865\u63A5\u811A\u672C\n- \u5355\u6D4B\u65B0\u589E 2 \u4F8B\uFF1A\u6865\u63A5\u7248\u672C\u4E00\u81F4\u6027\u3001\u7F3A\u5931\u81EA\u52A8\u843D\u76D8\uFF0Binitialize \u63E1\u624B\uFF08\u5171 29 \u4F8B\uFF09\n\n## [0.8.6] - 2026-11-20\n\n### \u6539\u8FDB\n- \u77E5\u8BC6\u5730\u5C42\u7CBE\u7B80\uFF1A13 \u5F20\u5361\u7247\u5408\u5E76\u4E3A 7 \u5F20\uFF0C\u6D88\u9664\u540C\u4E00\u6570\u636E\u7684\u91CD\u590D\u53EF\u89C6\u5316\n  - \u5E74\u8F6E / \u77E5\u8BC6\u6307\u7EB9 / \u6708\u76F8\u65E5\u5386\u5408\u5E76\u4E3A\u300C\u5E74\u5EA6\u753B\u50CF\u300D\u5206\u6BB5\u5207\u6362\u5361\uFF08\u9ED8\u8BA4\u5E74\u8F6E\uFF09\n  - \u79FB\u9664\u88C5\u9970\u6027\u5730\u5E73\u7EBF\u5361\uFF08\u4FE1\u606F\u5DF2\u88AB\u70ED\u529B\u56FE\u4E0E\u8D8B\u52BF\u8986\u76D6\uFF09\n  - \u5199\u4F5C\u6765\u6E90\u5E76\u5165\u300C\u5199\u4F5C\u4E0E\u65F6\u95F4\u8D8B\u52BF\u300D\u7B2C 4 \u4E2A tab\uFF1B\u6D3B\u8DC3\u65F6\u6BB5\u5E76\u5165\u8282\u5F8B\u77E9\u9635\u5361\u5207\u6362\n  - \u6708\u62A5\u6D77\u62A5\u4ECE\u5E38\u9A7B\u5361\u7247\u6539\u4E3A\u9875\u811A\u300C\u6708\u62A5\u300D\u6309\u94AE\u5F39\u7A97\uFF0C\u5BFC\u51FA PNG \u4FDD\u7559\n\n## [0.8.5] - 2026-11-19\n\n### \u4FEE\u590D\n- \u7EDF\u8BA1\u53E3\u5F84\uFF1AAgent \u7ECF API \u5199\u5165\u7684\u5185\u5BB9\u4E0D\u518D\u91CD\u590D\u8BA1\u5165\u4EBA\u7C7B\u5199\u4F5C\u6307\u6807\uFF08\u6765\u6E90\u6807\u8BB0 + \u6291\u5236\u7A97\u53E3\uFF09\uFF0C\u53EA\u8BA1 `aiWordsAdded`\n- \u7B14\u8BB0\u5F52\u5C5E\u65E5\u671F\u4F18\u5148\u8BFB frontmatter \u7684 `created` / `date`\uFF0C\u5BFC\u5165\u7684\u65E7\u7B14\u8BB0\u80FD\u5F52\u5230\u6B63\u786E\u7684\u65E5\u5B50\n- \u8D21\u732E\u5206\u6309\u53EF\u914D\u6743\u91CD\u8BA1\u7B97\u5E76\u652F\u6301\u5355\u65E5\u5C01\u9876\uFF0C\u63D0\u4F9B\u5168\u91CF\u91CD\u7B97\u4E0E\u5168\u5E93\u5386\u53F2\u91CD\u5EFA\u547D\u4EE4\n\n### \u65B0\u589E\n- \u901F\u8BB0\u652F\u6301\u7F16\u8F91 / \u5220\u9664 / \u5F52\u6863\uFF0C\u5E76\u4E0E\u65E5\u8BB0 Callout \u53CC\u5199\u540C\u6B65\n- \u7B14\u8BB0\u5065\u5EB7\u5EA6\u68C0\u67E5\uFF08\u5B64\u513F / \u65AD\u94FE / \u4E45\u672A\u66F4\u65B0\uFF09\uFF0C\u53EF\u4E00\u952E\u8F6C\u4E3A `#to-agent` \u4EFB\u52A1\n- \u6570\u636E\u5BFC\u51FA CSV / JSON\uFF0C\u9ED8\u8BA4\u8131\u654F\uFF08\u4E0D\u542B\u901F\u8BB0\u6B63\u6587\u3001\u6587\u4EF6\u8DEF\u5F84\u4E0E\u4EFB\u4F55\u4EE4\u724C\uFF09\uFF0C\u9700\u663E\u5F0F\u52FE\u9009\u624D\u5305\u542B\n- \u756A\u8304\u949F\u72B6\u6001\u6301\u4E45\u5316\u4E0E\u4F1A\u8BDD\u65E5\u5FD7\n- \u56FE\u8868\u53C2\u7167\u7EBF\uFF08\u5747\u503C / \u76EE\u6807\uFF09\u3001\u540C\u9875\u5237\u65B0\u4FDD\u7559\u6EDA\u52A8\u4F4D\u7F6E\u3001\u6BCF\u9875\u4E3B\u8272\u4E0E\u5361\u7247\u6750\u8D28\u3001\u70ED\u529B\u56FE\u65B9\u5411\u952E\u5BFC\u822A\n- \u754C\u9762\u8BED\u8A00\u5207\u6362\uFF08\u8DDF\u968F\u7CFB\u7EDF / \u4E2D\u6587 / English\uFF09\uFF0C\u8986\u76D6\u547D\u4EE4\u3001\u8BBE\u7F6E\u3001\u901F\u8BB0\u3001\u770B\u677F\u4E0E\u5F39\u7A97\n- \u7EAF\u51FD\u6570\u5355\u5143\u6D4B\u8BD5\u6846\u67B6\uFF08Node \u5185\u7F6E `node:test` + fake obsidian\uFF0C\u65E0\u65B0\u589E\u4F9D\u8D56\uFF09\uFF1A`npm run test:unit`\uFF0C`npm test` \u4E32\u8054\u5355\u6D4B\u4E0E MCP \u5192\u70DF\n\n## [0.8.4] - 2026-11-19\n\n### \u6539\u8FDB\n- \u6570\u636E\u4E0D\u8DB3 14 \u5929\u65F6\u6982\u89C8\u4E0E\u8D8B\u52BF\u56FE\u9ED8\u8BA4\u805A\u7126\u6700\u8FD1 14 \u5929\uFF1B\u6298\u7EBF\u52A0\u9762\u79EF\u6E10\u53D8\u3001\u975E\u96F6\u6563\u70B9\u4E0E\u5CF0\u503C\u6C14\u6CE1\n- \u5E74\u8F6E\u8865\u5168\u4E09\u5C42\u73AF\u5F62\u5E95\u8F68\u300112 \u6708\u523B\u5EA6\u4E0E\u5E74\u4EFD\u6C34\u5370\uFF0C\u5C04\u7EBF\u8BBE\u6700\u5C0F\u957F\u5EA6\n- \u5730\u5E73\u7EBF\u589E\u52A0\u8FDC\u666F\u5C71\u810A\u4E0E\u6C34\u6CE2\u5149\u5F71\n- \u4E09\u5F20\u6298\u7EBF\u56FE\u5408\u5E76\u4E3A\u300C\u5199\u4F5C\u4E0E\u65F6\u95F4\u8D8B\u52BF\u300D\u5206\u6BB5\u63A7\u4EF6\uFF0C\u77E5\u8BC6\u5730\u5C42\u52A0\u5438\u9876\u951A\u70B9\u5BFC\u822A\n- \u6295\u5165\u53BB\u5411\u6539\u4E3A\u6392\u540D\u8FDB\u5EA6\u6761\uFF08\u663E\u793A\u5B8C\u6574\u8DEF\u5F84\u3001\u5360\u6BD4\u4E0E\u5C55\u5F00\uFF09\n- \u8282\u5F8B\u77E9\u9635\u9ED8\u8BA4\u4EC5\u663E\u793A\u6D3B\u8DC3\u65E5\u671F\uFF0C\u7A7A\u884C\u538B\u7F29\u4E3A 4px\n- \u4ECA\u5929\u5361\u7247\u52A0\u76EE\u6807\u8FBE\u6210\u7387\u5706\u73AF\uFF0CAgent \u52A8\u6001\u884C\u5C3E\u663E\u793A\u76EE\u6807\u6587\u4EF6\u540D\uFF0C\u53D8\u66F4\u5BA1\u67E5\u52A0\u64CD\u4F5C\u7C7B\u578B\u5FBD\u7AE0\n\n### \u65B0\u589E\n- Agent \u6743\u9650\uFF1A\u7CFB\u7EDF\u76EE\u5F55 `.obsidian/` / `.git/` \u786C\u7F16\u7801\u62E6\u622A\uFF1B\u53EF\u9009\u767D\u540D\u5355\u6A21\u5F0F\u3001\u6309\u64CD\u4F5C\uFF08\u8BFB/\u5EFA/Patch/\u8986\u76D6/\u5220\u9664\uFF09\u5F00\u5173\uFF1B\u4FEE\u6539\u524D\u5FEB\u7167\u5F00\u5173\n- `patch_note` \u65B0\u589E `operation`\uFF08append/prepend/replace/update_frontmatter\uFF09\u3001`dryRun` Diff \u9884\u89C8\u3001`expectedMtime` \u4E50\u89C2\u9501\u3001`diffSummary`\u3001`createdHeading`\n- `replace_block` \u591A\u5904\u5339\u914D\u8FD4\u56DE `AMBIGUOUS_MATCH`\uFF1B\u6807\u9898\u4E0D\u5B58\u5728\u65F6\u81EA\u52A8\u521B\u5EFA\n- \u65B0\u589E MCP \u5DE5\u5177 `list_agent_changes` / `revert_agent_change` \u4E0E\u5BF9\u5E94 HTTP \u63A5\u53E3\uFF0CAgent \u53EF\u81EA\u67E5\u53D8\u66F4\u5E76\u56DE\u6EDA\n\n## [0.8.3] - 2026-11-19\n\n### \u65B0\u589E\n- data.json \u81EA\u52A8\u5907\u4EFD\u5230\u5E93\u5185\u666E\u901A\u6587\u4EF6\u5939\uFF08\u9ED8\u8BA4 `sediment-backup/`\uFF09\uFF0C\u6309\u4EFD\u6570\u4FDD\u7559\uFF1B\u65B0\u589E\u300C\u5907\u4EFD\u7EDF\u8BA1\u6570\u636E\u5230\u5E93\u5185\u300D\u547D\u4EE4\n- Style Settings \u9002\u914D\uFF1A\u53EF\u53EF\u89C6\u5316\u8C03\u8282\u5361\u7247\u5706\u89D2\u3001\u5185\u8FB9\u8DDD\u3001\u6B63\u6587\u5B57\u53F7\u3001\u70ED\u529B\u56FE\u683C\u5B50\u5C3A\u5BF8\n- \u4EE3\u7801\u5757\u5D4C\u5165\uFF1A```sediment-heatmap``` \u4E0E ```sediment-today``` \u53EF\u5199\u8FDB Home.md\n- \u70ED\u529B\u56FE\u5BCC Tooltip\uFF08\u5F53\u5929\u7B14\u8BB0\u6807\u9898\u4E0E\u901F\u8BB0\u6458\u8981\uFF09\u3001\u6700\u957F\u8FDE\u7EED\u5929\u6570\u5FBD\u7AE0\n- \u901F\u8BB0\u5361\u7247 hover \u64CD\u4F5C\u680F\uFF08\u590D\u5236 / \u5206\u4EAB\u56FE / \u8F6C Agent\uFF09\u3001\u53CC\u51FB\u5165\u53E3\u9884\u7559\n- \u901F\u8BB0\u5206\u4EAB\u5361\u4E0E\u300C\u4ECA\u65E5\u6218\u62A5\u300DPNG \u5BFC\u51FA\uFF08\u6781\u7B80 / \u7968\u636E / \u6C34\u58A8\u4E09\u6A21\u677F\uFF09\n- Agent \u53D8\u66F4\u5BA1\u67E5\uFF1A\u6700\u8FD1\u53D8\u66F4\u5217\u8868\u3001\u5907\u4EFD Diff \u5E76\u6392\u5BF9\u6BD4\u3001\u4E00\u952E\u6062\u590D\n\n### \u4FEE\u590D\n- \u5F85\u529E\u6807\u9898\u8FC7\u957F\u65F6\u4E0D\u518D\u6491\u7834\u5361\u7247\uFF0C\u6539\u4E3A\u7701\u7565\u53F7\u622A\u65AD\n- \u4ECA\u65E5\u9875 bento \u5361\u7247\u7B49\u9AD8\u5BF9\u9F50\uFF1BAgent \u52A8\u6001\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\u6539\u4E3A\u5355\u5217\u4FE1\u606F\u6D41\uFF0C\u4E0D\u518D\u6324\u6210\u591A\u5217\u7A84\u6761\n- \u901F\u8BB0\u4FA7\u680F\u6C89\u6DC0\u5217\u8868\u6807\u9898\u5DE6\u5BF9\u9F50\u5E76\u53BB\u6389\u9ED8\u8BA4\u6309\u94AE\u767D\u5E95\u65B9\u5757\uFF0C\u5143\u4FE1\u606F\u66F4\u7D27\u51D1\n\n## [0.8.2] - 2026-11-19\n\n### \u6539\u8FDB\n- \u7ED3\u6784\u6027\u7F8E\u5316\uFF1A\u4ECA\u65E5\u8109\u51B2\u6539\u4E3A bento \u7F51\u683C\uFF08\u4ECA\u65E5/\u901F\u8BB0/\u5F85\u529E/Agent \u52A8\u6001\u9519\u843D\u6392\u5E03\uFF09\uFF0C\u6A2A\u5E45\u52A0\u5929\u7A7A\u6E10\u53D8\u3001\u4E91\u96FE\u3001\u5149\u6655\u4E0E\u9897\u7C92\u8D28\u611F\uFF0C\u4FA7\u680F\u6807\u7B7E\u4E0E\u8F93\u5165\u533A\u7EDF\u4E00\u4E3A\u80F6\u56CA\u5206\u6BB5\u63A7\u4EF6\u4E0E\u5185\u5D4C\u9762\u677F\uFF0C\u4E3B\u8981\u5361\u7247\u91C7\u7528\u53CC\u5C42\u5185\u5D4C\u8D28\u611F\n- \u770B\u677F\u89C6\u89C9\u5347\u7EA7\uFF1A\u7B49\u5BBD\u6570\u5B57\u3001\u66F4\u6E05\u6670\u7684\u6807\u9898\u5C42\u7EA7\u3001\u5217\u8868\u4E24\u680F\u5BF9\u9F50\u4E0E\u60AC\u505C\u53CD\u9988\u3001\u7A7A\u72B6\u6001\u91CD\u505A\u3001\u5361\u7247\u9519\u843D\u5165\u573A\u52A8\u753B\n- `#to-agent` \u901F\u8BB0\u8BB0\u4F4F\u539F\u5F85\u529E\u7684 `sourcePath` / `sourceLine`\uFF0C\u901F\u8BB0\u5361\u7247\u548C\u5F85\u529E\u6A21\u5757\u53EF\u4E00\u952E\u8DF3\u56DE\u539F\u590D\u9009\u6846\u5E76\u5B9A\u4F4D\u884C\u53F7\n- `add_memo` \u652F\u6301\u4F20\u5165\u6765\u6E90\u8DEF\u5F84\u4E0E\u884C\u53F7\n\n## [0.8.1] - 2026-11-19\n\n### \u65B0\u589E\n- \u5F85\u529E\u6A21\u5757\uFF1A\u626B\u63CF vault \u539F\u751F `- [ ]` \u5F85\u529E\uFF0C\u5206\u4ECA\u65E5 / \u9057\u7559 / Agent \u4E09\u7C7B\u5C55\u793A\n- MCP \u5DE5\u5177 `list_tasks` / `complete_task` / `delegate_task` / `snapshot_tasks`\uFF0831 \u4E2A\u5DE5\u5177\uFF09\n- \u547D\u4EE4\u300C\u8BB0\u5F55\u4ECA\u65E5\u9057\u7559\u5F85\u529E\u5230\u65E5\u8BB0\u300D\uFF0C\u6309\u9700\u5199\u5165\uFF0C\u4E0D\u9ED8\u8BA4\u6539\u7B14\u8BB0\n\n### \u6539\u8FDB\n- \u6C89\u6DC0\u5217\u8868\u89C6\u89C9\uFF1A\u53BB\u6389\u6807\u9898\u65E5\u671F\u524D\u7F00\u3001\u5206\u7C7B\u5FBD\u7AE0\u4E0E\u8BA1\u6570\u3001\u76EE\u5F55/\u6807\u7B7E\u5143\u4FE1\u606F\u3001\u60AC\u505C\u9AD8\u4EAE\n\n## [0.8.0] - 2026-11-19\n\n### \u65B0\u589E\n- \u672C\u5730\u8BED\u4E49\u641C\u7D22 `semantic_search`\uFF1ATF-IDF \u5411\u91CF + \u4E2D\u6587\u53CC\u5B57\u5207\u5206 + \u8F7B\u91CF\u540C\u4E49\u8BCD\u6269\u5C55\uFF0C\u6309\u610F\u4E49\u68C0\u7D22\u7B14\u8BB0\uFF0C\u4E0D\u8054\u7F51\u3001\u4E0D\u4E0B\u8F7D\u6A21\u578B\n- \u7D22\u5F15\u5E38\u9A7B\u5185\u5B58\uFF0Cvault \u53D8\u5316\u65F6\u81EA\u52A8\u5931\u6548\u91CD\u5EFA\uFF0C\u5E76\u9075\u5B88\u6587\u4EF6\u5939/\u6807\u7B7E\u9ED1\u540D\u5355\n- AGENTS.md \u5DE5\u4F5C\u6D41\u8865\u5145\u8BED\u4E49\u63A2\u7D22\u6B65\u9AA4\n\n## [0.7.0] - 2026-11-19\n\n### \u65B0\u589E\n- \u8BBE\u7F6E\u9875\u300C\u4E00\u952E\u914D\u7F6E\u667A\u80FD\u4F53\u5BA2\u6237\u7AEF\u300D\uFF1A\u81EA\u52A8\u63A2\u6D4B OpenCode / Qoder / Claude Desktop / Cursor / Cline / Gemini CLI / Windsurf \u7B49\u914D\u7F6E\u6587\u4EF6\n- \u9009\u62E9\u5BA2\u6237\u7AEF\u540E\u4E00\u952E\u5199\u5165 MCP \u914D\u7F6E\uFF08\u81EA\u52A8\u5907\u4EFD\u539F\u6587\u4EF6\u3001\u4FDD\u7559\u5DF2\u6709\u914D\u7F6E\u3001\u590D\u7528\u5DF2\u5B58\u5728\u7684\u6865\u63A5\u8DEF\u5F84\uFF09\n- \u300C\u590D\u5236\u914D\u7F6E JSON\u300D\u6309\u94AE\uFF0C\u4FBF\u4E8E\u624B\u52A8\u7C98\u8D34\n\n## [0.6.0] - 2026-11-19\n\n### \u65B0\u589E\n- P2 UI\uFF1A\u4E09\u6BB5\u5F0F\u4E3B\u770B\u677F\uFF08\u4ECA\u65E5\u8109\u51B2 / \u77E5\u8BC6\u5730\u5C42 / \u667A\u80FD\u4F53\u5DE5\u574A\uFF09\uFF0C\u77E5\u8BC6\u590D\u76D8\u79FB\u5165\u77E5\u8BC6\u5730\u5C42\n- \u667A\u80FD\u4F53\u5DE5\u574A\uFF1A\u8FDE\u63A5\u4E0E\u8C03\u7528\u72B6\u6001\u3001AI \u8349\u7A3F\u5BA1\u6838\u6D41\uFF08\u91C7\u7EB3 / \u5408\u5E76\u5230\u5173\u8054\u7B14\u8BB0 / \u9A73\u56DE\u5220\u9664\uFF09\u3001\u5DE5\u4F5C\u65E5\u5FD7\u5217\u8868\n- \u4EBA\u673A\u53CC\u8272\u70ED\u529B\u56FE\uFF1A\u6309 `aiWordsAdded` \u5360\u6BD4\u7528\u6E10\u53D8\u533A\u5206\u4EBA\u7C7B\u7F16\u8F91\u4E0E AI \u6C89\u6DC0\n- \u4ECA\u65E5\u8109\u51B2\u9875\u65B0\u589E\u5FEB\u901F\u901F\u8BB0\u6846\u4E0E\u300C\u4ECA\u65E5 Agent \u52A8\u6001\u300D\n- \u901F\u8BB0\u4FA7\u680F\u65B0\u589E\u300C\u4E0E\u5F53\u524D\u7B14\u8BB0\u76F8\u5173\u300D\u533A\u5757\uFF0C\u968F\u6253\u5F00\u7684\u6587\u4EF6\u81EA\u52A8\u66F4\u65B0\n\n## [0.5.1] - 2026-11-19\n\n### \u4FEE\u590D\n- `get_active_context` \u5728\u4E3B\u533A\u6253\u5F00\u770B\u677F/\u56FE\u8C31\u65F6\u56DE\u9000\u5230\u6700\u8FD1\u4E00\u4E2A Markdown \u6807\u7B7E\u9875\uFF0C\u4E0D\u518D\u8FD4\u56DE\u7A7A\u7ED3\u679C\n\n## [0.5.0] - 2026-11-19\n\n### \u65B0\u589E\n- P1 \u7CBE\u51C6\u5199\u5165\uFF1A`patch_note`\uFF08\u6309\u6807\u9898/\u6587\u672C\u7247\u6BB5\u5C40\u90E8\u4FEE\u6539\u3001`vault.process` \u539F\u5B50\u5199\u5165\u3001\u5199\u524D\u81EA\u52A8\u5907\u4EFD\u3001`ifMatch` \u7248\u672C\u6821\u9A8C\uFF09\u4E0E `update_frontmatter`\n- `#to-agent` \u4EFB\u52A1\u95ED\u73AF\uFF1A`get_daily_context` \u8FD4\u56DE `agentTasks`\uFF0C\u65B0\u589E `claim_agent_task` / `complete_agent_task`\uFF0C\u72B6\u6001\u4ECE `#to-agent` \u2192 `#agent-in-progress` \u2192 `#agent-done`\n- \u5728 vault \u6839\u76EE\u5F55\u5199\u5165 `AGENTS.md` \u4E09\u9636\u6BB5\u534F\u4F5C\u534F\u8BAE\uFF08\u5F00\u5DE5\u5BF9\u9F50 / \u7CBE\u51C6\u8BFB\u5199 / \u6536\u5DE5\u6C89\u6DC0\uFF09\n- MCP \u5DE5\u5177\u589E\u81F3 26 \u4E2A\n\n## [0.4.0] - 2026-11-19\n\n### \u65B0\u589E\n- P0 \u5DE5\u5177\u5C42\uFF1A`get_active_context`\uFF08\u5F53\u524D\u7B14\u8BB0/\u9009\u4E2D\u6587\u672C/\u5149\u6807\u6BB5\u843D\uFF09\u3001`get_note_metadata`\uFF08\u53EA\u8BFB\u5143\u6570\u636E\u7701 Token\uFF09\u3001`get_graph_neighbors`\uFF08\u51FA\u94FE/\u53CD\u94FE/\u540C\u6807\u7B7E\uFF09\u3001`get_tool_activity`\uFF08\u8C03\u7528\u7EDF\u8BA1\uFF09\n- \u65B0\u589E\u6587\u4EF6\u5939/\u6807\u7B7E\u9ED1\u540D\u5355\uFF0CAgent \u7684\u8BFB\u5199\u4E0E\u641C\u7D22\u5168\u90E8\u53D7\u63A7\n- Agent \u5199\u5165\u7684\u5185\u5BB9\u5355\u72EC\u8BA1\u5165 `aiWordsAdded`\uFF0C\u4E3A\u540E\u7EED\u4EBA\u673A\u53CC\u8272\u70ED\u529B\u56FE\u6253\u57FA\u7840\n- MCP/HTTP \u8C03\u7528\u5BA1\u8BA1\u65E5\u5FD7\uFF08\u9650 500 \u6761\uFF09\uFF0C\u5E76\u8BB0\u5F55\u5BA2\u6237\u7AEF\u540D `AGENT_NAME`\n- AI \u6C89\u6DC0\u7B14\u8BB0\u9ED8\u8BA4\u5E26 `sediment_status: draft`\n\n## [0.3.4] - 2026-11-19\n\n### \u65B0\u589E\n- \u589E\u91CF\u53D8\u66F4\u8BB0\u5F55\uFF1A\u65B0\u589E `CHANGELOG.md`\uFF0C\u6309\u7248\u672C\u5206\u7EC4\u8BB0\u5F55\u65B0\u589E / \u53D8\u66F4 / \u4FEE\u590D\n- \u6784\u5EFA\u65F6\u81EA\u52A8\u540C\u6B65\u5230\u63D2\u4EF6\u5185\uFF0C\u770B\u677F\u9875\u811A\u300C\u66F4\u65B0\u8BB0\u5F55\u300D\u548C\u547D\u4EE4\u300C\u67E5\u770B\u66F4\u65B0\u8BB0\u5F55\u300D\u53EF\u968F\u65F6\u67E5\u770B\n- \u5347\u7EA7\u540E\u81EA\u52A8\u63D0\u793A\u65B0\u7248\u672C\u53F7\n- GitHub Release \u6B63\u6587\u4ECE\u5BF9\u5E94\u7248\u672C\u7684 CHANGELOG \u7AE0\u8282\u81EA\u52A8\u751F\u6210\uFF0C\u53D1\u5E03\u9875\u4E0E\u63D2\u4EF6\u5185\u8BF4\u660E\u4E00\u81F4\n\n## [0.3.3] - 2026-11-19\n\n### \u4FEE\u590D\n- Agent \u901A\u8FC7 MCP \u5199\u5165\u7B14\u8BB0\u540E\uFF0C\u770B\u677F\u4E0E\u901F\u8BB0\u9762\u677F 400ms \u5185\u81EA\u52A8\u5237\u65B0\uFF0C\u4E14\u4E0D\u6E05\u7A7A\u6B63\u5728\u8F93\u5165\u7684\u6587\u5B57\n- \u76D1\u542C create / modify / delete / rename \u4E8B\u4EF6\uFF0C\u8986\u76D6\u77E5\u8BC6\u5E93\u3001\u5DE5\u4F5C\u65E5\u5FD7\u4E0E\u65E5\u8BB0\u76EE\u5F55\n\n## [0.3.2] - 2026-11-19\n\n### \u4FEE\u590D\n- \u901F\u8BB0\u9762\u677F\u300C\u5168\u90E8\u300D\u9875\u7B7E\u4E0B\u7684\u6C89\u6DC0\u5217\u8868\u6539\u4E3A\u663E\u793A\u5168\u90E8\u7B14\u8BB0\uFF0C\u4E0D\u518D\u53EA\u663E\u793A 5 \u6761\n\n## [0.3.1] - 2026-11-19\n\n### \u65B0\u589E\n- \u901F\u8BB0\u9762\u677F\u300C\u5168\u90E8\u300D\u9875\u7B7E\u4E0B\u65B9\u76F4\u63A5\u663E\u793A\u300C\u77E5\u8BC6\u6C89\u6DC0\u300D\u5C0F\u533A\u5757\uFF0C\u4E0D\u7528\u5207\u9875\u7B7E\u5373\u53EF\u770B\u5230\uFF0C\u5E26\u300C\u5168\u90E8\u300D\u8DF3\u8F6C\u6309\u94AE\n\n## [0.3.0] - 2026-11-19\n\n### \u65B0\u589E\n- \u6C89\u6DC0\u9875\u7B7E\u6309\u5206\u7C7B\u5206\u7EC4\u663E\u793A\uFF08\u6280\u672F / \u65B9\u6CD5 / \u5DE5\u4F5C\u65E5\u5FD7\uFF09\n- \u667A\u80FD\u5206\u7C7B\uFF1AAgent \u4E0D\u4F20 category \u65F6\u6839\u636E\u6807\u9898\u3001\u6807\u7B7E\u3001\u6B63\u6587\u5173\u952E\u8BCD\u81EA\u52A8\u63A8\u65AD\uFF1B\u4E5F\u53EF\u4F20\u4EFB\u610F\u81EA\u5B9A\u4E49\u5206\u7C7B\u540D\n- \u65B0\u589E MCP \u5DE5\u5177 `list_categories`\n\n## [0.2.9] - 2026-11-19\n\n### \u65B0\u589E\n- \u77E5\u8BC6\u5E93\u5206\u7C7B\uFF1A\u9ED8\u8BA4\u300C\u6280\u672F / \u9879\u76EE / \u65B9\u6CD5 / \u7075\u611F / \u590D\u76D8\u300D\uFF0C\u6C89\u6DC0\u65F6\u6309\u5206\u7C7B\u5EFA\u5B50\u76EE\u5F55\n- \u77E5\u8BC6\u7B14\u8BB0\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\u7684\u7248\u5F0F\u7F8E\u5316\uFF1Afrontmatter\u3001\u901F\u89C8 Callout\u3001\u6B63\u6587\u3001\u5173\u8054\u6765\u6E90\u3001\u6C89\u6DC0\u4FE1\u606F\n- \u5DF2\u6709 7 \u7BC7\u7B14\u8BB0\u6309\u5206\u7C7B\u91CD\u65B0\u6392\u7248\u5F52\u4F4D\n\n## [0.2.8] - 2026-11-19\n\n### \u53D8\u66F4\n- \u300C\u77E5\u8BC6\u6C89\u6DC0\u300D\u4ECE\u770B\u677F\u5E95\u90E8\u79FB\u5230\u901F\u8BB0\u9762\u677F\uFF0C\u4F5C\u4E3A\u7B2C\u4E94\u4E2A\u9875\u7B7E\n\n## [0.2.7] - 2026-11-19\n\n### \u65B0\u589E\n- \u770B\u677F\u5E95\u90E8\u5217\u51FA Agent \u5199\u5165\u7684\u77E5\u8BC6\u7B14\u8BB0\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\uFF0C\u53EF\u70B9\u51FB\u6253\u5F00\n\n## [0.2.6] - 2026-11-19\n\n### \u4FEE\u590D\n- Obsidian \u91CD\u542F\u65F6\u4E3A\u5DF2\u6709\u6587\u4EF6\u8865\u53D1 create \u4E8B\u4EF6\uFF0C\u65E7\u7248\u4F1A\u8BEF\u7B97\u6210\u65B0\u5EFA\u7B14\u8BB0\uFF0822 \u7BC7 / 5512 \u5B57 / 121 \u5206\uFF09\n\n## [0.2.5] - 2026-11-19\n\n### \u4FEE\u590D\n- MCP \u6865\u63A5\u7684 GET \u5DE5\u5177\u53C2\u6570\u672A\u62FC\u8FDB URL\uFF0C\u5BFC\u81F4\u641C\u7D22\u65E0\u7ED3\u679C\u3001\u8BFB\u7B14\u8BB0\u62A5\u300C\u8DEF\u5F84\u4E0D\u80FD\u4E3A\u7A7A\u300D\n\n## [0.2.4] - 2026-11-19\n\n### \u4FEE\u590D\n- MCP \u6865\u63A5\u5728 Node 16 \u4E0B\u62A5 `fetch is not defined`\uFF0C\u6539\u7528 node:http\n\n## [0.2.3] - 2026-11-19\n\n### \u65B0\u589E\n- \u5185\u7F6E\u756A\u8304\u949F\uFF0825/5/15 \u5206\u949F\uFF09\uFF0C\u72B6\u6001\u680F\u5012\u8BA1\u65F6\uFF0C\u5B8C\u6210\u8BB0\u5165 focusMinutes\uFF0CAgent \u4E5F\u53EF\u901A\u8FC7 MCP \u63A7\u5236\n- \u65B0\u589E `get_pomodoro` / `control_pomodoro`\n\n### \u4FEE\u590D\n- \u5730\u5E73\u7EBF\u91CD\u505A\u4E3A\u5C71\u810A + \u6E56\u9762\u5012\u5F71 + \u65E5\u6708 + \u5B63\u8282\u6811 + \u4E13\u6CE8\u65F6\u5E06\u8239\n- \u9875\u811A\u7248\u672C\u53F7\u6539\u4E3A\u52A8\u6001\u8BFB\u53D6 manifest\n\n## [0.2.2] - 2026-11-19\n\n### \u4FEE\u590D\n- \u77E5\u8BC6\u590D\u76D8\u4ECE\u539F\u59CB Markdown \u6539\u4E3A\u6E32\u67D3\u9884\u89C8\uFF0C\u5E76\u52A0\u590D\u5236\u6309\u94AE\n\n## [0.2.1] - 2026-11-19\n\n### \u65B0\u589E\n- \u901F\u8BB0\uFF1A\u7C98\u8D34\u56FE\u7247\u81EA\u52A8\u5165\u5E93\u3001\u6BCF\u65E5\u56DE\u987E\uFF08\u53BB\u5E74\u4ECA\u65E5 / \u4E0A\u6708\u4ECA\u65E5\uFF09\u3001\u672C\u5730\u76F8\u4F3C\u5EA6\u6F2B\u6B65\u3001\u6807\u7B7E\u6811\n\n## [0.2.0] - 2026-11-19\n\n### \u65B0\u589E\n- \u6570\u636E\u5206\u6790\u9875\uFF1A\u5199\u4F5C\u67F1\u72B6\u56FE\u3001\u5199\u4F5C\u53D8\u5316\u6298\u7EBF\u3001\u65F6\u95F4\u6295\u5165\u3001\u5199\u4F5C\u6765\u6E90\u3001\u6295\u5165\u53BB\u5411\u3001\u6D3B\u8DC3\u65F6\u6BB5\u3001\u6295\u5165\u8282\u5F8B\u77E9\u9635\n- \u5E74\u5EA6\u753B\u50CF\uFF1A\u5E74\u8F6E\u3001\u77E5\u8BC6\u6307\u7EB9\u3001\u6708\u76F8\u65E5\u5386\u3001\u77E5\u8BC6\u5730\u5C42\u3001\u6708\u62A5\u6D77\u62A5 PNG \u5BFC\u51FA\n- \u4E09\u79CD\u753B\u98CE\uFF08\u50CF\u7D20\u6E56\u9762 / \u6C34\u58A8\u5C71\u6C34 / \u50CF\u7D20\u57CE\u5E02\uFF09\u4E0E\u968F\u65F6\u6BB5\u79FB\u52A8\u7684\u65E5\u6708\u6A2A\u5E45\n\n## [0.1.3] - 2026-11-19\n\n### \u4FEE\u590D\n- \u65E7\u7248\u6B8B\u7559\u5728\u4FA7\u680F\u7684\u770B\u677F\u6807\u7B7E\u88AB\u590D\u7528\u5BFC\u81F4\u4E00\u76F4\u7A84\u5C4F\uFF0C\u6539\u4E3A\u5F3A\u5236\u5728\u4E3B\u533A\u65B0\u5F00\u6807\u7B7E\u9875\n\n## [0.1.2] - 2026-11-19\n\n### \u65B0\u589E\n- \u5B8C\u6574\u4E3B\u89C6\u56FE\uFF1A\u901A\u680F\u6A2A\u5E45\u3001\u4ECA\u5929\u5361\u7247\u3001\u6982\u89C8\u5361 + SVG \u8D8B\u52BF\u300153 \u5468\u70ED\u529B\u56FE\u3001\u5730\u5E73\u7EBF\u3001\u56DB\u4E2A\u9875\u7B7E\n\n## [0.1.1] - 2026-11-19\n\n### \u4FEE\u590D\n- \u770B\u677F\u6539\u5230\u4E3B\u7F16\u8F91\u533A\u6253\u5F00\uFF0C\u901F\u8BB0\u7559\u5728\u53F3\u4FA7\u680F\n\n## [0.1.0] - 2026-11-19\n\n### \u65B0\u589E\n- \u9996\u4E2A\u7248\u672C\uFF1A\u70ED\u529B\u56FE\u770B\u677F\u3001\u5199\u4F5C\u7EDF\u8BA1\u3001flomo \u5F0F\u901F\u8BB0\u3001\u5468\u590D\u76D8\n- \u672C\u5730 HTTP API + MCP \u6865\u63A5\uFF0CAgent \u53EF\u8BFB\u5199\u77E5\u8BC6\u5E93\n- \u5DE5\u4F5C\u65E5\u5FD7\u4E0E\u77E5\u8BC6\u7B14\u8BB0\u6C89\u6DC0\uFF0CAgent \u4EA7\u51FA\u8BA1\u5165\u7EDF\u8BA1\n";
 
 // src/ui/changelog-modal.ts
-var ChangelogModal = class extends import_obsidian15.Modal {
+var ChangelogModal = class extends import_obsidian16.Modal {
   constructor(app) {
     super(app);
-    this.component = new import_obsidian15.Component();
+    this.component = new import_obsidian16.Component();
   }
   onOpen() {
     this.component.load();
@@ -6399,7 +6421,7 @@ var ChangelogModal = class extends import_obsidian15.Modal {
     contentEl.addClass("sd-changelog-modal");
     contentEl.createEl("h2", { text: t("Sediment \u66F4\u65B0\u8BB0\u5F55") });
     const body = contentEl.createDiv({ cls: "sd-changelog-body" });
-    void import_obsidian15.MarkdownRenderer.render(this.app, CHANGELOG, body, "", this.component);
+    void import_obsidian16.MarkdownRenderer.render(this.app, CHANGELOG, body, "", this.component);
   }
   onClose() {
     this.component.unload();
@@ -6415,11 +6437,11 @@ var SEDIMENT_MEMO_ICON_ID = "sediment-memo";
 var SEDIMENT_MEMO_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg"><path d="M5 4.5h14V15l-4.5 4.5H5z"/><path d="M14.5 19.5V15H19"/><path d="M8.5 9.5h7M8.5 13h4.5"/></svg>`;
 
 // src/views/dashboard-view.ts
-var import_obsidian21 = require("obsidian");
+var import_obsidian22 = require("obsidian");
 
 // src/ui/poster-modal.ts
-var import_obsidian16 = require("obsidian");
-var PosterModal = class extends import_obsidian16.Modal {
+var import_obsidian17 = require("obsidian");
+var PosterModal = class extends import_obsidian17.Modal {
   constructor(app, store, month) {
     super(app);
     this.store = store;
@@ -6487,7 +6509,7 @@ var PosterModal = class extends import_obsidian16.Modal {
     };
   }
   async exportPoster(title, total, words, active) {
-    const canvas = document.createElement("canvas");
+    const canvas = createEl("canvas");
     canvas.width = 900;
     canvas.height = 1200;
     const ctx = canvas.getContext("2d");
@@ -6506,12 +6528,26 @@ var PosterModal = class extends import_obsidian16.Modal {
     ctx.fillText(String(total), 60, 470);
     ctx.font = "32px sans-serif";
     ctx.fillText(tf("\u6D3B\u8DC3 {n} \u5929", { n: active }) + " \xB7 " + tf("\u65B0\u589E {n} \u5B57", { n: words }), 60, 610);
-    const link = document.createElement("a");
+    const link = createEl("a");
     link.download = `sediment-${title.replace(/\s/g, "")}.png`;
     link.href = canvas.toDataURL("image/png");
     link.click();
   }
 };
+
+// src/utils/dom.ts
+function appendSvg(parent, svg) {
+  const doc = new DOMParser().parseFromString(svg, "text/html");
+  const node = doc.body.firstElementChild;
+  if (!node || node.tagName.toLowerCase() !== "svg") return null;
+  const imported = parent.ownerDocument.importNode(node, true);
+  parent.appendChild(imported);
+  return imported;
+}
+function setSvg(parent, svg) {
+  parent.replaceChildren();
+  appendSvg(parent, svg);
+}
 
 // src/views/dashboard/constants.ts
 var TABS = [
@@ -6556,10 +6592,10 @@ function filterAgentTasks(tasks) {
 }
 
 // src/views/dashboard/sections/agent.ts
-var import_obsidian19 = require("obsidian");
+var import_obsidian20 = require("obsidian");
 
 // src/ui/diff-modal.ts
-var import_obsidian17 = require("obsidian");
+var import_obsidian18 = require("obsidian");
 function computeDiff(before, after) {
   const oldLines = before.split("\n");
   const newLines = after.split("\n");
@@ -6597,7 +6633,7 @@ function computeDiff(before, after) {
   }
   return lines;
 }
-var DiffModal = class extends import_obsidian17.Modal {
+var DiffModal = class extends import_obsidian18.Modal {
   constructor(app, titleText, before, after, onRestore, onKeep, labels) {
     super(app);
     this.titleText = titleText;
@@ -6683,13 +6719,13 @@ var DiffModal = class extends import_obsidian17.Modal {
 };
 
 // src/ui/draft-preview-modal.ts
-var import_obsidian18 = require("obsidian");
-var DraftPreviewModal = class extends import_obsidian18.Modal {
+var import_obsidian19 = require("obsidian");
+var DraftPreviewModal = class extends import_obsidian19.Modal {
   constructor(app, titleText, content) {
     super(app);
     this.titleText = titleText;
     this.content = content;
-    this.component = new import_obsidian18.Component();
+    this.component = new import_obsidian19.Component();
   }
   onOpen() {
     this.component.load();
@@ -6697,7 +6733,7 @@ var DraftPreviewModal = class extends import_obsidian18.Modal {
     contentEl.addClass("sd-draft-preview");
     contentEl.createEl("h2", { text: this.titleText });
     const body = contentEl.createDiv({ cls: "sd-review-preview" });
-    void import_obsidian18.MarkdownRenderer.render(this.app, this.content, body, "", this.component);
+    void import_obsidian19.MarkdownRenderer.render(this.app, this.content, body, "", this.component);
   }
   onClose() {
     this.component.unload();
@@ -6819,18 +6855,18 @@ function pendingToolLabel(tool) {
 async function approvePendingWrite(view, id) {
   try {
     await view.plugin.agentApi.approvePendingWrite(id);
-    new import_obsidian19.Notice(t("\u5DF2\u91C7\u7EB3\uFF0C\u5199\u5165\u5DF2\u843D\u76D8"));
+    new import_obsidian20.Notice(t("\u5DF2\u91C7\u7EB3\uFF0C\u5199\u5165\u5DF2\u843D\u76D8"));
   } catch (error) {
-    new import_obsidian19.Notice(error instanceof Error ? error.message : String(error));
+    new import_obsidian20.Notice(error instanceof Error ? error.message : String(error));
   }
   view.render();
 }
 async function rejectPendingWrite(view, id) {
   try {
     view.plugin.agentApi.rejectPendingWrite(id);
-    new import_obsidian19.Notice(t("\u5DF2\u9A73\u56DE\uFF0C\u672A\u5199\u5165\u4EFB\u4F55\u5185\u5BB9"));
+    new import_obsidian20.Notice(t("\u5DF2\u9A73\u56DE\uFF0C\u672A\u5199\u5165\u4EFB\u4F55\u5185\u5BB9"));
   } catch (error) {
-    new import_obsidian19.Notice(error instanceof Error ? error.message : String(error));
+    new import_obsidian20.Notice(error instanceof Error ? error.message : String(error));
   }
   view.render();
 }
@@ -6838,14 +6874,11 @@ function renderUnregisteredSources(view, root) {
   const plugin = view.plugin;
   const knowledgeFolder = normalizeFolder(plugin.store.settings.knowledgeFolder);
   if (!knowledgeFolder) return;
-  const files = plugin.app.vault.getMarkdownFiles().map((file) => {
-    var _a2;
-    return {
-      path: file.path,
-      mtime: file.stat.mtime,
-      frontmatter: (_a2 = plugin.app.metadataCache.getFileCache(file)) == null ? void 0 : _a2.frontmatter
-    };
-  });
+  const files = plugin.app.vault.getMarkdownFiles().map((file) => ({
+    path: file.path,
+    mtime: file.stat.mtime,
+    frontmatter: frontmatterOf(plugin.app.metadataCache.getFileCache(file))
+  }));
   const state = scanKnowledgeState(files, knowledgeFolder);
   if (state.unregistered === 0) return;
   const card = root.createDiv({ cls: "sd-card" });
@@ -6866,9 +6899,9 @@ function renderUnregisteredSources(view, root) {
 async function markHumanSource(view, path) {
   try {
     await view.plugin.agentApi.updateFrontmatter(path, { source: "human" }, void 0, true);
-    new import_obsidian19.Notice(t("\u5DF2\u6807\u8BB0\u4E3A\u4EBA\u5DE5\u6765\u6E90"));
+    new import_obsidian20.Notice(t("\u5DF2\u6807\u8BB0\u4E3A\u4EBA\u5DE5\u6765\u6E90"));
   } catch (error) {
-    new import_obsidian19.Notice(error instanceof Error ? error.message : String(error));
+    new import_obsidian20.Notice(error instanceof Error ? error.message : String(error));
   }
   view.render();
 }
@@ -6886,7 +6919,7 @@ function renderAgentChanges(view, root) {
   const list = card.createDiv({ cls: "sd-feed-list" });
   for (const call of calls) {
     const file = view.plugin.app.vault.getAbstractFileByPath(call.path);
-    if (!(file instanceof import_obsidian19.TFile)) continue;
+    if (!(file instanceof import_obsidian20.TFile)) continue;
     const backups = listBackups(view.plugin, call.path);
     const row = list.createDiv({ cls: "sd-feed-row sd-feed-row-audit" });
     row.createSpan({ text: `${localStamp(call.time).slice(5)} \xB7 ${call.tool.replace(/^(GET|POST) /, "")}`, attr: { title: call.path } });
@@ -6906,24 +6939,29 @@ function renderAgentChanges(view, root) {
             () => {
               void restoreBackup(view.plugin, file, backups[0].name).then(() => {
                 view.plugin.store.reviewChange(`${call.time}|${call.path}`, "reverted");
-                new import_obsidian19.Notice(t("\u5DF2\u91C7\u7528\u5907\u4EFD\uFF0C\u672C\u6B21 Agent \u4FEE\u6539\u5DF2\u64A4\u9500"));
+                new import_obsidian20.Notice(t("\u5DF2\u91C7\u7528\u5907\u4EFD\uFF0C\u672C\u6B21 Agent \u4FEE\u6539\u5DF2\u64A4\u9500"));
                 view.render();
               });
             },
             () => {
               view.plugin.store.reviewChange(`${call.time}|${call.path}`, "kept");
-              new import_obsidian19.Notice(t("\u5DF2\u6807\u8BB0\u4E3A\u4FDD\u7559\u5F53\u524D\u7248\u672C\uFF0C\u672C\u6B21\u53D8\u66F4\u4E0D\u518D\u5F85\u5BA1"));
+              new import_obsidian20.Notice(t("\u5DF2\u6807\u8BB0\u4E3A\u4FDD\u7559\u5F53\u524D\u7248\u672C\uFF0C\u672C\u6B21\u53D8\u66F4\u4E0D\u518D\u5F85\u5BA1"));
               view.render();
             }
           ).open();
         });
       };
       actions.createEl("button", { text: t("\u6062\u590D") }).onclick = () => {
-        if (!window.confirm(t("\u786E\u8BA4\u6062\u590D\u8FD9\u4E2A Agent \u4FEE\u6539\u5FEB\u7167\uFF1F\u5F53\u524D\u7B14\u8BB0\u5185\u5BB9\u4F1A\u88AB\u66FF\u6362\u3002"))) return;
-        void restoreBackup(view.plugin, file, backups[0].name).then(() => {
-          view.plugin.store.reviewChange(`${call.time}|${call.path}`, "reverted");
-          new import_obsidian19.Notice(t("\u5DF2\u6062\u590D\u5230\u6700\u8FD1\u5907\u4EFD"));
-          view.render();
+        void confirmAction(
+          view.plugin.app,
+          t("\u786E\u8BA4\u6062\u590D\u8FD9\u4E2A Agent \u4FEE\u6539\u5FEB\u7167\uFF1F\u5F53\u524D\u7B14\u8BB0\u5185\u5BB9\u4F1A\u88AB\u66FF\u6362\u3002")
+        ).then((ok) => {
+          if (!ok) return;
+          void restoreBackup(view.plugin, file, backups[0].name).then(() => {
+            view.plugin.store.reviewChange(`${call.time}|${call.path}`, "reverted");
+            new import_obsidian20.Notice(t("\u5DF2\u6062\u590D\u5230\u6700\u8FD1\u5907\u4EFD"));
+            view.render();
+          });
         });
       };
     }
@@ -6995,16 +7033,21 @@ function renderDrafts(view, root) {
     };
     actions.createEl("button", { text: t("\u91C7\u7EB3\u5E76\u5F52\u6863") }).onclick = () => {
       void view.plugin.agentApi.updateFrontmatter(file.path, { sediment_status: "accepted" }, void 0, true).then(() => {
-        new import_obsidian19.Notice(t("\u5DF2\u91C7\u7EB3"));
+        new import_obsidian20.Notice(t("\u5DF2\u91C7\u7EB3"));
         view.render();
       });
     };
     actions.createEl("button", { text: t("\u5408\u5E76\u5230\u5173\u8054\u7B14\u8BB0") }).onclick = () => void mergeDraft(view, file);
     actions.createEl("button", { text: t("\u9A73\u56DE\u5220\u9664") }).onclick = () => {
-      if (!window.confirm(t("\u786E\u8BA4\u9A73\u56DE\u5E76\u79FB\u5165\u56DE\u6536\u7AD9\uFF1F\u8349\u7A3F\u53EF\u5728\u56DE\u6536\u7AD9\u6062\u590D\u3002"))) return;
-      void view.plugin.app.vault.trash(file, false).then(() => {
-        new import_obsidian19.Notice(t("\u5DF2\u9A73\u56DE\u5E76\u79FB\u5165\u56DE\u6536\u7AD9"));
-        view.render();
+      void confirmAction(
+        view.plugin.app,
+        t("\u786E\u8BA4\u9A73\u56DE\u5E76\u79FB\u5165\u56DE\u6536\u7AD9\uFF1F\u8349\u7A3F\u53EF\u5728\u56DE\u6536\u7AD9\u6062\u590D\u3002")
+      ).then((ok) => {
+        if (!ok) return;
+        void view.plugin.app.fileManager.trashFile(file).then(() => {
+          new import_obsidian20.Notice(t("\u5DF2\u9A73\u56DE\u5E76\u79FB\u5165\u56DE\u6536\u7AD9"));
+          view.render();
+        });
       });
     };
   }
@@ -7015,23 +7058,23 @@ async function mergeDraft(view, file) {
   const links = (_a2 = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a2.links;
   const first = Array.isArray(links) && links.length > 0 ? String(links[0]) : "";
   if (!first) {
-    new import_obsidian19.Notice(t("\u8FD9\u5F20\u8349\u7A3F\u6CA1\u6709\u5173\u8054\u7B14\u8BB0\uFF0C\u65E0\u6CD5\u5408\u5E76"));
+    new import_obsidian20.Notice(t("\u8FD9\u5F20\u8349\u7A3F\u6CA1\u6709\u5173\u8054\u7B14\u8BB0\uFF0C\u65E0\u6CD5\u5408\u5E76"));
     return;
   }
   const target = view.plugin.app.vault.getMarkdownFiles().find((item) => item.basename === first || item.path === first);
   if (!target) {
-    new import_obsidian19.Notice(tf("\u627E\u4E0D\u5230\u5173\u8054\u7B14\u8BB0\uFF1A{name}", { name: first }));
+    new import_obsidian20.Notice(tf("\u627E\u4E0D\u5230\u5173\u8054\u7B14\u8BB0\uFF1A{name}", { name: first }));
     return;
   }
-  if (!window.confirm(t("\u5408\u5E76\u540E\u8349\u7A3F\u5C06\u79FB\u5165\u56DE\u6536\u7AD9\uFF0C\u662F\u5426\u7EE7\u7EED\uFF1F"))) return;
+  if (!await confirmAction(view.plugin.app, t("\u5408\u5E76\u540E\u8349\u7A3F\u5C06\u79FB\u5165\u56DE\u6536\u7AD9\uFF0C\u662F\u5426\u7EE7\u7EED\uFF1F"))) return;
   const source = await view.plugin.app.vault.read(file);
   const body = source.replace(/^---[\s\S]*?---\s*/, "");
   await view.plugin.app.vault.process(target, (data) => `${data.trimEnd()}
 
 ${body.trim()}
 `);
-  await view.plugin.app.vault.trash(file, false);
-  new import_obsidian19.Notice(tf("\u5DF2\u5408\u5E76\u5230 {name}", { name: target.basename }));
+  await view.plugin.app.fileManager.trashFile(file);
+  new import_obsidian20.Notice(tf("\u5DF2\u5408\u5E76\u5230 {name}", { name: target.basename }));
   view.render();
 }
 function renderWorkLogs(view, root) {
@@ -7051,7 +7094,7 @@ function renderWorkLogs(view, root) {
 }
 
 // src/views/dashboard/sections/insights.ts
-var import_obsidian20 = require("obsidian");
+var import_obsidian21 = require("obsidian");
 
 // src/utils/charts.ts
 function escapeAttr(value) {
@@ -7227,7 +7270,7 @@ function renderInsights(view, root) {
     ["review", t("\u672C\u5468\u590D\u76D8")]
   ];
   for (const [key, label] of sections) {
-    if (import_obsidian20.Platform.isMobile && (key === "folders" || key === "yearly")) continue;
+    if (import_obsidian21.Platform.isMobile && (key === "folders" || key === "yearly")) continue;
     const button = subnav.createEl("button", {
       cls: key === view.insightsSection ? "is-active" : "",
       text: label
@@ -7296,14 +7339,11 @@ function renderKnowledgeState(view, root) {
   const plugin = view.plugin;
   const knowledgeFolder = normalizeFolder(plugin.store.settings.knowledgeFolder);
   if (!knowledgeFolder) return;
-  const files = plugin.app.vault.getMarkdownFiles().map((file) => {
-    var _a2;
-    return {
-      path: file.path,
-      mtime: file.stat.mtime,
-      frontmatter: (_a2 = plugin.app.metadataCache.getFileCache(file)) == null ? void 0 : _a2.frontmatter
-    };
-  });
+  const files = plugin.app.vault.getMarkdownFiles().map((file) => ({
+    path: file.path,
+    mtime: file.stat.mtime,
+    frontmatter: frontmatterOf(plugin.app.metadataCache.getFileCache(file))
+  }));
   const state = scanKnowledgeState(files, knowledgeFolder);
   const card = root.createDiv({ cls: "sd-card sd-knowledge-state" });
   const head = card.createDiv({ cls: "sd-card-head" });
@@ -7361,9 +7401,12 @@ function renderOverview(view, root) {
   left.createDiv({ cls: "sd-metric-hint", text: tf("{active} \u5929\u6709\u8BB0\u5F55 \xB7 \u65E5\u5747 {avg} \u5206", { active, avg: keys.length ? Math.round(total / keys.length) : 0 }) });
   const overviewValues = keys.map((key) => view.value(key));
   const overviewMean = mean(overviewValues);
-  left.innerHTML += sparkline(
-    overviewValues,
-    overviewMean > 0 ? [{ value: overviewMean, label: tf("\u5747\u503C {n}", { n: Math.round(overviewMean) }) }] : []
+  appendSvg(
+    left,
+    sparkline(
+      overviewValues,
+      overviewMean > 0 ? [{ value: overviewMean, label: tf("\u5747\u503C {n}", { n: Math.round(overviewMean) }) }] : []
+    )
   );
   const right = grid.createDiv({ cls: "sd-overview-right" });
   const mini = (label, value, hint, ring2) => {
@@ -7371,7 +7414,7 @@ function renderOverview(view, root) {
     item.createDiv({ cls: "sd-mini-label", text: label });
     item.createDiv({ cls: "sd-mini-value", text: value });
     item.createDiv({ cls: "sd-mini-hint", text: hint });
-    if (ring2) item.createDiv({ cls: "sd-mini-ring" }).innerHTML = ring2;
+    if (ring2) appendSvg(item.createDiv({ cls: "sd-mini-ring" }), ring2);
   };
   mini(t("\u6D3B\u8DC3\u5929\u6570"), `${active} / ${keys.length}`, t("\u6709\u8BB0\u5F55\u7684\u65E5\u5B50"), ring(active, keys.length));
   mini(t("\u5F53\u524D\u8FDE\u7EED"), tf("{n} \u5929", { n: view.currentStreak() }), tf("\u6700\u957F {n} \u5929 \xB7 \u6309\u5168\u90E8\u5386\u53F2", { n: view.longestStreak() }));
@@ -7463,11 +7506,13 @@ function renderStrata(view, root) {
     ...totals
   });
   const slot = card.createDiv({ cls: "sd-strata-slot" });
-  slot.innerHTML = `<svg class="sd-strata-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeAttr(ariaLabel)}">${bands}${monthLabels}${hits}</svg>`;
+  appendSvg(
+    slot,
+    `<svg class="sd-strata-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeAttr(ariaLabel)}">${bands}${monthLabels}${hits}</svg>`
+  );
   const showTip = (event, month) => {
     view.hideHeatTooltip();
-    const tip = document.createElement("div");
-    tip.className = "sd-heat-tooltip";
+    const tip = document.body.createDiv({ cls: "sd-heat-tooltip" });
     tip.createDiv({ cls: "sd-tip-date", text: month.month });
     tip.createDiv({ cls: "sd-tip-metric", text: tf("\u4EBA\u5199 {human} \u5B57 \xB7 AI \u5199 {agent} \u5B57", { human: month.human, agent: month.agent }) });
     tip.createDiv({ cls: "sd-tip-metric", text: tf("\u5B8C\u6210\u4EFB\u52A1 {tasks} \u4E2A \xB7 \u4E13\u6CE8 {focus} \u5206\u949F", { tasks: month.tasks, focus: month.focus }) });
@@ -7524,7 +7569,6 @@ function renderHeatmap(view, root) {
   }
   const main = grid.createDiv({ cls: "sd-main" });
   const months = main.createDiv({ cls: "sd-months" });
-  months.style.gridTemplateColumns = "repeat(53, 15px)";
   const columns = main.createDiv({ cls: "sd-columns" });
   const cells = [];
   for (let week = 0; week < 53; week += 1) {
@@ -7561,7 +7605,7 @@ function renderHeatmap(view, root) {
     const column = Math.floor((cell.date.getTime() - start.getTime()) / (7 * 864e5));
     if (column < 0 || column >= 53) continue;
     const label = months.createDiv({ cls: "sd-month", text: tf("{n}\u6708", { n: cell.date.getMonth() + 1 }) });
-    label.style.gridColumn = String(column + 1);
+    label.setCssStyles({ gridColumn: String(column + 1) });
   }
   const max = Math.max(1, ...cells.map((cell) => cell.value));
   for (const cell of cells) {
@@ -7649,7 +7693,7 @@ function renderAnalytics(view, root, section = "all") {
       const writingRefs = [];
       if (goal > 0) writingRefs.push({ value: goal, label: tf("\u76EE\u6807 {n}", { n: goal }), color: "var(--text-accent)" });
       if (writingMean > 0) writingRefs.push({ value: writingMean, label: tf("\u5747\u503C {n}", { n: Math.round(writingMean) }) });
-      trendContent.innerHTML += barChart(writingValues, "var(--interactive-accent)", writingRefs);
+      appendSvg(trendContent, barChart(writingValues, "var(--interactive-accent)", writingRefs));
     } else if (view.trendTab === "changes") {
       const addedValues = days.map((day) => day.wordsAdded);
       const addedMean = mean(addedValues);
@@ -7658,9 +7702,12 @@ function renderAnalytics(view, root, section = "all") {
         { values: days.map((day) => day.wordsRemoved), color: "var(--text-faint)", label: t("\u79FB\u9664") },
         { values: days.map((day) => day.capturedWords), color: "var(--text-muted)", label: t("\u6355\u83B7") }
       ];
-      trendContent.innerHTML += multiLine(
-        changeSeries,
-        addedMean > 0 ? [{ value: addedMean, label: tf("\u65B0\u589E\u5747\u503C {n}", { n: Math.round(addedMean) }) }] : []
+      appendSvg(
+        trendContent,
+        multiLine(
+          changeSeries,
+          addedMean > 0 ? [{ value: addedMean, label: tf("\u65B0\u589E\u5747\u503C {n}", { n: Math.round(addedMean) }) }] : []
+        )
       );
       renderChartLegend(trendContent, changeSeries);
     } else if (view.trendTab === "time") {
@@ -7670,9 +7717,12 @@ function renderAnalytics(view, root, section = "all") {
         { values: activeValues, color: "var(--interactive-accent)", label: t("\u6D3B\u8DC3") },
         { values: days.map((day) => day.focusMinutes), color: "var(--text-faint)", label: t("\u4E13\u6CE8") }
       ];
-      trendContent.innerHTML += multiLine(
-        timeSeries,
-        activeMean > 0 ? [{ value: activeMean, label: tf("\u6D3B\u8DC3\u5747\u503C {n}", { n: Math.round(activeMean) }) }] : []
+      appendSvg(
+        trendContent,
+        multiLine(
+          timeSeries,
+          activeMean > 0 ? [{ value: activeMean, label: tf("\u6D3B\u8DC3\u5747\u503C {n}", { n: Math.round(activeMean) }) }] : []
+        )
       );
       renderChartLegend(trendContent, timeSeries);
     } else {
@@ -7680,8 +7730,12 @@ function renderAnalytics(view, root, section = "all") {
       const captured = days.reduce((sum, day) => sum + day.capturedWords, 0);
       const typed = Math.max(0, totalWords - captured);
       const bar = trendContent.createDiv({ cls: "sd-source-bar" });
-      bar.createDiv({ cls: "sd-source-typed" }).style.width = `${totalWords ? typed / totalWords * 100 : 0}%`;
-      bar.createDiv({ cls: "sd-source-capture" }).style.width = `${totalWords ? captured / totalWords * 100 : 0}%`;
+      bar.createDiv({ cls: "sd-source-typed" }).setCssStyles({
+        width: `${totalWords ? typed / totalWords * 100 : 0}%`
+      });
+      bar.createDiv({ cls: "sd-source-capture" }).setCssStyles({
+        width: `${totalWords ? captured / totalWords * 100 : 0}%`
+      });
       trendContent.createDiv({ cls: "sd-card-sub", text: tf("\u9010\u6B65\u5199\u5165 {typed} \u5B57 \xB7 \u5927\u6BB5\u6355\u83B7 {captured} \u5B57", { typed, captured }) });
     }
   }
@@ -7703,7 +7757,7 @@ function renderAnalytics(view, root, section = "all") {
       row.createSpan({ cls: "sd-folder-name", text: folder || "/", attr: { title: folder || "/" } });
       const track = row.createDiv({ cls: "sd-folder-track" });
       const percent = folderWordsTotal > 0 ? words / folderWordsTotal * 100 : 0;
-      track.createDiv({ cls: "sd-folder-fill" }).style.width = `${percent}%`;
+      track.createDiv({ cls: "sd-folder-fill" }).setCssStyles({ width: `${percent}%` });
       row.createEl("strong", { text: tf("{words} \u5B57 \xB7 {percent}%", { words, percent: percent.toFixed(0) }) });
     }
     if (sortedFolders.length > 6) {
@@ -7740,11 +7794,11 @@ function renderAnalytics(view, root, section = "all") {
         }, 0)
       );
       const hourlyMean = mean(hourly);
-      rhythm.createDiv({ cls: "sd-chart-slot" }).innerHTML = barChart(
+      appendSvg(rhythm.createDiv({ cls: "sd-chart-slot" }), barChart(
         hourly,
         "var(--interactive-accent)",
         hourlyMean > 0 ? [{ value: hourlyMean, label: tf("\u5747\u503C {n}", { n: Math.round(hourlyMean) }) }] : []
-      );
+      ));
       const weekdayHour = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0));
       for (const key of keys) {
         const day = view.plugin.store.getDay(key);
@@ -7840,7 +7894,7 @@ function renderYearly(view, root) {
       return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="var(--background-modifier-border)" stroke-width="1"/><text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-size="9" text-anchor="middle" dominant-baseline="middle" fill="var(--text-faint)">${tf("{n}\u6708", { n: month + 1 })}</text>`;
     }).join("");
     const watermark = `<text x="110" y="116" text-anchor="middle" font-size="26" font-weight="600" fill="var(--text-faint)" opacity="0.18">${year}</text>`;
-    card.createDiv({ cls: "sd-chart-slot" }).innerHTML = `<svg viewBox="0 0 220 220" class="sd-wheel" role="img" aria-label="${escapeAttr(`${t("\u5E74\u8F6E")} \xB7 ${tf("{year} \u5E74", { year })}`)}">${tracks}${monthTicks}${watermark}${petals}</svg>`;
+    appendSvg(card.createDiv({ cls: "sd-chart-slot" }), `<svg viewBox="0 0 220 220" class="sd-wheel" role="img" aria-label="${escapeAttr(`${t("\u5E74\u8F6E")} \xB7 ${tf("{year} \u5E74", { year })}`)}">${tracks}${monthTicks}${watermark}${petals}</svg>`);
     return;
   }
   if (view.yearlyTab === "fingerprint") {
@@ -7852,7 +7906,7 @@ function renderYearly(view, root) {
       }).join("");
       return `<text x="0" y="${month * 20 + 11}" font-size="9" fill="var(--text-faint)">${month + 1}</text>${bars}`;
     }).join("");
-    card.createDiv({ cls: "sd-chart-slot" }).innerHTML = `<svg viewBox="0 0 420 248" class="sd-fingerprint" role="img" aria-label="${escapeAttr(`${t("\u77E5\u8BC6\u6307\u7EB9")} \xB7 ${t("\u6BCF\u5929\u4E00\u6839\u8272\u6761")}`)}">${fingerprintSvg}</svg>`;
+    appendSvg(card.createDiv({ cls: "sd-chart-slot" }), `<svg viewBox="0 0 420 248" class="sd-fingerprint" role="img" aria-label="${escapeAttr(`${t("\u77E5\u8BC6\u6307\u7EB9")} \xB7 ${t("\u6BCF\u5929\u4E00\u6839\u8272\u6761")}`)}">${fingerprintSvg}</svg>`);
     return;
   }
   for (let month = 0; month < 12; month += 1) {
@@ -7874,10 +7928,10 @@ function renderReview(view, root) {
   head.createDiv({ cls: "sd-card-title", text: t("\u77E5\u8BC6\u590D\u76D8 \xB7 \u672C\u5468") });
   const markdown = buildWeeklyReview(view.plugin.store, /* @__PURE__ */ new Date());
   head.createEl("button", { text: t("\u590D\u5236 Markdown") }).onclick = () => {
-    void navigator.clipboard.writeText(markdown).then(() => new import_obsidian20.Notice(t("\u5468\u590D\u76D8\u5DF2\u590D\u5236")));
+    void navigator.clipboard.writeText(markdown).then(() => new import_obsidian21.Notice(t("\u5468\u590D\u76D8\u5DF2\u590D\u5236")));
   };
   const preview = card.createDiv({ cls: "sd-review-preview" });
-  void import_obsidian20.MarkdownRenderer.render(view.plugin.app, markdown, preview, "", view);
+  void import_obsidian21.MarkdownRenderer.render(view.plugin.app, markdown, preview, "", view);
 }
 
 // src/views/dashboard/sections/today.ts
@@ -7944,7 +7998,7 @@ function renderTodayCard(view, root) {
   head.createDiv({ cls: "sd-today-title", text: t("\u4ECA\u5929") });
   head.createDiv({ cls: "sd-pill", text: day.contribution > 0 ? tf("{n} \u5206", { n: day.contribution }) : t("\u8FD8\u6CA1\u5F00\u59CB") });
   const goalRing2 = head.createDiv({ cls: "sd-goal-ring" });
-  goalRing2.innerHTML = goalRing(day.wordsAdded, goal);
+  appendSvg(goalRing2, goalRing(day.wordsAdded, goal));
   head.createEl("button", { cls: "sd-share-today", text: t("\u6218\u62A5\u56FE\u7247") }).onclick = () => {
     exportTodayReport({
       date: today,
@@ -7965,28 +8019,23 @@ function renderTodayCard(view, root) {
   const skip = row.createEl("button", { cls: "sd-pomodoro-skip", text: t("\u8DF3\u8FC7") });
   skip.onclick = () => view.plugin.pomodoro.skip();
   const progress = card.createDiv({ cls: "sd-progress" });
-  progress.createDiv({ cls: "sd-progress-fill" }).style.width = `${Math.min(100, day.wordsAdded / goal * 100)}%`;
+  progress.createDiv({ cls: "sd-progress-fill" }).setCssStyles({
+    width: `${Math.min(100, day.wordsAdded / goal * 100)}%`
+  });
 }
 function renderQuickMemo(view, root) {
-  var _a2;
   const card = root.createDiv({ cls: "sd-card sd-quick-memo" });
   card.createDiv({ cls: "sd-card-title", text: t("\u5FEB\u901F\u901F\u8BB0") });
   const area = card.createEl("textarea", { cls: "sd-memo-input" });
   area.placeholder = t("\u60F3\u5230\u4EC0\u4E48\uFF0C\u968F\u624B\u8BB0\u4E0B\u2026");
   area.rows = 2;
   const draftKey = "sediment.quick-memo.draft";
-  try {
-    area.value = (_a2 = localStorage.getItem(draftKey)) != null ? _a2 : "";
-  } catch (e) {
-  }
+  const savedDraft = view.plugin.app.loadLocalStorage(draftKey);
+  area.value = typeof savedDraft === "string" ? savedDraft : "";
   const status = card.createDiv({ cls: "sd-save-status", text: area.value ? t("\u8349\u7A3F\u5DF2\u6062\u590D") : t("\u672A\u4FDD\u5B58") });
   area.oninput = () => {
-    try {
-      localStorage.setItem(draftKey, area.value);
-      status.setText(area.value ? t("\u8349\u7A3F\u5DF2\u4FDD\u5B58") : t("\u672A\u4FDD\u5B58"));
-    } catch (e) {
-      status.setText(t("\u8349\u7A3F\u4FDD\u5B58\u5931\u8D25"));
-    }
+    view.plugin.app.saveLocalStorage(draftKey, area.value || null);
+    status.setText(area.value ? t("\u8349\u7A3F\u5DF2\u4FDD\u5B58") : t("\u672A\u4FDD\u5B58"));
   };
   const submit = card.createEl("button", { cls: "mod-cta", text: t("\u8BB0\u4E00\u6761") });
   submit.onclick = () => {
@@ -7997,10 +8046,7 @@ function renderQuickMemo(view, root) {
     void view.plugin.memos.add(text).then((memo) => {
       if (memo) {
         area.value = "";
-        try {
-          localStorage.removeItem(draftKey);
-        } catch (e) {
-        }
+        view.plugin.app.saveLocalStorage(draftKey, null);
         status.setText(t("\u5DF2\u4FDD\u5B58"));
         view.render();
       } else {
@@ -8040,7 +8086,7 @@ function renderTodayAgent(view, root) {
 
 // src/views/dashboard-view.ts
 var DASHBOARD_VIEW_TYPE = "sediment-dashboard";
-var DashboardView = class extends import_obsidian21.ItemView {
+var DashboardView = class extends import_obsidian22.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
@@ -8222,8 +8268,7 @@ var DashboardView = class extends import_obsidian21.ItemView {
   showHeatTooltip(event, key) {
     this.hideHeatTooltip();
     const day = this.plugin.store.getDay(key);
-    const tip = document.createElement("div");
-    tip.className = "sd-heat-tooltip";
+    const tip = document.body.createDiv({ cls: "sd-heat-tooltip" });
     tip.createDiv({ cls: "sd-tip-date", text: key });
     tip.createDiv({
       cls: "sd-tip-metric",
@@ -8239,8 +8284,10 @@ var DashboardView = class extends import_obsidian21.ItemView {
   }
   moveHeatTooltip(event) {
     if (!this.heatTooltip) return;
-    this.heatTooltip.style.left = `${event.clientX + 14}px`;
-    this.heatTooltip.style.top = `${event.clientY + 14}px`;
+    this.heatTooltip.setCssStyles({
+      left: `${event.clientX + 14}px`,
+      top: `${event.clientY + 14}px`
+    });
   }
   hideHeatTooltip() {
     var _a2;
@@ -8250,15 +8297,15 @@ var DashboardView = class extends import_obsidian21.ItemView {
   renderHeader(root) {
     var _a2;
     const banner = root.createDiv({ cls: "sd-banner" });
-    banner.innerHTML = this.bannerSvg();
+    appendSvg(banner, this.bannerSvg());
     this.bannerEl = banner;
     const bar = root.createDiv({ cls: "sd-navbar" });
     const brand = bar.createDiv({ cls: "sd-brand" });
-    brand.insertAdjacentHTML("afterbegin", SEDIMENT_LOGO_SVG);
+    appendSvg(brand, SEDIMENT_LOGO_SVG);
     brand.createSpan({ text: "SEDIMENT" });
     const tabs = bar.createDiv({ cls: "sd-tabs" });
     for (const [key, label] of TABS) {
-      if (import_obsidian21.Platform.isMobile && key === "agent") continue;
+      if (import_obsidian22.Platform.isMobile && key === "agent") continue;
       const button = tabs.createEl("button", {
         cls: `sd-tab ${key === this.tab ? "is-active" : ""}`,
         text: t(label),
@@ -8283,8 +8330,6 @@ var DashboardView = class extends import_obsidian21.ItemView {
         this.render();
       };
     }
-    const spacer = bar.createDiv({ cls: "sd-spacer" });
-    spacer.setAttribute("style", "flex:1");
     const refresh = bar.createEl("button", { cls: "sd-refresh", text: t("\u5237\u65B0") });
     refresh.onclick = () => this.render();
   }
@@ -8335,38 +8380,42 @@ var DashboardView = class extends import_obsidian21.ItemView {
           const complete = actions.createEl("button", { text: t("\u5B8C\u6210") });
           complete.onclick = () => {
             complete.disabled = true;
-            if (!window.confirm(t("\u786E\u8BA4\u5C06\u6B64\u5F85\u529E\u6807\u8BB0\u4E3A\u5B8C\u6210\uFF1F"))) {
-              complete.disabled = false;
-              return;
-            }
-            void this.plugin.tasks.complete(task.path, task.line).then(() => {
-              new import_obsidian21.Notice(t("\u5F85\u529E\u5DF2\u5B8C\u6210"));
-              this.render();
-            }).catch((error) => {
-              complete.disabled = false;
-              new import_obsidian21.Notice(error instanceof Error ? error.message : t("\u64CD\u4F5C\u5931\u8D25"));
+            void confirmAction(this.app, t("\u786E\u8BA4\u5C06\u6B64\u5F85\u529E\u6807\u8BB0\u4E3A\u5B8C\u6210\uFF1F")).then((ok) => {
+              if (!ok) {
+                complete.disabled = false;
+                return;
+              }
+              void this.plugin.tasks.complete(task.path, task.line).then(() => {
+                new import_obsidian22.Notice(t("\u5F85\u529E\u5DF2\u5B8C\u6210"));
+                this.render();
+              }).catch((error) => {
+                complete.disabled = false;
+                new import_obsidian22.Notice(error instanceof Error ? error.message : t("\u64CD\u4F5C\u5931\u8D25"));
+              });
             });
           };
         } else if (task.memoId) {
           actions.createEl("button", { text: t("\u8BA4\u9886") }).onclick = () => {
             void this.plugin.agentApi.claimAgentTask(task.memoId, true).then(() => {
-              new import_obsidian21.Notice(t("\u4EFB\u52A1\u5DF2\u8BA4\u9886"));
+              new import_obsidian22.Notice(t("\u4EFB\u52A1\u5DF2\u8BA4\u9886"));
               this.render();
-            }).catch((error) => new import_obsidian21.Notice(error instanceof Error ? error.message : t("\u64CD\u4F5C\u5931\u8D25")));
+            }).catch((error) => new import_obsidian22.Notice(error instanceof Error ? error.message : t("\u64CD\u4F5C\u5931\u8D25")));
           };
           const complete = actions.createEl("button", { text: t("\u5B8C\u6210") });
           complete.onclick = () => {
             complete.disabled = true;
-            if (!window.confirm(t("\u786E\u8BA4\u5B8C\u6210\u6B64 Agent \u5F85\u529E\uFF1F"))) {
-              complete.disabled = false;
-              return;
-            }
-            void this.plugin.agentApi.completeAgentTask(task.memoId, void 0, true).then(() => {
-              new import_obsidian21.Notice(t("Agent \u5F85\u529E\u5DF2\u5B8C\u6210"));
-              this.render();
-            }).catch((error) => {
-              complete.disabled = false;
-              new import_obsidian21.Notice(error instanceof Error ? error.message : t("\u64CD\u4F5C\u5931\u8D25"));
+            void confirmAction(this.app, t("\u786E\u8BA4\u5B8C\u6210\u6B64 Agent \u5F85\u529E\uFF1F")).then((ok) => {
+              if (!ok) {
+                complete.disabled = false;
+                return;
+              }
+              void this.plugin.agentApi.completeAgentTask(task.memoId, void 0, true).then(() => {
+                new import_obsidian22.Notice(t("Agent \u5F85\u529E\u5DF2\u5B8C\u6210"));
+                this.render();
+              }).catch((error) => {
+                complete.disabled = false;
+                new import_obsidian22.Notice(error instanceof Error ? error.message : t("\u64CD\u4F5C\u5931\u8D25"));
+              });
             });
           };
         }
@@ -8466,7 +8515,7 @@ ${celestial}
 <ellipse cx="${x.toFixed(0)}" cy="276" rx="46" ry="8" fill="${daylight ? "#fff3c4" : "#eef2ff"}" opacity="0.2"/></svg>`;
   }
   updateBanner() {
-    if (this.bannerEl) this.bannerEl.innerHTML = this.bannerSvg();
+    if (this.bannerEl) setSvg(this.bannerEl, this.bannerSvg());
   }
   updatePomodoroButton() {
     const button = this.contentEl.querySelector(".sd-pomodoro-button");
@@ -8484,7 +8533,7 @@ ${celestial}
       { key: "ink", label: t("\u6C34\u58A8\u5C71\u6C34") },
       { key: "city", label: t("\u50CF\u7D20\u57CE\u5E02") }
     ];
-    const menu = new import_obsidian21.Menu();
+    const menu = new import_obsidian22.Menu();
     for (const style of styles) {
       menu.addItem((item) => {
         item.setTitle(style.label).setChecked(this.plugin.store.settings.artStyle === style.key).onClick(() => {
@@ -8499,9 +8548,9 @@ ${celestial}
 };
 
 // src/views/memo-view.ts
-var import_obsidian22 = require("obsidian");
+var import_obsidian23 = require("obsidian");
 var MEMO_VIEW_TYPE = "sediment-memo";
-var MemoView = class extends import_obsidian22.ItemView {
+var MemoView = class extends import_obsidian23.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
@@ -8704,12 +8753,11 @@ var MemoView = class extends import_obsidian22.ItemView {
       area.value += ` ![[${name}]]`;
       area.focus();
     }
-    new import_obsidian22.Notice(t("\u56FE\u7247\u5DF2\u63D2\u5165\u901F\u8BB0"));
+    new import_obsidian23.Notice(t("\u56FE\u7247\u5DF2\u63D2\u5165\u901F\u8BB0"));
   }
   renderList(root) {
     const existing = root.querySelector(".sd-memo-list");
-    const list = document.createElement("div");
-    list.className = "sd-memo-list";
+    const list = createDiv({ cls: "sd-memo-list" });
     if (existing) existing.replaceWith(list);
     else root.appendChild(list);
     let memos = this.plugin.store.data.memos.slice();
@@ -8737,8 +8785,7 @@ var MemoView = class extends import_obsidian22.ItemView {
   }
   memoCard(memo) {
     var _a2;
-    const card = document.createElement("div");
-    card.className = "sd-memo-card";
+    const card = createDiv({ cls: "sd-memo-card" });
     if (memo.archived) card.addClass("is-archived");
     card.createDiv({ cls: "sd-memo-time", text: memo.archived ? `${memo.time} \xB7 ${t("\u5DF2\u5F52\u6863")}` : memo.time });
     card.createDiv({
@@ -8774,25 +8821,23 @@ var MemoView = class extends import_obsidian22.ItemView {
     }
     const actions = card.createDiv({ cls: "sd-memo-actions" });
     actions.createEl("button", { text: t("\u590D\u5236") }).onclick = () => {
-      void navigator.clipboard.writeText(memo.text).then(() => new import_obsidian22.Notice(t("\u5DF2\u590D\u5236")));
+      void navigator.clipboard.writeText(memo.text).then(() => new import_obsidian23.Notice(t("\u5DF2\u590D\u5236")));
     };
     actions.createEl("button", { text: t("\u5206\u4EAB\u56FE") }).onclick = () => exportMemoCard(memo, "minimal");
     actions.createEl("button", { text: t("\u7F16\u8F91") }).onclick = () => {
-      const area = document.createElement("textarea");
-      area.className = "sd-memo-edit";
+      const area = createEl("textarea", { cls: "sd-memo-edit" });
       area.value = memo.text;
       area.rows = Math.min(8, Math.max(3, memo.text.split("\n").length + 1));
       textEl.replaceWith(area);
       area.focus();
-      const bar = document.createElement("div");
-      bar.className = "sd-memo-edit-bar";
+      const bar = createDiv({ cls: "sd-memo-edit-bar" });
       const save = bar.createEl("button", { cls: "mod-cta", text: t("\u4FDD\u5B58") });
       const cancel = bar.createEl("button", { text: t("\u53D6\u6D88") });
       area.after(bar);
       save.onclick = () => {
         void this.plugin.memos.edit(memo.id, area.value).then((updated) => {
           if (updated) this.render();
-          else new import_obsidian22.Notice(t("\u5185\u5BB9\u4E3A\u7A7A\uFF0C\u672A\u4FDD\u5B58"));
+          else new import_obsidian23.Notice(t("\u5185\u5BB9\u4E3A\u7A7A\uFF0C\u672A\u4FDD\u5B58"));
         });
       };
       cancel.onclick = () => this.render();
@@ -8807,19 +8852,24 @@ var MemoView = class extends import_obsidian22.ItemView {
     };
     actions.createEl("button", { text: memo.archived ? t("\u53D6\u6D88\u5F52\u6863") : t("\u5F52\u6863") }).onclick = () => {
       this.plugin.memos.setArchived(memo.id, !memo.archived);
-      new import_obsidian22.Notice(memo.archived ? t("\u5DF2\u5F52\u6863\uFF0C\u53EF\u5728\u300C\u542B\u5F52\u6863\u300D\u4E2D\u67E5\u770B") : t("\u5DF2\u53D6\u6D88\u5F52\u6863"));
+      new import_obsidian23.Notice(memo.archived ? t("\u5DF2\u5F52\u6863\uFF0C\u53EF\u5728\u300C\u542B\u5F52\u6863\u300D\u4E2D\u67E5\u770B") : t("\u5DF2\u53D6\u6D88\u5F52\u6863"));
       this.render();
     };
     actions.createEl("button", { cls: "sd-memo-delete", text: t("\u5220\u9664") }).onclick = () => {
-      if (!window.confirm(t("\u5220\u9664\u8FD9\u6761\u901F\u8BB0\uFF1F\u65E5\u8BB0\u4E2D\u5BF9\u5E94\u7684\u901F\u8BB0\u8BB0\u5F55\u4E5F\u4F1A\u4E00\u5E76\u79FB\u9664\u3002"))) return;
-      void this.plugin.memos.remove(memo.id).then(() => this.render());
+      void confirmAction(
+        this.app,
+        t("\u5220\u9664\u8FD9\u6761\u901F\u8BB0\uFF1F\u65E5\u8BB0\u4E2D\u5BF9\u5E94\u7684\u901F\u8BB0\u8BB0\u5F55\u4E5F\u4F1A\u4E00\u5E76\u79FB\u9664\u3002")
+      ).then((ok) => {
+        if (!ok) return;
+        void this.plugin.memos.remove(memo.id).then(() => this.render());
+      });
     };
     if (!memo.tags.includes("to-agent") && !memo.converted) {
       actions.createEl("button", { text: t("\u8F6C Agent") }).onclick = () => {
         memo.tags.push("to-agent");
         this.plugin.store.scheduleSave();
         void this.plugin.memos.syncTags(memo);
-        new import_obsidian22.Notice(t("\u5DF2\u52A0\u5165 Agent \u5F85\u529E"));
+        new import_obsidian23.Notice(t("\u5DF2\u52A0\u5165 Agent \u5F85\u529E"));
         this.render();
       };
     }
@@ -8861,7 +8911,7 @@ var MemoView = class extends import_obsidian22.ItemView {
   }
   tokens(text) {
     var _a2;
-    const clean = text.toLowerCase().replace(/[#\[\]()]/g, " ");
+    const clean = text.toLowerCase().replace(/[#[\]()]/g, " ");
     const chinese = clean.replace(/[^\u3400-\u9fff]/g, " ");
     const bigrams = [];
     for (let index = 0; index < chinese.length - 1; index += 1) {
@@ -8965,7 +9015,7 @@ var MemoView = class extends import_obsidian22.ItemView {
         });
         button.onclick = () => void this.plugin.app.workspace.openLinkText(file.path, "", false);
         const cache = this.plugin.app.metadataCache.getFileCache(file);
-        const rawTags = (_d = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _d.tags;
+        const rawTags = (_d = frontmatterOf(cache)) == null ? void 0 : _d.tags;
         const tags = Array.isArray(rawTags) ? rawTags.slice(0, 3).map((tag) => `#${String(tag).replace(/^#/, "")}`) : [];
         row.createDiv({
           cls: "sd-knowledge-path",
@@ -8998,20 +9048,20 @@ var MemoView = class extends import_obsidian22.ItemView {
 };
 
 // src/main.ts
-var SedimentPlugin = class extends import_obsidian23.Plugin {
+var SedimentPlugin = class extends import_obsidian24.Plugin {
   constructor() {
     super(...arguments);
     this.serverRestartTimer = null;
     this.refreshTimer = null;
   }
   async onload() {
-    (0, import_obsidian23.addIcon)(SEDIMENT_ICON_ID, SEDIMENT_ICON_SVG);
-    (0, import_obsidian23.addIcon)(SEDIMENT_MEMO_ICON_ID, SEDIMENT_MEMO_ICON_SVG);
+    (0, import_obsidian24.addIcon)(SEDIMENT_ICON_ID, SEDIMENT_ICON_SVG);
+    (0, import_obsidian24.addIcon)(SEDIMENT_MEMO_ICON_ID, SEDIMENT_MEMO_ICON_SVG);
     this.store = new Store(this);
     setLocale(localeFromPersisted(await this.loadData()));
     await this.store.load();
     if (this.store.migrationWarning) {
-      new import_obsidian23.Notice(
+      new import_obsidian24.Notice(
         this.store.recoveryCopyPath ? `${this.store.migrationWarning}
 ${tf("\u6062\u590D\u526F\u672C\uFF1A{path}", { path: this.store.recoveryCopyPath })}` : this.store.migrationWarning
       );
@@ -9020,7 +9070,7 @@ ${tf("\u6062\u590D\u526F\u672C\uFF1A{path}", { path: this.store.recoveryCopyPath
     if (this.store.settings.lastSeenVersion !== this.manifest.version) {
       this.store.settings.lastSeenVersion = this.manifest.version;
       await this.store.save();
-      new import_obsidian23.Notice(tf("Sediment \u5DF2\u66F4\u65B0\u5230 v{version}\uFF0C\u53EF\u5728\u300C\u67E5\u770B\u66F4\u65B0\u8BB0\u5F55\u300D\u4E2D\u4E86\u89E3\u53D8\u5316", { version: this.manifest.version }));
+      new import_obsidian24.Notice(tf("Sediment \u5DF2\u66F4\u65B0\u5230 v{version}\uFF0C\u53EF\u5728\u300C\u67E5\u770B\u66F4\u65B0\u8BB0\u5F55\u300D\u4E2D\u4E86\u89E3\u53D8\u5316", { version: this.manifest.version }));
     }
     if (!this.store.settings.agentServerToken) {
       this.store.settings.agentServerToken = generateToken();
@@ -9038,7 +9088,7 @@ ${tf("\u6062\u590D\u526F\u672C\uFF1A{path}", { path: this.store.recoveryCopyPath
     this.registerView(MEMO_VIEW_TYPE, (leaf) => new MemoView(leaf, this));
     this.registerMarkdownCodeBlockProcessor("sediment-heatmap", (source, element) => {
       const options = parseEmbedOptions(source);
-      element.createDiv({ cls: "sd-embed" }).innerHTML = heatmapSvg(this.store, options);
+      appendSvg(element.createDiv({ cls: "sd-embed" }), heatmapSvg(this.store, options));
     });
     this.registerMarkdownCodeBlockProcessor("sediment-today", (_source, element) => {
       element.createDiv({ cls: "sd-embed-today", text: todayLine(this.store) });
@@ -9123,7 +9173,7 @@ ${tf("\u6062\u590D\u526F\u672C\uFF1A{path}", { path: this.store.recoveryCopyPath
       id: "snapshot-open-tasks",
       name: t("\u8BB0\u5F55\u4ECA\u65E5\u9057\u7559\u5F85\u529E\u5230\u65E5\u8BB0"),
       callback: () => void this.tasks.snapshot().then((count) => {
-        new import_obsidian23.Notice(count > 0 ? tf("\u5DF2\u8BB0\u5F55 {n} \u6761\u9057\u7559\u5F85\u529E", { n: count }) : t("\u6CA1\u6709\u9057\u7559\u5F85\u529E"));
+        new import_obsidian24.Notice(count > 0 ? tf("\u5DF2\u8BB0\u5F55 {n} \u6761\u9057\u7559\u5F85\u529E", { n: count }) : t("\u6CA1\u6709\u9057\u7559\u5F85\u529E"));
       })
     });
     this.addCommand({
@@ -9147,10 +9197,10 @@ ${tf("\u6062\u590D\u526F\u672C\uFF1A{path}", { path: this.store.recoveryCopyPath
       id: "backup-data",
       name: t("\u5907\u4EFD\u7EDF\u8BA1\u6570\u636E\u5230\u5E93\u5185"),
       callback: () => void this.store.backupData(true).then((count) => {
-        new import_obsidian23.Notice(count > 0 ? t("\u6570\u636E\u5DF2\u5907\u4EFD\u5230\u5E93\u5185") : t("\u5907\u4EFD\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u8BBE\u7F6E\u4E2D\u7684\u5907\u4EFD\u76EE\u5F55"));
+        new import_obsidian24.Notice(count > 0 ? t("\u6570\u636E\u5DF2\u5907\u4EFD\u5230\u5E93\u5185") : t("\u5907\u4EFD\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u8BBE\u7F6E\u4E2D\u7684\u5907\u4EFD\u76EE\u5F55"));
       }).catch((error) => {
         console.error("Sediment: \u5907\u4EFD\u5931\u8D25", error);
-        new import_obsidian23.Notice(t("\u5907\u4EFD\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u8BBE\u7F6E\u4E2D\u7684\u5907\u4EFD\u76EE\u5F55"));
+        new import_obsidian24.Notice(t("\u5907\u4EFD\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u8BBE\u7F6E\u4E2D\u7684\u5907\u4EFD\u76EE\u5F55"));
       })
     });
     this.addCommand({
@@ -9158,7 +9208,7 @@ ${tf("\u6062\u590D\u526F\u672C\uFF1A{path}", { path: this.store.recoveryCopyPath
       name: t("\u91CD\u5EFA\u5386\u53F2\u7EDF\u8BA1\uFF08\u6309\u7B14\u8BB0\u65E5\u671F\u8865\u9F50\u7A7A\u65E5\u671F\uFF09"),
       callback: () => void rebuildHistory(this.store, this.app.vault).then((result) => {
         this.refreshViews();
-        new import_obsidian23.Notice(
+        new import_obsidian24.Notice(
           result.filledDays > 0 ? tf("\u5DF2\u626B\u63CF {scanned} \u7BC7\u7B14\u8BB0\uFF0C\u8865\u9F50 {days} \u5929\uFF08{notes} \u7BC7 / {words} \u8BCD\uFF09", {
             scanned: result.scanned,
             days: result.filledDays,
@@ -9205,16 +9255,16 @@ ${tf("\u6062\u590D\u526F\u672C\uFF1A{path}", { path: this.store.recoveryCopyPath
       }
     });
   }
-  async onunload() {
+  onunload() {
     var _a2, _b, _c, _d;
     if (this.serverRestartTimer !== null) window.clearTimeout(this.serverRestartTimer);
     if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
     (_a2 = this.tracker) == null ? void 0 : _a2.stop();
     (_b = this.pomodoro) == null ? void 0 : _b.shutdown();
-    await ((_c = this.agentServer) == null ? void 0 : _c.stop());
+    void ((_c = this.agentServer) == null ? void 0 : _c.stop());
     (_d = this.fileBridge) == null ? void 0 : _d.stop();
     delete window.Sediment;
-    await this.store.save();
+    void this.store.save();
   }
   async saveSettings() {
     var _a2;
@@ -9291,16 +9341,16 @@ ${tf("\u6062\u590D\u526F\u672C\uFF1A{path}", { path: this.store.recoveryCopyPath
       if (!leaf) leaf = candidate;
     }
     if (!leaf) {
-      leaf = type === MEMO_VIEW_TYPE ? (_a2 = workspace.getRightLeaf(false)) != null ? _a2 : await workspace.getLeaf(true) : await workspace.getLeaf(true);
+      leaf = type === MEMO_VIEW_TYPE ? (_a2 = workspace.getRightLeaf(false)) != null ? _a2 : workspace.getLeaf(true) : workspace.getLeaf(true);
     }
     await leaf.setViewState({ type, active: true });
-    void workspace.revealLeaf(leaf);
+    workspace.setActiveLeaf(leaf, { focus: true });
   }
   isSideLeaf(leaf) {
     var _a2;
     let parent = leaf.parent;
     while (parent) {
-      if (parent instanceof import_obsidian23.WorkspaceSidedock) return true;
+      if (parent instanceof import_obsidian24.WorkspaceSidedock) return true;
       parent = (_a2 = parent.parent) != null ? _a2 : null;
     }
     return false;
@@ -9314,12 +9364,12 @@ ${tf("\u6062\u590D\u526F\u672C\uFF1A{path}", { path: this.store.recoveryCopyPath
     const path = folder ? `${folder}/${name}` : name;
     const existing = this.app.vault.getAbstractFileByPath(path);
     let file;
-    if (existing instanceof import_obsidian23.TFile) {
+    if (existing instanceof import_obsidian24.TFile) {
       const previous = await this.app.vault.read(existing);
       const weekHeading = markdown.split("\n", 1)[0];
       if (previous.includes(weekHeading)) {
         await this.app.workspace.getLeaf(true).openFile(existing);
-        new import_obsidian23.Notice(t("\u672C\u5468\u590D\u76D8\u5DF2\u5B58\u5728"));
+        new import_obsidian24.Notice(t("\u672C\u5468\u590D\u76D8\u5DF2\u5B58\u5728"));
         return;
       }
       await this.app.vault.modify(existing, `${previous.trimEnd()}
@@ -9332,7 +9382,7 @@ ${markdown}`);
       file = await this.app.vault.create(path, markdown);
     }
     await this.app.workspace.getLeaf(true).openFile(file);
-    new import_obsidian23.Notice(t("\u5468\u590D\u76D8\u5DF2\u751F\u6210\u5E76\u6253\u5F00"));
+    new import_obsidian24.Notice(t("\u5468\u590D\u76D8\u5DF2\u751F\u6210\u5E76\u6253\u5F00"));
   }
 };
 var main_default = SedimentPlugin;

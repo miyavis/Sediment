@@ -3,10 +3,11 @@
 import { Notice, TFile } from "obsidian";
 import { DiffModal } from "../../../ui/diff-modal";
 import { DraftPreviewModal } from "../../../ui/draft-preview-modal";
+import { confirmAction } from "../../../ui/confirm-modal";
 import { listBackups, readBackup, restoreBackup } from "../../../features/audit";
 import { scanKnowledgeState } from "../../../features/knowledge-state";
 import { localStamp } from "../../../utils/dates";
-import { normalizeFolder } from "../../../utils/vault";
+import { frontmatterOf, normalizeFolder } from "../../../utils/vault";
 import { t, tf } from "../../../i18n";
 import { pendingReviewChanges } from "../review-queue";
 import type { DashboardView } from "../../dashboard-view";
@@ -117,9 +118,7 @@ export function renderUnregisteredSources(view: DashboardView, root: HTMLElement
   const files = plugin.app.vault.getMarkdownFiles().map((file) => ({
     path: file.path,
     mtime: file.stat.mtime,
-    frontmatter: plugin.app.metadataCache.getFileCache(file)?.frontmatter as
-      | Record<string, unknown>
-      | undefined,
+    frontmatter: frontmatterOf(plugin.app.metadataCache.getFileCache(file)),
   }));
   const state = scanKnowledgeState(files, knowledgeFolder);
   if (state.unregistered === 0) return;
@@ -206,11 +205,16 @@ export function renderAgentChanges(view: DashboardView, root: HTMLElement): void
         });
       };
       actions.createEl("button", { text: t("恢复") }).onclick = () => {
-        if (!window.confirm(t("确认恢复这个 Agent 修改快照？当前笔记内容会被替换。"))) return;
-        void restoreBackup(view.plugin, file, backups[0].name).then(() => {
-          view.plugin.store.reviewChange(`${call.time}|${call.path}`, "reverted");
-          new Notice(t("已恢复到最近备份"));
-          view.render();
+        void confirmAction(
+          view.plugin.app,
+          t("确认恢复这个 Agent 修改快照？当前笔记内容会被替换。")
+        ).then((ok) => {
+          if (!ok) return;
+          void restoreBackup(view.plugin, file, backups[0].name).then(() => {
+            view.plugin.store.reviewChange(`${call.time}|${call.path}`, "reverted");
+            new Notice(t("已恢复到最近备份"));
+            view.render();
+          });
         });
       };
     }
@@ -294,10 +298,15 @@ export function renderDrafts(view: DashboardView, root: HTMLElement): void {
     };
     actions.createEl("button", { text: t("合并到关联笔记") }).onclick = () => void mergeDraft(view, file);
     actions.createEl("button", { text: t("驳回删除") }).onclick = () => {
-      if (!window.confirm(t("确认驳回并移入回收站？草稿可在回收站恢复。"))) return;
-      void view.plugin.app.vault.trash(file, false).then(() => {
-        new Notice(t("已驳回并移入回收站"));
-        view.render();
+      void confirmAction(
+        view.plugin.app,
+        t("确认驳回并移入回收站？草稿可在回收站恢复。")
+      ).then((ok) => {
+        if (!ok) return;
+        void view.plugin.app.fileManager.trashFile(file).then(() => {
+          new Notice(t("已驳回并移入回收站"));
+          view.render();
+        });
       });
     };
   }
@@ -318,11 +327,11 @@ export async function mergeDraft(view: DashboardView, file: TFile): Promise<void
     new Notice(tf("找不到关联笔记：{name}", { name: first }));
     return;
   }
-  if (!window.confirm(t("合并后草稿将移入回收站，是否继续？"))) return;
+  if (!(await confirmAction(view.plugin.app, t("合并后草稿将移入回收站，是否继续？")))) return;
   const source = await view.plugin.app.vault.read(file);
   const body = source.replace(/^---[\s\S]*?---\s*/, "");
   await view.plugin.app.vault.process(target, (data) => `${data.trimEnd()}\n\n${body.trim()}\n`);
-  await view.plugin.app.vault.trash(file, false);
+  await view.plugin.app.fileManager.trashFile(file);
   new Notice(tf("已合并到 {name}", { name: target.basename }));
   view.render();
 }

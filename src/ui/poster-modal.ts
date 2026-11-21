@@ -78,7 +78,7 @@ export class PosterModal extends Modal {
   }
 
   private async exportPoster(title: string, total: number, words: number, active: number): Promise<void> {
-    const canvas = document.createElement("canvas");
+    const canvas = createEl("canvas");
     canvas.width = 900;
     canvas.height = 1200;
     const ctx = canvas.getContext("2d");
@@ -99,7 +99,7 @@ export class PosterModal extends Modal {
     ctx.fillText(String(total), 60, 470);
     ctx.font = "32px sans-serif";
     ctx.fillText(tf("活跃 {n} 天", { n: active }) + " · " + tf("新增 {n} 字", { n: words }), 60, 610);
-    const link = document.createElement("a");
+    const link = createEl("a");
     link.download = `sediment-${title.replace(/\s/g, "")}.png`;
     link.href = canvas.toDataURL("image/png");
     link.click();

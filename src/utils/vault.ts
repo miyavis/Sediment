@@ -25,3 +25,9 @@ export async function ensureFolder(vault: Vault, path: string): Promise<void> {
     }
   }
 }
+
+/** metadataCache.frontmatter 的类型是 any；只接受对象，否则视为无 frontmatter。 */
+export function frontmatterOf(cache: { frontmatter?: unknown } | null | undefined): Record<string, unknown> | undefined {
+  const value = cache?.frontmatter;
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
+}

@@ -33,7 +33,7 @@ export async function rebuildHistory(store: Store, vault: Vault): Promise<Rebuil
     let text = "";
     try {
       text = await vault.cachedRead(file);
-    } catch (error) {
+    } catch {
       continue;
     }
     if (/^source\s*:\s*agent\b/m.test(text.slice(0, 800))) continue;

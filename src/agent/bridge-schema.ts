@@ -145,7 +145,11 @@ export function normalizeBridgeAgent(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   if (!trimmed || trimmed.length > BRIDGE_MAX_AGENT_LENGTH) return null;
-  const cleaned = trimmed.replace(/[\u0000-\u001f\u007f:#]/g, "-");
+  // 逐字符过滤控制字符与分隔符，避免在正则里写控制字符范围。
+  const cleaned = Array.from(trimmed, (char) => {
+    const code = char.codePointAt(0) ?? 0;
+    return code < 0x20 || code === 0x7f || char === ":" || char === "#" ? "-" : char;
+  }).join("");
   return cleaned || null;
 }
 
@@ -255,9 +259,9 @@ export function parseBridgeProposal(id: string, raw: unknown): BridgeParseResult
     if (find !== undefined) input.find = find;
     if (mode !== undefined) input.mode = mode;
     if (operation !== undefined) input.operation = operation;
-    if (index !== undefined) input.index = index as number;
+    if (index !== undefined) input.index = index;
     if (ifMatch !== undefined) input.ifMatch = ifMatch;
-    if (expectedMtime !== undefined) input.expectedMtime = expectedMtime as number;
+    if (expectedMtime !== undefined) input.expectedMtime = expectedMtime;
     return {
       ok: true,
       proposal: { id, agent, tool: "patch_note", ...(note ? { note } : {}), args: { input } },

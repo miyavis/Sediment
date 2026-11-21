@@ -1,40 +1,25 @@
 import { Notice } from "obsidian";
-import type { IncomingMessage, ServerResponse } from "http";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "http";
+import { createHash, timingSafeEqual } from "crypto";
 import type { SedimentPlugin } from "../main";
 import { AGENT_API_VERSION, ApiError } from "./api";
 import { redactAuditPath } from "./security";
 import { t, tf } from "../i18n";
 import { logError } from "../utils/log-error";
 
-type HttpServer = import("http").Server;
-
-/** 延迟加载 Node http，移动端不可用时优雅降级。 */
-function getHttp(): typeof import("http") | null {
-  try {
-    return require("http") as typeof import("http");
-  } catch (error) {
-    return null;
-  }
-}
-
 /**
  * 恒定时间令牌比较：两侧先各自做 SHA-256 摘要（定长，避免长度不等抛异常
- * 与长度侧信道），再用 timingSafeEqual 比较；crypto 不可用时直接判为不匹配（fail-closed）。
+ * 与长度侧信道），再用 timingSafeEqual 比较。
  */
 export function tokensMatch(supplied: string, expected: string): boolean {
-  try {
-    const crypto = require("crypto") as typeof import("crypto");
-    const a = crypto.createHash("sha256").update(String(supplied), "utf8").digest();
-    const b = crypto.createHash("sha256").update(String(expected), "utf8").digest();
-    return crypto.timingSafeEqual(a, b);
-  } catch (error) {
-    return false;
-  }
+  const a = createHash("sha256").update(String(supplied), "utf8").digest();
+  const b = createHash("sha256").update(String(expected), "utf8").digest();
+  return timingSafeEqual(a, b);
 }
 
 /** 127.0.0.1 上的轻量 HTTP API，供 MCP 桥接与本地脚本调用。 */
 export class AgentServer {
-  private server: HttpServer | null = null;
+  private server: Server | null = null;
   private running: { enabled: boolean; port: number; token: string } | null = null;
 
   constructor(private plugin: SedimentPlugin) {}
@@ -56,13 +41,8 @@ export class AgentServer {
     await this.stop();
 
     if (!desired.enabled) return;
-    const http = getHttp();
-    if (!http) {
-      new Notice(t("Agent API 需要桌面版 Obsidian（移动端无 Node http）"));
-      return;
-    }
 
-    const server = http.createServer((request, response) => {
+    const server = createServer((request, response) => {
       void this.handle(request, response);
     });
     try {

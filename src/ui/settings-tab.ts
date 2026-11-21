@@ -3,6 +3,7 @@ import { configureAgent, configSnippet, detectAgents, isAgentConfigured } from "
 import { uninstallMcp } from "../features/uninstall";
 import { migrateLegacyFolders, planFolderMigrations, type FolderMigrationOutcome } from "../features/folder-migration";
 import { McpUninstallModal } from "./mcp-uninstall-modal";
+import { confirmAction } from "./confirm-modal";
 import type { SedimentPlugin } from "../main";
 import { generateToken } from "../agent/api";
 import { METRICS, type MetricKey, type PulseSettings } from "../types";
@@ -34,7 +35,7 @@ export class PulseSettingTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: t("Sediment 设置") });
+    new Setting(containerEl).setName(t("Sediment 设置")).setHeading();
     const onboarding = containerEl.createDiv({ cls: "sd-onboarding" });
     onboarding.createDiv({ cls: "sd-card-title", text: t("首次使用检查") });
     onboarding.createDiv({
@@ -47,7 +48,7 @@ export class PulseSettingTab extends PluginSettingTab {
 
     // 分区 IA 的单一事实源在 settings-sections.ts；这里按声明顺序渲染标题与内容。
     for (const section of SETTINGS_SECTIONS) {
-      containerEl.createEl("h3", { text: t(section.title) });
+      new Setting(containerEl).setName(t(section.title)).setHeading();
       if (section.id === "basics") this.renderBasics(containerEl, settings, save);
       else if (section.id === "agent") this.renderAgent(containerEl, settings, save);
       else if (section.id === "backup") this.renderBackup(containerEl, settings, save);
@@ -243,36 +244,39 @@ export class PulseSettingTab extends PluginSettingTab {
           .setValue(settings.agentWorkMode)
           .onChange((value) => {
             const next = value as "readonly" | "draft" | "confirm" | "auto";
+            if (next === settings.agentWorkMode) return;
             // 切换档位会静默覆写 5 个权限开关，先说清楚再动手；取消则还原下拉。
-            if (next !== settings.agentWorkMode && !window.confirm(tf(
+            void confirmAction(this.app, tf(
               "切换为「{mode}」将重置 5 个权限开关：允许读取、允许新建、允许局部修改、允许全量覆盖、允许删除（删除始终关闭）。是否继续？",
               { mode: t(WORK_MODE_LABELS[next] ?? next) }
-            ))) {
-              dropdown.setValue(settings.agentWorkMode);
-              return;
-            }
-            settings.agentWorkMode = next;
-            if (settings.agentWorkMode === "readonly") {
-              settings.agentAllowRead = true;
-              settings.agentAllowCreate = false;
-              settings.agentAllowPatch = false;
-              settings.agentAllowOverwrite = false;
-              settings.agentAllowDelete = false;
-            } else if (settings.agentWorkMode === "draft") {
-              settings.agentAllowRead = true;
-              settings.agentAllowCreate = true;
-              settings.agentAllowPatch = false;
-              settings.agentAllowOverwrite = false;
-              settings.agentAllowDelete = false;
-            } else {
-              settings.agentAllowRead = true;
-              settings.agentAllowCreate = true;
-              settings.agentAllowPatch = true;
-              settings.agentAllowOverwrite = true;
-              settings.agentAllowDelete = false;
-            }
-            save();
-            this.display();
+            )).then((ok) => {
+              if (!ok) {
+                dropdown.setValue(settings.agentWorkMode);
+                return;
+              }
+              settings.agentWorkMode = next;
+              if (settings.agentWorkMode === "readonly") {
+                settings.agentAllowRead = true;
+                settings.agentAllowCreate = false;
+                settings.agentAllowPatch = false;
+                settings.agentAllowOverwrite = false;
+                settings.agentAllowDelete = false;
+              } else if (settings.agentWorkMode === "draft") {
+                settings.agentAllowRead = true;
+                settings.agentAllowCreate = true;
+                settings.agentAllowPatch = false;
+                settings.agentAllowOverwrite = false;
+                settings.agentAllowDelete = false;
+              } else {
+                settings.agentAllowRead = true;
+                settings.agentAllowCreate = true;
+                settings.agentAllowPatch = true;
+                settings.agentAllowOverwrite = true;
+                settings.agentAllowDelete = false;
+              }
+              save();
+              this.display();
+            });
           })
       );
 
@@ -426,7 +430,8 @@ export class PulseSettingTab extends PluginSettingTab {
       return;
     }
     const list = plan.map((item) => `  ${item.from} → ${item.to}`).join("\n");
-    const confirmed = window.confirm(
+    const confirmed = await confirmAction(
+      this.app,
       tf(
         "将迁移以下旧默认目录到 Sediment/：\n{list}\n\n文件会逐个移动（Obsidian 内的链接自动更新）；目标已有同名文件的目录会整体跳过。若 Obsidian 核心「日记」插件指向 daily，迁移后请同步修改它的设置。确定继续？",
         { list }
@@ -475,7 +480,7 @@ export class PulseSettingTab extends PluginSettingTab {
   private renderBackup(containerEl: HTMLElement, settings: PulseSettings, save: () => void): void {
     new Setting(containerEl)
       .setName(t("自动备份统计数据"))
-      .setDesc(t("把 data.json 快照写入库内普通文件夹，避免 .obsidian 被同步工具忽略。"))
+      .setDesc(t("把 data.json 快照写入库内普通文件夹，避免配置文件夹被同步工具忽略。"))
       .addToggle((toggle) =>
         toggle.setValue(settings.backupEnabled).onChange((value) => {
           settings.backupEnabled = value;
@@ -547,21 +552,26 @@ export class PulseSettingTab extends PluginSettingTab {
       });
       const actions = row.createDiv({ cls: "sd-audit-actions" });
       actions.createEl("button", { text: t("恢复") }).onclick = () => {
-        if (!window.confirm(t("确认从该快照恢复统计数据？当前数据会先另存为恢复副本，恢复后看板立即重载。"))) return;
-        void this.plugin.store.restoreDataBackup(backup.name).then((result) => {
-          if (result.recovery === "failed") {
-            // 恢复副本创建失败：备份已写回但失去回退保险，必须显著告警。
-            new Notice(t("恢复副本创建失败：备份已恢复，但当前数据未能另存副本。请立即手动备份 data.json，避免再次恢复时无法回退。"), 15_000);
-          } else if (result.recovery === "none") {
-            // 全新安装没有当前数据可备份：无需恢复副本，不是失败。
-            new Notice(tf("已从 {name} 恢复（此前无数据，无需恢复副本）", { name: backup.name }));
-          } else {
-            new Notice(tf("已从 {name} 恢复，恢复副本：{path}", { name: backup.name, path: result.recoveryPath }));
-          }
-          this.plugin.refreshViews();
-          this.display();
-        }).catch((error) => {
-          new Notice(error instanceof Error ? error.message : String(error));
+        void confirmAction(
+          this.app,
+          t("确认从该快照恢复统计数据？当前数据会先另存为恢复副本，恢复后看板立即重载。")
+        ).then((ok) => {
+          if (!ok) return;
+          void this.plugin.store.restoreDataBackup(backup.name).then((result) => {
+            if (result.recovery === "failed") {
+              // 恢复副本创建失败：备份已写回但失去回退保险，必须显著告警。
+              new Notice(t("恢复副本创建失败：备份已恢复，但当前数据未能另存副本。请立即手动备份 data.json，避免再次恢复时无法回退。"), 15_000);
+            } else if (result.recovery === "none") {
+              // 全新安装没有当前数据可备份：无需恢复副本，不是失败。
+              new Notice(tf("已从 {name} 恢复（此前无数据，无需恢复副本）", { name: backup.name }));
+            } else {
+              new Notice(tf("已从 {name} 恢复，恢复副本：{path}", { name: backup.name, path: result.recoveryPath }));
+            }
+            this.plugin.refreshViews();
+            this.display();
+          }).catch((error) => {
+            new Notice(error instanceof Error ? error.message : String(error));
+          });
         });
       };
     }

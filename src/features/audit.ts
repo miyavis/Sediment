@@ -1,24 +1,10 @@
+import { readdirSync, existsSync, readFileSync, statSync } from "fs";
 import { TFile, type Vault } from "obsidian";
 import type { SedimentPlugin } from "../main";
 
-interface FsModule {
-  existsSync(path: string): boolean;
-  readdirSync(path: string): string[];
-  readFileSync(path: string, encoding: string): string;
-  statSync(path: string): { mtimeMs: number };
-}
-
-function nodeFs(): FsModule | null {
-  try {
-    return require("fs") as FsModule;
-  } catch (error) {
-    return null;
-  }
-}
-
 function backupDirectory(vault: Vault): string | null {
   const adapter = vault.adapter as unknown as { getFullPath?: (path: string) => string };
-  return adapter.getFullPath?.(".obsidian/plugins/sediment/backups") ?? null;
+  return adapter.getFullPath?.(`${vault.configDir}/plugins/sediment/backups`) ?? null;
 }
 
 export interface BackupInfo {
@@ -28,22 +14,19 @@ export interface BackupInfo {
 
 /** 列出某个笔记在插件 backups 目录里的历史快照。 */
 export function listBackups(plugin: SedimentPlugin, path: string): BackupInfo[] {
-  const fs = nodeFs();
   const directory = backupDirectory(plugin.app.vault);
-  if (!fs || !directory || !fs.existsSync(directory)) return [];
+  if (!directory || !existsSync(directory)) return [];
   const suffix = path.replace(/[\\/]/g, "_");
-  return fs
-    .readdirSync(directory)
+  return readdirSync(directory)
     .filter((name) => name.endsWith(suffix))
-    .map((name) => ({ name, mtimeMs: fs.statSync(`${directory}/${name}`).mtimeMs }))
+    .map((name) => ({ name, mtimeMs: statSync(`${directory}/${name}`).mtimeMs }))
     .sort((a, b) => b.mtimeMs - a.mtimeMs);
 }
 
 export function readBackup(plugin: SedimentPlugin, name: string): string {
-  const fs = nodeFs();
   const directory = backupDirectory(plugin.app.vault);
-  if (!fs || !directory) return "";
-  return fs.readFileSync(`${directory}/${name}`, "utf8");
+  if (!directory) return "";
+  return readFileSync(`${directory}/${name}`, "utf8");
 }
 
 export async function restoreBackup(
@@ -51,10 +34,9 @@ export async function restoreBackup(
   file: TFile,
   name: string
 ): Promise<void> {
-  const fs = nodeFs();
   const directory = backupDirectory(plugin.app.vault);
   // 快照文件可能已被保留策略清理；此时绝不能把笔记覆盖成空内容。
-  if (!fs || !directory || !fs.existsSync(`${directory}/${name}`)) {
+  if (!directory || !existsSync(`${directory}/${name}`)) {
     throw new Error(`快照文件不存在或已被清理：${name}`);
   }
   const content = readBackup(plugin, name);

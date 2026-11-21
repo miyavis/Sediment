@@ -2,10 +2,12 @@ import { ItemView, Menu, Notice, Platform, type WorkspaceLeaf } from "obsidian";
 import type { SedimentPlugin } from "../main";
 import { ChangelogModal } from "../ui/changelog-modal";
 import { PosterModal } from "../ui/poster-modal";
+import { confirmAction } from "../ui/confirm-modal";
 import { addDays, dateKey, lastNDays, parseKey } from "../utils/dates";
 import { METRICS, type MetricKey } from "../types";
 import { SEDIMENT_ICON_ID, SEDIMENT_LOGO_SVG } from "../ui/logo";
 import { t, tf } from "../i18n";
+import { appendSvg, setSvg } from "../utils/dom";
 import { TABS, type RangeKey, type TabKey } from "./dashboard/constants";
 import { filterAgentTasks, pendingReviewChanges, reviewBadgeCount } from "./dashboard/review-queue";
 import { listDraftFiles, renderAgentHub } from "./dashboard/sections/agent";
@@ -101,9 +103,9 @@ export class DashboardView extends ItemView {
       });
     }
     if (this.pendingFocusDate) {
-      const target = root.querySelector(
+      const target = root.querySelector<HTMLElement>(
         `.sd-cell[data-date="${this.pendingFocusDate}"]`
-      ) as HTMLElement | null;
+      );
       this.pendingFocusDate = null;
       target?.focus();
     }
@@ -121,8 +123,7 @@ export class DashboardView extends ItemView {
   }
 
   fallbackScroller(): HTMLElement | null {
-    return (this.containerEl.closest(".view-content") as HTMLElement | null) ??
-      (this.containerEl.parentElement as HTMLElement | null);
+    return this.containerEl.closest(".view-content") ?? this.containerEl.parentElement;
   }
 
   /** 平滑滚动到目标，并为吸顶导航预留偏移。 */
@@ -220,8 +221,7 @@ export class DashboardView extends ItemView {
   showHeatTooltip(event: MouseEvent, key: string): void {
     this.hideHeatTooltip();
     const day = this.plugin.store.getDay(key);
-    const tip = document.createElement("div");
-    tip.className = "sd-heat-tooltip";
+    const tip = document.body.createDiv({ cls: "sd-heat-tooltip" });
     tip.createDiv({ cls: "sd-tip-date", text: key });
     tip.createDiv({
       cls: "sd-tip-metric",
@@ -244,8 +244,10 @@ export class DashboardView extends ItemView {
 
   moveHeatTooltip(event: MouseEvent): void {
     if (!this.heatTooltip) return;
-    this.heatTooltip.style.left = `${event.clientX + 14}px`;
-    this.heatTooltip.style.top = `${event.clientY + 14}px`;
+    this.heatTooltip.setCssStyles({
+      left: `${event.clientX + 14}px`,
+      top: `${event.clientY + 14}px`,
+    });
   }
 
   hideHeatTooltip(): void {
@@ -255,12 +257,12 @@ export class DashboardView extends ItemView {
 
   renderHeader(root: HTMLElement): void {
     const banner = root.createDiv({ cls: "sd-banner" });
-    banner.innerHTML = this.bannerSvg();
+    appendSvg(banner, this.bannerSvg());
     this.bannerEl = banner;
 
     const bar = root.createDiv({ cls: "sd-navbar" });
     const brand = bar.createDiv({ cls: "sd-brand" });
-    brand.insertAdjacentHTML("afterbegin", SEDIMENT_LOGO_SVG);
+    appendSvg(brand, SEDIMENT_LOGO_SVG);
     brand.createSpan({ text: "SEDIMENT" });
     const tabs = bar.createDiv({ cls: "sd-tabs" });
     for (const [key, label] of TABS) {
@@ -290,8 +292,6 @@ export class DashboardView extends ItemView {
         this.render();
       };
     }
-    const spacer = bar.createDiv({ cls: "sd-spacer" });
-    spacer.setAttribute("style", "flex:1");
     const refresh = bar.createEl("button", { cls: "sd-refresh", text: t("刷新") });
     refresh.onclick = () => this.render();
   }
@@ -347,18 +347,20 @@ export class DashboardView extends ItemView {
         if (task.path) {
           const complete = actions.createEl("button", { text: t("完成") });
           complete.onclick = () => {
-            // confirm 弹窗与落盘期间禁用按钮，防双击重复完成。
+            // 弹窗与落盘期间禁用按钮，防双击重复完成。
             complete.disabled = true;
-            if (!window.confirm(t("确认将此待办标记为完成？"))) {
-              complete.disabled = false;
-              return;
-            }
-            void this.plugin.tasks.complete(task.path, task.line).then(() => {
-              new Notice(t("待办已完成"));
-              this.render();
-            }).catch((error) => {
-              complete.disabled = false;
-              new Notice(error instanceof Error ? error.message : t("操作失败"));
+            void confirmAction(this.app, t("确认将此待办标记为完成？")).then((ok) => {
+              if (!ok) {
+                complete.disabled = false;
+                return;
+              }
+              void this.plugin.tasks.complete(task.path, task.line).then(() => {
+                new Notice(t("待办已完成"));
+                this.render();
+              }).catch((error) => {
+                complete.disabled = false;
+                new Notice(error instanceof Error ? error.message : t("操作失败"));
+              });
             });
           };
         } else if (task.memoId) {
@@ -371,16 +373,18 @@ export class DashboardView extends ItemView {
           const complete = actions.createEl("button", { text: t("完成") });
           complete.onclick = () => {
             complete.disabled = true;
-            if (!window.confirm(t("确认完成此 Agent 待办？"))) {
-              complete.disabled = false;
-              return;
-            }
-            void this.plugin.agentApi.completeAgentTask(task.memoId!, undefined, true).then(() => {
-              new Notice(t("Agent 待办已完成"));
-              this.render();
-            }).catch((error) => {
-              complete.disabled = false;
-              new Notice(error instanceof Error ? error.message : t("操作失败"));
+            void confirmAction(this.app, t("确认完成此 Agent 待办？")).then((ok) => {
+              if (!ok) {
+                complete.disabled = false;
+                return;
+              }
+              void this.plugin.agentApi.completeAgentTask(task.memoId!, undefined, true).then(() => {
+                new Notice(t("Agent 待办已完成"));
+                this.render();
+              }).catch((error) => {
+                complete.disabled = false;
+                new Notice(error instanceof Error ? error.message : t("操作失败"));
+              });
             });
           };
         }
@@ -485,11 +489,11 @@ ${celestial}
   }
 
   updateBanner(): void {
-    if (this.bannerEl) this.bannerEl.innerHTML = this.bannerSvg();
+    if (this.bannerEl) setSvg(this.bannerEl, this.bannerSvg());
   }
 
   updatePomodoroButton(): void {
-    const button = this.contentEl.querySelector(".sd-pomodoro-button") as HTMLButtonElement | null;
+    const button = this.contentEl.querySelector<HTMLButtonElement>(".sd-pomodoro-button");
     if (!button) return;
     const state = this.plugin.pomodoro.state();
     const minutes = String(Math.floor(state.remaining / 60)).padStart(2, "0");

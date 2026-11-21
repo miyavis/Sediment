@@ -117,7 +117,7 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number)
 }
 
 function download(canvas: HTMLCanvasElement, name: string): void {
-  const link = document.createElement("a");
+  const link = createEl("a");
   link.download = name;
   link.href = canvas.toDataURL("image/png");
   link.click();
@@ -128,7 +128,7 @@ export function exportMemoCard(
   memo: { date: string; time: string; text: string; tags: string[] },
   template: "minimal" | "ticket" | "ink" = "minimal"
 ): void {
-  const canvas = document.createElement("canvas");
+  const canvas = createEl("canvas");
   canvas.width = 720;
   canvas.height = 420;
   const ctx = canvas.getContext("2d");
@@ -163,7 +163,7 @@ export function exportMemoCard(
 
 /** 导出今日战报。 */
 export function exportTodayReport(data: TodayReportData): void {
-  const canvas = document.createElement("canvas");
+  const canvas = createEl("canvas");
   canvas.width = 900;
   canvas.height = 560;
   const ctx = canvas.getContext("2d");

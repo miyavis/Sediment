@@ -2,7 +2,6 @@ import { requestUrl } from "obsidian";
 import type { SedimentPlugin } from "../main";
 import type { PulseSettings } from "../types";
 import { tf } from "../i18n";
-import { normalizeFolder } from "../utils/vault";
 import { isPathAllowedByMode, splitList } from "./access";
 import { OllamaEmbeddingClient, cosineSimilarity, hashText, type RequestFn } from "./embedding";
 
@@ -118,7 +117,8 @@ export class SemanticIndex {
       if (!this.isReachable(file.path)) return false;
       const cache = this.plugin.app.metadataCache.getFileCache(file);
       const tags = [...(cache?.tags ?? []).map((tag) => tag.tag.replace(/^#/, ""))];
-      const frontmatterTags = cache?.frontmatter?.tags;
+      const frontmatter = (cache?.frontmatter ?? {}) as Record<string, unknown>;
+      const frontmatterTags = frontmatter.tags;
       if (Array.isArray(frontmatterTags)) tags.push(...frontmatterTags.map(String));
       return !tags.some((tag) => deniedTags.includes(tag.replace(/^#/, "")));
     });

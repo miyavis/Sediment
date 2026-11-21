@@ -1,3 +1,5 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { homedir } from "os";
 import type { SedimentPlugin } from "../main";
 import { BRIDGE_SOURCE } from "./bridge-source";
 
@@ -8,25 +10,6 @@ export interface AgentTarget {
   /** OpenCode 用 mcp.environment，其它客户端多用 mcpServers.env */
   rootKey: "mcp" | "mcpServers";
   envKey: "environment" | "env";
-}
-
-function nodeModule<T>(name: string): T | null {
-  try {
-    return require(name) as T;
-  } catch (error) {
-    return null;
-  }
-}
-
-interface FsModule {
-  existsSync(path: string): boolean;
-  readFileSync(path: string, encoding: string): string;
-  writeFileSync(path: string, data: string, encoding: string): void;
-  mkdirSync(path: string, options: { recursive: boolean }): unknown;
-}
-
-interface OsModule {
-  homedir(): string;
 }
 
 /**
@@ -69,10 +52,7 @@ export function agentCandidates(home: string, appdata: string): AgentTarget[] {
 
 /** 探测本机已存在配置文件的智能体客户端。 */
 export function detectAgents(): AgentTarget[] {
-  const fs = nodeModule<FsModule>("fs");
-  const os = nodeModule<OsModule>("os");
-  if (!fs || !os) return [];
-  return agentCandidates(os.homedir(), String(process.env.APPDATA ?? "")).filter((target) => fs.existsSync(target.configPath));
+  return agentCandidates(homedir(), String(process.env.APPDATA ?? "")).filter((target) => existsSync(target.configPath));
 }
 
 function stripComments(raw: string): string {
@@ -82,32 +62,29 @@ function stripComments(raw: string): string {
 function readJson(raw: string): Record<string, unknown> {
   try {
     return JSON.parse(raw) as Record<string, unknown>;
-  } catch (error) {
+  } catch {
     return JSON.parse(stripComments(raw)) as Record<string, unknown>;
   }
 }
 
 /** 该客户端是否已经写入过 Sediment 配置（OpenCode 兼容 v1 直挂与 v2 servers 两个位置）。 */
 export function isAgentConfigured(target: AgentTarget): boolean {
-  const fs = nodeModule<FsModule>("fs");
-  if (!fs || !fs.existsSync(target.configPath)) return false;
+  if (!existsSync(target.configPath)) return false;
   try {
-    const data = readJson(fs.readFileSync(target.configPath, "utf8"));
+    const data = readJson(readFileSync(target.configPath, "utf8"));
     const root = (data[target.rootKey] ?? {}) as Record<string, unknown>;
     if (target.rootKey === "mcp") {
       const servers = (root.servers ?? {}) as Record<string, unknown>;
       return Boolean(root.sediment || servers.sediment);
     }
     return Boolean(root.sediment);
-  } catch (error) {
+  } catch {
     return false;
   }
 }
 
 /** 优先复用配置里已有的桥接路径，否则找插件目录；库内副本始终与嵌入源码保持同步。 */
 export function resolveBridgePath(plugin: SedimentPlugin, target?: AgentTarget): string {
-  const fs = nodeModule<FsModule>("fs");
-  if (!fs) return "";
   const adapter = plugin.app.vault.adapter as unknown as { getFullPath?: (path: string) => string };
   const vaultBridge = adapter.getFullPath
     ? adapter.getFullPath(`${plugin.app.vault.configDir}/plugins/sediment/mcp-server/index.mjs`)
@@ -120,18 +97,18 @@ export function resolveBridgePath(plugin: SedimentPlugin, target?: AgentTarget):
   const syncVaultBridge = (): string => {
     if (!vaultBridge) return "";
     try {
-      if (fs.existsSync(vaultBridge) && fs.readFileSync(vaultBridge, "utf8") === BRIDGE_SOURCE) return vaultBridge;
+      if (existsSync(vaultBridge) && readFileSync(vaultBridge, "utf8") === BRIDGE_SOURCE) return vaultBridge;
       const sep = Math.max(vaultBridge.lastIndexOf("/"), vaultBridge.lastIndexOf("\\"));
-      if (sep > 0) fs.mkdirSync(vaultBridge.slice(0, sep), { recursive: true });
-      fs.writeFileSync(vaultBridge, BRIDGE_SOURCE, "utf8");
-      return fs.existsSync(vaultBridge) ? vaultBridge : "";
-    } catch (error) {
+      if (sep > 0) mkdirSync(vaultBridge.slice(0, sep), { recursive: true });
+      writeFileSync(vaultBridge, BRIDGE_SOURCE, "utf8");
+      return existsSync(vaultBridge) ? vaultBridge : "";
+    } catch {
       return "";
     }
   };
   if (target) {
     try {
-      const data = readJson(fs.readFileSync(target.configPath, "utf8"));
+      const data = readJson(readFileSync(target.configPath, "utf8"));
       const root = (data[target.rootKey] ?? {}) as Record<string, unknown>;
       const servers = (root.servers ?? {}) as Record<string, unknown>;
       // OpenCode 条目可能在 v1 直挂或 v2 servers 位置；路径在 args（Claude 风格）或 command 数组里。
@@ -139,14 +116,14 @@ export function resolveBridgePath(plugin: SedimentPlugin, target?: AgentTarget):
       for (const entry of entries) {
         const command = Array.isArray(entry.command) ? (entry.command.filter((x) => typeof x === "string") as string[]) : [];
         const candidates = [...(entry.args ?? []), ...command];
-        const existing = candidates.find((arg) => arg.endsWith("index.mjs") && fs.existsSync(arg));
+        const existing = candidates.find((arg) => arg.endsWith("index.mjs") && existsSync(arg));
         if (existing) {
           // 引用的正是库内副本时先同步；库外路径属用户自有文件，不覆盖。
           if (vaultBridge && samePath(existing, vaultBridge)) return syncVaultBridge();
           return existing;
         }
       }
-    } catch (error) {
+    } catch {
       // 沿用默认探测
     }
   }
@@ -204,11 +181,9 @@ export function configSnippet(plugin: SedimentPlugin, id = "opencode"): string {
 
 /** 把 Sediment MCP 配置合并进目标客户端配置，写入前备份。OpenCode 按检测到的 v1/v2 布局写入并清理另一位置的旧条目。 */
 export function configureAgent(plugin: SedimentPlugin, target: AgentTarget): void {
-  const fs = nodeModule<FsModule>("fs");
-  if (!fs) throw new Error("一键配置需要桌面版 Obsidian");
   const bridge = resolveBridgePath(plugin, target);
   if (!bridge) throw new Error("找不到 mcp-server/index.mjs，无法配置");
-  const raw = fs.readFileSync(target.configPath, "utf8");
+  const raw = readFileSync(target.configPath, "utf8");
   const data = readJson(raw);
   if (target.rootKey === "mcp") {
     const layout = detectOpenCodeLayout(data);
@@ -233,6 +208,6 @@ export function configureAgent(plugin: SedimentPlugin, target: AgentTarget): voi
     root.sediment = buildEntry(plugin, target, bridge);
     data[target.rootKey] = root;
   }
-  fs.writeFileSync(`${target.configPath}.bak`, raw, "utf8");
-  fs.writeFileSync(target.configPath, JSON.stringify(data, null, 2), "utf8");
+  writeFileSync(`${target.configPath}.bak`, raw, "utf8");
+  writeFileSync(target.configPath, JSON.stringify(data, null, 2), "utf8");
 }

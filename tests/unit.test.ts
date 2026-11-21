@@ -782,6 +782,7 @@ function fakeVault(files: Array<{ path: string; mtime?: number; size?: number }>
     };
   });
   const vault = {
+    configDir: ".obsidian",
     adapter: {
       write: async (path: string, content: string) => { written.push([path, content]); },
       read: async (path: string) => {
@@ -805,7 +806,14 @@ function fakePluginWith(vault: ReturnType<typeof fakeVault>["vault"], raw: unkno
   const plugin = {
     loadData: async () => current,
     saveData: async (data: unknown) => { saved.push(data); current = data; },
-    app: { vault },
+    app: {
+      vault,
+      fileManager: {
+        trashFile: async (file: { path: string }) => {
+          await (vault as unknown as { trash: (f: { path: string }) => Promise<void> }).trash(file);
+        },
+      },
+    },
   };
   return { plugin: plugin as unknown as Parameters<typeof Store>[0], saved };
 }
@@ -1061,13 +1069,16 @@ test("Agent 安全路径：拒绝穿越、系统目录和非 Markdown", () => {
     "",
   ];
   for (const value of cases) {
-    assert.throws(() => safeAgentPath(value), ApiError);
+    assert.throws(() => safeAgentPath(value, ".obsidian"), ApiError);
   }
+  // 自定义配置目录同样拦截，不再依赖固定的 .obsidian 名称。
+  assert.throws(() => safeAgentPath("config/data.json", "config"), ApiError);
 });
 
 test("Agent 安全路径：规范化反斜杠并保留合法路径", () => {
-  assert.equal(safeAgentPath("notes\\daily\\2026.md"), "notes/daily/2026.md");
-  assert.equal(safeAgentPath("/notes//memo.md"), "notes/memo.md");
+  assert.equal(safeAgentPath("notes\\daily\\2026.md", ".obsidian"), "notes/daily/2026.md");
+  assert.equal(safeAgentPath("/notes//memo.md", ".obsidian"), "notes/memo.md");
+  assert.equal(safeAgentPath("notes/config.md", "config"), "notes/config.md");
 });
 
 test("Store：工作日志保留上限，避免无界增长", () => {
@@ -3107,9 +3118,24 @@ test("终审 4：年轮图月份标签走 tf()（EN 无中文泄漏），SVG 带
   const year = new Date().getFullYear();
   const days: Record<string, DayRecord> = { [`${year}-01-05`]: day({ contribution: 4 }) };
   const html: string[] = [];
+  class FakeSvg {
+    readonly tagName = "svg";
+    constructor(readonly raw: string) {}
+  }
+  const globals = globalThis as unknown as { DOMParser: unknown };
+  const previousParser = globals.DOMParser;
+  globals.DOMParser = class {
+    parseFromString(svg: string) {
+      return { body: { firstElementChild: new FakeSvg(svg) } };
+    }
+  };
   const slot = {
-    set innerHTML(value: string) { html.push(value); },
-    get innerHTML() { return html[html.length - 1] ?? ""; },
+    ownerDocument: { importNode: (node: unknown) => node },
+    appendChild: (node: FakeSvg) => { html.push(node.raw); },
+    replaceChildren: () => {},
+    setAttribute: () => {},
+    querySelector: () => undefined,
+    createDiv: () => ({}),
   };
   const card = { setAttribute: () => {}, querySelector: () => undefined, createDiv: () => slot };
   const view = {
@@ -3134,6 +3160,7 @@ test("终审 4：年轮图月份标签走 tf()（EN 无中文泄漏），SVG 带
     assert.ok(en.includes(">1<") && en.includes(">12<"), "EN 月份标签输出数字");
   } finally {
     setLocale(prev);
+    globals.DOMParser = previousParser;
   }
 });
 

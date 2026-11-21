@@ -4,6 +4,7 @@ import { exportTodayReport } from "../../../features/embed";
 import { dateKey, isSameLocalDay, localHHmm } from "../../../utils/dates";
 import { goalRing as goalRingSvg } from "../../../utils/charts";
 import { t, tf } from "../../../i18n";
+import { appendSvg } from "../../../utils/dom";
 import { renderAgentStatus, renderWorkLogs } from "./agent";
 import type { DashboardView } from "../../dashboard-view";
 
@@ -15,7 +16,7 @@ export function renderToday(view: DashboardView, root: HTMLElement): void {
     text: t("记一条速记"),
   });
   memoAction.onclick = () => {
-    const area = root.querySelector(".sd-quick-memo textarea") as HTMLTextAreaElement | null;
+    const area = root.querySelector<HTMLTextAreaElement>(".sd-quick-memo textarea");
     if (!area) return;
     view.scrollToElement(area, "center");
     area.focus({ preventScroll: true });
@@ -25,7 +26,7 @@ export function renderToday(view: DashboardView, root: HTMLElement): void {
     text: t("查看今日任务"),
   });
   taskAction.onclick = () => {
-    const tasks = root.querySelector(".sd-tasks") as HTMLElement | null;
+    const tasks = root.querySelector<HTMLElement>(".sd-tasks");
     if (tasks) view.scrollToElement(tasks);
   };
   const bento = body.createDiv({ cls: "sd-bento" });
@@ -72,7 +73,7 @@ export function renderTodayCard(view: DashboardView, root: HTMLElement): void {
   head.createDiv({ cls: "sd-today-title", text: t("今天") });
   head.createDiv({ cls: "sd-pill", text: day.contribution > 0 ? tf("{n} 分", { n: day.contribution }) : t("还没开始") });
   const goalRing = head.createDiv({ cls: "sd-goal-ring" });
-  goalRing.innerHTML = goalRingSvg(day.wordsAdded, goal);
+  appendSvg(goalRing, goalRingSvg(day.wordsAdded, goal));
   head.createEl("button", { cls: "sd-share-today", text: t("战报图片") }).onclick = () => {
     exportTodayReport({
       date: today,
@@ -93,7 +94,9 @@ export function renderTodayCard(view: DashboardView, root: HTMLElement): void {
   const skip = row.createEl("button", { cls: "sd-pomodoro-skip", text: t("跳过") });
   skip.onclick = () => view.plugin.pomodoro.skip();
   const progress = card.createDiv({ cls: "sd-progress" });
-  progress.createDiv({ cls: "sd-progress-fill" }).style.width = `${Math.min(100, (day.wordsAdded / goal) * 100)}%`;
+  progress.createDiv({ cls: "sd-progress-fill" }).setCssStyles({
+    width: `${Math.min(100, (day.wordsAdded / goal) * 100)}%`,
+  });
 }
 
 export function renderQuickMemo(view: DashboardView, root: HTMLElement): void {
@@ -103,17 +106,12 @@ export function renderQuickMemo(view: DashboardView, root: HTMLElement): void {
   area.placeholder = t("想到什么，随手记下…");
   area.rows = 2;
   const draftKey = "sediment.quick-memo.draft";
-  try {
-    area.value = localStorage.getItem(draftKey) ?? "";
-  } catch {}
+  const savedDraft = view.plugin.app.loadLocalStorage(draftKey) as unknown;
+  area.value = typeof savedDraft === "string" ? savedDraft : "";
   const status = card.createDiv({ cls: "sd-save-status", text: area.value ? t("草稿已恢复") : t("未保存") });
   area.oninput = () => {
-    try {
-      localStorage.setItem(draftKey, area.value);
-      status.setText(area.value ? t("草稿已保存") : t("未保存"));
-    } catch {
-      status.setText(t("草稿保存失败"));
-    }
+    view.plugin.app.saveLocalStorage(draftKey, area.value || null);
+    status.setText(area.value ? t("草稿已保存") : t("未保存"));
   };
   const submit = card.createEl("button", { cls: "mod-cta", text: t("记一条") });
   submit.onclick = () => {
@@ -124,7 +122,7 @@ export function renderQuickMemo(view: DashboardView, root: HTMLElement): void {
     void view.plugin.memos.add(text).then((memo) => {
       if (memo) {
         area.value = "";
-        try { localStorage.removeItem(draftKey); } catch {}
+        view.plugin.app.saveLocalStorage(draftKey, null);
         status.setText(t("已保存"));
         view.render();
       } else {
