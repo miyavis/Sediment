@@ -1295,6 +1295,9 @@ settings:
   color: var(--text-muted);
 }
 
+.sd-settings-weights { margin: 6px 0 12px; }
+.sd-settings-weights > summary { cursor: pointer; color: var(--text-muted); font-size: var(--font-ui-small); }
+
 .sd-quick-memo textarea {
   width: 100%;
   margin: 8px 0;
@@ -2219,6 +2222,11 @@ settings:
   color: var(--interactive-accent);
   background: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
   border-radius: 6px;
+}
+
+.sd-audit-badge.is-stale {
+  color: var(--text-error);
+  border-color: var(--text-error);
 }
 
 .sd-rhythm-cell.is-empty {

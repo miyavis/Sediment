@@ -183,7 +183,8 @@ OpenCode 示例（把 `<vault>` 换成你的库根目录）：
 
 - 主数据：`.obsidian/plugins/sediment/data.json`
 - 日记：由日记目录和文件名格式决定
-- 备份：默认写入库内 `sediment-backup/`
+- 默认目录统一位于库内 `Sediment/` 下：`Sediment/daily`、`Sediment/reviews`、`Sediment/agent-logs`、`Sediment/knowledge`、`Sediment/backups`
+- 升级自旧默认目录（`daily` / `reviews` / `agent-logs` / `knowledge` / `sediment-backup`）时，可在设置「基础」区点「一键迁移」整理到 `Sediment/`；迁移逐文件移动并保留 Obsidian 链接
 - 未知数据版本或异常格式：暂停写入并保留恢复副本
 - 卸载插件不会主动删除 vault 中的普通目录、日记或备份
 

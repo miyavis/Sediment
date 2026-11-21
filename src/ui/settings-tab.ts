@@ -1,6 +1,7 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import { configureAgent, configSnippet, detectAgents, isAgentConfigured } from "../agent/setup";
 import { uninstallMcp } from "../features/uninstall";
+import { migrateLegacyFolders, planFolderMigrations, type FolderMigrationOutcome } from "../features/folder-migration";
 import { McpUninstallModal } from "./mcp-uninstall-modal";
 import type { SedimentPlugin } from "../main";
 import { generateToken } from "../agent/api";
@@ -81,7 +82,7 @@ export class PulseSettingTab extends PluginSettingTab {
       .setDesc(t("速记写入的目录，留空表示库根目录。"))
       .addText((text) =>
         text
-          .setPlaceholder("daily")
+          .setPlaceholder("Sediment/daily")
           .setValue(settings.dailyNoteFolder)
           .onChange((value) => {
             settings.dailyNoteFolder = value;
@@ -153,12 +154,21 @@ export class PulseSettingTab extends PluginSettingTab {
       .setName(t("复盘归档文件夹"))
       .addText((text) =>
         text
-          .setPlaceholder("reviews")
+          .setPlaceholder("Sediment/reviews")
           .setValue(settings.reviewFolder)
           .onChange((value) => {
             settings.reviewFolder = value;
             save();
           })
+      );
+
+    new Setting(containerEl)
+      .setName(t("旧版目录迁移"))
+      .setDesc(
+        t("把旧默认目录（daily、reviews、agent-logs、knowledge、sediment-backup）整体移入 Sediment/，避免与库内已有目录撞名。仅迁移仍是旧默认值的目录，自定义路径不受影响。")
+      )
+      .addButton((button) =>
+        button.setButtonText(t("一键迁移")).onClick(() => void this.runLegacyFolderMigration())
       );
 
     new Setting(containerEl)
@@ -345,7 +355,7 @@ export class PulseSettingTab extends PluginSettingTab {
       .setDesc(t("智能体每次工作的沉淀日志，默认按天写入一个文件。"))
       .addText((text) =>
         text
-          .setPlaceholder("agent-logs")
+          .setPlaceholder("Sediment/agent-logs")
           .setValue(settings.workLogFolder)
           .onChange((value) => {
             settings.workLogFolder = value;
@@ -358,7 +368,7 @@ export class PulseSettingTab extends PluginSettingTab {
       .setDesc(t("智能体通过 add_knowledge 写入的长期笔记目录。"))
       .addText((text) =>
         text
-          .setPlaceholder("knowledge")
+          .setPlaceholder("Sediment/knowledge")
           .setValue(settings.knowledgeFolder)
           .onChange((value) => {
             settings.knowledgeFolder = value;
@@ -407,6 +417,61 @@ export class PulseSettingTab extends PluginSettingTab {
       );
   }
 
+  /** 一键把旧默认目录收进 Sediment/：确认 → 逐文件移动（保留链接）→ 保存设置并刷新。 */
+  private async runLegacyFolderMigration(): Promise<void> {
+    const settings = this.plugin.store.settings;
+    const plan = planFolderMigrations(settings);
+    if (plan.length === 0) {
+      new Notice(t("没有需要迁移的旧默认目录。"));
+      return;
+    }
+    const list = plan.map((item) => `  ${item.from} → ${item.to}`).join("\n");
+    const confirmed = window.confirm(
+      tf(
+        "将迁移以下旧默认目录到 Sediment/：\n{list}\n\n文件会逐个移动（Obsidian 内的链接自动更新）；目标已有同名文件的目录会整体跳过。若 Obsidian 核心「日记」插件指向 daily，迁移后请同步修改它的设置。确定继续？",
+        { list }
+      )
+    );
+    if (!confirmed) return;
+
+    let outcome: FolderMigrationOutcome;
+    try {
+      outcome = await migrateLegacyFolders({
+        settings,
+        vault: this.app.vault,
+        fileManager: this.app.fileManager,
+      });
+    } catch (error) {
+      new Notice(
+        tf("目录迁移失败：{error}", { error: error instanceof Error ? error.message : String(error) }),
+        10_000
+      );
+      return;
+    }
+
+    if (outcome.migrated.length > 0) {
+      this.plugin.store.logDiagnostic(
+        "storage",
+        tf("目录迁移完成：{n} 个目录、{files} 个文件", { n: outcome.migrated.length, files: outcome.movedFiles })
+      );
+      await this.plugin.saveSettings();
+      this.plugin.semantic.invalidate();
+      this.plugin.refreshViews();
+    }
+    const parts: string[] = [];
+    if (outcome.migrated.length > 0) {
+      parts.push(tf("已迁移 {n} 个目录、{files} 个文件", { n: outcome.migrated.length, files: outcome.movedFiles }));
+    }
+    for (const item of outcome.skipped) {
+      parts.push(tf("已跳过 {from}（{reason}）", { from: item.from, reason: item.reason }));
+    }
+    for (const item of outcome.failed) {
+      parts.push(tf("失败 {from}（{reason}）", { from: item.from, reason: item.reason }));
+    }
+    new Notice(parts.join("；"), outcome.failed.length > 0 ? 15_000 : 6_000);
+    if (outcome.migrated.length > 0) this.display();
+  }
+
   private renderBackup(containerEl: HTMLElement, settings: PulseSettings, save: () => void): void {
     new Setting(containerEl)
       .setName(t("自动备份统计数据"))
@@ -420,10 +485,10 @@ export class PulseSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName(t("备份目录"))
-      .setDesc(t("库内相对路径，默认 sediment-backup/。"))
+      .setDesc(t("库内相对路径，默认 Sediment/backups/。"))
       .addText((text) =>
         text
-          .setPlaceholder("sediment-backup")
+          .setPlaceholder("Sediment/backups")
           .setValue(settings.backupFolder)
           .onChange((value) => {
             settings.backupFolder = value;

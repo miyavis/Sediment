@@ -81,6 +81,11 @@ import {
 import { renderYearly } from "../src/views/dashboard/sections/insights";
 import { scanKnowledgeState, type KnowledgeFile } from "../src/features/knowledge-state";
 import { delegateHealthIssues, HEALTH_LABEL, scanNoteHealth } from "../src/features/health";
+import {
+  LEGACY_FOLDER_MIGRATIONS,
+  migrateLegacyFolders,
+  planFolderMigrations,
+} from "../src/features/folder-migration";
 
 const day = (partial: Partial<DayRecord> = {}): DayRecord => ({ ...createEmptyDay(), ...partial });
 const settings = (partial: Partial<PulseSettings> = {}): PulseSettings => ({
@@ -896,11 +901,11 @@ test("Store.backupData：库根目录只备份不清理", async () => {
 
 test("Store.backupData：正常目录按保留份数清理，不误删目录外文件", async () => {
   const { vault, trashed } = fakeVault([
-    { path: "sediment-backup/data-2026-11-18-0800.json", mtime: 1 },
-    { path: "sediment-backup/data-2026-11-19-0800.json", mtime: 2 },
-    { path: "sediment-backup/data-2026-11-20-0800.json", mtime: 3 },
+    { path: "Sediment/backups/data-2026-11-18-0800.json", mtime: 1 },
+    { path: "Sediment/backups/data-2026-11-19-0800.json", mtime: 2 },
+    { path: "Sediment/backups/data-2026-11-20-0800.json", mtime: 3 },
     { path: "data-root.json", mtime: 0 },
-    { path: "sediment-backup/sub/data-nested.json", mtime: 0 },
+    { path: "Sediment/backups/sub/data-nested.json", mtime: 0 },
   ]);
   const { plugin } = fakePluginWith(vault, null);
   const store = new Store(plugin);
@@ -911,7 +916,7 @@ test("Store.backupData：正常目录按保留份数清理，不误删目录外�
 
   assert.equal(count, 1);
   // 新备份不在 getFiles 列表里，列表中最旧的一份被清理。
-  assert.deepEqual(trashed, ["sediment-backup/data-2026-11-18-0800.json"]);
+  assert.deepEqual(trashed, ["Sediment/backups/data-2026-11-18-0800.json"]);
 });
 
 test("Store.backupData：写入失败抛错且不占用节流窗口", async () => {
@@ -954,12 +959,12 @@ test("Store.save：保存失败弹 Notice 并记录错误，不向调用方抛�
 
 test("Store.listDataBackups：只列备份目录内 data 快照，按时间倒序", async () => {
   const { vault } = fakeVault([
-    { path: "sediment-backup/data-2026-11-19-0800.json", mtime: 200, size: 20 },
-    { path: "sediment-backup/data-2026-11-20-0800.json", mtime: 300, size: 30 },
-    { path: "sediment-backup/notes.json", mtime: 400, size: 5 },
-    { path: "sediment-backup/sub/data-nested.json", mtime: 500, size: 5 },
+    { path: "Sediment/backups/data-2026-11-19-0800.json", mtime: 200, size: 20 },
+    { path: "Sediment/backups/data-2026-11-20-0800.json", mtime: 300, size: 30 },
+    { path: "Sediment/backups/notes.json", mtime: 400, size: 5 },
+    { path: "Sediment/backups/sub/data-nested.json", mtime: 500, size: 5 },
     { path: "data-root.json", mtime: 600, size: 5 },
-    { path: "sediment-backup/data-2026-11-18-0800.md", mtime: 700, size: 5 },
+    { path: "Sediment/backups/data-2026-11-18-0800.md", mtime: 700, size: 5 },
   ]);
   const { plugin } = fakePluginWith(vault, null);
   const store = new Store(plugin);
@@ -981,9 +986,9 @@ test("Store.restoreDataBackup：恢复备份、保留当前数据副本并重载
     memos: [],
   });
   const { vault, written } = fakeVault([
-    { path: `sediment-backup/${backupName}`, mtime: 200, size: backupContent.length },
+    { path: `Sediment/backups/${backupName}`, mtime: 200, size: backupContent.length },
   ]);
-  written.push([`sediment-backup/${backupName}`, backupContent]);
+  written.push([`Sediment/backups/${backupName}`, backupContent]);
   // 当前数据版本异常 → 阻塞；恢复后应解除。
   const { plugin, saved } = fakePluginWith(vault, { version: 99, days: {} });
   const store = new Store(plugin);
@@ -1023,16 +1028,16 @@ test("Store.restoreDataBackup：拒绝路径穿越与不存在的备份", async 
 test("Store.restoreDataBackup：备份内容损坏时拒绝恢复", async () => {
   const backupName = "data-2026-11-19-0800.json";
   const { vault, written } = fakeVault([
-    { path: `sediment-backup/${backupName}`, mtime: 200, size: 10 },
+    { path: `Sediment/backups/${backupName}`, mtime: 200, size: 10 },
   ]);
   const { plugin, saved } = fakePluginWith(vault, null);
   const store = new Store(plugin);
   await store.load();
 
-  written.push([`sediment-backup/${backupName}`, JSON.stringify({ version: 1, days: [] })]);
+  written.push([`Sediment/backups/${backupName}`, JSON.stringify({ version: 1, days: [] })]);
   await assert.rejects(() => store.restoreDataBackup(backupName), /备份内容损坏/);
   written.length = 0;
-  written.push([`sediment-backup/${backupName}`, "{not json"]);
+  written.push([`Sediment/backups/${backupName}`, "{not json"]);
   await assert.rejects(() => store.restoreDataBackup(backupName), /备份内容损坏/);
   assert.equal(saved.length, 0);
 });
@@ -1293,7 +1298,7 @@ test("H6：delegateTask 需要 read 权限且受白名单约束（含日记目�
 
   const ok = fakeAgentPlugin({
     agentAccessMode: "allowlist",
-    agentAllowedFolders: "知识, daily",
+    agentAllowedFolders: `知识, ${DEFAULT_SETTINGS.dailyNoteFolder}`,
     agentAllowRead: true,
   });
   await assert.doesNotReject(ok.api.delegateTask("知识/a.md", 2));
@@ -1301,7 +1306,7 @@ test("H6：delegateTask 需要 read 权限且受白名单约束（含日记目�
 });
 
 test("H6：snapshotTasks 写当天日记前过 patch 门禁", async () => {
-  const { api, calls } = fakeAgentPlugin({ deniedFolders: "daily", agentAllowPatch: true });
+  const { api, calls } = fakeAgentPlugin({ deniedFolders: DEFAULT_SETTINGS.dailyNoteFolder, agentAllowPatch: true });
   await assert.rejects(api.snapshotTasks(), (error) => {
     const e = asApiError(error);
     return e.code === "FORBIDDEN";
@@ -1393,13 +1398,14 @@ test("M1：addKnowledge 非法 category 回退默认分类并说明", async () =
   };
   const api = new AgentApi(plugin as never);
 
+  const knowledgeRoot = DEFAULT_SETTINGS.knowledgeFolder;
   const evil = await api.addKnowledge({ title: "沉淀", content: "正文", category: "../../evil" });
   assert.ok(!evil.path.includes(".."), `路径不得含 ..：${evil.path}`);
-  assert.ok(evil.path.startsWith("knowledge/技术/"), `应回退到默认分类：${evil.path}`);
+  assert.ok(evil.path.startsWith(`${knowledgeRoot}/技术/`), `应回退到默认分类：${evil.path}`);
   assert.ok(evil.note && evil.note.length > 0, "返回信息需说明分类被回退");
 
   const good = await api.addKnowledge({ title: "沉淀", content: "正文", category: "方法" });
-  assert.ok(good.path.startsWith("knowledge/方法/"));
+  assert.ok(good.path.startsWith(`${knowledgeRoot}/方法/`));
   assert.equal(good.note, undefined);
   assert.equal(created.length, 2, "两次调用都应真实落盘");
 });
@@ -1612,13 +1618,14 @@ test("工作模式四档矩阵：readonly 拒写 / draft 直写草稿 / confirm 
   assert.equal(ro.api.listNotes("", 10).length, 0, "只读档读取不受影响");
 
   const draft = fakeConfirmPlugin({ agentWorkMode: "draft", ...flags.draft });
-  const draftRes = (await draft.api.writeNote("knowledge/d.md", "草稿")) as HoldResult;
+  const draftPath = `${DEFAULT_SETTINGS.knowledgeFolder}/d.md`;
+  const draftRes = (await draft.api.writeNote(draftPath, "草稿")) as HoldResult;
   assert.equal(draftRes.pending, undefined, "draft 档写入直接落盘（草稿流），不挂起");
   // 知识目录内的新建笔记会自动补登记来源 frontmatter（任务 6），正文仍原样落盘。
-  const draftDoc = draft.files.get("knowledge/d.md") ?? "";
+  const draftDoc = draft.files.get(draftPath) ?? "";
   assert.match(draftDoc, /source: "agent"/);
   assert.ok(draftDoc.endsWith("草稿"), "正文不得被 stamp 改动");
-  await assert.rejects(draft.api.patchNote({ path: "knowledge/d.md", find: "草稿", content: "y" }), (error) => asApiError(error).code === "OPERATION_DENIED");
+  await assert.rejects(draft.api.patchNote({ path: draftPath, find: "草稿", content: "y" }), (error) => asApiError(error).code === "OPERATION_DENIED");
 
   const confirm = fakeConfirmPlugin({ agentWorkMode: "confirm", ...flags.confirm });
   const heldRes = (await confirm.api.writeNote("b.md", "x")) as HoldResult;
@@ -1642,7 +1649,7 @@ test("confirm 档：速记 / 工作日志 / 勾选待办挂起，采纳走真实
 
   const logRes = (await ctx.api.recordWorkLog({ task: "t", summary: "s" })) as HoldResult;
   const logId = pendingIdOf(logRes);
-  const logPath = `agent-logs/${dateKey(new Date())}.md`;
+  const logPath = `Sediment/agent-logs/${dateKey(new Date())}.md`;
   assert.equal(ctx.files.has(logPath), false, "挂起期间不建工作日志");
   assert.ok(String(ctx.pendingWrites.find((r) => r.tool === "record_work_log")?.after).includes("**完成了什么**"));
 
@@ -2113,7 +2120,7 @@ test("memo：id 锚点兜底——日记正文被手动改过后编辑仍同步�
   const h = memoHarness();
   const memo = await h.manager.add("original line", ["a"]);
   assert.ok(memo);
-  const path = `daily/${dateKey(new Date())}.md`;
+  const path = `Sediment/daily/${dateKey(new Date())}.md`;
   const before = h.contents.get(path) ?? "";
   assert.ok(before.includes(`%%memo:${memo.id}%%`)); // 写入时带行内 id 锚点
 
@@ -2129,7 +2136,7 @@ test("memo：id 锚点兜底——日记正文被手动改过后编辑仍同步�
 
 test("memo：删除失配尽力按旧文本清理，彻底失配时明确提示", async () => {
   const h = memoHarness();
-  const path = `daily/${dateKey(new Date())}.md`;
+  const path = `Sediment/daily/${dateKey(new Date())}.md`;
 
   // 场景 1：锚点被手动删掉但正文还在 → 旧文本兜底清理成功
   const legacy = await h.manager.add("legacy body");
@@ -2603,7 +2610,7 @@ test("aggregateStrata：纯函数——不修改输入数据", () => {
 
 test("A1：addMemo/delegateTask 的日记目标路径过完整门禁（黑名单/白名单/confirm 前置）", async () => {
   // auto 档 + 黑名单 daily：速记与转 Agent 都必须 403，且不产生任何副作用。
-  const denied = fakeAgentPlugin({ deniedFolders: "daily" }, { data: { memos: [] } });
+  const denied = fakeAgentPlugin({ deniedFolders: DEFAULT_SETTINGS.dailyNoteFolder }, { data: { memos: [] } });
   await assert.rejects(denied.api.addMemo("灵感", []), (error) => {
     const apiError = asApiError(error);
     assert.equal(apiError.code, "FORBIDDEN");
@@ -2618,7 +2625,7 @@ test("A1：addMemo/delegateTask 的日记目标路径过完整门禁（黑名单
   await assert.rejects(allowlist.api.addMemo("灵感", []), (error) => asApiError(error).code === "FORBIDDEN");
 
   // confirm 档：门禁先于挂起，越权不产生待审项。
-  const confirm = fakeConfirmPlugin({ agentWorkMode: "confirm", deniedFolders: "daily" });
+  const confirm = fakeConfirmPlugin({ agentWorkMode: "confirm", deniedFolders: DEFAULT_SETTINGS.dailyNoteFolder });
   await assert.rejects(confirm.api.addMemo("灵感", []), (error) => asApiError(error).code === "FORBIDDEN");
   assert.equal(confirm.pendingWrites.length, 0, "越权速记不得转挂起");
 
@@ -2635,7 +2642,7 @@ test("A1：confirm 采纳重放同样过门禁——挂起后收紧黑名单则�
   const held = (await ctx.api.addMemo("灵感一条", [])) as HoldResult;
   const id = pendingIdOf(held);
   // 挂起之后用户收紧权限：重放必须按当前设置重新校验，而不是信任挂起时的快照。
-  ctx.store.settings.deniedFolders = "daily";
+  ctx.store.settings.deniedFolders = DEFAULT_SETTINGS.dailyNoteFolder;
   await assert.rejects(ctx.api.approvePendingWrite(id), (error) => asApiError(error).code === "FORBIDDEN");
   assert.equal(ctx.pendingWrites.length, 1, "重放失败不得丢弃待审项");
   assert.equal(ctx.store.data.memos.length, 0, "重放被拒不得落盘");
@@ -2680,8 +2687,8 @@ test("A3：restoreDataBackup 三态语义——此前无数据 none / 副本写�
   const backupContent = JSON.stringify({ version: 1, days: { "2026-11-19": { wordsAdded: 42 } }, memos: [] });
 
   // 全新安装（loadData 为 null）：无需恢复副本，明确返回 none 而非歧义空串。
-  const fresh = fakeVault([{ path: `sediment-backup/${backupName}`, mtime: 200, size: backupContent.length }]);
-  fresh.written.push([`sediment-backup/${backupName}`, backupContent]);
+  const fresh = fakeVault([{ path: `Sediment/backups/${backupName}`, mtime: 200, size: backupContent.length }]);
+  fresh.written.push([`Sediment/backups/${backupName}`, backupContent]);
   const freshCtx = fakePluginWith(fresh.vault, null);
   const freshStore = new Store(freshCtx.plugin);
   await freshStore.load();
@@ -2690,8 +2697,8 @@ test("A3：restoreDataBackup 三态语义——此前无数据 none / 副本写�
   assert.equal(freshStore.getDay("2026-11-19").wordsAdded, 42, "none 分支仍须完成恢复");
 
   // 副本写失败：恢复继续，但必须显式标记 failed 并留下诊断（不静默吞错）。
-  const failing = fakeVault([{ path: `sediment-backup/${backupName}`, mtime: 200, size: backupContent.length }]);
-  failing.written.push([`sediment-backup/${backupName}`, backupContent]);
+  const failing = fakeVault([{ path: `Sediment/backups/${backupName}`, mtime: 200, size: backupContent.length }]);
+  failing.written.push([`Sediment/backups/${backupName}`, backupContent]);
   const failCtx = fakePluginWith(failing.vault, { version: 1, days: {} });
   const failStore = new Store(failCtx.plugin);
   await failStore.load();
@@ -2908,7 +2915,7 @@ function seedAgentMemo(ctx: ReturnType<typeof fakeConfirmPlugin>) {
 
 test("终审 1：claimAgentTask/completeAgentTask 日记路径过 patch 门禁；人用 bypass 面不受影响", async () => {
   // 黑名单含日记目录：Agent claim/complete 都 403，零落盘（标签不动、syncTags 不触达）。
-  const denied = fakeConfirmPlugin({ agentWorkMode: "auto", deniedFolders: "daily" });
+  const denied = fakeConfirmPlugin({ agentWorkMode: "auto", deniedFolders: DEFAULT_SETTINGS.dailyNoteFolder });
   let syncCalls = 0;
   denied.plugin.memos.syncTags = async () => { syncCalls += 1; };
   const memo = seedAgentMemo(denied);
@@ -2944,7 +2951,7 @@ test("终审 1：claimAgentTask/completeAgentTask 日记路径过 patch 门禁�
 
   // 人用看板调用面（bypassAccess=true）：readonly + 黑名单下照常认领/完成。
   const human = fakeConfirmPlugin({
-    agentWorkMode: "readonly", deniedFolders: "daily",
+    agentWorkMode: "readonly", deniedFolders: DEFAULT_SETTINGS.dailyNoteFolder,
     agentAllowRead: true, agentAllowCreate: false, agentAllowPatch: false, agentAllowOverwrite: false,
   });
   let humanSync = 0;
@@ -2964,7 +2971,7 @@ test("终审 2：recordWorkLog 目标已存在按 patch 过门禁——draft 档
   const ctx = fakeConfirmPlugin({ agentWorkMode: "draft", ...draftFlags });
   const first = (await ctx.api.recordWorkLog({ task: "t1", summary: "第一条" })) as HoldResult;
   assert.equal(first.pending, undefined, "draft 档首条直接新建落盘");
-  const logPath = `agent-logs/${dateKey(new Date())}.md`;
+  const logPath = `Sediment/agent-logs/${dateKey(new Date())}.md`;
   const content = ctx.files.get(logPath);
   assert.ok(content?.includes("第一条"));
 
@@ -3360,8 +3367,8 @@ test("EN locale：recordWorkLog 生成的工作日志零 CJK", async () => {
       task: "Ship stale guard",
       summary: "Added STALE_PENDING rejection.",
     });
-    // R4：workLogFolder 默认 agent-logs，路径不是库根。
-    const doc = ctx.files.get(`agent-logs/${dateKey(new Date())}.md`) ?? "";
+    // R4：workLogFolder 默认 Sediment/agent-logs，路径不是库根。
+    const doc = ctx.files.get(`Sediment/agent-logs/${dateKey(new Date())}.md`) ?? "";
     assert.equal(/[\u4e00-\u9fff]/.test(doc), false, doc);
   } finally {
     setLocale("zh");
@@ -3563,4 +3570,181 @@ test("SemanticIndex：默认 TF-IDF 不发 embedding 请求；embedding 结果�
   denied.invalidate();
   const rebuilt = await denied.search("apple");
   assert.equal(rebuilt.some((hit) => hit.path === "private/x.md"), false);
+});
+
+// ── 默认目录收进 Sediment/ 与旧目录一键迁移 ──
+
+test("默认目录：日记 / 复盘 / 工作日志 / 知识 / 备份全部位于 Sediment/ 下", () => {
+  assert.deepEqual(
+    {
+      dailyNoteFolder: DEFAULT_SETTINGS.dailyNoteFolder,
+      reviewFolder: DEFAULT_SETTINGS.reviewFolder,
+      workLogFolder: DEFAULT_SETTINGS.workLogFolder,
+      knowledgeFolder: DEFAULT_SETTINGS.knowledgeFolder,
+      backupFolder: DEFAULT_SETTINGS.backupFolder,
+    },
+    {
+      dailyNoteFolder: "Sediment/daily",
+      reviewFolder: "Sediment/reviews",
+      workLogFolder: "Sediment/agent-logs",
+      knowledgeFolder: "Sediment/knowledge",
+      backupFolder: "Sediment/backups",
+    }
+  );
+  // 迁移表的新旧值必须与默认值一一对应，避免只改一侧。
+  for (const item of LEGACY_FOLDER_MIGRATIONS) {
+    assert.equal(DEFAULT_SETTINGS[item.key], item.to);
+  }
+});
+
+test("planFolderMigrations：只迁移仍是旧默认值的目录，自定义路径不动", () => {
+  assert.deepEqual(
+    planFolderMigrations(
+      settings({
+        dailyNoteFolder: "daily",
+        reviewFolder: "reviews",
+        workLogFolder: "agent-logs",
+        knowledgeFolder: "knowledge",
+        backupFolder: "sediment-backup",
+      })
+    ).map((item) => item.key),
+    ["dailyNoteFolder", "reviewFolder", "workLogFolder", "knowledgeFolder", "backupFolder"]
+  );
+  assert.deepEqual(planFolderMigrations(settings()), [], "新默认值下无需迁移");
+  assert.deepEqual(
+    planFolderMigrations(settings({ dailyNoteFolder: "my/daily", knowledgeFolder: "knowledge" })).map((item) => item.key),
+    ["knowledgeFolder"]
+  );
+  // 首尾斜杠、重复斜杠按归一化后的路径判断。
+  assert.deepEqual(
+    planFolderMigrations(settings({ reviewFolder: "/reviews/" })).map((item) => item.key),
+    ["reviewFolder"]
+  );
+});
+
+/** 迁移测试桩：路径集合 + 可失败 renameFile + 可列目录/删空目录的 adapter。 */
+function migrationHarness(initial: string[], failOnPath = "") {
+  const paths = new Map<string, { path: string }>(initial.map((p) => [p, { path: p }]));
+  const renamed: Array<[string, string]> = [];
+  const removed: string[] = [];
+  // 真实 vault 里空目录会保留到 rmdir；这里同样单独跟踪目录集合。
+  const folders = new Set<string>();
+  const addParents = (p: string) => {
+    const parts = p.split("/");
+    for (let i = 1; i < parts.length; i += 1) folders.add(parts.slice(0, i).join("/"));
+  };
+  for (const p of paths.keys()) addParents(p);
+  const list = async (folder: string) => {
+    const prefix = `${folder}/`;
+    const files = [...paths.keys()].filter((p) => p.startsWith(prefix) && !p.slice(prefix.length).includes("/"));
+    const children = [...folders].filter(
+      (f) => f.startsWith(prefix) && !f.slice(prefix.length).includes("/")
+    );
+    return { files, folders: children };
+  };
+  const vault = {
+    getFiles: () => [...paths.values()],
+    getAbstractFileByPath: (p: string) => paths.get(p) ?? null,
+    adapter: {
+      list,
+      rmdir: async (folder: string) => {
+        const listing = await list(folder);
+        if (listing.files.length > 0 || listing.folders.length > 0) throw new Error(`not empty: ${folder}`);
+        folders.delete(folder);
+        removed.push(folder);
+      },
+    },
+  };
+  const fileManager = {
+    renameFile: async (file: { path: string }, to: string) => {
+      if (to === failOnPath) throw new Error("disk full");
+      if (paths.has(to)) throw new Error(`already exists: ${to}`);
+      paths.delete(file.path);
+      renamed.push([file.path, to]);
+      file.path = to;
+      paths.set(to, file);
+      addParents(to);
+    },
+  };
+  return { vault, fileManager, renamed, removed, paths, folders };
+}
+
+test("migrateLegacyFolders：逐文件移入 Sediment/、更新设置并清理空目录", async () => {
+  const h = migrationHarness([
+    "daily/2026-11-21.md",
+    "daily/2026-11-20.md",
+    "knowledge/技术/a.md",
+    "notes/keep.md",
+  ]);
+  const s = settings({ dailyNoteFolder: "daily", knowledgeFolder: "knowledge" });
+
+  const outcome = await migrateLegacyFolders({ settings: s, vault: h.vault, fileManager: h.fileManager });
+
+  assert.deepEqual(outcome.migrated.map((item) => item.key), ["dailyNoteFolder", "knowledgeFolder"]);
+  assert.equal(outcome.movedFiles, 3);
+  assert.equal(s.dailyNoteFolder, "Sediment/daily");
+  assert.equal(s.knowledgeFolder, "Sediment/knowledge");
+  // 按路径排序逐个移动，文件夹层级（技术/）保留。
+  assert.deepEqual(h.renamed, [
+    ["daily/2026-11-20.md", "Sediment/daily/2026-11-20.md"],
+    ["daily/2026-11-21.md", "Sediment/daily/2026-11-21.md"],
+    ["knowledge/技术/a.md", "Sediment/knowledge/技术/a.md"],
+  ]);
+  assert.equal(h.paths.has("daily/2026-11-20.md"), false);
+  assert.equal(h.paths.has("Sediment/knowledge/技术/a.md"), true);
+  assert.equal(h.paths.has("notes/keep.md"), true, "目录外文件不受影响");
+  assert.deepEqual(h.removed, ["daily", "knowledge/技术", "knowledge"]);
+});
+
+test("migrateLegacyFolders：旧目录不存在时只更新设置", async () => {
+  const h = migrationHarness([]);
+  const s = settings({ reviewFolder: "reviews" });
+
+  const outcome = await migrateLegacyFolders({ settings: s, vault: h.vault, fileManager: h.fileManager });
+
+  assert.deepEqual(outcome.migrated.map((item) => item.key), ["reviewFolder"]);
+  assert.equal(outcome.movedFiles, 0);
+  assert.equal(s.reviewFolder, "Sediment/reviews");
+});
+
+test("migrateLegacyFolders：目标已有同名文件时整目录跳过，不移动任何文件", async () => {
+  const h = migrationHarness(["daily/a.md", "daily/b.md", "Sediment/daily/a.md"]);
+  const s = settings({ dailyNoteFolder: "daily" });
+
+  const outcome = await migrateLegacyFolders({ settings: s, vault: h.vault, fileManager: h.fileManager });
+
+  assert.equal(outcome.migrated.length, 0);
+  assert.equal(outcome.skipped.length, 1);
+  assert.match(outcome.skipped[0].reason, /同名文件/);
+  assert.equal(s.dailyNoteFolder, "daily", "冲突时设置保持旧值");
+  assert.deepEqual(h.renamed, []);
+});
+
+test("migrateLegacyFolders：目标路径被同名文件占用时跳过", async () => {
+  const h = migrationHarness(["daily/a.md", "Sediment/daily"]);
+  const s = settings({ dailyNoteFolder: "daily" });
+
+  const outcome = await migrateLegacyFolders({ settings: s, vault: h.vault, fileManager: h.fileManager });
+
+  assert.equal(outcome.skipped.length, 1);
+  assert.match(outcome.skipped[0].reason, /被同名文件占用/);
+  assert.equal(s.dailyNoteFolder, "daily");
+});
+
+test("migrateLegacyFolders：移动中途失败时回滚已移动文件，设置不变", async () => {
+  const h = migrationHarness(["daily/a.md", "daily/b.md"], "Sediment/daily/b.md");
+  const s = settings({ dailyNoteFolder: "daily" });
+
+  const outcome = await migrateLegacyFolders({ settings: s, vault: h.vault, fileManager: h.fileManager });
+
+  assert.equal(outcome.failed.length, 1);
+  assert.match(outcome.failed[0].reason, /disk full/);
+  assert.equal(outcome.migrated.length, 0);
+  assert.equal(s.dailyNoteFolder, "daily");
+  assert.deepEqual(h.renamed, [
+    ["daily/a.md", "Sediment/daily/a.md"],
+    ["Sediment/daily/a.md", "daily/a.md"],
+  ]);
+  assert.equal(h.paths.has("daily/a.md"), true);
+  assert.equal(h.paths.has("daily/b.md"), true);
 });
