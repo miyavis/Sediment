@@ -2,6 +2,13 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [1.0.4] - 2026-11-21
+
+### 上架准备
+- `manifest.json` 标记 `isDesktopOnly: true`：一键配置、快照与卸载依赖 Node 文件系统与子进程，移动端不再安装。
+- README 补充网络使用与库外文件访问披露：本地 Agent API 仅监听 `127.0.0.1`、Ollama 走本机回环并可回退、客户端配置读写位于用户主目录/APPDATA、无遥测与云上传。
+- 发布标签改用不带 `v` 前缀的版本号，满足社区目录的 Release 版本匹配；发布工作流同时接受 `v*` 与数字开头标签。
+
 ## [1.0.3] - 2026-11-21
 
 ### 修复

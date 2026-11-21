@@ -1,10 +1,10 @@
 {
 	"id": "sediment",
 	"name": "Sediment",
-	"version": "1.0.3",
+	"version": "1.0.4",
 	"minAppVersion": "1.6.0",
 	"description": "Local-first knowledge dashboard with heatmaps, quick memos, weekly reviews, and agent knowledge deposition via MCP.",
 	"author": "miyavis",
 	"authorUrl": "https://github.com/miyavis",
-	"isDesktopOnly": false
+	"isDesktopOnly": true
 }

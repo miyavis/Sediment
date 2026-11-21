@@ -2,6 +2,13 @@
 
 Local-first Obsidian plugin: knowledge statistics, heatmaps, quick memos, weekly reviews, and agent knowledge deposition via MCP.
 
+## Network and file access
+
+- The optional local Agent API is off by default and listens on `127.0.0.1` only; requests require the token shown in settings.
+- Optional semantic search targets an Ollama endpoint (local loopback by default) and falls back to TF-IDF when it is unavailable.
+- "Configure agent clients" reads and writes MCP configuration files **outside the vault**, under your user home or `%APPDATA%` (for example `~/.claude.json`, `~/.cursor/mcp.json`, `~/.config/opencode/opencode.jsonc`). It only adds or removes the Sediment entry; "Uninstall MCP access" removes that entry again.
+- No telemetry, no cloud upload, no self-update, and no advertising.
+
 > 中文说明见下方 / Chinese documentation below.
 
 ---
@@ -12,7 +19,7 @@ Sediment 是一个本地优先的 Obsidian 插件，把知识工作统计、快�
 
 [![Obsidian](https://img.shields.io/badge/Obsidian-v1.6.0%2B-blue.svg)](https://obsidian.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v1.0.3-blue.svg)](https://github.com/miyavis/Sediment/releases)
+[![Version](https://img.shields.io/badge/version-v1.0.4-blue.svg)](https://github.com/miyavis/Sediment/releases)
 
 ## 核心入口
 
@@ -22,7 +29,7 @@ Sediment 是一个本地优先的 Obsidian 插件，把知识工作统计、快�
 | **知识** | 热力图、写作趋势、投入分布、年度画像和周期复盘 |
 | **Agent** | 草稿审核、待办认领、变更审查、快照恢复和工作日志 |
 
-支持精简、标准、完整三档布局密度。移动端隐藏「智能体工坊」页签（Agent 管理留在桌面端），今日脉冲与知识地层页签（含图表分析）仍可查看，速记侧栏照常可用。
+支持精简、标准、完整三档布局密度。插件为桌面端专用（manifest 标记 `isDesktopOnly`），因为一键配置、快照与卸载依赖 Node 的文件系统与子进程能力。
 
 ## 快速开始
 
@@ -264,8 +271,8 @@ mcp-server/          MCP stdio 桥接
 
 - 没有云授权或云同步，核心内容不上传
 - 语义检索使用本地 TF-IDF，不依赖大型 embedding 模型
-- 手机端保留今日脉冲与知识地层页签（含图表），隐藏智能体工坊；本地 Agent API 为桌面能力（移动端无 Node http）
-- 数据迁移、大 vault 性能和真实移动端可用性仍需持续基准验证
+- 桌面端专用：插件使用 Node 的文件系统与子进程能力（一键配置、快照、卸载），manifest 已标记 `isDesktopOnly`
+- 数据迁移、大 vault 性能仍需持续基准验证
 
 ## 更新记录
 
