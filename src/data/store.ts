@@ -16,6 +16,7 @@ import {
   type WorkLogRecord,
 } from "../types";
 import { t, tf } from "../i18n";
+import { reconcilePendingWrites, markStaleByPaths } from "../agent/reconcile";
 import { dateKey } from "../utils/dates";
 import { ensureFolder, normalizeFolder } from "../utils/vault";
 import { logError } from "../utils/log-error";
@@ -415,6 +416,20 @@ export class Store {
     const [removed] = this.data.pendingWrites.splice(index, 1);
     this.scheduleSave(2000);
     return removed;
+  }
+
+  /** 启动对账：目标已不存在的待审写入标记 stale，返回新标记数。 */
+  reconcilePending(exists: (path: string) => boolean): number {
+    const marked = reconcilePendingWrites(this.data.pendingWrites, exists);
+    if (marked > 0) this.scheduleSave(2000);
+    return marked;
+  }
+
+  /** 删除/重命名事件即时标记失效待审项。 */
+  markPendingWritesStale(paths: string[]): number {
+    const marked = markStaleByPaths(this.data.pendingWrites, paths);
+    if (marked > 0) this.scheduleSave(2000);
+    return marked;
   }
 
   addSnapshot(record: SnapshotRecord): void {

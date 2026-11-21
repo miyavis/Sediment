@@ -80,6 +80,8 @@ export interface PendingWriteRecord {
   before: string;
   /** 预览：采纳后的内容或操作摘要 */
   after: string;
+  /** 目标在挂起后被删除/移动（启动对账或事件标记），只能驳回重发 */
+  stale?: boolean;
 }
 
 export interface MemoRecord {

@@ -45,6 +45,7 @@ import { buildStatsCsv, buildExportJson, DEFAULT_EXPORT_OPTIONS } from "../src/f
 import { todayLine } from "../src/features/embed";
 import { Store } from "../src/data/store";
 import { AgentApi, ApiError, safeAgentPath } from "../src/agent/api";
+import { reconcilePendingWrites, markStaleByPaths } from "../src/agent/reconcile";
 import { SemanticIndex, tokenizeSemanticText } from "../src/agent/semantic";
 import { AgentServer, sanitizeServerError, tokensMatch } from "../src/agent/server";
 import { idempotencyKey, redactAuditPath, redactSecrets } from "../src/agent/security";
@@ -2980,4 +2981,53 @@ test("快照恢复入口迁移：工坊不再渲染、设置备份分区承接",
   assert.match(settingsSrc, /private renderRecoveryList\(/, "设置备份分区须承接快照恢复列表");
   assert.match(settingsSrc, /restoreDataBackup/, "恢复安全流程须在设置侧保留");
   assert.match(settingsSrc, /sd-feed-row-audit/, "恢复列表须复用可读审核行样式");
+});
+
+// ── 阶段一 Task 1：待审写入轻量对账 ──
+
+const pendingRecord = (partial: Partial<PendingWriteRecord> = {}): PendingWriteRecord => ({
+  id: "pw-1",
+  time: "2026-11-21T00:00:00.000Z",
+  tool: "patch_note",
+  agent: "agent",
+  path: "notes/a.md",
+  request: { kind: "patch_note", args: { path: "notes/a.md" } },
+  before: "old",
+  after: "new",
+  ...partial,
+});
+
+test("reconcile：before 非空且目标不存在 → stale；新建类不受影响；幂等", () => {
+  const records = [
+    pendingRecord(),
+    pendingRecord({ id: "pw-2", before: "", path: "notes/new.md", tool: "write_note" }),
+    pendingRecord({ id: "pw-3", path: "notes/b.md" }),
+  ];
+  const marked = reconcilePendingWrites(records, (p) => p === "notes/b.md");
+  assert.equal(marked, 1);
+  assert.equal(records[0].stale, true);
+  assert.equal(records[1].stale, undefined, "新建类（before 为空）不标记");
+  assert.equal(records[2].stale, undefined);
+  assert.equal(reconcilePendingWrites(records, (p) => p === "notes/b.md"), 0, "已标记的不重复计数");
+});
+
+test("markStaleByPaths：删除/重命名路径命中即标记", () => {
+  const records = [pendingRecord(), pendingRecord({ id: "pw-2", path: "notes/b.md" })];
+  assert.equal(markStaleByPaths(records, ["notes/a.md"]), 1);
+  assert.equal(records[0].stale, true);
+  assert.equal(records[1].stale, undefined);
+  assert.equal(markStaleByPaths(records, ["notes/a.md"]), 0, "已 stale 不重复");
+});
+
+test("store：reconcilePending / markPendingWritesStale 有标记才落盘", () => {
+  const store = Object.create(Store.prototype) as Store;
+  let saves = 0;
+  (store as any).data = { pendingWrites: [pendingRecord()] };
+  (store as any).scheduleSave = () => {
+    saves += 1;
+  };
+  assert.equal(store.reconcilePending(() => false), 1);
+  assert.equal(saves, 1);
+  assert.equal(store.markPendingWritesStale(["notes/a.md"]), 0, "已 stale 不再计数也不落盘");
+  assert.equal(saves, 1);
 });
