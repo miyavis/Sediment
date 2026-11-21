@@ -54,7 +54,7 @@ import { computeDiff } from "../src/ui/diff-modal";
 import { barChart, escapeAttr, goalRing, mean, multiLine, referenceLines, ring, sparkline } from "../src/utils/charts";
 import { aggregateStrata, listMonths, recentStrataRange } from "../src/utils/strata";
 import { logError } from "../src/utils/log-error";
-import { getLocale, localeFromPersisted, setLocale, tf } from "../src/i18n";
+import { getLocale, localeFromPersisted, setLocale, t, tf } from "../src/i18n";
 import { findViolations, stripComments } from "../scripts/lint-i18n.mjs";
 import {
   inferCategory,
@@ -3063,4 +3063,24 @@ test("main.ts：删除/重命名标记失效待审项，启动时对账", () => 
   assert.ok(src.includes("markPendingWritesStale([file.path])"), "delete 事件须标记被删路径");
   assert.ok(src.includes("markPendingWritesStale([oldPath])"), "rename 事件须标记旧路径");
   assert.ok(src.includes("this.store.reconcilePending("), "启动须做一次对账");
+});
+
+// ── 阶段一 Task 3：工坊失效待审 UI ──
+
+test("工坊：stale 待审行渲染失效徽章且只提供驳回", () => {
+  const src = fs.readFileSync("src/views/dashboard/sections/agent.ts", "utf8");
+  assert.ok(src.includes("item.stale"), "待审行须判断 stale");
+  assert.ok(src.includes("sd-audit-badge is-stale"), "stale 徽章类名");
+  const css = fs.readFileSync("styles.css", "utf8");
+  assert.match(css, /\.sd-audit-badge\.is-stale/);
+});
+
+test("i18n：stale 相关英文条目已收录", () => {
+  setLocale("en");
+  try {
+    assert.equal(t("目标已删除/移动"), "Target deleted/moved");
+    assert.equal(t("失效项（目标被删除/移动）只能驳回，让 Agent 重发。"), "Stale items (target deleted/moved) can only be rejected; ask the agent to resend.");
+  } finally {
+    setLocale("zh");
+  }
 });

@@ -2221,6 +2221,11 @@ settings:
   border-radius: 6px;
 }
 
+.sd-audit-badge.is-stale {
+  color: var(--text-error);
+  border-color: var(--text-error);
+}
+
 .sd-rhythm-cell.is-empty {
   height: 4px;
   min-height: 4px;

@@ -622,6 +622,10 @@ const EN: Record<string, string> = {
   "SEDIMENT · 今日战报": "SEDIMENT · Today's report",
   "连续 {streak} 天 / 最长 {longest} 天": "Streak {streak} days / best {longest} days",
   "速记 {m} 条 · Agent 调用 {a} 次": "{m} memos · {a} agent calls",
+
+  // 阶段一 Task 3：失效待审
+  "目标已删除/移动": "Target deleted/moved",
+  "失效项（目标被删除/移动）只能驳回，让 Agent 重发。": "Stale items (target deleted/moved) can only be rejected; ask the agent to resend.",
 };
 
 /** 取当前语言的文案；英文未收录时回退中文源串。 */

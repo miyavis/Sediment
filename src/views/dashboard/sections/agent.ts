@@ -25,6 +25,7 @@ export function renderPendingWrites(view: DashboardView, root: HTMLElement): voi
   card.createDiv({ cls: "sd-card-title", text: tf("待审写入 · {n}", { n: pending.length }) });
   card.createDiv({ cls: "sd-card-sub", text: t("「确认后写入」档下，Agent 的写操作挂起在这里，采纳后才真正落盘；驳回则丢弃。") });
   card.createDiv({ cls: "sd-card-sub", text: t("文件若在挂起后被修改，采纳会因版本冲突失败；可驳回后让 Agent 重发。") });
+  card.createDiv({ cls: "sd-card-sub", text: t("失效项（目标被删除/移动）只能驳回，让 Agent 重发。") });
   if (pending.length === 0) {
     card.createDiv({ cls: "sd-empty", text: t("没有挂起的待审写入。") });
     return;
@@ -35,6 +36,12 @@ export function renderPendingWrites(view: DashboardView, root: HTMLElement): voi
     row.createSpan({ text: `${localStamp(item.time).slice(5)} · ${item.agent} · ${item.path}`, attr: { title: item.path } });
     const actions = row.createDiv({ cls: "sd-audit-actions" });
     actions.createSpan({ cls: "sd-audit-badge", text: pendingToolLabel(item.tool) });
+    if (item.stale) {
+      actions.createSpan({ cls: "sd-audit-badge is-stale", text: t("目标已删除/移动") });
+      actions.createEl("button", { cls: "mod-cta", text: t("驳回") }).onclick = () =>
+        void rejectPendingWrite(view, item.id);
+      continue;
+    }
     actions.createEl("button", { cls: "mod-cta", text: t("预览并审批") }).onclick = () => {
       new DiffModal(
         view.plugin.app,
