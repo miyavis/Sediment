@@ -2,6 +2,12 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [Unreleased]
+
+### 上架反馈
+- 主 `README.md` 改为纯英文文档，完整中文说明移到 `README.zh-CN.md`，两份文件顶部互链；修复自动审核「README 不含英文」的误判。
+- 版本徽章同步与发布校验同时覆盖两份 README，单测新增「主 README 不得含中文字面量」断言。
+
 ## [1.0.6] - 2026-11-21
 
 ### 上架反馈

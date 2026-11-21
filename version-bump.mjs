@@ -54,9 +54,10 @@ writeIfChanged(
   )
 );
 
-// 6. README 版本徽章
-const readmePath = "README.md";
-const readme = readFileSync(readmePath, "utf8");
-writeIfChanged(readmePath, readme.replace(/version-v\d+(?:\.\d+)*/g, `version-v${version}`));
+// 6. README 版本徽章（英文主文档 + 中文翻译各一份）
+for (const readmePath of ["README.md", "README.zh-CN.md"]) {
+  const readme = readFileSync(readmePath, "utf8");
+  writeIfChanged(readmePath, readme.replace(/version-v\d+(?:\.\d+)*/g, `version-v${version}`));
+}
 
 console.log(`version synced: ${version}`);
