@@ -2,7 +2,7 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
-## [Unreleased]
+## [1.1.0] - 2026-11-21
 
 ### 修复
 - 确认（confirm）档：人工审批的预览与落盘内容绑定（挂起时记录 `before` 的 SHA-256，采纳前复验；目标在挂起后被修改或抢先创建则拒绝采纳），并把「修改」事件纳入失效判定。

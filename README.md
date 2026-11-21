@@ -6,7 +6,7 @@ Sediment is a local-first Obsidian plugin that turns daily work into a personal 
 
 [![Obsidian](https://img.shields.io/badge/Obsidian-v1.8.7%2B-blue.svg)](https://obsidian.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v1.0.11-blue.svg)](https://github.com/miyavis/Sediment/releases)
+[![Version](https://img.shields.io/badge/version-v1.1.0-blue.svg)](https://github.com/miyavis/Sediment/releases)
 
 ## What it does
 
