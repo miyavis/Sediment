@@ -443,6 +443,12 @@ var EN = {
   "\u4FEE\u6539\u6743\u91CD\u6216\u5C01\u9876\u540E\u4F1A\u7ACB\u5373\u5168\u91CF\u91CD\u7B97\u5386\u53F2\u8D21\u732E\u5206\u3002Agent \u5199\u5165\u53EA\u8BA1\u300CAI \u65B0\u589E\u8BCD\u300D\uFF0C\u4E0D\u91CD\u590D\u8BA1\u5165\u4EBA\u7C7B\u5199\u4F5C\u7EDF\u8BA1\u3002": "Changing weights or cap recomputes all history immediately. Agent writes count only as AI words, not human writing.",
   "Agent \u63A5\u5165\uFF08\u672C\u5730 HTTP / MCP\uFF09": "Agent access (local HTTP / MCP)",
   "\u542F\u7528\u672C\u5730 Agent API": "Enable local Agent API",
+  "\u542F\u7528\u6587\u4EF6\u6865\uFF08\u5B9E\u9A8C\uFF09": "Enable file bridge (experimental)",
+  "\u975E MCP \u667A\u80FD\u4F53\u53EF\u628A write_note / patch_note / add_knowledge \u63D0\u6848\u653E\u8FDB\u63D2\u4EF6\u76EE\u5F55 bridge/proposals/\uFF0C\u5728\u5DE5\u574A\u9884\u89C8\u540E\u91C7\u7EB3\u6216\u9A73\u56DE\uFF1B\u7ED3\u679C\u5199\u5230 bridge/decisions/\u3002\u9ED8\u8BA4\u5173\u95ED\uFF0C\u63D0\u6848\u4E0D\u4F1A\u81EA\u52A8\u843D\u76D8\u3002": "Agents that cannot use MCP can drop write_note / patch_note / add_knowledge proposals into bridge/proposals/ in the plugin folder, review them in the workshop, and approve or reject. Decisions are written to bridge/decisions/. Off by default; proposals are never applied automatically.",
+  "\u6587\u4EF6\u6865": "File bridge",
+  "\u6587\u4EF6\u6865\u5BFC\u5165\u5931\u8D25\uFF1A{code}": "File bridge import failed: {code}",
+  "\u6587\u4EF6\u6865\u63D0\u6848\u672A\u6302\u8D77\uFF1A{id}": "File bridge proposal was not held: {id}",
+  "\u6587\u4EF6\u6865\u63D0\u6848\u7F3A\u5C11 id": "File bridge proposal is missing an id",
   "\u53EA\u76D1\u542C 127.0.0.1\uFF0C\u4F9B MCP \u6865\u63A5\u548C\u672C\u5730\u811A\u672C\u8C03\u7528\u4E2A\u4EBA\u77E5\u8BC6\u5E93\u3002": "Listens on 127.0.0.1 only, for the MCP bridge and local scripts.",
   "\u7AEF\u53E3": "Port",
   "\u9ED8\u8BA4 27123\uFF0C\u4FEE\u6539\u540E\u670D\u52A1\u4F1A\u81EA\u52A8\u91CD\u542F\u3002": "Default 27123; the server restarts on change.",
@@ -1431,6 +1437,189 @@ function inferCategory(title, content, tags, categories) {
   return (_a2 = categories[0]) != null ? _a2 : "\u672A\u5206\u7C7B";
 }
 
+// src/agent/bridge-schema.ts
+var BRIDGE_VERSION = 1;
+var BRIDGE_PROPOSAL_MAX_BYTES = 256 * 1024;
+var BRIDGE_MAX_IMPORTS_PER_SCAN = 10;
+var BRIDGE_MAX_PENDING = 100;
+var BRIDGE_POLL_MS = 5e3;
+var BRIDGE_MAX_ID_LENGTH = 64;
+var BRIDGE_MAX_AGENT_LENGTH = 64;
+var BRIDGE_MAX_NOTE_LENGTH = 2e3;
+var BRIDGE_MAX_PATH_LENGTH = 1024;
+var BRIDGE_MAX_FIELD_LENGTH = 200;
+var BRIDGE_MAX_LIST_ITEMS = 50;
+function fail(reason, message) {
+  return { ok: false, reason, message };
+}
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function requiredString(value, max) {
+  return typeof value === "string" && value.length > 0 && value.length <= max ? value : null;
+}
+function optionalString(value, max) {
+  if (value === void 0) return void 0;
+  if (typeof value !== "string" || value.length > max) return null;
+  return value;
+}
+function stringList(value) {
+  if (value === void 0) return [];
+  if (!Array.isArray(value) || value.length > BRIDGE_MAX_LIST_ITEMS) return null;
+  if (!value.every((item) => typeof item === "string" && item.length <= BRIDGE_MAX_FIELD_LENGTH)) return null;
+  return value;
+}
+function oneOf(value, allowed) {
+  if (value === void 0) return void 0;
+  return allowed.includes(value) ? value : null;
+}
+function isBridgeProposalId(value) {
+  return value.length >= 1 && value.length <= BRIDGE_MAX_ID_LENGTH && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value);
+}
+function bridgePendingId(id) {
+  return `bridge-${id}`;
+}
+function bridgeProposalIdFromPath(path) {
+  const name = path.slice(Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1);
+  if (!name.toLowerCase().endsWith(".json")) return null;
+  const id = name.slice(0, -5);
+  return isBridgeProposalId(id) ? id : null;
+}
+function bridgeTextTooLarge(text) {
+  return new TextEncoder().encode(text).length > BRIDGE_PROPOSAL_MAX_BYTES;
+}
+function normalizeBridgeAgent(value) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > BRIDGE_MAX_AGENT_LENGTH) return null;
+  const cleaned = trimmed.replace(/[\u0000-\u001f\u007f:#]/g, "-");
+  return cleaned || null;
+}
+function buildBridgeDecision(input) {
+  return {
+    version: BRIDGE_VERSION,
+    id: input.id,
+    pendingId: input.pendingId,
+    ...input.agent ? { agent: input.agent } : {},
+    ...input.tool ? { tool: input.tool } : {},
+    ...input.path ? { path: input.path } : {},
+    decision: input.decision,
+    reason: input.reason,
+    ...input.message ? { message: input.message.slice(0, 500) } : {},
+    time: (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
+function parseBridgeProposal(id, raw) {
+  if (!isBridgeProposalId(id)) return fail("invalid_id", "\u63D0\u6848 id \u975E\u6CD5\uFF081\u201364 \u4F4D\u5B57\u6BCD\u6570\u5B57\u6216 ._-\uFF0C\u4E14\u4EE5\u5B57\u6BCD\u6570\u5B57\u5F00\u5934\uFF09");
+  if (!isRecord(raw)) return fail("invalid_schema", "\u63D0\u6848\u5FC5\u987B\u662F JSON \u5BF9\u8C61");
+  if (raw.id !== void 0 && raw.id !== id) return fail("invalid_schema", "\u63D0\u6848 id \u4E0E\u6587\u4EF6\u540D\u4E0D\u4E00\u81F4");
+  if (raw.version !== void 0 && raw.version !== BRIDGE_VERSION) {
+    return fail("unsupported_version", `\u4E0D\u652F\u6301\u7684\u63D0\u6848\u7248\u672C\uFF1A${String(raw.version)}`);
+  }
+  const agent = normalizeBridgeAgent(raw.agent);
+  if (!agent) return fail("invalid_schema", "agent \u5FC5\u987B\u662F\u975E\u7A7A\u5B57\u7B26\u4E32\uFF08\u226464 \u5B57\u7B26\uFF09");
+  const note = typeof raw.note === "string" ? raw.note.slice(0, BRIDGE_MAX_NOTE_LENGTH) : void 0;
+  const tool = raw.tool;
+  if (tool !== "write_note" && tool !== "patch_note" && tool !== "add_knowledge") {
+    return fail("invalid_schema", "tool \u53EA\u652F\u6301 write_note / patch_note / add_knowledge");
+  }
+  const args = raw.args;
+  if (!isRecord(args)) return fail("invalid_schema", "args \u5FC5\u987B\u662F\u5BF9\u8C61");
+  if (tool === "write_note") {
+    const path = requiredString(args.path, BRIDGE_MAX_PATH_LENGTH);
+    if (!path) return fail("invalid_schema", "write_note.path \u5FC5\u987B\u662F\u975E\u7A7A\u5B57\u7B26\u4E32\uFF08\u22641024 \u5B57\u7B26\uFF09");
+    if (typeof args.content !== "string") return fail("invalid_schema", "write_note.content \u5FC5\u987B\u662F\u5B57\u7B26\u4E32");
+    const mode = oneOf(args.mode, ["create", "overwrite", "append"]);
+    if (mode === null) return fail("invalid_schema", "write_note.mode \u53EA\u80FD\u662F create / overwrite / append");
+    return {
+      ok: true,
+      proposal: {
+        id,
+        agent,
+        tool: "write_note",
+        ...note ? { note } : {},
+        args: { path, content: args.content, mode: mode != null ? mode : "create" }
+      }
+    };
+  }
+  if (tool === "patch_note") {
+    const inputRaw2 = args.input;
+    if (!isRecord(inputRaw2)) return fail("invalid_schema", "patch_note.args.input \u5FC5\u987B\u662F\u5BF9\u8C61");
+    const path = requiredString(inputRaw2.path, BRIDGE_MAX_PATH_LENGTH);
+    if (!path) return fail("invalid_schema", "patch_note.path \u5FC5\u987B\u662F\u975E\u7A7A\u5B57\u7B26\u4E32\uFF08\u22641024 \u5B57\u7B26\uFF09");
+    if (typeof inputRaw2.content !== "string") return fail("invalid_schema", "patch_note.content \u5FC5\u987B\u662F\u5B57\u7B26\u4E32");
+    if (inputRaw2.dryRun === true) {
+      return fail("invalid_schema", "\u6587\u4EF6\u6865\u4E0D\u63A5\u53D7 dryRun\uFF1B\u63D0\u6848\u5FC5\u987B\u8FDB\u5165\u5F85\u5BA1\u961F\u5217");
+    }
+    const heading = optionalString(inputRaw2.heading, BRIDGE_MAX_FIELD_LENGTH);
+    if (heading === null) return fail("invalid_schema", "patch_note.heading \u5FC5\u987B\u662F \u2264200 \u5B57\u7B26\u7684\u5B57\u7B26\u4E32");
+    const find = optionalString(inputRaw2.find, BRIDGE_MAX_FIELD_LENGTH);
+    if (find === null) return fail("invalid_schema", "patch_note.find \u5FC5\u987B\u662F \u2264200 \u5B57\u7B26\u7684\u5B57\u7B26\u4E32");
+    const mode = oneOf(inputRaw2.mode, ["replace", "append", "prepend"]);
+    if (mode === null) return fail("invalid_schema", "patch_note.mode \u53EA\u80FD\u662F replace / append / prepend");
+    const operation = oneOf(inputRaw2.operation, [
+      "append_under_heading",
+      "prepend_under_heading",
+      "replace_block",
+      "update_frontmatter"
+    ]);
+    if (operation === null) return fail("invalid_schema", "patch_note.operation \u975E\u6CD5");
+    if (operation !== "update_frontmatter" && !heading && !find) {
+      return fail("invalid_schema", "patch_note \u9700\u8981 heading \u6216 find");
+    }
+    const index = inputRaw2.index;
+    if (index !== void 0 && (typeof index !== "number" || !Number.isInteger(index) || index < 0 || index > 1e4)) {
+      return fail("invalid_schema", "patch_note.index \u5FC5\u987B\u662F 0\u201310000 \u7684\u6574\u6570");
+    }
+    const ifMatch = optionalString(inputRaw2.ifMatch, BRIDGE_MAX_FIELD_LENGTH);
+    if (ifMatch === null) return fail("invalid_schema", "patch_note.ifMatch \u5FC5\u987B\u662F \u2264200 \u5B57\u7B26\u7684\u5B57\u7B26\u4E32");
+    const expectedMtime = inputRaw2.expectedMtime;
+    if (expectedMtime !== void 0 && (typeof expectedMtime !== "number" || !Number.isFinite(expectedMtime) || expectedMtime <= 0)) {
+      return fail("invalid_schema", "patch_note.expectedMtime \u5FC5\u987B\u662F\u6709\u9650\u6B63\u6570");
+    }
+    const input2 = { path, content: inputRaw2.content };
+    if (heading !== void 0) input2.heading = heading;
+    if (find !== void 0) input2.find = find;
+    if (mode !== void 0) input2.mode = mode;
+    if (operation !== void 0) input2.operation = operation;
+    if (index !== void 0) input2.index = index;
+    if (ifMatch !== void 0) input2.ifMatch = ifMatch;
+    if (expectedMtime !== void 0) input2.expectedMtime = expectedMtime;
+    return {
+      ok: true,
+      proposal: { id, agent, tool: "patch_note", ...note ? { note } : {}, args: { input: input2 } }
+    };
+  }
+  const inputRaw = args.input;
+  if (!isRecord(inputRaw)) return fail("invalid_schema", "add_knowledge.args.input \u5FC5\u987B\u662F\u5BF9\u8C61");
+  const title = requiredString(inputRaw.title, BRIDGE_MAX_FIELD_LENGTH);
+  if (!title || !title.trim()) return fail("invalid_schema", "add_knowledge.title \u5FC5\u987B\u662F\u975E\u7A7A\u5B57\u7B26\u4E32\uFF08\u2264200 \u5B57\u7B26\uFF09");
+  if (typeof inputRaw.content !== "string") return fail("invalid_schema", "add_knowledge.content \u5FC5\u987B\u662F\u5B57\u7B26\u4E32");
+  const tags = stringList(inputRaw.tags);
+  if (tags === null) return fail("invalid_schema", "add_knowledge.tags \u5FC5\u987B\u662F\u6700\u591A 50 \u4E2A\u77ED\u5B57\u7B26\u4E32");
+  const links = stringList(inputRaw.links);
+  if (links === null) return fail("invalid_schema", "add_knowledge.links \u5FC5\u987B\u662F\u6700\u591A 50 \u4E2A\u77ED\u5B57\u7B26\u4E32");
+  const category = optionalString(inputRaw.category, BRIDGE_MAX_FIELD_LENGTH);
+  if (category === null) return fail("invalid_schema", "add_knowledge.category \u5FC5\u987B\u662F \u2264200 \u5B57\u7B26\u7684\u5B57\u7B26\u4E32");
+  const folder = optionalString(inputRaw.folder, BRIDGE_MAX_FIELD_LENGTH);
+  if (folder === null) return fail("invalid_schema", "add_knowledge.folder \u5FC5\u987B\u662F \u2264200 \u5B57\u7B26\u7684\u5B57\u7B26\u4E32");
+  const source = optionalString(inputRaw.source, BRIDGE_MAX_FIELD_LENGTH);
+  if (source === null) return fail("invalid_schema", "add_knowledge.source \u5FC5\u987B\u662F \u2264200 \u5B57\u7B26\u7684\u5B57\u7B26\u4E32");
+  const inputAgent = optionalString(inputRaw.agent, BRIDGE_MAX_FIELD_LENGTH);
+  if (inputAgent === null) return fail("invalid_schema", "add_knowledge.agent \u5FC5\u987B\u662F \u2264200 \u5B57\u7B26\u7684\u5B57\u7B26\u4E32");
+  const input = { title: title.trim(), content: inputRaw.content };
+  if (tags.length) input.tags = tags;
+  if (links.length) input.links = links;
+  if (category !== void 0) input.category = category;
+  if (folder !== void 0) input.folder = folder;
+  if (source !== void 0) input.source = source;
+  if (inputAgent !== void 0) input.agent = inputAgent;
+  return {
+    ok: true,
+    proposal: { id, agent, tool: "add_knowledge", ...note ? { note } : {}, args: { input } }
+  };
+}
+
 // src/agent/api.ts
 function generateToken() {
   try {
@@ -1562,6 +1751,10 @@ var AgentApi = class {
   get vault() {
     return this.plugin.app.vault;
   }
+  /** 文件桥未启用（或尚未接入）时为 undefined，决策钩子退化成空操作。 */
+  get bridgeSink() {
+    return this.plugin.fileBridge;
+  }
   setCallContext(tool, agent) {
     this.currentTool = tool;
     this.currentAgent = agent;
@@ -1644,17 +1837,19 @@ var AgentApi = class {
    * 把一次写入挂起为待审条目并返回给调用方；不落盘、不建目录、不写快照。
    * request 保存原请求，采纳时经 replayPending 走与直接写相同的落盘函数。
    */
-  holdForConfirm(tool, path, kind, args, before, after) {
-    const id = `pw-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+  holdForConfirm(tool, path, kind, args, before, after, meta = {}) {
+    var _a2;
+    const id = (_a2 = meta.id) != null ? _a2 : `pw-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
     this.plugin.store.addPendingWrite({
       id,
       time: (/* @__PURE__ */ new Date()).toISOString(),
       tool,
-      agent: this.currentAgent || "agent",
+      agent: meta.agent || this.currentAgent || "agent",
       path,
       request: { kind, args },
       before,
-      after
+      after,
+      ...meta.source === "bridge" && meta.proposalId ? { source: "bridge", proposalId: meta.proposalId } : {}
     });
     const message = tf("confirm \u6A21\u5F0F\u4E0B\u5199\u5165\u5DF2\u6302\u8D77\u5F85\u5BA1\uFF1A{path}", { path });
     this.plugin.store.logDiagnostic("storage", message, `${id} \xB7 ${tool}`);
@@ -1671,6 +1866,7 @@ var AgentApi = class {
   }
   /** 采纳：按挂起时保存的原请求重放对应的落盘函数（重放前再次过门禁）。 */
   async approvePendingWrite(id) {
+    var _a2;
     const record = this.getPendingWrite(id);
     if (!record) throw new ApiError("NOT_FOUND", tf("\u5F85\u5BA1\u5199\u5165\u4E0D\u5B58\u5728\uFF1A{id}", { id }), 404);
     const staleMessage = tf("\u5F85\u5BA1\u5199\u5165\u5DF2\u5931\u6548\uFF08\u76EE\u6807\u88AB\u5220\u9664\u6216\u79FB\u52A8\uFF09\uFF1A{path}\uFF0C\u8BF7\u9A73\u56DE\u540E\u8BA9 Agent \u91CD\u53D1", {
@@ -1680,23 +1876,68 @@ var AgentApi = class {
     if (record.before !== "" && !(this.vault.getAbstractFileByPath(record.path) instanceof import_obsidian3.TFile)) {
       throw new ApiError("STALE_PENDING", staleMessage, 409);
     }
-    await this.replayPending(record.request);
+    await this.replayPending(record.request, record.agent);
     this.plugin.store.removePendingWrite(id);
+    if (record.source === "bridge") {
+      (_a2 = this.bridgeSink) == null ? void 0 : _a2.notifyDecision(record, "approved", "user_approved");
+    }
     const message = tf("\u5F85\u5BA1\u5199\u5165\u5DF2\u91C7\u7EB3\u5E76\u843D\u76D8\uFF1A{path}", { path: record.path });
     this.plugin.store.logDiagnostic("storage", message, id);
     return { path: record.path };
   }
   /** 驳回：丢弃挂起请求（不落盘），并记安全诊断。 */
   rejectPendingWrite(id) {
+    var _a2;
     const removed = this.plugin.store.removePendingWrite(id);
     if (!removed) throw new ApiError("NOT_FOUND", tf("\u5F85\u5BA1\u5199\u5165\u4E0D\u5B58\u5728\uFF1A{id}", { id }), 404);
+    if (removed.source === "bridge") {
+      (_a2 = this.bridgeSink) == null ? void 0 : _a2.notifyDecision(removed, "rejected", removed.stale ? "stale" : "user_rejected");
+    }
     const message = tf("\u5F85\u5BA1\u5199\u5165\u5DF2\u9A73\u56DE\u5E76\u4E22\u5F03\uFF1A{path}", { path: removed.path });
     this.plugin.store.logDiagnostic("security", message, `${removed.id} \xB7 ${removed.tool}`);
     return { ok: true, path: removed.path };
   }
+  /** 文件桥导入：校验 + 门禁 + 预览 + 无条件挂起；绝不直接落盘。 */
+  async importBridgeProposal(proposal) {
+    if (!proposal.id) throw new ApiError("INVALID_PROPOSAL", t("\u6587\u4EF6\u6865\u63D0\u6848\u7F3A\u5C11 id"), 400);
+    const meta = {
+      id: bridgePendingId(proposal.id),
+      hold: true,
+      agent: proposal.agent,
+      source: "bridge",
+      proposalId: proposal.id
+    };
+    let result;
+    switch (proposal.tool) {
+      case "write_note":
+        result = await this.writeNote(
+          proposal.args.path,
+          proposal.args.content,
+          proposal.args.mode,
+          false,
+          meta
+        );
+        break;
+      case "patch_note":
+        result = await this.patchNote(proposal.args.input, false, meta);
+        break;
+      case "add_knowledge":
+        result = await this.addKnowledge(
+          { ...proposal.args.input, agent: proposal.agent },
+          false,
+          meta
+        );
+        break;
+    }
+    if (!(result == null ? void 0 : result.pending) || !result.pendingId) {
+      throw new ApiError("INVALID_PROPOSAL", tf("\u6587\u4EF6\u6865\u63D0\u6848\u672A\u6302\u8D77\uFF1A{id}", { id: proposal.id }), 400);
+    }
+    return { pendingId: result.pendingId, path: result.path };
+  }
   /** 采纳时的重放分发：各 kind 与下方写方法一一对应，bypassConfirm=true。 */
-  async replayPending(request) {
+  async replayPending(request, agent = "") {
     var _a2;
+    const meta = agent ? { agent } : {};
     const args = request.args;
     const str = (value) => String(value != null ? value : "");
     switch (request.kind) {
@@ -1705,22 +1946,24 @@ var AgentApi = class {
           str(args.path),
           str(args.content),
           str(args.mode) || "create",
-          true
+          true,
+          meta
         );
         return;
       case "patch_note":
-        await this.patchNote(args.input, true);
+        await this.patchNote(args.input, true, meta);
         return;
       case "frontmatter":
         await this.updateFrontmatter(
           str(args.path),
           (_a2 = args.updates) != null ? _a2 : {},
           args.ifMatch ? str(args.ifMatch) : void 0,
-          true
+          true,
+          meta
         );
         return;
       case "knowledge":
-        await this.addKnowledge(args.input, true);
+        await this.addKnowledge(args.input, true, meta);
         return;
       case "memo":
         await this.addMemo(
@@ -1853,7 +2096,7 @@ var AgentApi = class {
     return { path: safe, content: await this.vault.read(file) };
   }
   /** 新建、覆盖或追加笔记。confirm 档挂起为待审写入（bypassConfirm 仅采纳重放时使用）。 */
-  async writeNote(path, content, mode = "create", bypassConfirm = false) {
+  async writeNote(path, content, mode = "create", bypassConfirm = false, meta) {
     const safe = safeAgentPath(path);
     this.assertPathAllowed(
       safe,
@@ -1863,8 +2106,8 @@ var AgentApi = class {
     const existing = this.vault.getAbstractFileByPath(safe);
     if (mode === "create" && existing) throw new Error(`\u7B14\u8BB0\u5DF2\u5B58\u5728\uFF1A${safe}`);
     const knowledgeBase = normalizeFolder(this.plugin.store.settings.knowledgeFolder);
-    const finalContent = mode === "create" && knowledgeBase.length > 0 && safe.startsWith(`${knowledgeBase}/`) ? stampAgentProvenance(content, this.currentAgent || "agent", dateKey(/* @__PURE__ */ new Date())) : content;
-    if (!bypassConfirm && this.isConfirmMode()) {
+    const finalContent = mode === "create" && knowledgeBase.length > 0 && safe.startsWith(`${knowledgeBase}/`) ? stampAgentProvenance(content, (meta == null ? void 0 : meta.agent) || this.currentAgent || "agent", dateKey(/* @__PURE__ */ new Date())) : content;
+    if (!bypassConfirm && ((meta == null ? void 0 : meta.hold) || this.isConfirmMode())) {
       const previous = existing instanceof import_obsidian3.TFile ? await this.vault.read(existing) : "";
       const after = mode === "append" && existing instanceof import_obsidian3.TFile ? `${previous.trimEnd()}
 
@@ -1876,7 +2119,8 @@ ${finalContent}` : finalContent;
           "write_note",
           { path: safe, content: finalContent, mode },
           previous,
-          after
+          after,
+          meta
         ),
         path: safe
       };
@@ -2024,7 +2268,7 @@ ${String(text != null ? text : "").trim()}${tagStr}`
     return { path: safe, outgoing, backlinks, sameTag };
   }
   /** 按标题或文本片段局部修改笔记；支持 dryRun、乐观锁、快照与 diff 统计。confirm 档挂起为待审写入。 */
-  async patchNote(input, bypassConfirm = false) {
+  async patchNote(input, bypassConfirm = false, meta) {
     var _a2, _b, _c, _d, _e;
     const safe = safeAgentPath(input.path);
     this.assertPathAllowed(safe, "patch");
@@ -2044,7 +2288,7 @@ ${String(text != null ? text : "").trim()}${tagStr}`
       } catch (error) {
         throw new ApiError("INVALID_JSON", "update_frontmatter \u7684 content \u5FC5\u987B\u662F JSON \u5BF9\u8C61\u5B57\u7B26\u4E32");
       }
-      const result2 = await this.updateFrontmatter(safe, updates, input.ifMatch, bypassConfirm);
+      const result2 = await this.updateFrontmatter(safe, updates, input.ifMatch, bypassConfirm, meta);
       return { ...result2, mtime: file.stat.mtime, diffSummary: { addedLines: 0, removedLines: 0 } };
     }
     const content = String((_b = input.content) != null ? _b : "");
@@ -2102,9 +2346,9 @@ ${content}
         createdHeading
       };
     }
-    if (!bypassConfirm && this.isConfirmMode()) {
+    if (!bypassConfirm && ((meta == null ? void 0 : meta.hold) || this.isConfirmMode())) {
       return {
-        ...this.holdForConfirm("patch_note", safe, "patch_note", { input }, before, result),
+        ...this.holdForConfirm("patch_note", safe, "patch_note", { input }, before, result, meta),
         path: safe,
         version: versionOf(result),
         mtime: file.stat.mtime,
@@ -2128,7 +2372,7 @@ ${content}
     };
   }
   /** 单独更新 frontmatter 字段，不动正文。confirm 档挂起为待审写入。 */
-  async updateFrontmatter(path, updates, ifMatch, bypassConfirm = false) {
+  async updateFrontmatter(path, updates, ifMatch, bypassConfirm = false, meta) {
     const safe = safeAgentPath(path);
     this.assertPathAllowed(safe, "patch");
     const file = this.vault.getAbstractFileByPath(safe);
@@ -2138,9 +2382,9 @@ ${content}
       throw new Error(`\u7248\u672C\u51B2\u7A81\uFF1A${safe} \u5DF2\u88AB\u4FEE\u6539\uFF0C\u8BF7\u91CD\u65B0\u8BFB\u53D6\u540E\u518D\u5199\u5165`);
     }
     const result = applyFrontmatterUpdate(before, updates);
-    if (!bypassConfirm && this.isConfirmMode()) {
+    if (!bypassConfirm && ((meta == null ? void 0 : meta.hold) || this.isConfirmMode())) {
       return {
-        ...this.holdForConfirm("frontmatter", safe, "frontmatter", { path: safe, updates, ifMatch }, before, result),
+        ...this.holdForConfirm("frontmatter", safe, "frontmatter", { path: safe, updates, ifMatch }, before, result, meta),
         path: safe,
         version: versionOf(result)
       };
@@ -2351,7 +2595,7 @@ ${block}`);
     return log;
   }
   /** 把一段知识沉淀成带 frontmatter 的独立笔记。confirm 档挂起为待审写入。 */
-  async addKnowledge(input, bypassConfirm = false) {
+  async addKnowledge(input, bypassConfirm = false, meta) {
     var _a2, _b, _c, _d, _e;
     const title = String(input.title || t("\u672A\u547D\u540D\u7B14\u8BB0")).trim();
     const safeTitle = title.replace(/[\\/:*?"<>|#\[\]]/g, "-").slice(0, 80) || t("\u672A\u547D\u540D\u7B14\u8BB0");
@@ -2424,9 +2668,9 @@ ${block}`);
       ""
     ].join("\n");
     this.assertPathAllowed(path, "create");
-    if (!bypassConfirm && this.isConfirmMode()) {
+    if (!bypassConfirm && ((meta == null ? void 0 : meta.hold) || this.isConfirmMode())) {
       return {
-        ...this.holdForConfirm("add_knowledge", path, "knowledge", { input }, "", doc),
+        ...this.holdForConfirm("add_knowledge", path, "knowledge", { input }, "", doc, meta),
         path
       };
     }
@@ -3313,6 +3557,7 @@ var DEFAULT_SETTINGS = {
   semanticEngine: "tfidf",
   embeddingEndpoint: "http://127.0.0.1:11434",
   embeddingModel: "bge-m3",
+  fileBridgeEnabled: false,
   agentServerToken: ""
 };
 function createEmptyDay() {
@@ -3380,7 +3625,7 @@ function markStaleByPaths(records, paths) {
 
 // src/data/store.ts
 var DIAGNOSTICS_CAP = 300;
-function isRecord(value) {
+function isRecord2(value) {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 function corruptFields(loaded) {
@@ -3389,7 +3634,7 @@ function corruptFields(loaded) {
   const corrupt = [];
   for (const key of recordKeys) {
     const value = loaded[key];
-    if (value != null && !isRecord(value)) corrupt.push(key);
+    if (value != null && !isRecord2(value)) corrupt.push(key);
   }
   for (const key of arrayKeys) {
     const value = loaded[key];
@@ -3437,10 +3682,10 @@ var Store = class {
   async load() {
     var _a2, _b, _c;
     const raw = await this.plugin.loadData();
-    const loaded = isRecord(raw) ? raw : {};
+    const loaded = isRecord2(raw) ? raw : {};
     let recoveryPath = "";
     let migratedVersion = false;
-    if (isRecord(raw)) {
+    if (isRecord2(raw)) {
       const version = loaded.version;
       const corrupt = corruptFields(loaded);
       if (version === void 0 && corrupt.length === 0) {
@@ -3483,7 +3728,7 @@ var Store = class {
       // 缺 request.kind 或 request.args 形状异常的畸形条目会让 approvePendingWrite
       // 抛裸 TypeError（HTTP 500），迁移时一并过滤。
       pendingWrites: Array.isArray(loaded.pendingWrites) ? loaded.pendingWrites.filter(
-        (item) => item && typeof item === "object" && typeof item.id === "string" && typeof item.path === "string" && item.request && typeof item.request === "object" && typeof item.request.kind === "string" && isRecord(item.request.args)
+        (item) => item && typeof item === "object" && typeof item.id === "string" && typeof item.path === "string" && item.request && typeof item.request === "object" && typeof item.request.kind === "string" && isRecord2(item.request.args)
       ) : [],
       diagnostics: Array.isArray(loaded.diagnostics) ? loaded.diagnostics : [],
       editSessions: loaded.editSessions && typeof loaded.editSessions === "object" && !Array.isArray(loaded.editSessions) ? loaded.editSessions : {},
@@ -3600,7 +3845,7 @@ var Store = class {
       throw new Error(tf("\u5907\u4EFD\u5185\u5BB9\u635F\u574F\uFF0C\u65E0\u6CD5\u6062\u590D\uFF1A{name}", { name }));
     }
     const candidate = parsed;
-    if (!isRecord(parsed) || corruptFields(candidate).length > 0 || candidate.version != null && candidate.version !== 1) {
+    if (!isRecord2(parsed) || corruptFields(candidate).length > 0 || candidate.version != null && candidate.version !== 1) {
       throw new Error(tf("\u5907\u4EFD\u5185\u5BB9\u635F\u574F\uFF0C\u65E0\u6CD5\u6062\u590D\uFF1A{name}", { name }));
     }
     const currentRaw = await this.plugin.loadData();
@@ -4067,6 +4312,288 @@ var PomodoroManager = class {
     const seconds = String(remaining % 60).padStart(2, "0");
     const mode = this.mode === "focus" ? t("\u756A\u8304") : this.mode === "short" ? t("\u77ED\u4F11") : t("\u957F\u4F11");
     this.statusEl.setText(`${this.running ? "\u25B6" : "\u23F8"} ${mode} ${minutes}:${seconds}`);
+  }
+};
+
+// src/features/file-bridge.ts
+function proposalPathOf(proposal) {
+  if (proposal.tool === "write_note") return proposal.args.path;
+  if (proposal.tool === "patch_note") return proposal.args.input.path;
+  return "";
+}
+function toolOfRecord(tool) {
+  if (tool === "frontmatter") return "patch_note";
+  return tool === "write_note" || tool === "patch_note" || tool === "add_knowledge" ? tool : void 0;
+}
+function mapImportError(error) {
+  if (error instanceof ApiError) {
+    const code = error.code.toLowerCase();
+    const allowed = [
+      "forbidden",
+      "operation_denied",
+      "not_found",
+      "version_conflict",
+      "ambiguous_match",
+      "missing_anchor",
+      "invalid_json"
+    ];
+    return {
+      reason: allowed.includes(code) ? code : "import_failed",
+      message: tf("\u6587\u4EF6\u6865\u5BFC\u5165\u5931\u8D25\uFF1A{code}", { code: error.code })
+    };
+  }
+  return { reason: "import_failed", message: error instanceof Error ? error.message : String(error) };
+}
+var FileBridge = class {
+  constructor(plugin) {
+    this.plugin = plugin;
+    this.timer = null;
+    this.scanning = false;
+    this.flushPromise = null;
+    /** 禁用后为 true：进行中的扫描要立刻停手，不能继续导入。 */
+    this.stopped = false;
+    this.failedIds = /* @__PURE__ */ new Set();
+    this.decisions = /* @__PURE__ */ new Map();
+    this.lastQueueFullLog = 0;
+    this.decisionFailureLogged = false;
+  }
+  applySettings() {
+    if (this.plugin.store.settings.fileBridgeEnabled) this.start();
+    else this.stop();
+  }
+  start() {
+    if (this.timer !== null) return;
+    this.stopped = false;
+    void this.scanNow();
+    this.timer = window.setInterval(() => void this.scanNow(), BRIDGE_POLL_MS);
+  }
+  stop() {
+    if (this.timer !== null) window.clearInterval(this.timer);
+    this.timer = null;
+    this.stopped = true;
+    this.failedIds.clear();
+  }
+  /** 采纳/驳回后的决策写回；非文件桥记录直接忽略。 */
+  notifyDecision(record, decision, reason) {
+    if (record.source !== "bridge" || !record.proposalId) return;
+    if (!isBridgeProposalId(record.proposalId)) {
+      this.plugin.store.logDiagnostic("security", "\u6587\u4EF6\u6865\u51B3\u7B56 id \u975E\u6CD5\uFF0C\u5DF2\u5FFD\u7565", record.proposalId);
+      return;
+    }
+    this.decisions.set(
+      record.proposalId,
+      buildBridgeDecision({
+        id: record.proposalId,
+        pendingId: record.id,
+        decision,
+        reason,
+        agent: record.agent,
+        tool: toolOfRecord(record.tool),
+        path: record.path
+      })
+    );
+    void this.flushNow();
+  }
+  /** 供测试与启动时立即处理；正常轮询也走这里。 */
+  async scanNow() {
+    var _a2, _b;
+    if (this.scanning) return;
+    this.scanning = true;
+    try {
+      const adapter = this.adapter();
+      await this.ensureDirs(adapter);
+      await this.flushNow();
+      const pending = (_a2 = this.plugin.store.data.pendingWrites) != null ? _a2 : [];
+      if (pending.length >= BRIDGE_MAX_PENDING) {
+        this.logQueueFull();
+        return;
+      }
+      const [proposalList, decisionList] = await Promise.all([
+        adapter.list(this.proposalsDir()).catch(() => ({ files: [], folders: [] })),
+        adapter.list(this.decisionsDir()).catch(() => ({ files: [], folders: [] }))
+      ]);
+      const decided = /* @__PURE__ */ new Set();
+      for (const file of decisionList.files) {
+        const id = bridgeProposalIdFromPath(file);
+        if (id) decided.add(id);
+      }
+      const candidates = proposalList.files.map(bridgeProposalIdFromPath).filter((id) => id !== null).filter((id) => !decided.has(id) && !this.failedIds.has(id)).filter((id) => !pending.some((item) => item.id === bridgePendingId(id))).sort();
+      let imported = 0;
+      for (const id of candidates) {
+        if (this.stopped) break;
+        if (imported >= BRIDGE_MAX_IMPORTS_PER_SCAN) break;
+        if (((_b = this.plugin.store.data.pendingWrites) != null ? _b : []).length >= BRIDGE_MAX_PENDING) {
+          this.logQueueFull();
+          break;
+        }
+        const path = `${this.proposalsDir()}/${id}.json`;
+        if (adapter.stat) {
+          const stat = await adapter.stat(path).catch(() => null);
+          if (stat && stat.size > BRIDGE_PROPOSAL_MAX_BYTES) {
+            this.reject(id, "too_large", "\u63D0\u6848\u8D85\u8FC7 256 KB");
+            continue;
+          }
+        }
+        let text;
+        try {
+          text = await adapter.read(path);
+        } catch (e) {
+          continue;
+        }
+        if (bridgeTextTooLarge(text)) {
+          this.reject(id, "too_large", "\u63D0\u6848\u8D85\u8FC7 256 KB");
+          continue;
+        }
+        let raw;
+        try {
+          raw = JSON.parse(text);
+        } catch (e) {
+          this.reject(id, "invalid_json", "\u63D0\u6848\u4E0D\u662F\u5408\u6CD5 JSON");
+          continue;
+        }
+        const parsed = parseBridgeProposal(id, raw);
+        if (!parsed.ok) {
+          this.reject(id, parsed.reason, parsed.message);
+          continue;
+        }
+        if (this.decisions.has(id) || await adapter.exists(`${this.decisionsDir()}/${id}.json`)) {
+          continue;
+        }
+        if (this.stopped) break;
+        try {
+          await this.plugin.agentApi.importBridgeProposal(parsed.proposal);
+          imported += 1;
+          this.plugin.store.logDiagnostic(
+            "storage",
+            `\u6587\u4EF6\u6865\u5DF2\u5BFC\u5165\u5F85\u5BA1\u63D0\u6848\uFF1A${parsed.proposal.tool}`,
+            id
+          );
+        } catch (error) {
+          const mapped = mapImportError(error);
+          this.reject(id, mapped.reason, mapped.message, parsed.proposal);
+        }
+      }
+      await this.flushNow();
+      if (imported > 0) this.plugin.refreshViews();
+    } catch (error) {
+      this.plugin.store.logDiagnostic(
+        "storage",
+        `\u6587\u4EF6\u6865\u8F6E\u8BE2\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}`
+      );
+    } finally {
+      this.scanning = false;
+    }
+  }
+  /**
+   * 把内存里的决策尽快写盘；失败保留到下次轮询。
+   * 链式排队而非合并：轮询关闭时 notifyDecision 也要把新决策写出去。
+   */
+  async flushNow() {
+    var _a2;
+    const previous = (_a2 = this.flushPromise) != null ? _a2 : Promise.resolve();
+    const next = previous.then(() => this.flushDecisions()).catch(() => {
+    });
+    this.flushPromise = next;
+    try {
+      await next;
+    } finally {
+      if (this.flushPromise === next) this.flushPromise = null;
+    }
+  }
+  adapter() {
+    return this.plugin.app.vault.adapter;
+  }
+  bridgeRoot() {
+    const manifest = this.plugin.manifest;
+    const base = manifest.dir || `${this.plugin.app.vault.configDir}/plugins/${manifest.id}`;
+    return `${base}/bridge`;
+  }
+  proposalsDir() {
+    return `${this.bridgeRoot()}/proposals`;
+  }
+  decisionsDir() {
+    return `${this.bridgeRoot()}/decisions`;
+  }
+  async ensureDirs(adapter) {
+    for (const path of [this.bridgeRoot(), this.proposalsDir(), this.decisionsDir()]) {
+      try {
+        if (!await adapter.exists(path)) await adapter.mkdir(path);
+      } catch (e) {
+      }
+    }
+  }
+  reject(id, reason, message, proposal) {
+    this.failedIds.add(id);
+    this.decisions.set(
+      id,
+      buildBridgeDecision({
+        id,
+        pendingId: bridgePendingId(id),
+        decision: "rejected",
+        reason,
+        ...proposal ? { agent: proposal.agent, tool: proposal.tool, path: proposalPathOf(proposal) } : {},
+        ...message ? { message } : {}
+      })
+    );
+    this.plugin.store.logDiagnostic("security", `\u6587\u4EF6\u6865\u63D0\u6848\u88AB\u62D2\u6536\uFF1A${reason}`, id);
+    void this.flushNow();
+  }
+  async flushDecisions() {
+    if (this.decisions.size === 0) return;
+    const adapter = this.adapter();
+    try {
+      await this.ensureDirs(adapter);
+      for (const [id, body] of [...this.decisions]) {
+        const path = `${this.decisionsDir()}/${id}.json`;
+        try {
+          if (await adapter.exists(path)) {
+            this.decisions.delete(id);
+            continue;
+          }
+          await this.writeAtomic(adapter, path, JSON.stringify(body, null, 2));
+          this.decisions.delete(id);
+        } catch (e) {
+          this.logDecisionFailureOnce();
+        }
+      }
+    } catch (e) {
+      this.logDecisionFailureOnce();
+    }
+  }
+  logDecisionFailureOnce() {
+    if (this.decisionFailureLogged) return;
+    this.decisionFailureLogged = true;
+    this.plugin.store.logDiagnostic("storage", "\u6587\u4EF6\u6865\u51B3\u7B56\u5199\u5165\u5931\u8D25\uFF0C\u5C06\u5728\u4E0B\u6B21\u8F6E\u8BE2\u91CD\u8BD5");
+  }
+  async writeAtomic(adapter, path, text) {
+    if (!adapter.rename) {
+      await adapter.write(path, text);
+      return;
+    }
+    const tmp = `${path}.tmp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    try {
+      await adapter.write(tmp, text);
+      await adapter.rename(tmp, path);
+    } catch (error) {
+      if (await adapter.exists(path)) return;
+      try {
+        await adapter.write(path, text);
+      } catch (e) {
+        throw error;
+      }
+      if (adapter.remove) {
+        try {
+          await adapter.remove(tmp);
+        } catch (e) {
+        }
+      }
+    }
+  }
+  logQueueFull() {
+    const now = Date.now();
+    if (now - this.lastQueueFullLog < 6e4) return;
+    this.lastQueueFullLog = now;
+    this.plugin.store.logDiagnostic("storage", "\u6587\u4EF6\u6865\u6682\u505C\u5BFC\u5165\uFF1A\u5F85\u5BA1\u961F\u5217\u5DF2\u6EE1\uFF08100\uFF09");
   }
 };
 
@@ -4726,7 +5253,7 @@ var DiagnosticsModal = class extends import_obsidian12.Modal {
 var import_obsidian13 = require("obsidian");
 
 // src/agent/bridge-source.ts
-var BRIDGE_SOURCE = '#!/usr/bin/env node\r\n/**\r\n * Sediment MCP stdio bridge.\r\n * \u66B4\u9732\u4EFB\u52A1\u578B\u5DE5\u5177\u548C\u53EA\u8BFB\u5DE5\u4F5C\u533A\u805A\u5408\u5165\u53E3\uFF1B\u65E7\u7EC6\u7C92\u5EA6\u5DE5\u5177\u540D\u4E0D\u518D\u4FDD\u7559\u3002\r\n */\r\n\r\nimport process from "node:process";\r\nimport http from "node:http";\r\nimport https from "node:https";\r\n\r\nconst BASE = process.env.SEDIMENT_URL || "http://127.0.0.1:27123";\r\nconst TOKEN = process.env.SEDIMENT_TOKEN || "";\r\n\r\n/** HTTP \u8BF7\u6C42\u8D85\u65F6\u4E0E\u54CD\u5E94\u4F53/stdin \u7F13\u51B2\u4E0A\u9650\uFF0C\u9632\u6B62\u6302\u6B7B\u4E0E\u65E0\u754C\u5185\u5B58\u589E\u957F\u3002 */\r\nconst REQUEST_TIMEOUT_MS = 30_000;\r\nconst MAX_RESPONSE_CHARS = 8 * 1024 * 1024;\r\nconst MAX_STDIN_BUFFER_CHARS = 1024 * 1024;\r\n\r\nconst TOOLS = [\r\n  {\r\n    name: "get_daily_context",\r\n    description: "\u83B7\u53D6\u4ECA\u65E5\u72B6\u6001\u3001\u6700\u8FD1\u5DE5\u4F5C\u65E5\u5FD7\u3001\u901F\u8BB0\u3001\u7B14\u8BB0\u548C Agent \u5F85\u529E\u3002",\r\n    inputSchema: { type: "object", properties: { days: { type: "number", description: "\u56DE\u6EAF\u5929\u6570\uFF0C\u9ED8\u8BA4 7" } } },\r\n  },\r\n  {\r\n    name: "get_active_context",\r\n    description: "\u83B7\u53D6\u5F53\u524D\u7B14\u8BB0\u3001\u9009\u4E2D\u6587\u672C\u3001\u5149\u6807\u884C\u548C\u5149\u6807\u6BB5\u843D\u3002",\r\n    inputSchema: { type: "object", properties: {} },\r\n  },\r\n  {\r\n    name: "search_notes",\r\n    description: "\u5168\u6587\u6216\u672C\u5730\u8BED\u4E49\u68C0\u7D22\u7B14\u8BB0\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        query: { type: "string" },\r\n        limit: { type: "number", description: "\u6700\u591A\u8FD4\u56DE\u6761\u6570\uFF0C\u9ED8\u8BA4 10" },\r\n        mode: { type: "string", enum: ["text", "semantic"], description: "\u9ED8\u8BA4 text" },\r\n      },\r\n      required: ["query"],\r\n    },\r\n  },\r\n  {\r\n    name: "list_notes",\r\n    description: "\u5217\u51FA\u7B14\u8BB0\uFF0C\u53EF\u6309\u6587\u4EF6\u5939\u8FC7\u6EE4\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        folder: { type: "string" },\r\n        limit: { type: "number", description: "\u6700\u591A\u8FD4\u56DE\u6761\u6570\uFF0C\u9ED8\u8BA4 50" },\r\n      },\r\n    },\r\n  },\r\n  {\r\n    name: "read_note",\r\n    description: "\u8BFB\u53D6\u6307\u5B9A\u7B14\u8BB0\u5168\u6587\u6216\u53EA\u8BFB\u5143\u6570\u636E\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        path: { type: "string" },\r\n        metadataOnly: { type: "boolean", description: "\u53EA\u8FD4\u56DE frontmatter\u3001\u6807\u7B7E\u3001\u6807\u9898\u5927\u7EB2\u548C\u94FE\u63A5" },\r\n      },\r\n      required: ["path"],\r\n    },\r\n  },\r\n  {\r\n    name: "write_note",\r\n    description: "\u7EDF\u4E00\u5199\u5165\u7B14\u8BB0\uFF1Acreate\u3001append \u6216 overwrite\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        path: { type: "string" },\r\n        content: { type: "string" },\r\n        action: { type: "string", enum: ["create", "append", "overwrite"], description: "\u9ED8\u8BA4 create" },\r\n      },\r\n      required: ["path", "content"],\r\n    },\r\n  },\r\n  {\r\n    name: "patch_note",\r\n    description: "\u6309\u6807\u9898\u6216\u6587\u672C\u7247\u6BB5\u5C40\u90E8\u4FEE\u6539\uFF0C\u652F\u6301\u9884\u89C8\u3001\u7248\u672C\u51B2\u7A81\u548C\u5FEB\u7167\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        path: { type: "string" },\r\n        heading: { type: "string" },\r\n        find: { type: "string" },\r\n        content: { type: "string" },\r\n        mode: { type: "string", enum: ["replace", "append", "prepend"] },\r\n        operation: {\r\n          type: "string",\r\n          enum: ["append_under_heading", "prepend_under_heading", "replace_block", "update_frontmatter"],\r\n        },\r\n        index: { type: "number" },\r\n        ifMatch: { type: "string" },\r\n        expectedMtime: { type: "number" },\r\n        dryRun: { type: "boolean" },\r\n      },\r\n      required: ["path", "content"],\r\n    },\r\n  },\r\n  {\r\n    name: "add_memo",\r\n    description: "\u8BB0\u4E00\u6761\u901F\u8BB0\uFF0C\u53EF\u5173\u8054\u5F85\u529E\u6765\u6E90\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        text: { type: "string" },\r\n        tags: { type: "array", items: { type: "string" } },\r\n        sourcePath: { type: "string" },\r\n        sourceLine: { type: "number" },\r\n      },\r\n      required: ["text"],\r\n    },\r\n  },\r\n  {\r\n    name: "add_knowledge",\r\n    description: "\u6C89\u6DC0\u77E5\u8BC6\u7B14\u8BB0\u3001\u5206\u7C7B\u3001\u6807\u7B7E\u548C\u5173\u8054\u6765\u6E90\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        title: { type: "string" },\r\n        content: { type: "string" },\r\n        category: { type: "string" },\r\n        folder: { type: "string" },\r\n        tags: { type: "array", items: { type: "string" } },\r\n        agent: { type: "string" },\r\n        source: { type: "string" },\r\n        links: { type: "array", items: { type: "string" } },\r\n      },\r\n      required: ["title", "content"],\r\n    },\r\n  },\r\n  {\r\n    name: "record_work_log",\r\n    description: "\u8BB0\u5F55 Agent \u5DE5\u4F5C\u65E5\u5FD7\u3001\u51B3\u7B56\u3001\u6D89\u53CA\u6587\u4EF6\u3001\u5B66\u4E60\u548C\u5F85\u786E\u8BA4\u4E8B\u9879\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        agent: { type: "string" },\r\n        task: { type: "string" },\r\n        summary: { type: "string" },\r\n        decisions: { type: "string" },\r\n        learnings: { type: "string" },\r\n        openQuestions: { type: "string" },\r\n        files: { type: "array", items: { type: "string" } },\r\n        tags: { type: "array", items: { type: "string" } },\r\n      },\r\n      required: ["task", "summary"],\r\n    },\r\n  },\r\n  {\r\n    name: "manage_tasks",\r\n    description: "\u7EDF\u4E00\u7BA1\u7406\u4EFB\u52A1\uFF1Alist\u3001complete\u3001delegate\u3001snapshot\u3001claim \u6216 complete_agent\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        action: { type: "string", enum: ["list", "complete", "delegate", "snapshot", "claim", "complete_agent"] },\r\n        scope: { type: "string", enum: ["today", "overdue", "all", "agent"] },\r\n        id: { type: "string" },\r\n        path: { type: "string" },\r\n        line: { type: "number" },\r\n        resultPath: { type: "string" },\r\n      },\r\n      required: ["action"],\r\n    },\r\n  },\r\n  {\r\n    name: "get_workspace_state",\r\n    description: "\u6309\u9700\u805A\u5408\u53EA\u8BFB\u9AD8\u7EA7\u72B6\u6001\uFF1A\u7EDF\u8BA1\u3001\u56FE\u8C31\u3001\u756A\u8304\u949F\u3001\u5468\u590D\u76D8\u3001\u8C03\u7528\u6D3B\u52A8\u3001\u5DE5\u4F5C\u65E5\u5FD7\u6216\u5206\u7C7B\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        sections: {\r\n          type: "array",\r\n          items: {\r\n            type: "string",\r\n            enum: ["stats", "graph", "pomodoro", "weekly_review", "tool_activity", "work_logs", "categories"],\r\n          },\r\n          description: "\u7559\u7A7A\u65F6\u8FD4\u56DE today\u3001stats\u3001pomodoro\u3001work_logs\u3001categories \u548C tool_activity",\r\n        },\r\n        path: { type: "string", description: "graph section \u4F7F\u7528\u7684\u7B14\u8BB0\u8DEF\u5F84" },\r\n        types: { type: "string", description: "graph \u7C7B\u578B\uFF0C\u9ED8\u8BA4 outgoing,backlinks,tags" },\r\n        days: { type: "number", description: "stats/work_logs \u56DE\u6EAF\u5929\u6570" },\r\n        date: { type: "string", description: "weekly_review \u951A\u5B9A\u65E5\u671F YYYY-MM-DD" },\r\n        limit: { type: "number", description: "tool_activity \u6216 work_logs \u6570\u91CF\u4E0A\u9650" },\r\n      },\r\n    },\r\n  },\r\n  {\r\n    name: "manage_changes",\r\n    description: "\u7EDF\u4E00\u5BA1\u67E5 Agent \u4FEE\u6539\uFF1Alist \u6216 revert\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        action: { type: "string", enum: ["list", "revert"] },\r\n        snapshotId: { type: "string" },\r\n        limit: { type: "number" },\r\n      },\r\n      required: ["action"],\r\n    },\r\n  },\r\n];\r\n\r\nfunction request(url, method, payload, extraHeaders = {}) {\r\n  return new Promise((resolve, reject) => {\r\n    const transport = url.protocol === "https:" ? https : http;\r\n    const body = payload === undefined ? null : JSON.stringify(payload);\r\n    const headers = { ...extraHeaders };\r\n    if (body) {\r\n      headers["Content-Type"] = "application/json";\r\n      headers["Content-Length"] = Buffer.byteLength(body);\r\n    }\r\n    const req = transport.request(url, { method, headers }, (res) => {\r\n      let raw = "";\r\n      let oversized = false;\r\n      res.setEncoding("utf8");\r\n      res.on("data", (chunk) => {\r\n        raw += chunk;\r\n        if (raw.length > MAX_RESPONSE_CHARS) {\r\n          oversized = true;\r\n          req.destroy(new Error(`\u54CD\u5E94\u4F53\u8FC7\u5927\uFF08\u4E0A\u9650 ${MAX_RESPONSE_CHARS} \u5B57\u7B26\uFF09`));\r\n        }\r\n      });\r\n      res.on("end", () => {\r\n        if (oversized) return;\r\n        let data;\r\n        try { data = JSON.parse(raw); } catch { data = raw; }\r\n        if (res.statusCode >= 200 && res.statusCode < 300) resolve(data);\r\n        else reject(new Error(data?.error || `HTTP ${res.statusCode}`));\r\n      });\r\n    });\r\n    req.setTimeout(REQUEST_TIMEOUT_MS, () => {\r\n      req.destroy(new Error(`\u8BF7\u6C42\u8D85\u65F6\uFF08${REQUEST_TIMEOUT_MS / 1000}s\uFF09\uFF1A${url.pathname}`));\r\n    });\r\n    req.on("error", reject);\r\n    if (body) req.write(body);\r\n    req.end();\r\n  });\r\n}\r\n\r\nasync function call(path, params = {}, method = "GET") {\r\n  // \u4EE4\u724C\u7F3A\u5931\u4E0E\u4EE4\u724C\u9519\u8BEF\u5206\u5F00\u63D0\u793A\uFF1A\u7F3A\u5931\u662F\u914D\u7F6E\u95EE\u9898\uFF0C401 \u624D\u662F\u4EE4\u724C\u4E0D\u5339\u914D\u3002\r\n  if (!TOKEN) {\r\n    throw new Error("\u7F3A\u5C11\u4EE4\u724C\uFF1A\u8BF7\u8BBE\u7F6E SEDIMENT_TOKEN \u73AF\u5883\u53D8\u91CF\uFF08\u63D2\u4EF6\u8BBE\u7F6E \u2192 Agent \u63A5\u5165\u53EF\u590D\u5236\uFF09");\r\n  }\r\n  const url = new URL(path, BASE);\r\n  url.searchParams.set("agent", process.env.AGENT_NAME || "");\r\n  // \u4EE4\u724C\u53EA\u8D70 Authorization \u5934\uFF0C\u4E0D\u518D\u653E\u67E5\u8BE2\u4E32\uFF08\u4F1A\u843D\u5165\u65E5\u5FD7/\u4EE3\u7406\u7F13\u5B58\uFF09\u3002\r\n  const headers = { Authorization: `Bearer ${TOKEN}` };\r\n  if (method === "POST") return request(url, method, params, headers);\r\n  for (const [key, value] of Object.entries(params)) {\r\n    if (value !== undefined && value !== null) url.searchParams.set(key, String(value));\r\n  }\r\n  return request(url, method, undefined, headers);\r\n}\r\n\r\nasync function dispatch(name, args) {\r\n  const tool = TOOLS.find((candidate) => candidate.name === name);\r\n  if (!tool) throw new Error(`\u672A\u77E5\u5DE5\u5177\uFF1A${name}`);\r\n  const missing = (tool.inputSchema.required ?? []).filter(\r\n    (key) => args[key] === undefined || args[key] === null || args[key] === ""\r\n  );\r\n  if (missing.length > 0) throw new Error(`\u7F3A\u5C11\u5FC5\u586B\u53C2\u6570\uFF1A${missing.join(", ")}`);\r\n\r\n  switch (name) {\r\n    case "get_daily_context":\r\n      return call("/context", { days: args.days ?? 7 });\r\n    case "get_active_context":\r\n      return call("/active-context");\r\n    case "search_notes":\r\n      return call(args.mode === "semantic" ? "/semantic-search" : "/search", {\r\n        q: args.query ?? "",\r\n        query: args.query ?? "",\r\n        limit: args.limit ?? 10,\r\n      });\r\n    case "list_notes":\r\n      return call("/notes", { folder: args.folder ?? "", limit: args.limit ?? 50 });\r\n    case "read_note":\r\n      return args.metadataOnly\r\n        ? call("/note-metadata", { path: args.path })\r\n        : call("/note", { path: args.path });\r\n    case "write_note":\r\n      return call("/note", { path: args.path, content: args.content, mode: args.action ?? "create" }, "POST");\r\n    case "patch_note":\r\n      return call("/patch-note", {\r\n        path: args.path,\r\n        heading: args.heading ?? "",\r\n        find: args.find ?? "",\r\n        content: args.content,\r\n        mode: args.mode ?? "replace",\r\n        operation: args.operation ?? "",\r\n        index: args.index,\r\n        ifMatch: args.ifMatch ?? "",\r\n        expectedMtime: args.expectedMtime,\r\n        dryRun: args.dryRun === true,\r\n      }, "POST");\r\n    case "add_memo":\r\n      return call("/memo", {\r\n        text: args.text,\r\n        tags: args.tags ?? [],\r\n        sourcePath: args.sourcePath ?? "",\r\n        sourceLine: args.sourceLine ?? 0,\r\n      }, "POST");\r\n    case "add_knowledge":\r\n      return call("/knowledge", {\r\n        title: args.title,\r\n        content: args.content,\r\n        category: args.category ?? "",\r\n        folder: args.folder ?? "",\r\n        tags: args.tags ?? [],\r\n        agent: args.agent ?? "",\r\n        source: args.source ?? "",\r\n        links: args.links ?? [],\r\n      }, "POST");\r\n    case "record_work_log":\r\n      return call("/worklog", {\r\n        agent: args.agent ?? "",\r\n        task: args.task,\r\n        summary: args.summary,\r\n        decisions: args.decisions ?? "",\r\n        learnings: args.learnings ?? "",\r\n        openQuestions: args.openQuestions ?? "",\r\n        files: args.files ?? [],\r\n        tags: args.tags ?? [],\r\n      }, "POST");\r\n    case "manage_tasks":\r\n      switch (args.action) {\r\n        case "list": return call("/tasks", { scope: args.scope ?? "all" });\r\n        case "complete": return call("/tasks/complete", { path: args.path, line: args.line }, "POST");\r\n        case "delegate": return call("/tasks/delegate", { path: args.path, line: args.line }, "POST");\r\n        case "snapshot": return call("/tasks/snapshot", {}, "POST");\r\n        case "claim": return call("/agent-task/claim", { id: args.id }, "POST");\r\n        case "complete_agent":\r\n          return call("/agent-task/complete", { id: args.id, resultPath: args.resultPath ?? "" }, "POST");\r\n      }\r\n      throw new Error("manage_tasks.action \u65E0\u6548");\r\n    case "get_workspace_state":\r\n      {\r\n        const allowed = new Set(["stats", "graph", "pomodoro", "weekly_review", "tool_activity", "work_logs", "categories"]);\r\n        const requested = Array.isArray(args.sections)\r\n          ? args.sections.filter((section) => allowed.has(section))\r\n          : ["stats", "pomodoro", "tool_activity", "work_logs", "categories"];\r\n        const sections = [...new Set(requested)];\r\n        const state = {};\r\n        const reads = [];\r\n\r\n        if (sections.includes("stats")) {\r\n          reads.push(call("/stats", { days: args.days ?? 30 }).then((value) => { state.stats = value; }));\r\n        }\r\n        if (sections.includes("graph")) {\r\n          if (!args.path) {\r\n            state.graph = { skipped: true, reason: "graph \u9700\u8981 path \u53C2\u6570" };\r\n          } else {\r\n            reads.push(call("/graph", { path: args.path, types: args.types ?? "outgoing,backlinks,tags" })\r\n              .then((value) => { state.graph = value; }));\r\n          }\r\n        }\r\n        if (sections.includes("pomodoro")) {\r\n          reads.push(call("/pomodoro").then((value) => { state.pomodoro = value; }));\r\n        }\r\n        if (sections.includes("weekly_review")) {\r\n          reads.push(call("/review", { date: args.date ?? "" })\r\n            .then((value) => { state.weeklyReview = value; }));\r\n        }\r\n        if (sections.includes("tool_activity")) {\r\n          reads.push(call("/activity").then((value) => { state.toolActivity = value; }));\r\n        }\r\n        if (sections.includes("work_logs")) {\r\n          reads.push(call("/worklogs", { days: args.days ?? 7 })\r\n            .then((value) => { state.workLogs = value; }));\r\n        }\r\n        if (sections.includes("categories")) {\r\n          reads.push(call("/categories").then((value) => { state.categories = value; }));\r\n        }\r\n\r\n        await Promise.all(reads);\r\n        return state;\r\n      }\r\n    case "manage_changes":\r\n      if (args.action === "list") return call("/agent/audit", { limit: args.limit ?? 20 });\r\n      if (args.action === "revert") return call("/agent/revert", { snapshotId: args.snapshotId }, "POST");\r\n      throw new Error("manage_changes.action \u65E0\u6548");\r\n  }\r\n}\r\n\r\nfunction send(message) {\r\n  process.stdout.write(JSON.stringify(message) + "\\n");\r\n}\r\n\r\nasync function handle(message) {\r\n  if (message.id === undefined) return;\r\n  const { id, method, params } = message;\r\n  switch (method) {\r\n    case "initialize":\r\n      send({\r\n        jsonrpc: "2.0",\r\n        id,\r\n        result: {\r\n          protocolVersion: "2024-11-05",\r\n          capabilities: { tools: {} },\r\n          serverInfo: { name: "sediment", version: "1.0.1" },\r\n        },\r\n      });\r\n      break;\r\n    case "tools/list":\r\n      send({ jsonrpc: "2.0", id, result: { tools: TOOLS } });\r\n      break;\r\n    case "tools/call":\r\n      try {\r\n        const data = await dispatch(params?.name, params?.arguments ?? {});\r\n        send({\r\n          jsonrpc: "2.0",\r\n          id,\r\n          result: {\r\n            content: [{ type: "text", text: typeof data === "string" ? data : JSON.stringify(data, null, 2) }],\r\n          },\r\n        });\r\n      } catch (error) {\r\n        send({\r\n          jsonrpc: "2.0",\r\n          id,\r\n          result: { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true },\r\n        });\r\n      }\r\n      break;\r\n    case "ping":\r\n      send({ jsonrpc: "2.0", id, result: {} });\r\n      break;\r\n    default:\r\n      send({ jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${method}` } });\r\n  }\r\n}\r\n\r\nlet buffer = "";\r\nprocess.stdin.setEncoding("utf8");\r\nprocess.stdin.on("data", (chunk) => {\r\n  buffer += chunk;\r\n  if (buffer.length > MAX_STDIN_BUFFER_CHARS) {\r\n    process.stderr.write("sediment-mcp: stdin \u7F13\u51B2\u8D85\u8FC7 1MB \u4E0A\u9650\uFF0C\u65AD\u5F00\u8FDE\u63A5\\n");\r\n    process.exit(1);\r\n  }\r\n  let index;\r\n  while ((index = buffer.indexOf("\\n")) >= 0) {\r\n    const line = buffer.slice(0, index).trim();\r\n    buffer = buffer.slice(index + 1);\r\n    if (!line) continue;\r\n    let message;\r\n    try {\r\n      message = JSON.parse(line);\r\n    } catch (error) {\r\n      // \u7578\u5F62 JSON \u8BF4\u660E\u6D41\u5DF2\u4E0D\u53EF\u4FE1\uFF1A\u8BB0\u8BCA\u65AD\uFF08stderr\uFF09\u540E\u65AD\u5F00\uFF0C\u4E0D\u518D\u9759\u9ED8\u541E\u6389\u3002\r\n      process.stderr.write(`sediment-mcp: \u7578\u5F62 JSON \u8F93\u5165\uFF0C\u65AD\u5F00\u8FDE\u63A5\uFF1A${error.message}\\n`);\r\n      process.exit(1);\r\n    }\r\n    void handle(message);\r\n  }\r\n});\r\n';
+var BRIDGE_SOURCE = '#!/usr/bin/env node\r\n/**\r\n * Sediment MCP stdio bridge.\r\n * \u66B4\u9732\u4EFB\u52A1\u578B\u5DE5\u5177\u548C\u53EA\u8BFB\u5DE5\u4F5C\u533A\u805A\u5408\u5165\u53E3\uFF1B\u65E7\u7EC6\u7C92\u5EA6\u5DE5\u5177\u540D\u4E0D\u518D\u4FDD\u7559\u3002\r\n */\r\n\r\nimport process from "node:process";\r\nimport http from "node:http";\r\nimport https from "node:https";\r\n\r\nconst BASE = process.env.SEDIMENT_URL || "http://127.0.0.1:27123";\r\nconst TOKEN = process.env.SEDIMENT_TOKEN || "";\r\n\r\n/** HTTP \u8BF7\u6C42\u8D85\u65F6\u4E0E\u54CD\u5E94\u4F53/stdin \u7F13\u51B2\u4E0A\u9650\uFF0C\u9632\u6B62\u6302\u6B7B\u4E0E\u65E0\u754C\u5185\u5B58\u589E\u957F\u3002 */\r\nconst REQUEST_TIMEOUT_MS = 30_000;\r\nconst MAX_RESPONSE_CHARS = 8 * 1024 * 1024;\r\nconst MAX_STDIN_BUFFER_CHARS = 1024 * 1024;\r\n\r\nconst TOOLS = [\r\n  {\r\n    name: "get_daily_context",\r\n    description: "\u83B7\u53D6\u4ECA\u65E5\u72B6\u6001\u3001\u6700\u8FD1\u5DE5\u4F5C\u65E5\u5FD7\u3001\u901F\u8BB0\u3001\u7B14\u8BB0\u548C Agent \u5F85\u529E\u3002",\r\n    inputSchema: { type: "object", properties: { days: { type: "number", description: "\u56DE\u6EAF\u5929\u6570\uFF0C\u9ED8\u8BA4 7" } } },\r\n  },\r\n  {\r\n    name: "get_active_context",\r\n    description: "\u83B7\u53D6\u5F53\u524D\u7B14\u8BB0\u3001\u9009\u4E2D\u6587\u672C\u3001\u5149\u6807\u884C\u548C\u5149\u6807\u6BB5\u843D\u3002",\r\n    inputSchema: { type: "object", properties: {} },\r\n  },\r\n  {\r\n    name: "search_notes",\r\n    description: "\u5168\u6587\u6216\u672C\u5730\u8BED\u4E49\u68C0\u7D22\u7B14\u8BB0\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        query: { type: "string" },\r\n        limit: { type: "number", description: "\u6700\u591A\u8FD4\u56DE\u6761\u6570\uFF0C\u9ED8\u8BA4 10" },\r\n        mode: { type: "string", enum: ["text", "semantic"], description: "\u9ED8\u8BA4 text" },\r\n      },\r\n      required: ["query"],\r\n    },\r\n  },\r\n  {\r\n    name: "list_notes",\r\n    description: "\u5217\u51FA\u7B14\u8BB0\uFF0C\u53EF\u6309\u6587\u4EF6\u5939\u8FC7\u6EE4\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        folder: { type: "string" },\r\n        limit: { type: "number", description: "\u6700\u591A\u8FD4\u56DE\u6761\u6570\uFF0C\u9ED8\u8BA4 50" },\r\n      },\r\n    },\r\n  },\r\n  {\r\n    name: "read_note",\r\n    description: "\u8BFB\u53D6\u6307\u5B9A\u7B14\u8BB0\u5168\u6587\u6216\u53EA\u8BFB\u5143\u6570\u636E\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        path: { type: "string" },\r\n        metadataOnly: { type: "boolean", description: "\u53EA\u8FD4\u56DE frontmatter\u3001\u6807\u7B7E\u3001\u6807\u9898\u5927\u7EB2\u548C\u94FE\u63A5" },\r\n      },\r\n      required: ["path"],\r\n    },\r\n  },\r\n  {\r\n    name: "write_note",\r\n    description: "\u7EDF\u4E00\u5199\u5165\u7B14\u8BB0\uFF1Acreate\u3001append \u6216 overwrite\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        path: { type: "string" },\r\n        content: { type: "string" },\r\n        action: { type: "string", enum: ["create", "append", "overwrite"], description: "\u9ED8\u8BA4 create" },\r\n      },\r\n      required: ["path", "content"],\r\n    },\r\n  },\r\n  {\r\n    name: "patch_note",\r\n    description: "\u6309\u6807\u9898\u6216\u6587\u672C\u7247\u6BB5\u5C40\u90E8\u4FEE\u6539\uFF0C\u652F\u6301\u9884\u89C8\u3001\u7248\u672C\u51B2\u7A81\u548C\u5FEB\u7167\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        path: { type: "string" },\r\n        heading: { type: "string" },\r\n        find: { type: "string" },\r\n        content: { type: "string" },\r\n        mode: { type: "string", enum: ["replace", "append", "prepend"] },\r\n        operation: {\r\n          type: "string",\r\n          enum: ["append_under_heading", "prepend_under_heading", "replace_block", "update_frontmatter"],\r\n        },\r\n        index: { type: "number" },\r\n        ifMatch: { type: "string" },\r\n        expectedMtime: { type: "number" },\r\n        dryRun: { type: "boolean" },\r\n      },\r\n      required: ["path", "content"],\r\n    },\r\n  },\r\n  {\r\n    name: "add_memo",\r\n    description: "\u8BB0\u4E00\u6761\u901F\u8BB0\uFF0C\u53EF\u5173\u8054\u5F85\u529E\u6765\u6E90\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        text: { type: "string" },\r\n        tags: { type: "array", items: { type: "string" } },\r\n        sourcePath: { type: "string" },\r\n        sourceLine: { type: "number" },\r\n      },\r\n      required: ["text"],\r\n    },\r\n  },\r\n  {\r\n    name: "add_knowledge",\r\n    description: "\u6C89\u6DC0\u77E5\u8BC6\u7B14\u8BB0\u3001\u5206\u7C7B\u3001\u6807\u7B7E\u548C\u5173\u8054\u6765\u6E90\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        title: { type: "string" },\r\n        content: { type: "string" },\r\n        category: { type: "string" },\r\n        folder: { type: "string" },\r\n        tags: { type: "array", items: { type: "string" } },\r\n        agent: { type: "string" },\r\n        source: { type: "string" },\r\n        links: { type: "array", items: { type: "string" } },\r\n      },\r\n      required: ["title", "content"],\r\n    },\r\n  },\r\n  {\r\n    name: "record_work_log",\r\n    description: "\u8BB0\u5F55 Agent \u5DE5\u4F5C\u65E5\u5FD7\u3001\u51B3\u7B56\u3001\u6D89\u53CA\u6587\u4EF6\u3001\u5B66\u4E60\u548C\u5F85\u786E\u8BA4\u4E8B\u9879\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        agent: { type: "string" },\r\n        task: { type: "string" },\r\n        summary: { type: "string" },\r\n        decisions: { type: "string" },\r\n        learnings: { type: "string" },\r\n        openQuestions: { type: "string" },\r\n        files: { type: "array", items: { type: "string" } },\r\n        tags: { type: "array", items: { type: "string" } },\r\n      },\r\n      required: ["task", "summary"],\r\n    },\r\n  },\r\n  {\r\n    name: "manage_tasks",\r\n    description: "\u7EDF\u4E00\u7BA1\u7406\u4EFB\u52A1\uFF1Alist\u3001complete\u3001delegate\u3001snapshot\u3001claim \u6216 complete_agent\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        action: { type: "string", enum: ["list", "complete", "delegate", "snapshot", "claim", "complete_agent"] },\r\n        scope: { type: "string", enum: ["today", "overdue", "all", "agent"] },\r\n        id: { type: "string" },\r\n        path: { type: "string" },\r\n        line: { type: "number" },\r\n        resultPath: { type: "string" },\r\n      },\r\n      required: ["action"],\r\n    },\r\n  },\r\n  {\r\n    name: "get_workspace_state",\r\n    description: "\u6309\u9700\u805A\u5408\u53EA\u8BFB\u9AD8\u7EA7\u72B6\u6001\uFF1A\u7EDF\u8BA1\u3001\u56FE\u8C31\u3001\u756A\u8304\u949F\u3001\u5468\u590D\u76D8\u3001\u8C03\u7528\u6D3B\u52A8\u3001\u5DE5\u4F5C\u65E5\u5FD7\u6216\u5206\u7C7B\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        sections: {\r\n          type: "array",\r\n          items: {\r\n            type: "string",\r\n            enum: ["stats", "graph", "pomodoro", "weekly_review", "tool_activity", "work_logs", "categories"],\r\n          },\r\n          description: "\u7559\u7A7A\u65F6\u8FD4\u56DE today\u3001stats\u3001pomodoro\u3001work_logs\u3001categories \u548C tool_activity",\r\n        },\r\n        path: { type: "string", description: "graph section \u4F7F\u7528\u7684\u7B14\u8BB0\u8DEF\u5F84" },\r\n        types: { type: "string", description: "graph \u7C7B\u578B\uFF0C\u9ED8\u8BA4 outgoing,backlinks,tags" },\r\n        days: { type: "number", description: "stats/work_logs \u56DE\u6EAF\u5929\u6570" },\r\n        date: { type: "string", description: "weekly_review \u951A\u5B9A\u65E5\u671F YYYY-MM-DD" },\r\n        limit: { type: "number", description: "tool_activity \u6216 work_logs \u6570\u91CF\u4E0A\u9650" },\r\n      },\r\n    },\r\n  },\r\n  {\r\n    name: "manage_changes",\r\n    description: "\u7EDF\u4E00\u5BA1\u67E5 Agent \u4FEE\u6539\uFF1Alist \u6216 revert\u3002",\r\n    inputSchema: {\r\n      type: "object",\r\n      properties: {\r\n        action: { type: "string", enum: ["list", "revert"] },\r\n        snapshotId: { type: "string" },\r\n        limit: { type: "number" },\r\n      },\r\n      required: ["action"],\r\n    },\r\n  },\r\n];\r\n\r\nfunction request(url, method, payload, extraHeaders = {}) {\r\n  return new Promise((resolve, reject) => {\r\n    const transport = url.protocol === "https:" ? https : http;\r\n    const body = payload === undefined ? null : JSON.stringify(payload);\r\n    const headers = { ...extraHeaders };\r\n    if (body) {\r\n      headers["Content-Type"] = "application/json";\r\n      headers["Content-Length"] = Buffer.byteLength(body);\r\n    }\r\n    const req = transport.request(url, { method, headers }, (res) => {\r\n      let raw = "";\r\n      let oversized = false;\r\n      res.setEncoding("utf8");\r\n      res.on("data", (chunk) => {\r\n        raw += chunk;\r\n        if (raw.length > MAX_RESPONSE_CHARS) {\r\n          oversized = true;\r\n          req.destroy(new Error(`\u54CD\u5E94\u4F53\u8FC7\u5927\uFF08\u4E0A\u9650 ${MAX_RESPONSE_CHARS} \u5B57\u7B26\uFF09`));\r\n        }\r\n      });\r\n      res.on("end", () => {\r\n        if (oversized) return;\r\n        let data;\r\n        try { data = JSON.parse(raw); } catch { data = raw; }\r\n        if (res.statusCode >= 200 && res.statusCode < 300) resolve(data);\r\n        else reject(new Error(data?.error || `HTTP ${res.statusCode}`));\r\n      });\r\n    });\r\n    req.setTimeout(REQUEST_TIMEOUT_MS, () => {\r\n      req.destroy(new Error(`\u8BF7\u6C42\u8D85\u65F6\uFF08${REQUEST_TIMEOUT_MS / 1000}s\uFF09\uFF1A${url.pathname}`));\r\n    });\r\n    req.on("error", reject);\r\n    if (body) req.write(body);\r\n    req.end();\r\n  });\r\n}\r\n\r\nasync function call(path, params = {}, method = "GET") {\r\n  // \u4EE4\u724C\u7F3A\u5931\u4E0E\u4EE4\u724C\u9519\u8BEF\u5206\u5F00\u63D0\u793A\uFF1A\u7F3A\u5931\u662F\u914D\u7F6E\u95EE\u9898\uFF0C401 \u624D\u662F\u4EE4\u724C\u4E0D\u5339\u914D\u3002\r\n  if (!TOKEN) {\r\n    throw new Error("\u7F3A\u5C11\u4EE4\u724C\uFF1A\u8BF7\u8BBE\u7F6E SEDIMENT_TOKEN \u73AF\u5883\u53D8\u91CF\uFF08\u63D2\u4EF6\u8BBE\u7F6E \u2192 Agent \u63A5\u5165\u53EF\u590D\u5236\uFF09");\r\n  }\r\n  const url = new URL(path, BASE);\r\n  url.searchParams.set("agent", process.env.AGENT_NAME || "");\r\n  // \u4EE4\u724C\u53EA\u8D70 Authorization \u5934\uFF0C\u4E0D\u518D\u653E\u67E5\u8BE2\u4E32\uFF08\u4F1A\u843D\u5165\u65E5\u5FD7/\u4EE3\u7406\u7F13\u5B58\uFF09\u3002\r\n  const headers = { Authorization: `Bearer ${TOKEN}` };\r\n  if (method === "POST") return request(url, method, params, headers);\r\n  for (const [key, value] of Object.entries(params)) {\r\n    if (value !== undefined && value !== null) url.searchParams.set(key, String(value));\r\n  }\r\n  return request(url, method, undefined, headers);\r\n}\r\n\r\nasync function dispatch(name, args) {\r\n  const tool = TOOLS.find((candidate) => candidate.name === name);\r\n  if (!tool) throw new Error(`\u672A\u77E5\u5DE5\u5177\uFF1A${name}`);\r\n  const missing = (tool.inputSchema.required ?? []).filter(\r\n    (key) => args[key] === undefined || args[key] === null || args[key] === ""\r\n  );\r\n  if (missing.length > 0) throw new Error(`\u7F3A\u5C11\u5FC5\u586B\u53C2\u6570\uFF1A${missing.join(", ")}`);\r\n\r\n  switch (name) {\r\n    case "get_daily_context":\r\n      return call("/context", { days: args.days ?? 7 });\r\n    case "get_active_context":\r\n      return call("/active-context");\r\n    case "search_notes":\r\n      return call(args.mode === "semantic" ? "/semantic-search" : "/search", {\r\n        q: args.query ?? "",\r\n        query: args.query ?? "",\r\n        limit: args.limit ?? 10,\r\n      });\r\n    case "list_notes":\r\n      return call("/notes", { folder: args.folder ?? "", limit: args.limit ?? 50 });\r\n    case "read_note":\r\n      return args.metadataOnly\r\n        ? call("/note-metadata", { path: args.path })\r\n        : call("/note", { path: args.path });\r\n    case "write_note":\r\n      return call("/note", { path: args.path, content: args.content, mode: args.action ?? "create" }, "POST");\r\n    case "patch_note":\r\n      return call("/patch-note", {\r\n        path: args.path,\r\n        heading: args.heading ?? "",\r\n        find: args.find ?? "",\r\n        content: args.content,\r\n        mode: args.mode ?? "replace",\r\n        operation: args.operation ?? "",\r\n        index: args.index,\r\n        ifMatch: args.ifMatch ?? "",\r\n        expectedMtime: args.expectedMtime,\r\n        dryRun: args.dryRun === true,\r\n      }, "POST");\r\n    case "add_memo":\r\n      return call("/memo", {\r\n        text: args.text,\r\n        tags: args.tags ?? [],\r\n        sourcePath: args.sourcePath ?? "",\r\n        sourceLine: args.sourceLine ?? 0,\r\n      }, "POST");\r\n    case "add_knowledge":\r\n      return call("/knowledge", {\r\n        title: args.title,\r\n        content: args.content,\r\n        category: args.category ?? "",\r\n        folder: args.folder ?? "",\r\n        tags: args.tags ?? [],\r\n        agent: args.agent ?? "",\r\n        source: args.source ?? "",\r\n        links: args.links ?? [],\r\n      }, "POST");\r\n    case "record_work_log":\r\n      return call("/worklog", {\r\n        agent: args.agent ?? "",\r\n        task: args.task,\r\n        summary: args.summary,\r\n        decisions: args.decisions ?? "",\r\n        learnings: args.learnings ?? "",\r\n        openQuestions: args.openQuestions ?? "",\r\n        files: args.files ?? [],\r\n        tags: args.tags ?? [],\r\n      }, "POST");\r\n    case "manage_tasks":\r\n      switch (args.action) {\r\n        case "list": return call("/tasks", { scope: args.scope ?? "all" });\r\n        case "complete": return call("/tasks/complete", { path: args.path, line: args.line }, "POST");\r\n        case "delegate": return call("/tasks/delegate", { path: args.path, line: args.line }, "POST");\r\n        case "snapshot": return call("/tasks/snapshot", {}, "POST");\r\n        case "claim": return call("/agent-task/claim", { id: args.id }, "POST");\r\n        case "complete_agent":\r\n          return call("/agent-task/complete", { id: args.id, resultPath: args.resultPath ?? "" }, "POST");\r\n      }\r\n      throw new Error("manage_tasks.action \u65E0\u6548");\r\n    case "get_workspace_state":\r\n      {\r\n        const allowed = new Set(["stats", "graph", "pomodoro", "weekly_review", "tool_activity", "work_logs", "categories"]);\r\n        const requested = Array.isArray(args.sections)\r\n          ? args.sections.filter((section) => allowed.has(section))\r\n          : ["stats", "pomodoro", "tool_activity", "work_logs", "categories"];\r\n        const sections = [...new Set(requested)];\r\n        const state = {};\r\n        const reads = [];\r\n\r\n        if (sections.includes("stats")) {\r\n          reads.push(call("/stats", { days: args.days ?? 30 }).then((value) => { state.stats = value; }));\r\n        }\r\n        if (sections.includes("graph")) {\r\n          if (!args.path) {\r\n            state.graph = { skipped: true, reason: "graph \u9700\u8981 path \u53C2\u6570" };\r\n          } else {\r\n            reads.push(call("/graph", { path: args.path, types: args.types ?? "outgoing,backlinks,tags" })\r\n              .then((value) => { state.graph = value; }));\r\n          }\r\n        }\r\n        if (sections.includes("pomodoro")) {\r\n          reads.push(call("/pomodoro").then((value) => { state.pomodoro = value; }));\r\n        }\r\n        if (sections.includes("weekly_review")) {\r\n          reads.push(call("/review", { date: args.date ?? "" })\r\n            .then((value) => { state.weeklyReview = value; }));\r\n        }\r\n        if (sections.includes("tool_activity")) {\r\n          reads.push(call("/activity").then((value) => { state.toolActivity = value; }));\r\n        }\r\n        if (sections.includes("work_logs")) {\r\n          reads.push(call("/worklogs", { days: args.days ?? 7 })\r\n            .then((value) => { state.workLogs = value; }));\r\n        }\r\n        if (sections.includes("categories")) {\r\n          reads.push(call("/categories").then((value) => { state.categories = value; }));\r\n        }\r\n\r\n        await Promise.all(reads);\r\n        return state;\r\n      }\r\n    case "manage_changes":\r\n      if (args.action === "list") return call("/agent/audit", { limit: args.limit ?? 20 });\r\n      if (args.action === "revert") return call("/agent/revert", { snapshotId: args.snapshotId }, "POST");\r\n      throw new Error("manage_changes.action \u65E0\u6548");\r\n  }\r\n}\r\n\r\nfunction send(message) {\r\n  process.stdout.write(JSON.stringify(message) + "\\n");\r\n}\r\n\r\nasync function handle(message) {\r\n  if (message.id === undefined) return;\r\n  const { id, method, params } = message;\r\n  switch (method) {\r\n    case "initialize":\r\n      send({\r\n        jsonrpc: "2.0",\r\n        id,\r\n        result: {\r\n          protocolVersion: "2024-11-05",\r\n          capabilities: { tools: {} },\r\n          serverInfo: { name: "sediment", version: "1.0.2" },\r\n        },\r\n      });\r\n      break;\r\n    case "tools/list":\r\n      send({ jsonrpc: "2.0", id, result: { tools: TOOLS } });\r\n      break;\r\n    case "tools/call":\r\n      try {\r\n        const data = await dispatch(params?.name, params?.arguments ?? {});\r\n        send({\r\n          jsonrpc: "2.0",\r\n          id,\r\n          result: {\r\n            content: [{ type: "text", text: typeof data === "string" ? data : JSON.stringify(data, null, 2) }],\r\n          },\r\n        });\r\n      } catch (error) {\r\n        send({\r\n          jsonrpc: "2.0",\r\n          id,\r\n          result: { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true },\r\n        });\r\n      }\r\n      break;\r\n    case "ping":\r\n      send({ jsonrpc: "2.0", id, result: {} });\r\n      break;\r\n    default:\r\n      send({ jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${method}` } });\r\n  }\r\n}\r\n\r\nlet buffer = "";\r\nprocess.stdin.setEncoding("utf8");\r\nprocess.stdin.on("data", (chunk) => {\r\n  buffer += chunk;\r\n  if (buffer.length > MAX_STDIN_BUFFER_CHARS) {\r\n    process.stderr.write("sediment-mcp: stdin \u7F13\u51B2\u8D85\u8FC7 1MB \u4E0A\u9650\uFF0C\u65AD\u5F00\u8FDE\u63A5\\n");\r\n    process.exit(1);\r\n  }\r\n  let index;\r\n  while ((index = buffer.indexOf("\\n")) >= 0) {\r\n    const line = buffer.slice(0, index).trim();\r\n    buffer = buffer.slice(index + 1);\r\n    if (!line) continue;\r\n    let message;\r\n    try {\r\n      message = JSON.parse(line);\r\n    } catch (error) {\r\n      // \u7578\u5F62 JSON \u8BF4\u660E\u6D41\u5DF2\u4E0D\u53EF\u4FE1\uFF1A\u8BB0\u8BCA\u65AD\uFF08stderr\uFF09\u540E\u65AD\u5F00\uFF0C\u4E0D\u518D\u9759\u9ED8\u541E\u6389\u3002\r\n      process.stderr.write(`sediment-mcp: \u7578\u5F62 JSON \u8F93\u5165\uFF0C\u65AD\u5F00\u8FDE\u63A5\uFF1A${error.message}\\n`);\r\n      process.exit(1);\r\n    }\r\n    void handle(message);\r\n  }\r\n});\r\n';
 
 // src/agent/setup.ts
 function nodeModule(name) {
@@ -5714,6 +6241,16 @@ var PulseSettingTab = class extends import_obsidian14.PluginSettingTab {
         this.display();
       })
     );
+    new import_obsidian14.Setting(containerEl).setName(t("\u542F\u7528\u6587\u4EF6\u6865\uFF08\u5B9E\u9A8C\uFF09")).setDesc(
+      t(
+        "\u975E MCP \u667A\u80FD\u4F53\u53EF\u628A write_note / patch_note / add_knowledge \u63D0\u6848\u653E\u8FDB\u63D2\u4EF6\u76EE\u5F55 bridge/proposals/\uFF0C\u5728\u5DE5\u574A\u9884\u89C8\u540E\u91C7\u7EB3\u6216\u9A73\u56DE\uFF1B\u7ED3\u679C\u5199\u5230 bridge/decisions/\u3002\u9ED8\u8BA4\u5173\u95ED\uFF0C\u63D0\u6848\u4E0D\u4F1A\u81EA\u52A8\u843D\u76D8\u3002"
+      )
+    ).addToggle(
+      (toggle) => toggle.setValue(settings.fileBridgeEnabled).onChange((value) => {
+        settings.fileBridgeEnabled = value;
+        save();
+      })
+    );
   }
   renderClients(containerEl) {
     const hint = containerEl.createDiv({ cls: "sd-setup-hint" });
@@ -5766,7 +6303,7 @@ function tfAgentConfigured(name) {
 var import_obsidian15 = require("obsidian");
 
 // src/changelog.ts
-var CHANGELOG = "# \u66F4\u65B0\u8BB0\u5F55\r\n\r\n\u672C\u6587\u4EF6\u8BB0\u5F55\u6BCF\u4E2A\u7248\u672C\u7684\u589E\u91CF\u53D8\u5316\uFF0C\u683C\u5F0F\u9075\u5FAA [Keep a Changelog](https://keepachangelog.com/)\u3002\u6784\u5EFA\u65F6\u7531 `scripts/sync-changelog.mjs` \u540C\u6B65\u5230\u63D2\u4EF6\u5185\uFF0C\u53EF\u5728\u770B\u677F\u9875\u811A\u7684\u300C\u66F4\u65B0\u8BB0\u5F55\u300D\u91CC\u67E5\u770B\u3002\r\n\r\n## [Unreleased]\r\n\r\n### \u65B0\u589E\r\n- \u5F85\u5BA1\u5199\u5165\u5931\u6548\u68C0\u6D4B\uFF1A\u76EE\u6807\u88AB\u5220\u9664/\u79FB\u52A8\u540E\u6807\u8BB0 stale\uFF08\u542F\u52A8\u5BF9\u8D26 + \u5220\u9664/\u91CD\u547D\u540D\u5373\u65F6\u6807\u8BB0 + \u91C7\u7EB3\u524D\u590D\u9A8C\uFF09\uFF0C\u5931\u6548\u9879\u53EA\u5141\u8BB8\u9A73\u56DE\u540E\u7531 Agent \u91CD\u53D1\u3002\r\n- \u770B\u677F\u300C\u77E5\u8BC6\u5E93\u73B0\u72B6\u300D\u5361\uFF1A\u5B9E\u65F6\u626B\u63CF\u77E5\u8BC6\u5E93\u603B\u91CF\u3001\u5F85\u5BA1\u8349\u7A3F\u3001\u5DF2\u91C7\u7EB3\u3001\u6765\u6E90\u672A\u767B\u8BB0\uFF0C\u4E0E\u5386\u53F2\u6D3B\u52A8\u7EDF\u8BA1\u53E3\u5F84\u4E92\u8865\u3002\r\n- Agent \u5728\u77E5\u8BC6\u5E93\u76EE\u5F55\u65B0\u5EFA\u7B14\u8BB0\u81EA\u52A8\u767B\u8BB0 `source: agent` \u7B49\u6765\u6E90\u5C5E\u6027\uFF1B\u5DE5\u574A\u65B0\u589E\u300C\u6765\u6E90\u672A\u767B\u8BB0\u300D\u5361\uFF0C\u53EF\u4E00\u952E\u6807\u8BB0\u4E3A\u4EBA\u5DE5\u6765\u6E90\u3002\r\n- \u7B14\u8BB0\u5065\u5EB7\u5EA6\u6269\u4E3A\u516D\u9879\uFF1A\u65B0\u589E\u8349\u7A3F\u6EDE\u7559\uFF0814 \u5929\uFF09\u3001\u7591\u4F3C\u91CD\u590D\u6807\u9898\u3001\u7A7A\u58F3\u7B14\u8BB0\u3002\r\n- \u5468\u590D\u76D8\u3001\u77E5\u8BC6\u7B14\u8BB0\u3001\u5DE5\u4F5C\u65E5\u5FD7\u3001\u5065\u5EB7\u4EFB\u52A1\u4E0E\u68C0\u7D22\u6807\u9898\u652F\u6301\u82F1\u6587\u8F93\u51FA\u3002\r\n- \u53EF\u9009 Ollama embedding \u8BED\u4E49\u68C0\u7D22\uFF08\u9ED8\u8BA4\u5173\u95ED\uFF0C\u4E0D\u53EF\u7528\u81EA\u52A8\u56DE\u9000 TF-IDF\uFF09\uFF1B\u8BBE\u7F6E\u65B0\u589E\u300C\u68C0\u7D22\u589E\u5F3A\u300D\u5206\u533A\u3002\r\n- \u793E\u533A\u5E02\u573A\u63D0\u4EA4\u6E05\u5355 `docs/marketplace-submission.md`\uFF0Cmanifest \u63CF\u8FF0\u6539\u82F1\u6587\u3002\r\n\r\n### \u6539\u8FDB\r\n- \u7EDF\u8BA1\u53E3\u5F84\u533A\u7684 5 \u9879\u6743\u91CD\u6536\u8FDB\u300C\u9AD8\u7EA7\u6743\u91CD\u300D\u6298\u53E0\u533A\uFF0C\u5C01\u9876\u4E24\u9879\u4FDD\u6301\u53EF\u89C1\u3002\r\n- \u4E94\u9879\u9ED8\u8BA4\u76EE\u5F55\u7EDF\u4E00\u6536\u8FDB `Sediment/`\uFF08\u65E5\u8BB0\u3001\u590D\u76D8\u3001Agent \u65E5\u5FD7\u3001\u77E5\u8BC6\u6C89\u6DC0\u3001\u5907\u4EFD\uFF09\uFF0C\u907F\u514D\u4E0E\u5E93\u5185\u65E2\u6709\u76EE\u5F55\u649E\u540D\uFF1B\u8BBE\u7F6E\u9875\u65B0\u589E\u300C\u65E7\u7248\u76EE\u5F55\u8FC1\u79FB\u300D\u6309\u94AE\uFF0C\u6309\u6587\u4EF6\u9010\u4E2A\u79FB\u52A8\u5E76\u4FDD\u7559 Obsidian \u94FE\u63A5\uFF0C\u51B2\u7A81\u76EE\u5F55\u6574\u4F53\u8DF3\u8FC7\u3001\u5931\u8D25\u81EA\u52A8\u56DE\u6EDA\uFF0C\u4EC5\u8FC1\u79FB\u4ECD\u662F\u65E7\u9ED8\u8BA4\u503C\u7684\u76EE\u5F55\u3002\r\n\r\n## [1.0.1] - 2026-11-20\r\n\r\n### \u6539\u8FDB\r\n- \u53D1\u5E03\u6D41\u6C34\u7EBF\u5347\u7EA7 Node 24 \u8FD0\u884C\u65F6\uFF1Acheckout v7\u3001setup-node v7\u3001action-gh-release v3\uFF08v3 \u4EC5\u8FD0\u884C\u65F6\u8FC1\u79FB\uFF0C\u8F93\u5165\u4E0D\u53D8\uFF09\uFF0C\u6D88\u9664 GitHub Actions Node 20 \u5F03\u7528\u8B66\u544A\r\n- CI \u6784\u5EFA Node 18\uFF08\u5DF2 EOL\uFF09\u5347\u7EA7 22 LTS\r\n\r\n## [1.0.0] - 2026-11-21\r\n\r\n### \u65B0\u589E\r\n- OpenCode \u4E00\u952E\u914D\u7F6E v1/v2 \u53CC\u5E03\u5C40\u9002\u914D\uFF1A\u6309\u914D\u7F6E\u5F62\u72B6\u5224\u5B9A\uFF08v1 \u76F4\u6302\u6761\u76EE\u4F18\u5148\uFF0C\u5176\u6B21 mcp.servers\uFF09\uFF0C\u5F62\u72B6\u65E0\u7EBF\u7D22\u65F6\u63A2\u6D4B\u672C\u673A `opencode --version`\uFF0C\u63A2\u6D4B\u5931\u8D25\u9ED8\u8BA4 v2\uFF1B\u5199\u5165\u539F\u751F\u7ED3\u6784\uFF08type:local + command \u6570\u7EC4 + environment\uFF09\uFF0Cv2 \u7528\u5BF9\u8C61 timeout\u3001v1 \u7528 enabled + \u6570\u5B57 timeout\r\n- \u914D\u7F6E\u8FC1\u79FB\u81EA\u6108\uFF1A\u5199\u5165 v2 \u65F6\u6E05\u7406 v1 \u76F4\u6302\u6B8B\u7559\uFF0C\u5199\u5165 v1 \u65F6\u6E05\u7406 servers \u5185\u65E7\u6761\u76EE\u5E76\u79FB\u9664\u7A7A servers \u952E\uFF0C\u907F\u514D\u65E7\u7248\u8BEF\u8BFB\r\n- Windsurf Next \u5BA2\u6237\u7AEF\u5019\u9009\uFF08~/.codeium/windsurf-next/mcp_config.json\uFF09\r\n- \u4E00\u952E\u914D\u7F6E\u5355\u5143\u6D4B\u8BD5 +12\uFF08\u5E03\u5C40\u5224\u5B9A\u3001\u53CC\u5E03\u5C40\u5199\u5165\u3001\u8FC1\u79FB\u6E05\u7406\u3001\u6865\u63A5\u590D\u7528\u3001\u7247\u6BB5\u8F93\u51FA\u3001\u5019\u9009\u8DEF\u5F84\uFF09\uFF1B\u53E6\u52A0\u5BA1\u6838\u884C\u53EF\u8BFB\u6027\u4E0E\u6062\u590D\u5165\u53E3\u8FC1\u79FB\u56DE\u5F52 2 \u9879\uFF0C\u5168\u91CF 153 \u9879\r\n\r\n### \u6539\u8FDB\r\n- \u6570\u636E\u5FEB\u7167\u6062\u590D\u5217\u8868\u4ECE\u667A\u80FD\u4F53\u5DE5\u574A\u632A\u5230\u8BBE\u7F6E\u9875\u5907\u4EFD\u5206\u533A\uFF08\u4FDD\u7559\u4EFD\u6570\u4E0B\u65B9\uFF09\uFF0C\u5DE5\u574A\u56DE\u5F52\u7EAF\u5BA1\u6838\u961F\u5217\uFF08\u8349\u7A3F/\u5F85\u5BA1\u5199\u5165/\u53D8\u66F4\u5BA1\u67E5/Agent \u5F85\u529E\uFF09\uFF1B\u6062\u590D\u5B89\u5168\u6D41\u7A0B\u4E0D\u53D8\uFF1A\u4E8C\u6B21\u786E\u8BA4\u2192\u6062\u590D\u526F\u672C\u2192\u683C\u5F0F\u6821\u9A8C\u2192\u5199\u56DE\u91CD\u8F7D\r\n\r\n### \u4FEE\u590D\r\n- OpenCode \u4E00\u952E\u914D\u7F6E\u4E0D\u751F\u6548\uFF1A\u6B64\u524D\u5BF9\u6240\u6709\u5BA2\u6237\u7AEF\u5199 Claude \u98CE\u683C\u6761\u76EE\uFF08command \u5B57\u7B26\u4E32 + args\uFF09\uFF0COpenCode v1/v2 \u5747\u4E0D\u8BC6\u522B\uFF1B\u73B0\u6309\u5BA2\u6237\u7AEF\u539F\u751F schema \u5199\u5165\uFF0C\u5B9E\u6D4B `opencode mcp list` \u8FDE\u63A5\u6210\u529F\r\n- Cline \u914D\u7F6E\u8DEF\u5F84\u4FEE\u6B63\uFF1ACLI \u4E3A ~/.cline/data/settings/cline_mcp_settings.json\uFF0CVS Code \u6269\u5C55\u4E3A globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json\uFF0C\u539F ~/.cline/mcp_settings.json \u4E24\u8005\u7686\u975E\r\n- Cline \u6761\u76EE\u4E0D\u518D\u5199 timeout\uFF1ACline \u6309\u79D2\u89E3\u91CA\uFF0C\u5199 60000 \u4F1A\u88AB\u8BEF\u8BFB\u4E3A 60000 \u79D2\uFF1B\u5176\u4F59\u5BA2\u6237\u7AEF\u4FDD\u6301 60000 \u6BEB\u79D2\r\n- \u79FB\u9664\u65E0\u6548\u5019\u9009 ~/.opencode.json\uFF1AOpenCode \u4EFB\u4F55\u7248\u672C\u90FD\u4E0D\u8BFB\u53D6\u8BE5\u4F4D\u7F6E\r\n- isAgentConfigured \u517C\u5BB9 OpenCode \u53CC\u4F4D\u7F6E\uFF08v1 \u76F4\u6302\u4E0E v2 servers\uFF09\uFF0C\u5DF2\u914D\u7F6E\u72B6\u6001\u4E0D\u518D\u6F0F\u62A5\r\n- \u5BA1\u6838\u884C\u53EF\u8BFB\u6027\uFF1A\u5BA1\u6279\u6309\u94AE mod-cta \u767D\u5B57\u843D\u6D45\u5E95\uFF08\u5BF9\u6BD4\u5EA6 1.1:1 \u5168\u9690\u5F62\uFF09\u6062\u590D\u5F3A\u8C03\u5E95+\u663E\u5F0F\u5B57\u8272\uFF085.70:1\uFF09\uFF1B\u5F85\u5BA1\u5199\u5165/\u53D8\u66F4\u5BA1\u67E5/\u5FEB\u7167\u6062\u590D\u884C\u4E0D\u518D\u590D\u7528 112px \u5143\u4FE1\u606F\u5217\u4E0E faint 10px\uFF08485px \u5185\u5BB9\u622A\u5230 112px\u30012.85:1\uFF09\uFF0C\u6539\u72EC\u7ACB\u5E03\u5C40\u5360\u6EE1\u5269\u4F59\u5BBD + muted 11px\uFF085.74:1\uFF09+ \u60AC\u505C\u5168\u6587\u63D0\u793A\r\n\r\n## [0.9.8] - 2026-11-20\r\n\r\n### \u65B0\u589E\r\n- \u786E\u8BA4\uFF08confirm\uFF09\u5DE5\u4F5C\u6A21\u5F0F\u771F\u5B9E\u751F\u6548\uFF1AAgent \u5199\u8BF7\u6C42\u6302\u8D77\u4E3A\u300C\u5F85\u5BA1\u5199\u5165\u300D\uFF0C\u5728\u667A\u80FD\u4F53\u5DE5\u574A\u9010\u6761\u5DEE\u5F02\u9884\u89C8\u3001\u91C7\u7EB3\u6216\u9A73\u56DE\uFF1B\u76EE\u6807\u6587\u4EF6\u5728\u6302\u8D77\u540E\u88AB\u4FEE\u6539\u65F6\u91C7\u7EB3\u62A5\u7248\u672C\u51B2\u7A81\uFF0C\u907F\u514D\u8986\u76D6\u4EBA\u5DE5\u7F16\u8F91\u3002\u9ED8\u8BA4\u5DE5\u4F5C\u6A21\u5F0F\u5373 confirm\uFF0C\u6B64\u524D\u7248\u672C\u8BE5\u884C\u4E3A\u672A\u843D\u5730\uFF0C\u672C\u7248\u8D77\u5F3A\u5236\u6267\u884C\r\n- data.json \u6570\u636E\u5FEB\u7167\uFF1A\u5907\u4EFD\u5FEB\u7167\u5217\u8868\u4E0E\u4E00\u952E\u6062\u590D\uFF08\u6062\u590D\u524D\u4E8C\u6B21\u786E\u8BA4\u3001\u81EA\u52A8\u521B\u5EFA\u6062\u590D\u526F\u672C\u3001\u5931\u8D25\u663E\u8457\u544A\u8B66\uFF09\r\n- \u77E5\u8BC6\u5730\u5C42\u5256\u9762\u4E3B\u89C6\u56FE\uFF1A\u4EBA/AI/\u4EFB\u52A1/\u4E13\u6CE8\u6309\u6708\u5806\u53E0\u6210\u5730\u5C42\u6A2A\u622A\u9762\uFF0C\u70ED\u529B\u56FE\u964D\u4E3A\u9644\u5C5E\u89C6\u56FE\r\n- Agent \u9875\u7B7E\u5F85\u5BA1\u6570\u91CF\u5FBD\u7AE0\uFF08\u8349\u7A3F+\u53D8\u66F4+\u5F85\u5BA1\u5199\u5165\u4E4B\u548C\uFF0C\u4E3A 0 \u4E0D\u663E\u793A\uFF09\r\n- \u4E00\u952E\u914D\u7F6E\u81EA\u6108\uFF1A\u5E93\u5185\u65E7\u7248\u6865\u63A5\u811A\u672C\u81EA\u52A8\u5237\u65B0\u4E3A\u63D2\u4EF6\u5185\u5D4C\u7248\u672C\uFF0C\u534F\u8BAE\u5347\u7EA7\u540E\u65E0\u9700\u624B\u5DE5\u6E05\u7406\r\n\r\n### \u6539\u8FDB\r\n- Agent \u6743\u9650\u95E8\u7981\u7EDF\u4E00\uFF1A\u9ED1\u540D\u5355/\u767D\u540D\u5355/\u64CD\u4F5C\u6743\u9650\u6536\u655B\u5230 access.ts \u5355\u4E00\u89C4\u5219\u6E90\uFF0C\u8986\u76D6\u7B14\u8BB0/\u901F\u8BB0/\u59D4\u6258/\u5DE5\u4F5C\u65E5\u5FD7/\u4EFB\u52A1\u5FEB\u7167/\u65E5\u8BB0\u7B49\u5168\u90E8\u5199\u8DEF\u5F84\uFF1B\u4EBA\u7528 UI \u64CD\u4F5C\u4E0D\u53D7 Agent \u95E8\u7981\u5F71\u54CD\r\n- \u8BBE\u7F6E\u9762\u677F\u6309\u5206\u533A\u91CD\u7EC4\uFF1B\u5207\u6362\u5DE5\u4F5C\u6A21\u5F0F\u63D0\u793A\u5C06\u91CD\u7F6E\u6743\u9650\u5F00\u5173\uFF0C\u6743\u91CD\u8F93\u5165\u9632\u6296\uFF0C\u79FB\u9664\u65E0\u6548\u7684\u300C\u5141\u8BB8\u5220\u9664\u300D\u5F00\u5173\r\n- i18n \u8865\u9F50\uFF1A\u6A21\u6001\u6846\u3001\u547D\u4EE4\u540D\u3001\u542F\u52A8\u4E0E\u5931\u8D25\u63D0\u793A\u7B49\u5168\u90E8\u8D70\u7FFB\u8BD1\uFF1B\u65B0\u589E CI \u68C0\u67E5\u9632\u6B62\u672A\u7FFB\u8BD1\u4E2D\u6587\u5B57\u9762\u91CF\u518D\u8FDB UI\r\n- \u56FE\u8868\u53EF\u8BBF\u95EE\u6027\uFF1ASVG \u8F93\u51FA\u8865 role/aria-label\uFF0C\u591A\u5E8F\u5217\u8D8B\u52BF\u56FE\u52A0\u56FE\u4F8B\uFF0C\u70ED\u529B\u56FE\u683C\u5B50\u6539\u7528\u81EA\u5B9A\u4E49 tooltip\r\n- \u672C\u5730 API \u4F20\u8F93\u52A0\u56FA\uFF1A\u4EE4\u724C\u53EA\u8D70 Authorization \u5934\u5E76\u5E38\u91CF\u65F6\u95F4\u6BD4\u8F83\uFF0C\u8BF7\u6C42\u4F53\u8D85\u9650\u8FD4\u56DE 413\uFF0C\u7578\u5F62 URL \u8FD4\u56DE 400\uFF0C500 \u9519\u8BEF\u4FE1\u606F\u767D\u540D\u5355\u5316\uFF1B\u6865\u63A5\u811A\u672C\u52A0\u8BF7\u6C42\u8D85\u65F6\u3001\u54CD\u5E94\u4F53\u4E0E stdin \u7F13\u51B2\u4E0A\u9650\uFF0C\u7578\u5F62 JSON \u65AD\u5F00\u8FDE\u63A5\r\n- \u5B58\u50A8\u53EF\u9760\u6027\uFF1A\u52A0\u8F7D\u65F6\u635F\u574F\u5B57\u6BB5\u9632\u62A4\uFF08\u542B\u5F85\u5BA1\u5199\u5165\uFF09\u3001\u4FDD\u5B58\u5931\u8D25\u63D0\u793A\u8282\u6D41\u3001\u5907\u4EFD\u5199\u5165\u5931\u8D25\u4E0D\u518D\u9759\u9ED8\u5F53\u4F5C\u6210\u529F\r\n- \u756A\u8304\u949F\uFF1A\u591A\u5B9E\u4F8B\u63A5\u7BA1\u3001\u8BA1\u65F6\u6F02\u79FB\u6821\u6B63\u3001\u8DE8\u5929\u7ED3\u7B97\r\n- \u5173\u952E catch \u70B9\u6539\u7528 logError \u7EDF\u4E00\u8BB0\u5F55\uFF08\u63A7\u5236\u53F0+\u5E26\u4E0A\u9650\u7684\u8BCA\u65AD\u5217\u8868\uFF09\uFF0C\u4E0D\u518D\u9759\u9ED8\u541E\u9519\r\n- \u53D1\u5E03\u6821\u9A8C\u65B0\u589E README \u7248\u672C\u5FBD\u7AE0\u4E0E versions.json \u7248\u672C\u952E\u65AD\u8A00\r\n- \u54C1\u724C\u56FE\u6807\u66F4\u65B0\uFF0C\u901F\u8BB0\u89C6\u56FE\u72EC\u7ACB\u56FE\u6807\uFF1B\u6DF1\u8272\u4E3B\u9898\u5BFC\u822A\u4E0E\u6D45\u8272\u4E3B\u9898\u5FBD\u7AE0\u5BF9\u6BD4\u5EA6\u4FEE\u590D\uFF1B\u79FB\u52A8\u7AEF/\u89E6\u63A7\u53EF\u7528\u6027\u6539\u8FDB\r\n\r\n### \u4FEE\u590D\r\n- \u4E00\u952E\u914D\u7F6E\u56DE\u5F52\uFF1A\u9274\u6743\u5347\u7EA7\u540E\u5E93\u5185\u65E7\u6865\u63A5\u4E0E\u65B0\u670D\u52A1\u7AEF\u4E0D\u5339\u914D\u5BFC\u81F4\u5168\u90E8 401\uFF0C\u300C\u91CD\u65B0\u5199\u5165\u300D\u65F6\u81EA\u52A8\u5237\u65B0\u6865\u63A5\r\n- \u5730\u5C42\u4E13\u6CE8\u5C42\u6539\u6309\u6BCF\u65E5\u4E13\u6CE8\u5206\u949F\u805A\u5408\uFF0C\u65E9\u671F\u6708\u4EFD\u4E0D\u518D\u56E0\u4F1A\u8BDD\u8BB0\u5F55\u622A\u65AD\u800C\u865A\u5047\u5F52\u96F6\r\n- \u6D1E\u5BDF\u9875\u6B7B\u4EA4\u4E92\u3001aria \u8F6C\u4E49\u3001\u6D77\u62A5\u8DE8\u5E74\u6708\u4EFD\u5FAA\u73AF\u3001\u753B\u5E03\u4E3B\u9898\u8272\u8BFB\u53D6\u7B49\u89C6\u56FE\u95EE\u9898\r\n- \u901F\u8BB0\u5F39\u7A97\u652F\u6301 Ctrl+Enter \u63D0\u4EA4\u3001\u7A7A\u6587\u672C\u4FDD\u5B58\u63D0\u793A\uFF1B\u4EFB\u52A1\u5B8C\u6210\u6309\u94AE\u9632\u53CC\u51FB\uFF1B\u901F\u8BB0\u957F\u6587\u672C\u884C\u6570\u94B3\u5236\r\n\r\n## [0.9.7] - 2026-11-20\r\n\r\n### \u6539\u8FDB\uFF08\u4EE3\u7801\u7ED3\u6784\uFF09\r\n- \u770B\u677F\u4E3B\u89C6\u56FE\u6309\u9875\u7B7E\u62C6\u5206\uFF1A`views/dashboard/sections/` \u4E0B today / insights / agent \u4E09\u4E2A\u6E32\u67D3\u6A21\u5757\uFF0C\u4E3B\u89C6\u56FE\u4ECE ~1300 \u884C\u964D\u5230 523 \u884C\uFF0C\u4EC5\u4FDD\u7559\u751F\u547D\u5468\u671F\u4E0E\u5171\u4EAB\u8F85\u52A9\u65B9\u6CD5\r\n- \u62BD\u51FA\u7EAF SVG \u56FE\u8868\u51FD\u6570\u5230 `utils/charts.ts`\uFF0C\u770B\u677F\u4E0D\u518D\u5185\u8054\u751F\u6210\u56FE\u8868\u903B\u8F91\r\n- \u62BD\u51FA Agent \u8BBF\u95EE\u7B56\u7565\u7EAF\u89C4\u5219\u5230 `agent/access.ts`\uFF08\u9ED1\u540D\u5355/\u767D\u540D\u5355/\u64CD\u4F5C\u6743\u9650/\u5206\u7C7B\u63A8\u65AD\uFF09\uFF0C\u53EF\u5355\u6D4B\r\n- `main.ts` \u7684 16 \u4E2A\u547D\u4EE4\u6CE8\u518C\u62BD\u6210 `registerCommands()`\uFF0C`onload` \u66F4\u6E05\u6670\r\n- \u7EDF\u4E00\u751F\u6210\u6587\u4EF6\u7B56\u7565\uFF1A`changelog.ts` \u4E0E `bridge-source.ts` \u5747\u7531\u6784\u5EFA\u751F\u6210\u5E76\u52A0\u5165 `.gitignore`\r\n\r\n### \u4FEE\u590D\r\n- \u4FEE\u590D\u7248\u672C\u53F7\u5FBD\u7AE0\u5728\u591A\u6BB5\u7248\u672C\u53F7\u4E0B\u6BCF\u6B21\u6784\u5EFA\u91CD\u590D\u8FFD\u52A0\u5C3E\u53F7\u7684 bug\r\n- \u5DE6\u4FA7\u529F\u80FD\u680F\u56FE\u6807\u6539\u7528\u65B0\u7684 Sediment \u54C1\u724C\u56FE\u6807\r\n\r\n## [0.9.6.1] - 2026-11-20\r\n\r\n### \u4FEE\u590D\r\n- \u901F\u8BB0\u641C\u7D22\u6846\uFF1A\u4FEE\u590D\u8F93\u5165\u65F6\u7ED3\u679C\u88AB\u8FFD\u52A0\u5230\u5217\u8868\u672B\u5C3E\u3001\u8DF3\u5230\u77E5\u8BC6\u533A\u4E0B\u65B9\u7684 bug\uFF1B\u65B0\u589E\u300C\u5339\u914D N \u6761\u300D\u5B9E\u65F6\u8BA1\u6570\uFF0C\u641C\u7D22\u6548\u679C\u53EF\u89C1\r\n- \u5207\u6362\u9875\u7B7E\u65F6\u6EDA\u52A8\u4F4D\u7F6E\u5F52\u96F6\uFF0C\u907F\u514D\u5185\u5BB9\u88AB\u5438\u9876\u5BFC\u822A\u6321\u4F4F\r\n- \u6A2A\u5E45\u4E0D\u518D\u88AB\u5438\u9876\u5BFC\u822A\u906E\u76D6\r\n- \u65B0\u589E Sediment \u5C42\u7406\u54C1\u724C\u56FE\u6807\uFF0C\u63A5\u5165\u5BFC\u822A\u680F\u4E0E\u89C6\u56FE\u56FE\u6807\r\n\r\n## [0.9.6] - 2026-11-20\r\n\r\n### \u4FEE\u590D\r\n- Agent \u65F6\u95F4\u663E\u793A\u6539\u4E3A\u672C\u5730\u65F6\u533A\uFF1A\u5DE5\u5177\u8C03\u7528/\u53D8\u66F4\u5BA1\u67E5/\u6700\u8FD1\u8C03\u7528/\u8BCA\u65AD\u65E5\u5FD7\u7684\u65F6\u95F4\u4E0D\u518D\u663E\u793A\u6210 UTC\uFF08\u5982 05:30 \u5B9E\u4E3A\u672C\u5730 13:30\uFF09\uFF0C\u300C\u4ECA\u65E5\u300D\u7EDF\u8BA1\u4E5F\u6309\u672C\u5730\u65E5\u671F\u5224\u5B9A\r\n- \u9876\u90E8\u5BFC\u822A\u5438\u9876\uFF1A\u4E3B\u5BFC\u822A\u680F\u56FA\u5B9A\u5728\u9876\u90E8\uFF0C\u5B50\u9875\u7B7E\uFF08\u77E5\u8BC6\u5730\u5C42\uFF09\u4E0E\u300C\u4ECA\u65E5\u300D\u64CD\u4F5C\u680F\u9489\u5728\u5176\u4E0B\u65B9\uFF0C\u6EDA\u52A8\u65F6\u59CB\u7EC8\u53EF\u89C1\r\n- \u5468\u590D\u76D8\u300C\u672A\u5B8C\u6210\u4E8B\u9879\u300D\u53BB\u91CD\uFF1A\u5E26 #to-agent \u7684\u901F\u8BB0\u4E0D\u518D\u540C\u65F6\u51FA\u73B0\u5728\u300C\u901F\u8BB0\u300D\u548C\u300CAgent \u4EFB\u52A1\u300D\u4E24\u5904\r\n- \u4FEE\u590D\u300C\u8282\u5F8B\u77E9\u9635/\u6D3B\u8DC3\u65F6\u6BB5\u300D\u300C\u5E74\u8F6E/\u6307\u7EB9/\u6708\u76F8\u300D\u9875\u7B7E\u70B9\u51FB\u5931\u6548\uFF1A\u6539\u7528\u5185\u90E8\u5BB9\u5668\u63D2\u5165 SVG\uFF0C\u907F\u514D innerHTML += \u51B2\u6389\u6309\u94AE\u4E8B\u4EF6\r\n\r\n## [0.9.5] - 2026-11-20\r\n\r\n### \u6539\u8FDB\r\n- \u77E5\u8BC6\u5730\u5C42\u5206\u9875\u5316\uFF1A\u9876\u90E8\u80F6\u56CA\u6539\u4E3A\u771F\u6B63\u7684\u9875\u7B7E\uFF0C\u4E00\u6B21\u53EA\u663E\u793A\u4E00\u4E2A\u6A21\u5757\uFF08\u8109\u51B2\u6982\u89C8/\u70ED\u529B\u56FE/\u5199\u4F5C\u8D8B\u52BF/\u6295\u5165\u5206\u5E03/\u5E74\u5EA6\u753B\u50CF/\u672C\u5468\u590D\u76D8\uFF09\uFF0C\u4E0D\u518D\u662F\u957F\u9875\u9762\u8DF3\u8F6C\r\n\r\n### \u4FEE\u590D\r\n- \u951A\u70B9/\u5FEB\u6377\u8DF3\u8F6C\u6539\u56DE\u6D4F\u89C8\u5668\u539F\u751F scrollIntoView + CSS scroll-margin\uFF0C\u4FEE\u590D\u300C\u6709\u7684\u8DF3\u6709\u7684\u4E0D\u8DF3\u300D\uFF1B\u7528\u6237\u4E3B\u52A8\u6EDA\u52A8\u65F6\u53D6\u6D88\u6392\u961F\u4E2D\u7684\u6EDA\u52A8\u6062\u590D\uFF0C\u907F\u514D\u4E92\u76F8\u6253\u65AD\r\n\r\n## [0.9.4] - 2026-11-20\r\n\r\n### \u4FEE\u590D\r\n- \u300C\u67E5\u770B\u4ECA\u65E5\u4EFB\u52A1\u300D\u300C\u8BB0\u4E00\u6761\u901F\u8BB0\u300D\u6539\u7528\u5E26\u504F\u79FB\u7684\u5E73\u6ED1\u6EDA\u52A8\u5E76\u963B\u6B62 focus \u81EA\u52A8\u8DF3\u5C4F\uFF0C\u4E0D\u518D\u786C\u8DF3\r\n\r\n### \u4FEE\u590D\r\n- \u951A\u70B9\u8DF3\u8F6C\u6309\u5438\u9876\u5BFC\u822A\u9AD8\u5EA6\u7559\u504F\u79FB\uFF0C\u907F\u514D\u76EE\u6807\u6807\u9898\u88AB\u5BFC\u822A\u6761\u76D6\u4F4F\u9020\u6210\u7684\u89C6\u89C9\u8DF3\u52A8\r\n\r\n## [0.9.3] - 2026-11-20\r\n\r\n### \u4FEE\u590D\r\n- \u64CD\u4F5C\u540E\u6574\u9875\u91CD\u7ED8\u5BFC\u81F4\u7684\u6EDA\u52A8\u6296\u52A8\uFF1A\u91CD\u7ED8\u65F6\u4FDD\u5B58/\u5EF6\u8FDF\u6062\u590D\u6EDA\u52A8\u4F4D\u7F6E\uFF0C\u5E76\u5728\u540C\u4E00\u9875\u7B7E\u7684\u8F6F\u5237\u65B0\u4E2D\u5173\u95ED\u5361\u7247\u5165\u573A\u52A8\u753B\r\n\r\n### \u6539\u8FDB\r\n- \u65B0\u589E `npm run release:prepare -- X.Y.Z`\uFF1A\u81EA\u52A8\u5B9A\u7A3F CHANGELOG \u7248\u672C\u6807\u9898\u5E76\u66F4\u65B0 package.json \u7248\u672C\u6E90\uFF1BCI \u6253 tag \u65F6\u4E5F\u4F1A\u81EA\u52A8\u6267\u884C\r\n\r\n## [0.9.2] - 2026-11-20\r\n\r\n### \u4FEE\u590D\r\n- Agent \u53D8\u66F4\u5BA1\u67E5\u300C\u4FDD\u7559\u5F53\u524D\u5E76\u5173\u95ED\u300D\u73B0\u5728\u4F1A\u8BB0\u5F55\u5BA1\u67E5\u51B3\u5B9A\uFF08kept\uFF09\uFF0C\u8BE5\u53D8\u66F4\u4ECE\u5F85\u5BA1\u5217\u8868\u79FB\u9664\uFF1B\u300C\u91C7\u7528\u5907\u4EFD / \u6062\u590D\u300D\u8BB0\u5F55\u4E3A reverted\r\n- \u53D8\u66F4\u5BA1\u67E5\u53EA\u5217\u51FA POST \u5199\u64CD\u4F5C\uFF1BGET \u53EA\u8BFB\u8C03\u7528\uFF08\u5982 graph\uFF09\u4E0D\u518D\u51FA\u73B0\u5728\u5F85\u5BA1\u5217\u8868\r\n\r\n### \u65B0\u589E\r\n- MCP \u4E00\u952E\u5378\u8F7D\uFF1A\u8BBE\u7F6E\u9875\u6BCF\u4E2A\u5DF2\u914D\u7F6E\u5BA2\u6237\u7AEF\u52A0\u300C\u5378\u8F7D\u300D\u6309\u94AE\uFF0C\u5E76\u63D0\u4F9B\u300C\u6253\u5F00\u5378\u8F7D\u5411\u5BFC\u300D\uFF1B\u53EA\u79FB\u9664\u5BA2\u6237\u7AEF\u914D\u7F6E\u4E0E\u6865\u63A5\u811A\u672C\uFF0C\u5199\u524D\u5907\u4EFD `.bak`\uFF0C\u4E0D\u52A8\u7B14\u8BB0\u548C\u7EDF\u8BA1\u6570\u636E\r\n\r\n### \u6587\u6863\r\n- README \u8865\u5145\u300C\u5982\u4F55\u627E\u5230 .obsidian \u76EE\u5F55\u300D\u4E0E zip \u624B\u5DE5\u5B89\u88C5\u6B65\u9AA4\uFF0C\u793A\u4F8B\u8DEF\u5F84\u6539\u4E3A `<vault>` \u901A\u7528\u5199\u6CD5\uFF0C\u5E76\u8BF4\u660E BRAT \u5B89\u88C5\u65F6\u6865\u63A5\u811A\u672C\u7531\u4E00\u952E\u914D\u7F6E\u81EA\u52A8\u843D\u76D8\r\n\r\n### \u6539\u8FDB\r\n- \u65B0\u589E\u5B89\u88C5\u6574\u5305 `dist/sediment/`\uFF1A\u5305\u542B main.js\u3001manifest.json\u3001styles.css\u3001mcp-server/index.mjs \u4E0E\u5B89\u88C5\u8BF4\u660E\uFF1BRelease \u81EA\u52A8\u9644\u52A0 `sediment-vX.Y.Z.zip`\uFF0C\u4E0B\u8F7D\u89E3\u538B\u5373\u53EF\u590D\u5236\r\n\r\n### \u6539\u8FDB\r\n- \u7248\u672C\u53F7\u7EDF\u4E00\u5230 `package.json` \u5355\u4E00\u6E90\uFF1A`version-bump.mjs` \u5728\u6784\u5EFA\u65F6\u540C\u6B65 lockfile\u3001manifest\u3001versions\u3001MCP bridge \u548C README \u5FBD\u7AE0\uFF1B\u53D1\u7248\u53EA\u6539\u4E00\u5904\r\n\r\n## [0.9.1] - 2026-11-20\r\n\r\n### \u6539\u8FDB\r\n- Agent \u53D8\u66F4 Diff \u91CD\u505A\uFF1ALCS \u9010\u884C\u6807\u8BB0\u589E\u5220\u3001\u53CC\u680F\u6EDA\u52A8\u8054\u52A8\u3001\u53D8\u5316\u884C\u6570\u7EDF\u8BA1\uFF0C\u53EF\u5728\u5F39\u7A97\u5185\u300C\u91C7\u7528\u5907\u4EFD\uFF08\u64A4\u9500\uFF09\u300D\u6216\u300C\u4FDD\u7559\u5F53\u524D\u300D\r\n- AI \u6C89\u6DC0\u5BA1\u6838\uFF1A\u663E\u793A\u5F53\u524D\u5DE5\u4F5C\u6A21\u5F0F\uFF0C\u65B0\u589E\u300C\u67E5\u770B\u539F\u6587\u300D\u53EA\u8BFB\u9884\u89C8\uFF0C\u6309\u94AE\u542B\u4E49\u660E\u786E\r\n- \u5355\u6D4B\u589E\u81F3 41 \u4F8B\uFF08\u9010\u884C Diff\u3001\u5E42\u7B49\u952E\u3001\u5BA1\u8BA1\u8131\u654F\u3001400 \u5929\u6279\u91CF\u6570\u636E\u89C4\u8303\u5316\uFF09\r\n- \u7EAF\u51FD\u6570\u6027\u80FD\u57FA\u51C6 `npm run test:bench`\uFF1A1k/10k/100k \u5929\u8D21\u732E\u8BA1\u7B97\u7684\u8017\u65F6\u4E0E\u5806\u5185\u5B58\u91CF\u5316\r\n- Agent \u5B89\u5168\u8F85\u52A9\uFF1A\u5E42\u7B49\u952E `idempotencyKey`\u3001\u5BA1\u8BA1\u8DEF\u5F84\u8131\u654F `redactAuditPath`\u3001\u654F\u611F\u4E32\u66FF\u6362 `redactSecrets`\uFF1B\u5BA1\u8BA1\u65E5\u5FD7\u843D\u76D8\u524D\u8131\u654F\u67E5\u8BE2\u4E32\r\n- \u77E5\u8BC6\u9875\u6458\u8981\u4F18\u5148 + \u8BE6\u7EC6\u56FE\u8868\u6298\u53E0\u5F00\u5173\uFF1B\u4EBA\u673A\u53CC\u8272\u70ED\u529B\u56FE\u79FB\u5165\u77E5\u8BC6\u9875\r\n- \u5468\u590D\u76D8\u91CD\u6392\u4E3A\u300C\u7EBF\u7D22\u2014\u6210\u679C\u2014\u884C\u52A8\u2014\u5F52\u6863\u2014\u8BE6\u7EC6\u6570\u636E\u300D\r\n- \u901F\u8BB0\u4FA7\u680F\u300C\u5168\u90E8 + \u66F4\u591A\u300D\u6B21\u7EA7\u5165\u53E3\uFF0C\u56DE\u987E/\u6F2B\u6B65/\u6807\u7B7E/\u6C89\u6DC0\u6536\u8FDB\u66F4\u591A\u83DC\u5355\r\n- \u7EDF\u4E00\u641C\u7D22\u5165\u53E3\uFF1A`search_notes` \u540C\u65F6\u68C0\u7D22\u7B14\u8BB0\u3001\u901F\u8BB0\u3001\u5DE5\u4F5C\u65E5\u5FD7\u548C\u8349\u7A3F\uFF0C\u5E76\u6807\u6CE8\u6765\u6E90\u7C7B\u578B\r\n- \u9996\u6B21\u4F7F\u7528\u8F7B\u91CF\u4E0A\u4E0B\u6587\u63D0\u793A\uFF0C\u53EF\u5173\u95ED\r\n- Agent API \u7248\u672C\u58F0\u660E\uFF1A`AGENT_API_VERSION = 1`\uFF0C`/health` \u8FD4\u56DE `agentApiVersion`\uFF0CREADME \u5199\u660E\u517C\u5BB9\u7B56\u7565\r\n- \u8BCA\u65AD\u65E5\u5FD7\uFF1A\u8BB0\u5F55\u8FC1\u79FB\u3001\u5B89\u5168\u62D2\u7EDD\u3001\u6162\u67E5\u8BE2\u4E0E\u5B58\u50A8\u4E8B\u4EF6\uFF0C\u547D\u4EE4\u300C\u67E5\u770B\u8BCA\u65AD\u65E5\u5FD7\u300D\u53EF\u67E5\u770B\uFF1B\u771F\u5B9E\u73AF\u5883\u9A8C\u8BC1\u624B\u518C\u89C1 `docs/real-environment-verification.md`\r\n- \u7EC4\u4EF6\u547D\u540D\u7EDF\u4E00\uFF1A\u6240\u6709 `kp-*` \u524D\u7F00\u6539\u4E3A `sd-*`\uFF0C\u6784\u5EFA\u4E0E 41 \u4F8B\u5355\u6D4B\u901A\u8FC7\r\n\r\n## [0.9.0] - 2026-11-20\r\n\r\n### \u65B0\u589E\r\n- \u4ECA\u65E5\u9875\u589E\u52A0\u901F\u8BB0\u3001\u4ECA\u65E5\u4EFB\u52A1\u548C\u5F00\u59CB\u4E13\u6CE8\u5FEB\u6377\u64CD\u4F5C\uFF1B\u7A84\u5C4F\u6539\u4E3A\u7EB5\u5411\u5E03\u5C40\u3002\r\n- \u8BBE\u7F6E\u65B0\u589E Agent \u5DE5\u4F5C\u6A21\u5F0F\uFF1A\u53EA\u8BFB\u3001\u8349\u7A3F\u3001\u786E\u8BA4\u540E\u5199\u5165\u3001\u81EA\u52A8\u6267\u884C\u3002\r\n- \u901F\u8BB0\u5361\u7247\u663E\u793A\u672A\u5904\u7406\u3001\u5DF2\u59D4\u6D3E Agent\u3001\u5DF2\u6C89\u6DC0\u6216\u5DF2\u5F52\u6863\u72B6\u6001\u3002\r\n- \u5FEB\u901F\u901F\u8BB0\u652F\u6301\u8349\u7A3F\u6062\u590D\u3001\u4FDD\u5B58\u4E2D\u3001\u4FDD\u5B58\u6210\u529F\u548C\u4FDD\u5B58\u5931\u8D25\u53CD\u9988\u3002\r\n\r\n### \u6539\u8FDB\r\n- MCP \u5DE5\u5177\u7531\u5206\u6563\u7684\u7EC6\u7C92\u5EA6\u80FD\u529B\u6536\u655B\u4E3A\u4EFB\u52A1\u578B\u5165\u53E3\uFF1B\u65B0\u589E\u53EA\u8BFB\u805A\u5408 `get_workspace_state`\uFF0C\u65E7\u5DE5\u5177\u540D\u5DF2\u5220\u9664\uFF0C\u4E0D\u518D\u4FDD\u7559\u517C\u5BB9\u5165\u53E3\u3002\r\n- Agent \u9875\u4F18\u5148\u5C55\u793A\u8349\u7A3F\u3001\u4EFB\u52A1\u3001\u53D8\u66F4\u5BA1\u67E5\u548C\u5DE5\u4F5C\u65E5\u5FD7\uFF0C\u8FDE\u63A5\u8BCA\u65AD\u4E0E\u7EDF\u8BA1\u79FB\u81F3\u6B21\u7EA7\u4F4D\u7F6E\u3002\r\n- \u5F85\u529E\u5361\u7247\u53EF\u76F4\u63A5\u5B8C\u6210\u672C\u5730\u4EFB\u52A1\uFF0C\u4E5F\u53EF\u8BA4\u9886\u6216\u5B8C\u6210 Agent \u4EFB\u52A1\u3002\r\n- \u77E5\u8BC6\u6982\u89C8\u6295\u5165\u65F6\u95F4\u7531\u771F\u5B9E\u6D3B\u8DC3\u5206\u949F\u4E0E\u4E13\u6CE8\u5206\u949F\u8BA1\u7B97\uFF0C\u4E0D\u518D\u56FA\u5B9A\u663E\u793A\u5360\u4F4D\u6570\u636E\u3002\r\n- \u770B\u677F\u9875\u7B7E\u3001\u901F\u8BB0\u9875\u7B7E\u8865\u5145\u53EF\u8BBF\u95EE\u6027\u72B6\u6001\uFF1B\u7A84\u5C4F\u9875\u7B7E\u53EF\u6A2A\u5411\u6EDA\u52A8\u3002\r\n- \u77E5\u8BC6\u65E5\u5FD7\u4E0E\u6C89\u6DC0\u5199\u5165\u7EDF\u4E00\u53D7 Agent \u64CD\u4F5C\u6743\u9650\u548C\u76EE\u5F55\u9650\u5236\u7EA6\u675F\u3002\r\n- README \u66F4\u65B0 0.9.0\u300112 \u4E2A\u516C\u5F00 MCP \u5DE5\u5177\u5165\u53E3\u3001\u624B\u52A8\u5B89\u88C5\u6587\u4EF6\u548C\u6D4B\u8BD5\u547D\u4EE4\u3002\r\n\r\n### \u4FEE\u590D\r\n- \u8349\u7A3F\u5408\u5E76\u3001\u9A73\u56DE\u548C\u5FEB\u7167\u6062\u590D\u589E\u52A0\u786E\u8BA4\u53CA\u660E\u786E\u53CD\u9988\u3002\r\n- \u786E\u4FDD\u6570\u636E\u6587\u6863\u3001\u8BBE\u7F6E\u8BF4\u660E\u548C\u5B9E\u9645\u754C\u9762\u80FD\u529B\u4E00\u81F4\u3002\r\n\r\n## [0.8.8] - 2026-11-20\r\n\r\n### \u65B0\u589E\r\n- \u53D1\u5E03\u6D41\u6C34\u7EBF\u65B0\u589E\u5B8C\u6574\u56DE\u5F52\u6D4B\u8BD5\u3001\u7248\u672C\u4E00\u81F4\u6027\u6821\u9A8C\u548C\u8131\u654F\u7F3A\u9677\u53CD\u9988\u6A21\u677F\u3002\r\n- \u8BBE\u7F6E\u65B0\u589E\u7CBE\u7B80\u3001\u6807\u51C6\u3001\u5B8C\u6574\u5E03\u5C40\u5BC6\u5EA6\uFF0C\u4EE5\u53CA\u51CF\u5C11\u52A8\u6001\u6548\u679C\u9009\u9879\u3002\r\n- \u68C0\u7D22\u7ED3\u679C\u589E\u52A0\u7CBE\u786E\u5339\u914D\u4E0E\u672C\u5730 TF-IDF \u8BED\u4E49\u5339\u914D\u8BF4\u660E\u3002\r\n\r\n### \u6539\u8FDB\r\n- \u672A\u77E5\u6570\u636E\u7248\u672C\u52A0\u8F7D\u65F6\u6682\u505C\u5199\u5165\u5E76\u4FDD\u7559\u6062\u590D\u526F\u672C\uFF1B\u521D\u59CB\u5316\u3001\u8D1F\u503C\u4E0E\u5F02\u5E38\u5B57\u6BB5\u589E\u52A0\u89C4\u8303\u5316\u3002\r\n- Agent HTTP \u5199\u5165\u6536\u7D27\u6A21\u5F0F\u6821\u9A8C\uFF0C\u8865\u5145\u8DEF\u5F84\u7A7F\u8D8A\u3001\u7CFB\u7EDF\u76EE\u5F55\u3001\u975E\u6CD5 JSON \u548C\u5FC5\u586B\u53C2\u6570\u4FDD\u62A4\u3002\r\n- \u6587\u4EF6\u4FEE\u6539\u4E8B\u4EF6\u589E\u52A0\u53BB\u6296\uFF0C\u5378\u8F7D\u65F6\u6E05\u7406\u5B9A\u65F6\u5668\uFF0C\u8BED\u4E49\u7D22\u5F15\u5408\u5E76\u5E76\u53D1\u91CD\u5EFA\u3002\r\n- \u901F\u8BB0\u3001\u5DE5\u4F5C\u65E5\u5FD7\u3001\u5FEB\u7167\u4E0E\u5DE5\u5177\u8C03\u7528\u7B49\u6301\u4E45\u6570\u636E\u589E\u52A0\u4FDD\u7559\u4E0A\u9650\u3002\r\n- \u4FEE\u6B63 TypeScript \u914D\u7F6E\u4E2D\u7684\u5DF2\u79FB\u9664 `baseUrl` \u548C `node10` \u6A21\u5757\u89E3\u6790\u9009\u9879\u3002\r\n\r\n### \u4FEE\u590D\r\n- \u5B8C\u5584\u5347\u7EA7\u3001\u5378\u8F7D\u3001\u6062\u590D\u548C\u672C\u5730 Agent \u6743\u9650\u8BF4\u660E\u3002\r\n- \u53D1\u5E03\u6821\u9A8C\u8986\u76D6 package.json\u3001manifest\u3001MCP bridge\u3001CHANGELOG \u4E0E\u53D1\u5E03\u4EA7\u7269\u4E00\u81F4\u6027\u3002\r\n\r\n## [0.8.7] - 2026-11-20\r\n\r\n### \u4FEE\u590D\r\n- \u4E00\u952E\u914D\u7F6E Agent \u4E0D\u518D\u5199\u51FA\u4E0D\u5B58\u5728\u7684\u6865\u63A5\u8DEF\u5F84\uFF1A\u5E93\u5185\u7F3A `mcp-server/index.mjs` \u65F6\u7528\u6784\u5EFA\u65F6\u5D4C\u5165\u7684\u6E90\u7801\u81EA\u52A8\u843D\u76D8\uFF08Obsidian \u53EA\u5B89\u88C5\u4E09\u4EF6\u5957\uFF0C\u6B64\u524D\u65B0\u88C5\u7528\u6237\u5FC5\u8E29 MCP \u8FDB\u7A0B\u9000\u51FA\u7801 1\uFF09\r\n- MCP \u6865\u63A5 `serverInfo` \u7248\u672C\u968F\u63D2\u4EF6\u7248\u672C\u540C\u6B65\uFF08version-bump \u8054\u52A8\uFF09\uFF0C\u4E0D\u518D\u786C\u7F16\u7801\u65E7\u7248\u672C\r\n\r\n### \u6539\u8FDB\r\n- \u53D1\u5E03\u5305\u65B0\u589E `mcp-server/index.mjs`\uFF0C\u624B\u52A8\u5B89\u88C5\u53EF\u76F4\u63A5\u53D6\u7528\u6865\u63A5\u811A\u672C\r\n- \u5355\u6D4B\u65B0\u589E 2 \u4F8B\uFF1A\u6865\u63A5\u7248\u672C\u4E00\u81F4\u6027\u3001\u7F3A\u5931\u81EA\u52A8\u843D\u76D8\uFF0Binitialize \u63E1\u624B\uFF08\u5171 29 \u4F8B\uFF09\r\n\r\n## [0.8.6] - 2026-11-20\r\n\r\n### \u6539\u8FDB\r\n- \u77E5\u8BC6\u5730\u5C42\u7CBE\u7B80\uFF1A13 \u5F20\u5361\u7247\u5408\u5E76\u4E3A 7 \u5F20\uFF0C\u6D88\u9664\u540C\u4E00\u6570\u636E\u7684\u91CD\u590D\u53EF\u89C6\u5316\r\n  - \u5E74\u8F6E / \u77E5\u8BC6\u6307\u7EB9 / \u6708\u76F8\u65E5\u5386\u5408\u5E76\u4E3A\u300C\u5E74\u5EA6\u753B\u50CF\u300D\u5206\u6BB5\u5207\u6362\u5361\uFF08\u9ED8\u8BA4\u5E74\u8F6E\uFF09\r\n  - \u79FB\u9664\u88C5\u9970\u6027\u5730\u5E73\u7EBF\u5361\uFF08\u4FE1\u606F\u5DF2\u88AB\u70ED\u529B\u56FE\u4E0E\u8D8B\u52BF\u8986\u76D6\uFF09\r\n  - \u5199\u4F5C\u6765\u6E90\u5E76\u5165\u300C\u5199\u4F5C\u4E0E\u65F6\u95F4\u8D8B\u52BF\u300D\u7B2C 4 \u4E2A tab\uFF1B\u6D3B\u8DC3\u65F6\u6BB5\u5E76\u5165\u8282\u5F8B\u77E9\u9635\u5361\u5207\u6362\r\n  - \u6708\u62A5\u6D77\u62A5\u4ECE\u5E38\u9A7B\u5361\u7247\u6539\u4E3A\u9875\u811A\u300C\u6708\u62A5\u300D\u6309\u94AE\u5F39\u7A97\uFF0C\u5BFC\u51FA PNG \u4FDD\u7559\r\n\r\n## [0.8.5] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- \u7EDF\u8BA1\u53E3\u5F84\uFF1AAgent \u7ECF API \u5199\u5165\u7684\u5185\u5BB9\u4E0D\u518D\u91CD\u590D\u8BA1\u5165\u4EBA\u7C7B\u5199\u4F5C\u6307\u6807\uFF08\u6765\u6E90\u6807\u8BB0 + \u6291\u5236\u7A97\u53E3\uFF09\uFF0C\u53EA\u8BA1 `aiWordsAdded`\r\n- \u7B14\u8BB0\u5F52\u5C5E\u65E5\u671F\u4F18\u5148\u8BFB frontmatter \u7684 `created` / `date`\uFF0C\u5BFC\u5165\u7684\u65E7\u7B14\u8BB0\u80FD\u5F52\u5230\u6B63\u786E\u7684\u65E5\u5B50\r\n- \u8D21\u732E\u5206\u6309\u53EF\u914D\u6743\u91CD\u8BA1\u7B97\u5E76\u652F\u6301\u5355\u65E5\u5C01\u9876\uFF0C\u63D0\u4F9B\u5168\u91CF\u91CD\u7B97\u4E0E\u5168\u5E93\u5386\u53F2\u91CD\u5EFA\u547D\u4EE4\r\n\r\n### \u65B0\u589E\r\n- \u901F\u8BB0\u652F\u6301\u7F16\u8F91 / \u5220\u9664 / \u5F52\u6863\uFF0C\u5E76\u4E0E\u65E5\u8BB0 Callout \u53CC\u5199\u540C\u6B65\r\n- \u7B14\u8BB0\u5065\u5EB7\u5EA6\u68C0\u67E5\uFF08\u5B64\u513F / \u65AD\u94FE / \u4E45\u672A\u66F4\u65B0\uFF09\uFF0C\u53EF\u4E00\u952E\u8F6C\u4E3A `#to-agent` \u4EFB\u52A1\r\n- \u6570\u636E\u5BFC\u51FA CSV / JSON\uFF0C\u9ED8\u8BA4\u8131\u654F\uFF08\u4E0D\u542B\u901F\u8BB0\u6B63\u6587\u3001\u6587\u4EF6\u8DEF\u5F84\u4E0E\u4EFB\u4F55\u4EE4\u724C\uFF09\uFF0C\u9700\u663E\u5F0F\u52FE\u9009\u624D\u5305\u542B\r\n- \u756A\u8304\u949F\u72B6\u6001\u6301\u4E45\u5316\u4E0E\u4F1A\u8BDD\u65E5\u5FD7\r\n- \u56FE\u8868\u53C2\u7167\u7EBF\uFF08\u5747\u503C / \u76EE\u6807\uFF09\u3001\u540C\u9875\u5237\u65B0\u4FDD\u7559\u6EDA\u52A8\u4F4D\u7F6E\u3001\u6BCF\u9875\u4E3B\u8272\u4E0E\u5361\u7247\u6750\u8D28\u3001\u70ED\u529B\u56FE\u65B9\u5411\u952E\u5BFC\u822A\r\n- \u754C\u9762\u8BED\u8A00\u5207\u6362\uFF08\u8DDF\u968F\u7CFB\u7EDF / \u4E2D\u6587 / English\uFF09\uFF0C\u8986\u76D6\u547D\u4EE4\u3001\u8BBE\u7F6E\u3001\u901F\u8BB0\u3001\u770B\u677F\u4E0E\u5F39\u7A97\r\n- \u7EAF\u51FD\u6570\u5355\u5143\u6D4B\u8BD5\u6846\u67B6\uFF08Node \u5185\u7F6E `node:test` + fake obsidian\uFF0C\u65E0\u65B0\u589E\u4F9D\u8D56\uFF09\uFF1A`npm run test:unit`\uFF0C`npm test` \u4E32\u8054\u5355\u6D4B\u4E0E MCP \u5192\u70DF\r\n\r\n## [0.8.4] - 2026-11-19\r\n\r\n### \u6539\u8FDB\r\n- \u6570\u636E\u4E0D\u8DB3 14 \u5929\u65F6\u6982\u89C8\u4E0E\u8D8B\u52BF\u56FE\u9ED8\u8BA4\u805A\u7126\u6700\u8FD1 14 \u5929\uFF1B\u6298\u7EBF\u52A0\u9762\u79EF\u6E10\u53D8\u3001\u975E\u96F6\u6563\u70B9\u4E0E\u5CF0\u503C\u6C14\u6CE1\r\n- \u5E74\u8F6E\u8865\u5168\u4E09\u5C42\u73AF\u5F62\u5E95\u8F68\u300112 \u6708\u523B\u5EA6\u4E0E\u5E74\u4EFD\u6C34\u5370\uFF0C\u5C04\u7EBF\u8BBE\u6700\u5C0F\u957F\u5EA6\r\n- \u5730\u5E73\u7EBF\u589E\u52A0\u8FDC\u666F\u5C71\u810A\u4E0E\u6C34\u6CE2\u5149\u5F71\r\n- \u4E09\u5F20\u6298\u7EBF\u56FE\u5408\u5E76\u4E3A\u300C\u5199\u4F5C\u4E0E\u65F6\u95F4\u8D8B\u52BF\u300D\u5206\u6BB5\u63A7\u4EF6\uFF0C\u77E5\u8BC6\u5730\u5C42\u52A0\u5438\u9876\u951A\u70B9\u5BFC\u822A\r\n- \u6295\u5165\u53BB\u5411\u6539\u4E3A\u6392\u540D\u8FDB\u5EA6\u6761\uFF08\u663E\u793A\u5B8C\u6574\u8DEF\u5F84\u3001\u5360\u6BD4\u4E0E\u5C55\u5F00\uFF09\r\n- \u8282\u5F8B\u77E9\u9635\u9ED8\u8BA4\u4EC5\u663E\u793A\u6D3B\u8DC3\u65E5\u671F\uFF0C\u7A7A\u884C\u538B\u7F29\u4E3A 4px\r\n- \u4ECA\u5929\u5361\u7247\u52A0\u76EE\u6807\u8FBE\u6210\u7387\u5706\u73AF\uFF0CAgent \u52A8\u6001\u884C\u5C3E\u663E\u793A\u76EE\u6807\u6587\u4EF6\u540D\uFF0C\u53D8\u66F4\u5BA1\u67E5\u52A0\u64CD\u4F5C\u7C7B\u578B\u5FBD\u7AE0\r\n\r\n### \u65B0\u589E\r\n- Agent \u6743\u9650\uFF1A\u7CFB\u7EDF\u76EE\u5F55 `.obsidian/` / `.git/` \u786C\u7F16\u7801\u62E6\u622A\uFF1B\u53EF\u9009\u767D\u540D\u5355\u6A21\u5F0F\u3001\u6309\u64CD\u4F5C\uFF08\u8BFB/\u5EFA/Patch/\u8986\u76D6/\u5220\u9664\uFF09\u5F00\u5173\uFF1B\u4FEE\u6539\u524D\u5FEB\u7167\u5F00\u5173\r\n- `patch_note` \u65B0\u589E `operation`\uFF08append/prepend/replace/update_frontmatter\uFF09\u3001`dryRun` Diff \u9884\u89C8\u3001`expectedMtime` \u4E50\u89C2\u9501\u3001`diffSummary`\u3001`createdHeading`\r\n- `replace_block` \u591A\u5904\u5339\u914D\u8FD4\u56DE `AMBIGUOUS_MATCH`\uFF1B\u6807\u9898\u4E0D\u5B58\u5728\u65F6\u81EA\u52A8\u521B\u5EFA\r\n- \u65B0\u589E MCP \u5DE5\u5177 `list_agent_changes` / `revert_agent_change` \u4E0E\u5BF9\u5E94 HTTP \u63A5\u53E3\uFF0CAgent \u53EF\u81EA\u67E5\u53D8\u66F4\u5E76\u56DE\u6EDA\r\n\r\n## [0.8.3] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- data.json \u81EA\u52A8\u5907\u4EFD\u5230\u5E93\u5185\u666E\u901A\u6587\u4EF6\u5939\uFF08\u9ED8\u8BA4 `sediment-backup/`\uFF09\uFF0C\u6309\u4EFD\u6570\u4FDD\u7559\uFF1B\u65B0\u589E\u300C\u5907\u4EFD\u7EDF\u8BA1\u6570\u636E\u5230\u5E93\u5185\u300D\u547D\u4EE4\r\n- Style Settings \u9002\u914D\uFF1A\u53EF\u53EF\u89C6\u5316\u8C03\u8282\u5361\u7247\u5706\u89D2\u3001\u5185\u8FB9\u8DDD\u3001\u6B63\u6587\u5B57\u53F7\u3001\u70ED\u529B\u56FE\u683C\u5B50\u5C3A\u5BF8\r\n- \u4EE3\u7801\u5757\u5D4C\u5165\uFF1A```sediment-heatmap``` \u4E0E ```sediment-today``` \u53EF\u5199\u8FDB Home.md\r\n- \u70ED\u529B\u56FE\u5BCC Tooltip\uFF08\u5F53\u5929\u7B14\u8BB0\u6807\u9898\u4E0E\u901F\u8BB0\u6458\u8981\uFF09\u3001\u6700\u957F\u8FDE\u7EED\u5929\u6570\u5FBD\u7AE0\r\n- \u901F\u8BB0\u5361\u7247 hover \u64CD\u4F5C\u680F\uFF08\u590D\u5236 / \u5206\u4EAB\u56FE / \u8F6C Agent\uFF09\u3001\u53CC\u51FB\u5165\u53E3\u9884\u7559\r\n- \u901F\u8BB0\u5206\u4EAB\u5361\u4E0E\u300C\u4ECA\u65E5\u6218\u62A5\u300DPNG \u5BFC\u51FA\uFF08\u6781\u7B80 / \u7968\u636E / \u6C34\u58A8\u4E09\u6A21\u677F\uFF09\r\n- Agent \u53D8\u66F4\u5BA1\u67E5\uFF1A\u6700\u8FD1\u53D8\u66F4\u5217\u8868\u3001\u5907\u4EFD Diff \u5E76\u6392\u5BF9\u6BD4\u3001\u4E00\u952E\u6062\u590D\r\n\r\n### \u4FEE\u590D\r\n- \u5F85\u529E\u6807\u9898\u8FC7\u957F\u65F6\u4E0D\u518D\u6491\u7834\u5361\u7247\uFF0C\u6539\u4E3A\u7701\u7565\u53F7\u622A\u65AD\r\n- \u4ECA\u65E5\u9875 bento \u5361\u7247\u7B49\u9AD8\u5BF9\u9F50\uFF1BAgent \u52A8\u6001\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\u6539\u4E3A\u5355\u5217\u4FE1\u606F\u6D41\uFF0C\u4E0D\u518D\u6324\u6210\u591A\u5217\u7A84\u6761\r\n- \u901F\u8BB0\u4FA7\u680F\u6C89\u6DC0\u5217\u8868\u6807\u9898\u5DE6\u5BF9\u9F50\u5E76\u53BB\u6389\u9ED8\u8BA4\u6309\u94AE\u767D\u5E95\u65B9\u5757\uFF0C\u5143\u4FE1\u606F\u66F4\u7D27\u51D1\r\n\r\n## [0.8.2] - 2026-11-19\r\n\r\n### \u6539\u8FDB\r\n- \u7ED3\u6784\u6027\u7F8E\u5316\uFF1A\u4ECA\u65E5\u8109\u51B2\u6539\u4E3A bento \u7F51\u683C\uFF08\u4ECA\u65E5/\u901F\u8BB0/\u5F85\u529E/Agent \u52A8\u6001\u9519\u843D\u6392\u5E03\uFF09\uFF0C\u6A2A\u5E45\u52A0\u5929\u7A7A\u6E10\u53D8\u3001\u4E91\u96FE\u3001\u5149\u6655\u4E0E\u9897\u7C92\u8D28\u611F\uFF0C\u4FA7\u680F\u6807\u7B7E\u4E0E\u8F93\u5165\u533A\u7EDF\u4E00\u4E3A\u80F6\u56CA\u5206\u6BB5\u63A7\u4EF6\u4E0E\u5185\u5D4C\u9762\u677F\uFF0C\u4E3B\u8981\u5361\u7247\u91C7\u7528\u53CC\u5C42\u5185\u5D4C\u8D28\u611F\r\n- \u770B\u677F\u89C6\u89C9\u5347\u7EA7\uFF1A\u7B49\u5BBD\u6570\u5B57\u3001\u66F4\u6E05\u6670\u7684\u6807\u9898\u5C42\u7EA7\u3001\u5217\u8868\u4E24\u680F\u5BF9\u9F50\u4E0E\u60AC\u505C\u53CD\u9988\u3001\u7A7A\u72B6\u6001\u91CD\u505A\u3001\u5361\u7247\u9519\u843D\u5165\u573A\u52A8\u753B\r\n- `#to-agent` \u901F\u8BB0\u8BB0\u4F4F\u539F\u5F85\u529E\u7684 `sourcePath` / `sourceLine`\uFF0C\u901F\u8BB0\u5361\u7247\u548C\u5F85\u529E\u6A21\u5757\u53EF\u4E00\u952E\u8DF3\u56DE\u539F\u590D\u9009\u6846\u5E76\u5B9A\u4F4D\u884C\u53F7\r\n- `add_memo` \u652F\u6301\u4F20\u5165\u6765\u6E90\u8DEF\u5F84\u4E0E\u884C\u53F7\r\n\r\n## [0.8.1] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u5F85\u529E\u6A21\u5757\uFF1A\u626B\u63CF vault \u539F\u751F `- [ ]` \u5F85\u529E\uFF0C\u5206\u4ECA\u65E5 / \u9057\u7559 / Agent \u4E09\u7C7B\u5C55\u793A\r\n- MCP \u5DE5\u5177 `list_tasks` / `complete_task` / `delegate_task` / `snapshot_tasks`\uFF0831 \u4E2A\u5DE5\u5177\uFF09\r\n- \u547D\u4EE4\u300C\u8BB0\u5F55\u4ECA\u65E5\u9057\u7559\u5F85\u529E\u5230\u65E5\u8BB0\u300D\uFF0C\u6309\u9700\u5199\u5165\uFF0C\u4E0D\u9ED8\u8BA4\u6539\u7B14\u8BB0\r\n\r\n### \u6539\u8FDB\r\n- \u6C89\u6DC0\u5217\u8868\u89C6\u89C9\uFF1A\u53BB\u6389\u6807\u9898\u65E5\u671F\u524D\u7F00\u3001\u5206\u7C7B\u5FBD\u7AE0\u4E0E\u8BA1\u6570\u3001\u76EE\u5F55/\u6807\u7B7E\u5143\u4FE1\u606F\u3001\u60AC\u505C\u9AD8\u4EAE\r\n\r\n## [0.8.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u672C\u5730\u8BED\u4E49\u641C\u7D22 `semantic_search`\uFF1ATF-IDF \u5411\u91CF + \u4E2D\u6587\u53CC\u5B57\u5207\u5206 + \u8F7B\u91CF\u540C\u4E49\u8BCD\u6269\u5C55\uFF0C\u6309\u610F\u4E49\u68C0\u7D22\u7B14\u8BB0\uFF0C\u4E0D\u8054\u7F51\u3001\u4E0D\u4E0B\u8F7D\u6A21\u578B\r\n- \u7D22\u5F15\u5E38\u9A7B\u5185\u5B58\uFF0Cvault \u53D8\u5316\u65F6\u81EA\u52A8\u5931\u6548\u91CD\u5EFA\uFF0C\u5E76\u9075\u5B88\u6587\u4EF6\u5939/\u6807\u7B7E\u9ED1\u540D\u5355\r\n- AGENTS.md \u5DE5\u4F5C\u6D41\u8865\u5145\u8BED\u4E49\u63A2\u7D22\u6B65\u9AA4\r\n\r\n## [0.7.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u8BBE\u7F6E\u9875\u300C\u4E00\u952E\u914D\u7F6E\u667A\u80FD\u4F53\u5BA2\u6237\u7AEF\u300D\uFF1A\u81EA\u52A8\u63A2\u6D4B OpenCode / Qoder / Claude Desktop / Cursor / Cline / Gemini CLI / Windsurf \u7B49\u914D\u7F6E\u6587\u4EF6\r\n- \u9009\u62E9\u5BA2\u6237\u7AEF\u540E\u4E00\u952E\u5199\u5165 MCP \u914D\u7F6E\uFF08\u81EA\u52A8\u5907\u4EFD\u539F\u6587\u4EF6\u3001\u4FDD\u7559\u5DF2\u6709\u914D\u7F6E\u3001\u590D\u7528\u5DF2\u5B58\u5728\u7684\u6865\u63A5\u8DEF\u5F84\uFF09\r\n- \u300C\u590D\u5236\u914D\u7F6E JSON\u300D\u6309\u94AE\uFF0C\u4FBF\u4E8E\u624B\u52A8\u7C98\u8D34\r\n\r\n## [0.6.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- P2 UI\uFF1A\u4E09\u6BB5\u5F0F\u4E3B\u770B\u677F\uFF08\u4ECA\u65E5\u8109\u51B2 / \u77E5\u8BC6\u5730\u5C42 / \u667A\u80FD\u4F53\u5DE5\u574A\uFF09\uFF0C\u77E5\u8BC6\u590D\u76D8\u79FB\u5165\u77E5\u8BC6\u5730\u5C42\r\n- \u667A\u80FD\u4F53\u5DE5\u574A\uFF1A\u8FDE\u63A5\u4E0E\u8C03\u7528\u72B6\u6001\u3001AI \u8349\u7A3F\u5BA1\u6838\u6D41\uFF08\u91C7\u7EB3 / \u5408\u5E76\u5230\u5173\u8054\u7B14\u8BB0 / \u9A73\u56DE\u5220\u9664\uFF09\u3001\u5DE5\u4F5C\u65E5\u5FD7\u5217\u8868\r\n- \u4EBA\u673A\u53CC\u8272\u70ED\u529B\u56FE\uFF1A\u6309 `aiWordsAdded` \u5360\u6BD4\u7528\u6E10\u53D8\u533A\u5206\u4EBA\u7C7B\u7F16\u8F91\u4E0E AI \u6C89\u6DC0\r\n- \u4ECA\u65E5\u8109\u51B2\u9875\u65B0\u589E\u5FEB\u901F\u901F\u8BB0\u6846\u4E0E\u300C\u4ECA\u65E5 Agent \u52A8\u6001\u300D\r\n- \u901F\u8BB0\u4FA7\u680F\u65B0\u589E\u300C\u4E0E\u5F53\u524D\u7B14\u8BB0\u76F8\u5173\u300D\u533A\u5757\uFF0C\u968F\u6253\u5F00\u7684\u6587\u4EF6\u81EA\u52A8\u66F4\u65B0\r\n\r\n## [0.5.1] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- `get_active_context` \u5728\u4E3B\u533A\u6253\u5F00\u770B\u677F/\u56FE\u8C31\u65F6\u56DE\u9000\u5230\u6700\u8FD1\u4E00\u4E2A Markdown \u6807\u7B7E\u9875\uFF0C\u4E0D\u518D\u8FD4\u56DE\u7A7A\u7ED3\u679C\r\n\r\n## [0.5.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- P1 \u7CBE\u51C6\u5199\u5165\uFF1A`patch_note`\uFF08\u6309\u6807\u9898/\u6587\u672C\u7247\u6BB5\u5C40\u90E8\u4FEE\u6539\u3001`vault.process` \u539F\u5B50\u5199\u5165\u3001\u5199\u524D\u81EA\u52A8\u5907\u4EFD\u3001`ifMatch` \u7248\u672C\u6821\u9A8C\uFF09\u4E0E `update_frontmatter`\r\n- `#to-agent` \u4EFB\u52A1\u95ED\u73AF\uFF1A`get_daily_context` \u8FD4\u56DE `agentTasks`\uFF0C\u65B0\u589E `claim_agent_task` / `complete_agent_task`\uFF0C\u72B6\u6001\u4ECE `#to-agent` \u2192 `#agent-in-progress` \u2192 `#agent-done`\r\n- \u5728 vault \u6839\u76EE\u5F55\u5199\u5165 `AGENTS.md` \u4E09\u9636\u6BB5\u534F\u4F5C\u534F\u8BAE\uFF08\u5F00\u5DE5\u5BF9\u9F50 / \u7CBE\u51C6\u8BFB\u5199 / \u6536\u5DE5\u6C89\u6DC0\uFF09\r\n- MCP \u5DE5\u5177\u589E\u81F3 26 \u4E2A\r\n\r\n## [0.4.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- P0 \u5DE5\u5177\u5C42\uFF1A`get_active_context`\uFF08\u5F53\u524D\u7B14\u8BB0/\u9009\u4E2D\u6587\u672C/\u5149\u6807\u6BB5\u843D\uFF09\u3001`get_note_metadata`\uFF08\u53EA\u8BFB\u5143\u6570\u636E\u7701 Token\uFF09\u3001`get_graph_neighbors`\uFF08\u51FA\u94FE/\u53CD\u94FE/\u540C\u6807\u7B7E\uFF09\u3001`get_tool_activity`\uFF08\u8C03\u7528\u7EDF\u8BA1\uFF09\r\n- \u65B0\u589E\u6587\u4EF6\u5939/\u6807\u7B7E\u9ED1\u540D\u5355\uFF0CAgent \u7684\u8BFB\u5199\u4E0E\u641C\u7D22\u5168\u90E8\u53D7\u63A7\r\n- Agent \u5199\u5165\u7684\u5185\u5BB9\u5355\u72EC\u8BA1\u5165 `aiWordsAdded`\uFF0C\u4E3A\u540E\u7EED\u4EBA\u673A\u53CC\u8272\u70ED\u529B\u56FE\u6253\u57FA\u7840\r\n- MCP/HTTP \u8C03\u7528\u5BA1\u8BA1\u65E5\u5FD7\uFF08\u9650 500 \u6761\uFF09\uFF0C\u5E76\u8BB0\u5F55\u5BA2\u6237\u7AEF\u540D `AGENT_NAME`\r\n- AI \u6C89\u6DC0\u7B14\u8BB0\u9ED8\u8BA4\u5E26 `sediment_status: draft`\r\n\r\n## [0.3.4] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u589E\u91CF\u53D8\u66F4\u8BB0\u5F55\uFF1A\u65B0\u589E `CHANGELOG.md`\uFF0C\u6309\u7248\u672C\u5206\u7EC4\u8BB0\u5F55\u65B0\u589E / \u53D8\u66F4 / \u4FEE\u590D\r\n- \u6784\u5EFA\u65F6\u81EA\u52A8\u540C\u6B65\u5230\u63D2\u4EF6\u5185\uFF0C\u770B\u677F\u9875\u811A\u300C\u66F4\u65B0\u8BB0\u5F55\u300D\u548C\u547D\u4EE4\u300C\u67E5\u770B\u66F4\u65B0\u8BB0\u5F55\u300D\u53EF\u968F\u65F6\u67E5\u770B\r\n- \u5347\u7EA7\u540E\u81EA\u52A8\u63D0\u793A\u65B0\u7248\u672C\u53F7\r\n- GitHub Release \u6B63\u6587\u4ECE\u5BF9\u5E94\u7248\u672C\u7684 CHANGELOG \u7AE0\u8282\u81EA\u52A8\u751F\u6210\uFF0C\u53D1\u5E03\u9875\u4E0E\u63D2\u4EF6\u5185\u8BF4\u660E\u4E00\u81F4\r\n\r\n## [0.3.3] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- Agent \u901A\u8FC7 MCP \u5199\u5165\u7B14\u8BB0\u540E\uFF0C\u770B\u677F\u4E0E\u901F\u8BB0\u9762\u677F 400ms \u5185\u81EA\u52A8\u5237\u65B0\uFF0C\u4E14\u4E0D\u6E05\u7A7A\u6B63\u5728\u8F93\u5165\u7684\u6587\u5B57\r\n- \u76D1\u542C create / modify / delete / rename \u4E8B\u4EF6\uFF0C\u8986\u76D6\u77E5\u8BC6\u5E93\u3001\u5DE5\u4F5C\u65E5\u5FD7\u4E0E\u65E5\u8BB0\u76EE\u5F55\r\n\r\n## [0.3.2] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- \u901F\u8BB0\u9762\u677F\u300C\u5168\u90E8\u300D\u9875\u7B7E\u4E0B\u7684\u6C89\u6DC0\u5217\u8868\u6539\u4E3A\u663E\u793A\u5168\u90E8\u7B14\u8BB0\uFF0C\u4E0D\u518D\u53EA\u663E\u793A 5 \u6761\r\n\r\n## [0.3.1] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u901F\u8BB0\u9762\u677F\u300C\u5168\u90E8\u300D\u9875\u7B7E\u4E0B\u65B9\u76F4\u63A5\u663E\u793A\u300C\u77E5\u8BC6\u6C89\u6DC0\u300D\u5C0F\u533A\u5757\uFF0C\u4E0D\u7528\u5207\u9875\u7B7E\u5373\u53EF\u770B\u5230\uFF0C\u5E26\u300C\u5168\u90E8\u300D\u8DF3\u8F6C\u6309\u94AE\r\n\r\n## [0.3.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u6C89\u6DC0\u9875\u7B7E\u6309\u5206\u7C7B\u5206\u7EC4\u663E\u793A\uFF08\u6280\u672F / \u65B9\u6CD5 / \u5DE5\u4F5C\u65E5\u5FD7\uFF09\r\n- \u667A\u80FD\u5206\u7C7B\uFF1AAgent \u4E0D\u4F20 category \u65F6\u6839\u636E\u6807\u9898\u3001\u6807\u7B7E\u3001\u6B63\u6587\u5173\u952E\u8BCD\u81EA\u52A8\u63A8\u65AD\uFF1B\u4E5F\u53EF\u4F20\u4EFB\u610F\u81EA\u5B9A\u4E49\u5206\u7C7B\u540D\r\n- \u65B0\u589E MCP \u5DE5\u5177 `list_categories`\r\n\r\n## [0.2.9] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u77E5\u8BC6\u5E93\u5206\u7C7B\uFF1A\u9ED8\u8BA4\u300C\u6280\u672F / \u9879\u76EE / \u65B9\u6CD5 / \u7075\u611F / \u590D\u76D8\u300D\uFF0C\u6C89\u6DC0\u65F6\u6309\u5206\u7C7B\u5EFA\u5B50\u76EE\u5F55\r\n- \u77E5\u8BC6\u7B14\u8BB0\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\u7684\u7248\u5F0F\u7F8E\u5316\uFF1Afrontmatter\u3001\u901F\u89C8 Callout\u3001\u6B63\u6587\u3001\u5173\u8054\u6765\u6E90\u3001\u6C89\u6DC0\u4FE1\u606F\r\n- \u5DF2\u6709 7 \u7BC7\u7B14\u8BB0\u6309\u5206\u7C7B\u91CD\u65B0\u6392\u7248\u5F52\u4F4D\r\n\r\n## [0.2.8] - 2026-11-19\r\n\r\n### \u53D8\u66F4\r\n- \u300C\u77E5\u8BC6\u6C89\u6DC0\u300D\u4ECE\u770B\u677F\u5E95\u90E8\u79FB\u5230\u901F\u8BB0\u9762\u677F\uFF0C\u4F5C\u4E3A\u7B2C\u4E94\u4E2A\u9875\u7B7E\r\n\r\n## [0.2.7] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u770B\u677F\u5E95\u90E8\u5217\u51FA Agent \u5199\u5165\u7684\u77E5\u8BC6\u7B14\u8BB0\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\uFF0C\u53EF\u70B9\u51FB\u6253\u5F00\r\n\r\n## [0.2.6] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- Obsidian \u91CD\u542F\u65F6\u4E3A\u5DF2\u6709\u6587\u4EF6\u8865\u53D1 create \u4E8B\u4EF6\uFF0C\u65E7\u7248\u4F1A\u8BEF\u7B97\u6210\u65B0\u5EFA\u7B14\u8BB0\uFF0822 \u7BC7 / 5512 \u5B57 / 121 \u5206\uFF09\r\n\r\n## [0.2.5] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- MCP \u6865\u63A5\u7684 GET \u5DE5\u5177\u53C2\u6570\u672A\u62FC\u8FDB URL\uFF0C\u5BFC\u81F4\u641C\u7D22\u65E0\u7ED3\u679C\u3001\u8BFB\u7B14\u8BB0\u62A5\u300C\u8DEF\u5F84\u4E0D\u80FD\u4E3A\u7A7A\u300D\r\n\r\n## [0.2.4] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- MCP \u6865\u63A5\u5728 Node 16 \u4E0B\u62A5 `fetch is not defined`\uFF0C\u6539\u7528 node:http\r\n\r\n## [0.2.3] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u5185\u7F6E\u756A\u8304\u949F\uFF0825/5/15 \u5206\u949F\uFF09\uFF0C\u72B6\u6001\u680F\u5012\u8BA1\u65F6\uFF0C\u5B8C\u6210\u8BB0\u5165 focusMinutes\uFF0CAgent \u4E5F\u53EF\u901A\u8FC7 MCP \u63A7\u5236\r\n- \u65B0\u589E `get_pomodoro` / `control_pomodoro`\r\n\r\n### \u4FEE\u590D\r\n- \u5730\u5E73\u7EBF\u91CD\u505A\u4E3A\u5C71\u810A + \u6E56\u9762\u5012\u5F71 + \u65E5\u6708 + \u5B63\u8282\u6811 + \u4E13\u6CE8\u65F6\u5E06\u8239\r\n- \u9875\u811A\u7248\u672C\u53F7\u6539\u4E3A\u52A8\u6001\u8BFB\u53D6 manifest\r\n\r\n## [0.2.2] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- \u77E5\u8BC6\u590D\u76D8\u4ECE\u539F\u59CB Markdown \u6539\u4E3A\u6E32\u67D3\u9884\u89C8\uFF0C\u5E76\u52A0\u590D\u5236\u6309\u94AE\r\n\r\n## [0.2.1] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u901F\u8BB0\uFF1A\u7C98\u8D34\u56FE\u7247\u81EA\u52A8\u5165\u5E93\u3001\u6BCF\u65E5\u56DE\u987E\uFF08\u53BB\u5E74\u4ECA\u65E5 / \u4E0A\u6708\u4ECA\u65E5\uFF09\u3001\u672C\u5730\u76F8\u4F3C\u5EA6\u6F2B\u6B65\u3001\u6807\u7B7E\u6811\r\n\r\n## [0.2.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u6570\u636E\u5206\u6790\u9875\uFF1A\u5199\u4F5C\u67F1\u72B6\u56FE\u3001\u5199\u4F5C\u53D8\u5316\u6298\u7EBF\u3001\u65F6\u95F4\u6295\u5165\u3001\u5199\u4F5C\u6765\u6E90\u3001\u6295\u5165\u53BB\u5411\u3001\u6D3B\u8DC3\u65F6\u6BB5\u3001\u6295\u5165\u8282\u5F8B\u77E9\u9635\r\n- \u5E74\u5EA6\u753B\u50CF\uFF1A\u5E74\u8F6E\u3001\u77E5\u8BC6\u6307\u7EB9\u3001\u6708\u76F8\u65E5\u5386\u3001\u77E5\u8BC6\u5730\u5C42\u3001\u6708\u62A5\u6D77\u62A5 PNG \u5BFC\u51FA\r\n- \u4E09\u79CD\u753B\u98CE\uFF08\u50CF\u7D20\u6E56\u9762 / \u6C34\u58A8\u5C71\u6C34 / \u50CF\u7D20\u57CE\u5E02\uFF09\u4E0E\u968F\u65F6\u6BB5\u79FB\u52A8\u7684\u65E5\u6708\u6A2A\u5E45\r\n\r\n## [0.1.3] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- \u65E7\u7248\u6B8B\u7559\u5728\u4FA7\u680F\u7684\u770B\u677F\u6807\u7B7E\u88AB\u590D\u7528\u5BFC\u81F4\u4E00\u76F4\u7A84\u5C4F\uFF0C\u6539\u4E3A\u5F3A\u5236\u5728\u4E3B\u533A\u65B0\u5F00\u6807\u7B7E\u9875\r\n\r\n## [0.1.2] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u5B8C\u6574\u4E3B\u89C6\u56FE\uFF1A\u901A\u680F\u6A2A\u5E45\u3001\u4ECA\u5929\u5361\u7247\u3001\u6982\u89C8\u5361 + SVG \u8D8B\u52BF\u300153 \u5468\u70ED\u529B\u56FE\u3001\u5730\u5E73\u7EBF\u3001\u56DB\u4E2A\u9875\u7B7E\r\n\r\n## [0.1.1] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- \u770B\u677F\u6539\u5230\u4E3B\u7F16\u8F91\u533A\u6253\u5F00\uFF0C\u901F\u8BB0\u7559\u5728\u53F3\u4FA7\u680F\r\n\r\n## [0.1.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u9996\u4E2A\u7248\u672C\uFF1A\u70ED\u529B\u56FE\u770B\u677F\u3001\u5199\u4F5C\u7EDF\u8BA1\u3001flomo \u5F0F\u901F\u8BB0\u3001\u5468\u590D\u76D8\r\n- \u672C\u5730 HTTP API + MCP \u6865\u63A5\uFF0CAgent \u53EF\u8BFB\u5199\u77E5\u8BC6\u5E93\r\n- \u5DE5\u4F5C\u65E5\u5FD7\u4E0E\u77E5\u8BC6\u7B14\u8BB0\u6C89\u6DC0\uFF0CAgent \u4EA7\u51FA\u8BA1\u5165\u7EDF\u8BA1\r\n";
+var CHANGELOG = "# \u66F4\u65B0\u8BB0\u5F55\r\n\r\n\u672C\u6587\u4EF6\u8BB0\u5F55\u6BCF\u4E2A\u7248\u672C\u7684\u589E\u91CF\u53D8\u5316\uFF0C\u683C\u5F0F\u9075\u5FAA [Keep a Changelog](https://keepachangelog.com/)\u3002\u6784\u5EFA\u65F6\u7531 `scripts/sync-changelog.mjs` \u540C\u6B65\u5230\u63D2\u4EF6\u5185\uFF0C\u53EF\u5728\u770B\u677F\u9875\u811A\u7684\u300C\u66F4\u65B0\u8BB0\u5F55\u300D\u91CC\u67E5\u770B\u3002\r\n\r\n## [1.0.2] - 2026-11-21\r\n\r\n### \u65B0\u589E\r\n- \u5F85\u5BA1\u5199\u5165\u5931\u6548\u68C0\u6D4B\uFF1A\u76EE\u6807\u88AB\u5220\u9664/\u79FB\u52A8\u540E\u6807\u8BB0 stale\uFF08\u542F\u52A8\u5BF9\u8D26 + \u5220\u9664/\u91CD\u547D\u540D\u5373\u65F6\u6807\u8BB0 + \u91C7\u7EB3\u524D\u590D\u9A8C\uFF09\uFF0C\u5931\u6548\u9879\u53EA\u5141\u8BB8\u9A73\u56DE\u540E\u7531 Agent \u91CD\u53D1\u3002\r\n- \u770B\u677F\u300C\u77E5\u8BC6\u5E93\u73B0\u72B6\u300D\u5361\uFF1A\u5B9E\u65F6\u626B\u63CF\u77E5\u8BC6\u5E93\u603B\u91CF\u3001\u5F85\u5BA1\u8349\u7A3F\u3001\u5DF2\u91C7\u7EB3\u3001\u6765\u6E90\u672A\u767B\u8BB0\uFF0C\u4E0E\u5386\u53F2\u6D3B\u52A8\u7EDF\u8BA1\u53E3\u5F84\u4E92\u8865\u3002\r\n- Agent \u5728\u77E5\u8BC6\u5E93\u76EE\u5F55\u65B0\u5EFA\u7B14\u8BB0\u81EA\u52A8\u767B\u8BB0 `source: agent` \u7B49\u6765\u6E90\u5C5E\u6027\uFF1B\u5DE5\u574A\u65B0\u589E\u300C\u6765\u6E90\u672A\u767B\u8BB0\u300D\u5361\uFF0C\u53EF\u4E00\u952E\u6807\u8BB0\u4E3A\u4EBA\u5DE5\u6765\u6E90\u3002\r\n- \u7B14\u8BB0\u5065\u5EB7\u5EA6\u6269\u4E3A\u516D\u9879\uFF1A\u65B0\u589E\u8349\u7A3F\u6EDE\u7559\uFF0814 \u5929\uFF09\u3001\u7591\u4F3C\u91CD\u590D\u6807\u9898\u3001\u7A7A\u58F3\u7B14\u8BB0\u3002\r\n- \u5468\u590D\u76D8\u3001\u77E5\u8BC6\u7B14\u8BB0\u3001\u5DE5\u4F5C\u65E5\u5FD7\u3001\u5065\u5EB7\u4EFB\u52A1\u4E0E\u68C0\u7D22\u6807\u9898\u652F\u6301\u82F1\u6587\u8F93\u51FA\u3002\r\n- \u53EF\u9009 Ollama embedding \u8BED\u4E49\u68C0\u7D22\uFF08\u9ED8\u8BA4\u5173\u95ED\uFF0C\u4E0D\u53EF\u7528\u81EA\u52A8\u56DE\u9000 TF-IDF\uFF09\uFF1B\u8BBE\u7F6E\u65B0\u589E\u300C\u68C0\u7D22\u589E\u5F3A\u300D\u5206\u533A\u3002\r\n- \u793E\u533A\u5E02\u573A\u63D0\u4EA4\u6E05\u5355\u6539\u4E3A\u672C\u5730\u7EF4\u62A4\uFF08\u4E0D\u5165\u5E93\uFF09\uFF0Cmanifest \u63CF\u8FF0\u6539\u82F1\u6587\u3002\r\n- \u6587\u4EF6\u6865\uFF08\u5B9E\u9A8C\uFF0C\u9ED8\u8BA4\u5173\u95ED\uFF09\uFF1A\u975E MCP \u667A\u80FD\u4F53\u53EF\u628A `write_note` / `patch_note` / `add_knowledge` \u63D0\u6848\u5199\u5165\u63D2\u4EF6\u76EE\u5F55 `bridge/proposals/`\uFF0C\u5BFC\u5165\u5DE5\u574A\u5F85\u5BA1\u961F\u5217\uFF1B\u91C7\u7EB3/\u9A73\u56DE\u7ED3\u679C\u5199\u5165 `bridge/decisions/` \u4F9B\u667A\u80FD\u4F53\u8F6E\u8BE2\u3002\u73B0\u6709 MCP \u901A\u9053\u4E0E\u5DE5\u5177\u4E0D\u53D8\u3002\r\n\r\n### \u6539\u8FDB\r\n- \u7EDF\u8BA1\u53E3\u5F84\u533A\u7684 5 \u9879\u6743\u91CD\u6536\u8FDB\u300C\u9AD8\u7EA7\u6743\u91CD\u300D\u6298\u53E0\u533A\uFF0C\u5C01\u9876\u4E24\u9879\u4FDD\u6301\u53EF\u89C1\u3002\r\n- \u4E94\u9879\u9ED8\u8BA4\u76EE\u5F55\u7EDF\u4E00\u6536\u8FDB `Sediment/`\uFF08\u65E5\u8BB0\u3001\u590D\u76D8\u3001Agent \u65E5\u5FD7\u3001\u77E5\u8BC6\u6C89\u6DC0\u3001\u5907\u4EFD\uFF09\uFF0C\u907F\u514D\u4E0E\u5E93\u5185\u65E2\u6709\u76EE\u5F55\u649E\u540D\uFF1B\u8BBE\u7F6E\u9875\u65B0\u589E\u300C\u65E7\u7248\u76EE\u5F55\u8FC1\u79FB\u300D\u6309\u94AE\uFF0C\u6309\u6587\u4EF6\u9010\u4E2A\u79FB\u52A8\u5E76\u4FDD\u7559 Obsidian \u94FE\u63A5\uFF0C\u51B2\u7A81\u76EE\u5F55\u6574\u4F53\u8DF3\u8FC7\u3001\u5931\u8D25\u81EA\u52A8\u56DE\u6EDA\uFF0C\u4EC5\u8FC1\u79FB\u4ECD\u662F\u65E7\u9ED8\u8BA4\u503C\u7684\u76EE\u5F55\u3002\r\n\r\n## [1.0.1] - 2026-11-20\r\n\r\n### \u6539\u8FDB\r\n- \u53D1\u5E03\u6D41\u6C34\u7EBF\u5347\u7EA7 Node 24 \u8FD0\u884C\u65F6\uFF1Acheckout v7\u3001setup-node v7\u3001action-gh-release v3\uFF08v3 \u4EC5\u8FD0\u884C\u65F6\u8FC1\u79FB\uFF0C\u8F93\u5165\u4E0D\u53D8\uFF09\uFF0C\u6D88\u9664 GitHub Actions Node 20 \u5F03\u7528\u8B66\u544A\r\n- CI \u6784\u5EFA Node 18\uFF08\u5DF2 EOL\uFF09\u5347\u7EA7 22 LTS\r\n\r\n## [1.0.0] - 2026-11-21\r\n\r\n### \u65B0\u589E\r\n- OpenCode \u4E00\u952E\u914D\u7F6E v1/v2 \u53CC\u5E03\u5C40\u9002\u914D\uFF1A\u6309\u914D\u7F6E\u5F62\u72B6\u5224\u5B9A\uFF08v1 \u76F4\u6302\u6761\u76EE\u4F18\u5148\uFF0C\u5176\u6B21 mcp.servers\uFF09\uFF0C\u5F62\u72B6\u65E0\u7EBF\u7D22\u65F6\u63A2\u6D4B\u672C\u673A `opencode --version`\uFF0C\u63A2\u6D4B\u5931\u8D25\u9ED8\u8BA4 v2\uFF1B\u5199\u5165\u539F\u751F\u7ED3\u6784\uFF08type:local + command \u6570\u7EC4 + environment\uFF09\uFF0Cv2 \u7528\u5BF9\u8C61 timeout\u3001v1 \u7528 enabled + \u6570\u5B57 timeout\r\n- \u914D\u7F6E\u8FC1\u79FB\u81EA\u6108\uFF1A\u5199\u5165 v2 \u65F6\u6E05\u7406 v1 \u76F4\u6302\u6B8B\u7559\uFF0C\u5199\u5165 v1 \u65F6\u6E05\u7406 servers \u5185\u65E7\u6761\u76EE\u5E76\u79FB\u9664\u7A7A servers \u952E\uFF0C\u907F\u514D\u65E7\u7248\u8BEF\u8BFB\r\n- Windsurf Next \u5BA2\u6237\u7AEF\u5019\u9009\uFF08~/.codeium/windsurf-next/mcp_config.json\uFF09\r\n- \u4E00\u952E\u914D\u7F6E\u5355\u5143\u6D4B\u8BD5 +12\uFF08\u5E03\u5C40\u5224\u5B9A\u3001\u53CC\u5E03\u5C40\u5199\u5165\u3001\u8FC1\u79FB\u6E05\u7406\u3001\u6865\u63A5\u590D\u7528\u3001\u7247\u6BB5\u8F93\u51FA\u3001\u5019\u9009\u8DEF\u5F84\uFF09\uFF1B\u53E6\u52A0\u5BA1\u6838\u884C\u53EF\u8BFB\u6027\u4E0E\u6062\u590D\u5165\u53E3\u8FC1\u79FB\u56DE\u5F52 2 \u9879\uFF0C\u5168\u91CF 153 \u9879\r\n\r\n### \u6539\u8FDB\r\n- \u6570\u636E\u5FEB\u7167\u6062\u590D\u5217\u8868\u4ECE\u667A\u80FD\u4F53\u5DE5\u574A\u632A\u5230\u8BBE\u7F6E\u9875\u5907\u4EFD\u5206\u533A\uFF08\u4FDD\u7559\u4EFD\u6570\u4E0B\u65B9\uFF09\uFF0C\u5DE5\u574A\u56DE\u5F52\u7EAF\u5BA1\u6838\u961F\u5217\uFF08\u8349\u7A3F/\u5F85\u5BA1\u5199\u5165/\u53D8\u66F4\u5BA1\u67E5/Agent \u5F85\u529E\uFF09\uFF1B\u6062\u590D\u5B89\u5168\u6D41\u7A0B\u4E0D\u53D8\uFF1A\u4E8C\u6B21\u786E\u8BA4\u2192\u6062\u590D\u526F\u672C\u2192\u683C\u5F0F\u6821\u9A8C\u2192\u5199\u56DE\u91CD\u8F7D\r\n\r\n### \u4FEE\u590D\r\n- OpenCode \u4E00\u952E\u914D\u7F6E\u4E0D\u751F\u6548\uFF1A\u6B64\u524D\u5BF9\u6240\u6709\u5BA2\u6237\u7AEF\u5199 Claude \u98CE\u683C\u6761\u76EE\uFF08command \u5B57\u7B26\u4E32 + args\uFF09\uFF0COpenCode v1/v2 \u5747\u4E0D\u8BC6\u522B\uFF1B\u73B0\u6309\u5BA2\u6237\u7AEF\u539F\u751F schema \u5199\u5165\uFF0C\u5B9E\u6D4B `opencode mcp list` \u8FDE\u63A5\u6210\u529F\r\n- Cline \u914D\u7F6E\u8DEF\u5F84\u4FEE\u6B63\uFF1ACLI \u4E3A ~/.cline/data/settings/cline_mcp_settings.json\uFF0CVS Code \u6269\u5C55\u4E3A globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json\uFF0C\u539F ~/.cline/mcp_settings.json \u4E24\u8005\u7686\u975E\r\n- Cline \u6761\u76EE\u4E0D\u518D\u5199 timeout\uFF1ACline \u6309\u79D2\u89E3\u91CA\uFF0C\u5199 60000 \u4F1A\u88AB\u8BEF\u8BFB\u4E3A 60000 \u79D2\uFF1B\u5176\u4F59\u5BA2\u6237\u7AEF\u4FDD\u6301 60000 \u6BEB\u79D2\r\n- \u79FB\u9664\u65E0\u6548\u5019\u9009 ~/.opencode.json\uFF1AOpenCode \u4EFB\u4F55\u7248\u672C\u90FD\u4E0D\u8BFB\u53D6\u8BE5\u4F4D\u7F6E\r\n- isAgentConfigured \u517C\u5BB9 OpenCode \u53CC\u4F4D\u7F6E\uFF08v1 \u76F4\u6302\u4E0E v2 servers\uFF09\uFF0C\u5DF2\u914D\u7F6E\u72B6\u6001\u4E0D\u518D\u6F0F\u62A5\r\n- \u5BA1\u6838\u884C\u53EF\u8BFB\u6027\uFF1A\u5BA1\u6279\u6309\u94AE mod-cta \u767D\u5B57\u843D\u6D45\u5E95\uFF08\u5BF9\u6BD4\u5EA6 1.1:1 \u5168\u9690\u5F62\uFF09\u6062\u590D\u5F3A\u8C03\u5E95+\u663E\u5F0F\u5B57\u8272\uFF085.70:1\uFF09\uFF1B\u5F85\u5BA1\u5199\u5165/\u53D8\u66F4\u5BA1\u67E5/\u5FEB\u7167\u6062\u590D\u884C\u4E0D\u518D\u590D\u7528 112px \u5143\u4FE1\u606F\u5217\u4E0E faint 10px\uFF08485px \u5185\u5BB9\u622A\u5230 112px\u30012.85:1\uFF09\uFF0C\u6539\u72EC\u7ACB\u5E03\u5C40\u5360\u6EE1\u5269\u4F59\u5BBD + muted 11px\uFF085.74:1\uFF09+ \u60AC\u505C\u5168\u6587\u63D0\u793A\r\n\r\n## [0.9.8] - 2026-11-20\r\n\r\n### \u65B0\u589E\r\n- \u786E\u8BA4\uFF08confirm\uFF09\u5DE5\u4F5C\u6A21\u5F0F\u771F\u5B9E\u751F\u6548\uFF1AAgent \u5199\u8BF7\u6C42\u6302\u8D77\u4E3A\u300C\u5F85\u5BA1\u5199\u5165\u300D\uFF0C\u5728\u667A\u80FD\u4F53\u5DE5\u574A\u9010\u6761\u5DEE\u5F02\u9884\u89C8\u3001\u91C7\u7EB3\u6216\u9A73\u56DE\uFF1B\u76EE\u6807\u6587\u4EF6\u5728\u6302\u8D77\u540E\u88AB\u4FEE\u6539\u65F6\u91C7\u7EB3\u62A5\u7248\u672C\u51B2\u7A81\uFF0C\u907F\u514D\u8986\u76D6\u4EBA\u5DE5\u7F16\u8F91\u3002\u9ED8\u8BA4\u5DE5\u4F5C\u6A21\u5F0F\u5373 confirm\uFF0C\u6B64\u524D\u7248\u672C\u8BE5\u884C\u4E3A\u672A\u843D\u5730\uFF0C\u672C\u7248\u8D77\u5F3A\u5236\u6267\u884C\r\n- data.json \u6570\u636E\u5FEB\u7167\uFF1A\u5907\u4EFD\u5FEB\u7167\u5217\u8868\u4E0E\u4E00\u952E\u6062\u590D\uFF08\u6062\u590D\u524D\u4E8C\u6B21\u786E\u8BA4\u3001\u81EA\u52A8\u521B\u5EFA\u6062\u590D\u526F\u672C\u3001\u5931\u8D25\u663E\u8457\u544A\u8B66\uFF09\r\n- \u77E5\u8BC6\u5730\u5C42\u5256\u9762\u4E3B\u89C6\u56FE\uFF1A\u4EBA/AI/\u4EFB\u52A1/\u4E13\u6CE8\u6309\u6708\u5806\u53E0\u6210\u5730\u5C42\u6A2A\u622A\u9762\uFF0C\u70ED\u529B\u56FE\u964D\u4E3A\u9644\u5C5E\u89C6\u56FE\r\n- Agent \u9875\u7B7E\u5F85\u5BA1\u6570\u91CF\u5FBD\u7AE0\uFF08\u8349\u7A3F+\u53D8\u66F4+\u5F85\u5BA1\u5199\u5165\u4E4B\u548C\uFF0C\u4E3A 0 \u4E0D\u663E\u793A\uFF09\r\n- \u4E00\u952E\u914D\u7F6E\u81EA\u6108\uFF1A\u5E93\u5185\u65E7\u7248\u6865\u63A5\u811A\u672C\u81EA\u52A8\u5237\u65B0\u4E3A\u63D2\u4EF6\u5185\u5D4C\u7248\u672C\uFF0C\u534F\u8BAE\u5347\u7EA7\u540E\u65E0\u9700\u624B\u5DE5\u6E05\u7406\r\n\r\n### \u6539\u8FDB\r\n- Agent \u6743\u9650\u95E8\u7981\u7EDF\u4E00\uFF1A\u9ED1\u540D\u5355/\u767D\u540D\u5355/\u64CD\u4F5C\u6743\u9650\u6536\u655B\u5230 access.ts \u5355\u4E00\u89C4\u5219\u6E90\uFF0C\u8986\u76D6\u7B14\u8BB0/\u901F\u8BB0/\u59D4\u6258/\u5DE5\u4F5C\u65E5\u5FD7/\u4EFB\u52A1\u5FEB\u7167/\u65E5\u8BB0\u7B49\u5168\u90E8\u5199\u8DEF\u5F84\uFF1B\u4EBA\u7528 UI \u64CD\u4F5C\u4E0D\u53D7 Agent \u95E8\u7981\u5F71\u54CD\r\n- \u8BBE\u7F6E\u9762\u677F\u6309\u5206\u533A\u91CD\u7EC4\uFF1B\u5207\u6362\u5DE5\u4F5C\u6A21\u5F0F\u63D0\u793A\u5C06\u91CD\u7F6E\u6743\u9650\u5F00\u5173\uFF0C\u6743\u91CD\u8F93\u5165\u9632\u6296\uFF0C\u79FB\u9664\u65E0\u6548\u7684\u300C\u5141\u8BB8\u5220\u9664\u300D\u5F00\u5173\r\n- i18n \u8865\u9F50\uFF1A\u6A21\u6001\u6846\u3001\u547D\u4EE4\u540D\u3001\u542F\u52A8\u4E0E\u5931\u8D25\u63D0\u793A\u7B49\u5168\u90E8\u8D70\u7FFB\u8BD1\uFF1B\u65B0\u589E CI \u68C0\u67E5\u9632\u6B62\u672A\u7FFB\u8BD1\u4E2D\u6587\u5B57\u9762\u91CF\u518D\u8FDB UI\r\n- \u56FE\u8868\u53EF\u8BBF\u95EE\u6027\uFF1ASVG \u8F93\u51FA\u8865 role/aria-label\uFF0C\u591A\u5E8F\u5217\u8D8B\u52BF\u56FE\u52A0\u56FE\u4F8B\uFF0C\u70ED\u529B\u56FE\u683C\u5B50\u6539\u7528\u81EA\u5B9A\u4E49 tooltip\r\n- \u672C\u5730 API \u4F20\u8F93\u52A0\u56FA\uFF1A\u4EE4\u724C\u53EA\u8D70 Authorization \u5934\u5E76\u5E38\u91CF\u65F6\u95F4\u6BD4\u8F83\uFF0C\u8BF7\u6C42\u4F53\u8D85\u9650\u8FD4\u56DE 413\uFF0C\u7578\u5F62 URL \u8FD4\u56DE 400\uFF0C500 \u9519\u8BEF\u4FE1\u606F\u767D\u540D\u5355\u5316\uFF1B\u6865\u63A5\u811A\u672C\u52A0\u8BF7\u6C42\u8D85\u65F6\u3001\u54CD\u5E94\u4F53\u4E0E stdin \u7F13\u51B2\u4E0A\u9650\uFF0C\u7578\u5F62 JSON \u65AD\u5F00\u8FDE\u63A5\r\n- \u5B58\u50A8\u53EF\u9760\u6027\uFF1A\u52A0\u8F7D\u65F6\u635F\u574F\u5B57\u6BB5\u9632\u62A4\uFF08\u542B\u5F85\u5BA1\u5199\u5165\uFF09\u3001\u4FDD\u5B58\u5931\u8D25\u63D0\u793A\u8282\u6D41\u3001\u5907\u4EFD\u5199\u5165\u5931\u8D25\u4E0D\u518D\u9759\u9ED8\u5F53\u4F5C\u6210\u529F\r\n- \u756A\u8304\u949F\uFF1A\u591A\u5B9E\u4F8B\u63A5\u7BA1\u3001\u8BA1\u65F6\u6F02\u79FB\u6821\u6B63\u3001\u8DE8\u5929\u7ED3\u7B97\r\n- \u5173\u952E catch \u70B9\u6539\u7528 logError \u7EDF\u4E00\u8BB0\u5F55\uFF08\u63A7\u5236\u53F0+\u5E26\u4E0A\u9650\u7684\u8BCA\u65AD\u5217\u8868\uFF09\uFF0C\u4E0D\u518D\u9759\u9ED8\u541E\u9519\r\n- \u53D1\u5E03\u6821\u9A8C\u65B0\u589E README \u7248\u672C\u5FBD\u7AE0\u4E0E versions.json \u7248\u672C\u952E\u65AD\u8A00\r\n- \u54C1\u724C\u56FE\u6807\u66F4\u65B0\uFF0C\u901F\u8BB0\u89C6\u56FE\u72EC\u7ACB\u56FE\u6807\uFF1B\u6DF1\u8272\u4E3B\u9898\u5BFC\u822A\u4E0E\u6D45\u8272\u4E3B\u9898\u5FBD\u7AE0\u5BF9\u6BD4\u5EA6\u4FEE\u590D\uFF1B\u79FB\u52A8\u7AEF/\u89E6\u63A7\u53EF\u7528\u6027\u6539\u8FDB\r\n\r\n### \u4FEE\u590D\r\n- \u4E00\u952E\u914D\u7F6E\u56DE\u5F52\uFF1A\u9274\u6743\u5347\u7EA7\u540E\u5E93\u5185\u65E7\u6865\u63A5\u4E0E\u65B0\u670D\u52A1\u7AEF\u4E0D\u5339\u914D\u5BFC\u81F4\u5168\u90E8 401\uFF0C\u300C\u91CD\u65B0\u5199\u5165\u300D\u65F6\u81EA\u52A8\u5237\u65B0\u6865\u63A5\r\n- \u5730\u5C42\u4E13\u6CE8\u5C42\u6539\u6309\u6BCF\u65E5\u4E13\u6CE8\u5206\u949F\u805A\u5408\uFF0C\u65E9\u671F\u6708\u4EFD\u4E0D\u518D\u56E0\u4F1A\u8BDD\u8BB0\u5F55\u622A\u65AD\u800C\u865A\u5047\u5F52\u96F6\r\n- \u6D1E\u5BDF\u9875\u6B7B\u4EA4\u4E92\u3001aria \u8F6C\u4E49\u3001\u6D77\u62A5\u8DE8\u5E74\u6708\u4EFD\u5FAA\u73AF\u3001\u753B\u5E03\u4E3B\u9898\u8272\u8BFB\u53D6\u7B49\u89C6\u56FE\u95EE\u9898\r\n- \u901F\u8BB0\u5F39\u7A97\u652F\u6301 Ctrl+Enter \u63D0\u4EA4\u3001\u7A7A\u6587\u672C\u4FDD\u5B58\u63D0\u793A\uFF1B\u4EFB\u52A1\u5B8C\u6210\u6309\u94AE\u9632\u53CC\u51FB\uFF1B\u901F\u8BB0\u957F\u6587\u672C\u884C\u6570\u94B3\u5236\r\n\r\n## [0.9.7] - 2026-11-20\r\n\r\n### \u6539\u8FDB\uFF08\u4EE3\u7801\u7ED3\u6784\uFF09\r\n- \u770B\u677F\u4E3B\u89C6\u56FE\u6309\u9875\u7B7E\u62C6\u5206\uFF1A`views/dashboard/sections/` \u4E0B today / insights / agent \u4E09\u4E2A\u6E32\u67D3\u6A21\u5757\uFF0C\u4E3B\u89C6\u56FE\u4ECE ~1300 \u884C\u964D\u5230 523 \u884C\uFF0C\u4EC5\u4FDD\u7559\u751F\u547D\u5468\u671F\u4E0E\u5171\u4EAB\u8F85\u52A9\u65B9\u6CD5\r\n- \u62BD\u51FA\u7EAF SVG \u56FE\u8868\u51FD\u6570\u5230 `utils/charts.ts`\uFF0C\u770B\u677F\u4E0D\u518D\u5185\u8054\u751F\u6210\u56FE\u8868\u903B\u8F91\r\n- \u62BD\u51FA Agent \u8BBF\u95EE\u7B56\u7565\u7EAF\u89C4\u5219\u5230 `agent/access.ts`\uFF08\u9ED1\u540D\u5355/\u767D\u540D\u5355/\u64CD\u4F5C\u6743\u9650/\u5206\u7C7B\u63A8\u65AD\uFF09\uFF0C\u53EF\u5355\u6D4B\r\n- `main.ts` \u7684 16 \u4E2A\u547D\u4EE4\u6CE8\u518C\u62BD\u6210 `registerCommands()`\uFF0C`onload` \u66F4\u6E05\u6670\r\n- \u7EDF\u4E00\u751F\u6210\u6587\u4EF6\u7B56\u7565\uFF1A`changelog.ts` \u4E0E `bridge-source.ts` \u5747\u7531\u6784\u5EFA\u751F\u6210\u5E76\u52A0\u5165 `.gitignore`\r\n\r\n### \u4FEE\u590D\r\n- \u4FEE\u590D\u7248\u672C\u53F7\u5FBD\u7AE0\u5728\u591A\u6BB5\u7248\u672C\u53F7\u4E0B\u6BCF\u6B21\u6784\u5EFA\u91CD\u590D\u8FFD\u52A0\u5C3E\u53F7\u7684 bug\r\n- \u5DE6\u4FA7\u529F\u80FD\u680F\u56FE\u6807\u6539\u7528\u65B0\u7684 Sediment \u54C1\u724C\u56FE\u6807\r\n\r\n## [0.9.6.1] - 2026-11-20\r\n\r\n### \u4FEE\u590D\r\n- \u901F\u8BB0\u641C\u7D22\u6846\uFF1A\u4FEE\u590D\u8F93\u5165\u65F6\u7ED3\u679C\u88AB\u8FFD\u52A0\u5230\u5217\u8868\u672B\u5C3E\u3001\u8DF3\u5230\u77E5\u8BC6\u533A\u4E0B\u65B9\u7684 bug\uFF1B\u65B0\u589E\u300C\u5339\u914D N \u6761\u300D\u5B9E\u65F6\u8BA1\u6570\uFF0C\u641C\u7D22\u6548\u679C\u53EF\u89C1\r\n- \u5207\u6362\u9875\u7B7E\u65F6\u6EDA\u52A8\u4F4D\u7F6E\u5F52\u96F6\uFF0C\u907F\u514D\u5185\u5BB9\u88AB\u5438\u9876\u5BFC\u822A\u6321\u4F4F\r\n- \u6A2A\u5E45\u4E0D\u518D\u88AB\u5438\u9876\u5BFC\u822A\u906E\u76D6\r\n- \u65B0\u589E Sediment \u5C42\u7406\u54C1\u724C\u56FE\u6807\uFF0C\u63A5\u5165\u5BFC\u822A\u680F\u4E0E\u89C6\u56FE\u56FE\u6807\r\n\r\n## [0.9.6] - 2026-11-20\r\n\r\n### \u4FEE\u590D\r\n- Agent \u65F6\u95F4\u663E\u793A\u6539\u4E3A\u672C\u5730\u65F6\u533A\uFF1A\u5DE5\u5177\u8C03\u7528/\u53D8\u66F4\u5BA1\u67E5/\u6700\u8FD1\u8C03\u7528/\u8BCA\u65AD\u65E5\u5FD7\u7684\u65F6\u95F4\u4E0D\u518D\u663E\u793A\u6210 UTC\uFF08\u5982 05:30 \u5B9E\u4E3A\u672C\u5730 13:30\uFF09\uFF0C\u300C\u4ECA\u65E5\u300D\u7EDF\u8BA1\u4E5F\u6309\u672C\u5730\u65E5\u671F\u5224\u5B9A\r\n- \u9876\u90E8\u5BFC\u822A\u5438\u9876\uFF1A\u4E3B\u5BFC\u822A\u680F\u56FA\u5B9A\u5728\u9876\u90E8\uFF0C\u5B50\u9875\u7B7E\uFF08\u77E5\u8BC6\u5730\u5C42\uFF09\u4E0E\u300C\u4ECA\u65E5\u300D\u64CD\u4F5C\u680F\u9489\u5728\u5176\u4E0B\u65B9\uFF0C\u6EDA\u52A8\u65F6\u59CB\u7EC8\u53EF\u89C1\r\n- \u5468\u590D\u76D8\u300C\u672A\u5B8C\u6210\u4E8B\u9879\u300D\u53BB\u91CD\uFF1A\u5E26 #to-agent \u7684\u901F\u8BB0\u4E0D\u518D\u540C\u65F6\u51FA\u73B0\u5728\u300C\u901F\u8BB0\u300D\u548C\u300CAgent \u4EFB\u52A1\u300D\u4E24\u5904\r\n- \u4FEE\u590D\u300C\u8282\u5F8B\u77E9\u9635/\u6D3B\u8DC3\u65F6\u6BB5\u300D\u300C\u5E74\u8F6E/\u6307\u7EB9/\u6708\u76F8\u300D\u9875\u7B7E\u70B9\u51FB\u5931\u6548\uFF1A\u6539\u7528\u5185\u90E8\u5BB9\u5668\u63D2\u5165 SVG\uFF0C\u907F\u514D innerHTML += \u51B2\u6389\u6309\u94AE\u4E8B\u4EF6\r\n\r\n## [0.9.5] - 2026-11-20\r\n\r\n### \u6539\u8FDB\r\n- \u77E5\u8BC6\u5730\u5C42\u5206\u9875\u5316\uFF1A\u9876\u90E8\u80F6\u56CA\u6539\u4E3A\u771F\u6B63\u7684\u9875\u7B7E\uFF0C\u4E00\u6B21\u53EA\u663E\u793A\u4E00\u4E2A\u6A21\u5757\uFF08\u8109\u51B2\u6982\u89C8/\u70ED\u529B\u56FE/\u5199\u4F5C\u8D8B\u52BF/\u6295\u5165\u5206\u5E03/\u5E74\u5EA6\u753B\u50CF/\u672C\u5468\u590D\u76D8\uFF09\uFF0C\u4E0D\u518D\u662F\u957F\u9875\u9762\u8DF3\u8F6C\r\n\r\n### \u4FEE\u590D\r\n- \u951A\u70B9/\u5FEB\u6377\u8DF3\u8F6C\u6539\u56DE\u6D4F\u89C8\u5668\u539F\u751F scrollIntoView + CSS scroll-margin\uFF0C\u4FEE\u590D\u300C\u6709\u7684\u8DF3\u6709\u7684\u4E0D\u8DF3\u300D\uFF1B\u7528\u6237\u4E3B\u52A8\u6EDA\u52A8\u65F6\u53D6\u6D88\u6392\u961F\u4E2D\u7684\u6EDA\u52A8\u6062\u590D\uFF0C\u907F\u514D\u4E92\u76F8\u6253\u65AD\r\n\r\n## [0.9.4] - 2026-11-20\r\n\r\n### \u4FEE\u590D\r\n- \u300C\u67E5\u770B\u4ECA\u65E5\u4EFB\u52A1\u300D\u300C\u8BB0\u4E00\u6761\u901F\u8BB0\u300D\u6539\u7528\u5E26\u504F\u79FB\u7684\u5E73\u6ED1\u6EDA\u52A8\u5E76\u963B\u6B62 focus \u81EA\u52A8\u8DF3\u5C4F\uFF0C\u4E0D\u518D\u786C\u8DF3\r\n\r\n### \u4FEE\u590D\r\n- \u951A\u70B9\u8DF3\u8F6C\u6309\u5438\u9876\u5BFC\u822A\u9AD8\u5EA6\u7559\u504F\u79FB\uFF0C\u907F\u514D\u76EE\u6807\u6807\u9898\u88AB\u5BFC\u822A\u6761\u76D6\u4F4F\u9020\u6210\u7684\u89C6\u89C9\u8DF3\u52A8\r\n\r\n## [0.9.3] - 2026-11-20\r\n\r\n### \u4FEE\u590D\r\n- \u64CD\u4F5C\u540E\u6574\u9875\u91CD\u7ED8\u5BFC\u81F4\u7684\u6EDA\u52A8\u6296\u52A8\uFF1A\u91CD\u7ED8\u65F6\u4FDD\u5B58/\u5EF6\u8FDF\u6062\u590D\u6EDA\u52A8\u4F4D\u7F6E\uFF0C\u5E76\u5728\u540C\u4E00\u9875\u7B7E\u7684\u8F6F\u5237\u65B0\u4E2D\u5173\u95ED\u5361\u7247\u5165\u573A\u52A8\u753B\r\n\r\n### \u6539\u8FDB\r\n- \u65B0\u589E `npm run release:prepare -- X.Y.Z`\uFF1A\u81EA\u52A8\u5B9A\u7A3F CHANGELOG \u7248\u672C\u6807\u9898\u5E76\u66F4\u65B0 package.json \u7248\u672C\u6E90\uFF1BCI \u6253 tag \u65F6\u4E5F\u4F1A\u81EA\u52A8\u6267\u884C\r\n\r\n## [0.9.2] - 2026-11-20\r\n\r\n### \u4FEE\u590D\r\n- Agent \u53D8\u66F4\u5BA1\u67E5\u300C\u4FDD\u7559\u5F53\u524D\u5E76\u5173\u95ED\u300D\u73B0\u5728\u4F1A\u8BB0\u5F55\u5BA1\u67E5\u51B3\u5B9A\uFF08kept\uFF09\uFF0C\u8BE5\u53D8\u66F4\u4ECE\u5F85\u5BA1\u5217\u8868\u79FB\u9664\uFF1B\u300C\u91C7\u7528\u5907\u4EFD / \u6062\u590D\u300D\u8BB0\u5F55\u4E3A reverted\r\n- \u53D8\u66F4\u5BA1\u67E5\u53EA\u5217\u51FA POST \u5199\u64CD\u4F5C\uFF1BGET \u53EA\u8BFB\u8C03\u7528\uFF08\u5982 graph\uFF09\u4E0D\u518D\u51FA\u73B0\u5728\u5F85\u5BA1\u5217\u8868\r\n\r\n### \u65B0\u589E\r\n- MCP \u4E00\u952E\u5378\u8F7D\uFF1A\u8BBE\u7F6E\u9875\u6BCF\u4E2A\u5DF2\u914D\u7F6E\u5BA2\u6237\u7AEF\u52A0\u300C\u5378\u8F7D\u300D\u6309\u94AE\uFF0C\u5E76\u63D0\u4F9B\u300C\u6253\u5F00\u5378\u8F7D\u5411\u5BFC\u300D\uFF1B\u53EA\u79FB\u9664\u5BA2\u6237\u7AEF\u914D\u7F6E\u4E0E\u6865\u63A5\u811A\u672C\uFF0C\u5199\u524D\u5907\u4EFD `.bak`\uFF0C\u4E0D\u52A8\u7B14\u8BB0\u548C\u7EDF\u8BA1\u6570\u636E\r\n\r\n### \u6587\u6863\r\n- README \u8865\u5145\u300C\u5982\u4F55\u627E\u5230 .obsidian \u76EE\u5F55\u300D\u4E0E zip \u624B\u5DE5\u5B89\u88C5\u6B65\u9AA4\uFF0C\u793A\u4F8B\u8DEF\u5F84\u6539\u4E3A `<vault>` \u901A\u7528\u5199\u6CD5\uFF0C\u5E76\u8BF4\u660E BRAT \u5B89\u88C5\u65F6\u6865\u63A5\u811A\u672C\u7531\u4E00\u952E\u914D\u7F6E\u81EA\u52A8\u843D\u76D8\r\n\r\n### \u6539\u8FDB\r\n- \u65B0\u589E\u5B89\u88C5\u6574\u5305 `dist/sediment/`\uFF1A\u5305\u542B main.js\u3001manifest.json\u3001styles.css\u3001mcp-server/index.mjs \u4E0E\u5B89\u88C5\u8BF4\u660E\uFF1BRelease \u81EA\u52A8\u9644\u52A0 `sediment-vX.Y.Z.zip`\uFF0C\u4E0B\u8F7D\u89E3\u538B\u5373\u53EF\u590D\u5236\r\n\r\n### \u6539\u8FDB\r\n- \u7248\u672C\u53F7\u7EDF\u4E00\u5230 `package.json` \u5355\u4E00\u6E90\uFF1A`version-bump.mjs` \u5728\u6784\u5EFA\u65F6\u540C\u6B65 lockfile\u3001manifest\u3001versions\u3001MCP bridge \u548C README \u5FBD\u7AE0\uFF1B\u53D1\u7248\u53EA\u6539\u4E00\u5904\r\n\r\n## [0.9.1] - 2026-11-20\r\n\r\n### \u6539\u8FDB\r\n- Agent \u53D8\u66F4 Diff \u91CD\u505A\uFF1ALCS \u9010\u884C\u6807\u8BB0\u589E\u5220\u3001\u53CC\u680F\u6EDA\u52A8\u8054\u52A8\u3001\u53D8\u5316\u884C\u6570\u7EDF\u8BA1\uFF0C\u53EF\u5728\u5F39\u7A97\u5185\u300C\u91C7\u7528\u5907\u4EFD\uFF08\u64A4\u9500\uFF09\u300D\u6216\u300C\u4FDD\u7559\u5F53\u524D\u300D\r\n- AI \u6C89\u6DC0\u5BA1\u6838\uFF1A\u663E\u793A\u5F53\u524D\u5DE5\u4F5C\u6A21\u5F0F\uFF0C\u65B0\u589E\u300C\u67E5\u770B\u539F\u6587\u300D\u53EA\u8BFB\u9884\u89C8\uFF0C\u6309\u94AE\u542B\u4E49\u660E\u786E\r\n- \u5355\u6D4B\u589E\u81F3 41 \u4F8B\uFF08\u9010\u884C Diff\u3001\u5E42\u7B49\u952E\u3001\u5BA1\u8BA1\u8131\u654F\u3001400 \u5929\u6279\u91CF\u6570\u636E\u89C4\u8303\u5316\uFF09\r\n- \u7EAF\u51FD\u6570\u6027\u80FD\u57FA\u51C6 `npm run test:bench`\uFF1A1k/10k/100k \u5929\u8D21\u732E\u8BA1\u7B97\u7684\u8017\u65F6\u4E0E\u5806\u5185\u5B58\u91CF\u5316\r\n- Agent \u5B89\u5168\u8F85\u52A9\uFF1A\u5E42\u7B49\u952E `idempotencyKey`\u3001\u5BA1\u8BA1\u8DEF\u5F84\u8131\u654F `redactAuditPath`\u3001\u654F\u611F\u4E32\u66FF\u6362 `redactSecrets`\uFF1B\u5BA1\u8BA1\u65E5\u5FD7\u843D\u76D8\u524D\u8131\u654F\u67E5\u8BE2\u4E32\r\n- \u77E5\u8BC6\u9875\u6458\u8981\u4F18\u5148 + \u8BE6\u7EC6\u56FE\u8868\u6298\u53E0\u5F00\u5173\uFF1B\u4EBA\u673A\u53CC\u8272\u70ED\u529B\u56FE\u79FB\u5165\u77E5\u8BC6\u9875\r\n- \u5468\u590D\u76D8\u91CD\u6392\u4E3A\u300C\u7EBF\u7D22\u2014\u6210\u679C\u2014\u884C\u52A8\u2014\u5F52\u6863\u2014\u8BE6\u7EC6\u6570\u636E\u300D\r\n- \u901F\u8BB0\u4FA7\u680F\u300C\u5168\u90E8 + \u66F4\u591A\u300D\u6B21\u7EA7\u5165\u53E3\uFF0C\u56DE\u987E/\u6F2B\u6B65/\u6807\u7B7E/\u6C89\u6DC0\u6536\u8FDB\u66F4\u591A\u83DC\u5355\r\n- \u7EDF\u4E00\u641C\u7D22\u5165\u53E3\uFF1A`search_notes` \u540C\u65F6\u68C0\u7D22\u7B14\u8BB0\u3001\u901F\u8BB0\u3001\u5DE5\u4F5C\u65E5\u5FD7\u548C\u8349\u7A3F\uFF0C\u5E76\u6807\u6CE8\u6765\u6E90\u7C7B\u578B\r\n- \u9996\u6B21\u4F7F\u7528\u8F7B\u91CF\u4E0A\u4E0B\u6587\u63D0\u793A\uFF0C\u53EF\u5173\u95ED\r\n- Agent API \u7248\u672C\u58F0\u660E\uFF1A`AGENT_API_VERSION = 1`\uFF0C`/health` \u8FD4\u56DE `agentApiVersion`\uFF0CREADME \u5199\u660E\u517C\u5BB9\u7B56\u7565\r\n- \u8BCA\u65AD\u65E5\u5FD7\uFF1A\u8BB0\u5F55\u8FC1\u79FB\u3001\u5B89\u5168\u62D2\u7EDD\u3001\u6162\u67E5\u8BE2\u4E0E\u5B58\u50A8\u4E8B\u4EF6\uFF0C\u547D\u4EE4\u300C\u67E5\u770B\u8BCA\u65AD\u65E5\u5FD7\u300D\u53EF\u67E5\u770B\uFF1B\u771F\u5B9E\u73AF\u5883\u9A8C\u8BC1\u624B\u518C\u89C1 `docs/real-environment-verification.md`\r\n- \u7EC4\u4EF6\u547D\u540D\u7EDF\u4E00\uFF1A\u6240\u6709 `kp-*` \u524D\u7F00\u6539\u4E3A `sd-*`\uFF0C\u6784\u5EFA\u4E0E 41 \u4F8B\u5355\u6D4B\u901A\u8FC7\r\n\r\n## [0.9.0] - 2026-11-20\r\n\r\n### \u65B0\u589E\r\n- \u4ECA\u65E5\u9875\u589E\u52A0\u901F\u8BB0\u3001\u4ECA\u65E5\u4EFB\u52A1\u548C\u5F00\u59CB\u4E13\u6CE8\u5FEB\u6377\u64CD\u4F5C\uFF1B\u7A84\u5C4F\u6539\u4E3A\u7EB5\u5411\u5E03\u5C40\u3002\r\n- \u8BBE\u7F6E\u65B0\u589E Agent \u5DE5\u4F5C\u6A21\u5F0F\uFF1A\u53EA\u8BFB\u3001\u8349\u7A3F\u3001\u786E\u8BA4\u540E\u5199\u5165\u3001\u81EA\u52A8\u6267\u884C\u3002\r\n- \u901F\u8BB0\u5361\u7247\u663E\u793A\u672A\u5904\u7406\u3001\u5DF2\u59D4\u6D3E Agent\u3001\u5DF2\u6C89\u6DC0\u6216\u5DF2\u5F52\u6863\u72B6\u6001\u3002\r\n- \u5FEB\u901F\u901F\u8BB0\u652F\u6301\u8349\u7A3F\u6062\u590D\u3001\u4FDD\u5B58\u4E2D\u3001\u4FDD\u5B58\u6210\u529F\u548C\u4FDD\u5B58\u5931\u8D25\u53CD\u9988\u3002\r\n\r\n### \u6539\u8FDB\r\n- MCP \u5DE5\u5177\u7531\u5206\u6563\u7684\u7EC6\u7C92\u5EA6\u80FD\u529B\u6536\u655B\u4E3A\u4EFB\u52A1\u578B\u5165\u53E3\uFF1B\u65B0\u589E\u53EA\u8BFB\u805A\u5408 `get_workspace_state`\uFF0C\u65E7\u5DE5\u5177\u540D\u5DF2\u5220\u9664\uFF0C\u4E0D\u518D\u4FDD\u7559\u517C\u5BB9\u5165\u53E3\u3002\r\n- Agent \u9875\u4F18\u5148\u5C55\u793A\u8349\u7A3F\u3001\u4EFB\u52A1\u3001\u53D8\u66F4\u5BA1\u67E5\u548C\u5DE5\u4F5C\u65E5\u5FD7\uFF0C\u8FDE\u63A5\u8BCA\u65AD\u4E0E\u7EDF\u8BA1\u79FB\u81F3\u6B21\u7EA7\u4F4D\u7F6E\u3002\r\n- \u5F85\u529E\u5361\u7247\u53EF\u76F4\u63A5\u5B8C\u6210\u672C\u5730\u4EFB\u52A1\uFF0C\u4E5F\u53EF\u8BA4\u9886\u6216\u5B8C\u6210 Agent \u4EFB\u52A1\u3002\r\n- \u77E5\u8BC6\u6982\u89C8\u6295\u5165\u65F6\u95F4\u7531\u771F\u5B9E\u6D3B\u8DC3\u5206\u949F\u4E0E\u4E13\u6CE8\u5206\u949F\u8BA1\u7B97\uFF0C\u4E0D\u518D\u56FA\u5B9A\u663E\u793A\u5360\u4F4D\u6570\u636E\u3002\r\n- \u770B\u677F\u9875\u7B7E\u3001\u901F\u8BB0\u9875\u7B7E\u8865\u5145\u53EF\u8BBF\u95EE\u6027\u72B6\u6001\uFF1B\u7A84\u5C4F\u9875\u7B7E\u53EF\u6A2A\u5411\u6EDA\u52A8\u3002\r\n- \u77E5\u8BC6\u65E5\u5FD7\u4E0E\u6C89\u6DC0\u5199\u5165\u7EDF\u4E00\u53D7 Agent \u64CD\u4F5C\u6743\u9650\u548C\u76EE\u5F55\u9650\u5236\u7EA6\u675F\u3002\r\n- README \u66F4\u65B0 0.9.0\u300112 \u4E2A\u516C\u5F00 MCP \u5DE5\u5177\u5165\u53E3\u3001\u624B\u52A8\u5B89\u88C5\u6587\u4EF6\u548C\u6D4B\u8BD5\u547D\u4EE4\u3002\r\n\r\n### \u4FEE\u590D\r\n- \u8349\u7A3F\u5408\u5E76\u3001\u9A73\u56DE\u548C\u5FEB\u7167\u6062\u590D\u589E\u52A0\u786E\u8BA4\u53CA\u660E\u786E\u53CD\u9988\u3002\r\n- \u786E\u4FDD\u6570\u636E\u6587\u6863\u3001\u8BBE\u7F6E\u8BF4\u660E\u548C\u5B9E\u9645\u754C\u9762\u80FD\u529B\u4E00\u81F4\u3002\r\n\r\n## [0.8.8] - 2026-11-20\r\n\r\n### \u65B0\u589E\r\n- \u53D1\u5E03\u6D41\u6C34\u7EBF\u65B0\u589E\u5B8C\u6574\u56DE\u5F52\u6D4B\u8BD5\u3001\u7248\u672C\u4E00\u81F4\u6027\u6821\u9A8C\u548C\u8131\u654F\u7F3A\u9677\u53CD\u9988\u6A21\u677F\u3002\r\n- \u8BBE\u7F6E\u65B0\u589E\u7CBE\u7B80\u3001\u6807\u51C6\u3001\u5B8C\u6574\u5E03\u5C40\u5BC6\u5EA6\uFF0C\u4EE5\u53CA\u51CF\u5C11\u52A8\u6001\u6548\u679C\u9009\u9879\u3002\r\n- \u68C0\u7D22\u7ED3\u679C\u589E\u52A0\u7CBE\u786E\u5339\u914D\u4E0E\u672C\u5730 TF-IDF \u8BED\u4E49\u5339\u914D\u8BF4\u660E\u3002\r\n\r\n### \u6539\u8FDB\r\n- \u672A\u77E5\u6570\u636E\u7248\u672C\u52A0\u8F7D\u65F6\u6682\u505C\u5199\u5165\u5E76\u4FDD\u7559\u6062\u590D\u526F\u672C\uFF1B\u521D\u59CB\u5316\u3001\u8D1F\u503C\u4E0E\u5F02\u5E38\u5B57\u6BB5\u589E\u52A0\u89C4\u8303\u5316\u3002\r\n- Agent HTTP \u5199\u5165\u6536\u7D27\u6A21\u5F0F\u6821\u9A8C\uFF0C\u8865\u5145\u8DEF\u5F84\u7A7F\u8D8A\u3001\u7CFB\u7EDF\u76EE\u5F55\u3001\u975E\u6CD5 JSON \u548C\u5FC5\u586B\u53C2\u6570\u4FDD\u62A4\u3002\r\n- \u6587\u4EF6\u4FEE\u6539\u4E8B\u4EF6\u589E\u52A0\u53BB\u6296\uFF0C\u5378\u8F7D\u65F6\u6E05\u7406\u5B9A\u65F6\u5668\uFF0C\u8BED\u4E49\u7D22\u5F15\u5408\u5E76\u5E76\u53D1\u91CD\u5EFA\u3002\r\n- \u901F\u8BB0\u3001\u5DE5\u4F5C\u65E5\u5FD7\u3001\u5FEB\u7167\u4E0E\u5DE5\u5177\u8C03\u7528\u7B49\u6301\u4E45\u6570\u636E\u589E\u52A0\u4FDD\u7559\u4E0A\u9650\u3002\r\n- \u4FEE\u6B63 TypeScript \u914D\u7F6E\u4E2D\u7684\u5DF2\u79FB\u9664 `baseUrl` \u548C `node10` \u6A21\u5757\u89E3\u6790\u9009\u9879\u3002\r\n\r\n### \u4FEE\u590D\r\n- \u5B8C\u5584\u5347\u7EA7\u3001\u5378\u8F7D\u3001\u6062\u590D\u548C\u672C\u5730 Agent \u6743\u9650\u8BF4\u660E\u3002\r\n- \u53D1\u5E03\u6821\u9A8C\u8986\u76D6 package.json\u3001manifest\u3001MCP bridge\u3001CHANGELOG \u4E0E\u53D1\u5E03\u4EA7\u7269\u4E00\u81F4\u6027\u3002\r\n\r\n## [0.8.7] - 2026-11-20\r\n\r\n### \u4FEE\u590D\r\n- \u4E00\u952E\u914D\u7F6E Agent \u4E0D\u518D\u5199\u51FA\u4E0D\u5B58\u5728\u7684\u6865\u63A5\u8DEF\u5F84\uFF1A\u5E93\u5185\u7F3A `mcp-server/index.mjs` \u65F6\u7528\u6784\u5EFA\u65F6\u5D4C\u5165\u7684\u6E90\u7801\u81EA\u52A8\u843D\u76D8\uFF08Obsidian \u53EA\u5B89\u88C5\u4E09\u4EF6\u5957\uFF0C\u6B64\u524D\u65B0\u88C5\u7528\u6237\u5FC5\u8E29 MCP \u8FDB\u7A0B\u9000\u51FA\u7801 1\uFF09\r\n- MCP \u6865\u63A5 `serverInfo` \u7248\u672C\u968F\u63D2\u4EF6\u7248\u672C\u540C\u6B65\uFF08version-bump \u8054\u52A8\uFF09\uFF0C\u4E0D\u518D\u786C\u7F16\u7801\u65E7\u7248\u672C\r\n\r\n### \u6539\u8FDB\r\n- \u53D1\u5E03\u5305\u65B0\u589E `mcp-server/index.mjs`\uFF0C\u624B\u52A8\u5B89\u88C5\u53EF\u76F4\u63A5\u53D6\u7528\u6865\u63A5\u811A\u672C\r\n- \u5355\u6D4B\u65B0\u589E 2 \u4F8B\uFF1A\u6865\u63A5\u7248\u672C\u4E00\u81F4\u6027\u3001\u7F3A\u5931\u81EA\u52A8\u843D\u76D8\uFF0Binitialize \u63E1\u624B\uFF08\u5171 29 \u4F8B\uFF09\r\n\r\n## [0.8.6] - 2026-11-20\r\n\r\n### \u6539\u8FDB\r\n- \u77E5\u8BC6\u5730\u5C42\u7CBE\u7B80\uFF1A13 \u5F20\u5361\u7247\u5408\u5E76\u4E3A 7 \u5F20\uFF0C\u6D88\u9664\u540C\u4E00\u6570\u636E\u7684\u91CD\u590D\u53EF\u89C6\u5316\r\n  - \u5E74\u8F6E / \u77E5\u8BC6\u6307\u7EB9 / \u6708\u76F8\u65E5\u5386\u5408\u5E76\u4E3A\u300C\u5E74\u5EA6\u753B\u50CF\u300D\u5206\u6BB5\u5207\u6362\u5361\uFF08\u9ED8\u8BA4\u5E74\u8F6E\uFF09\r\n  - \u79FB\u9664\u88C5\u9970\u6027\u5730\u5E73\u7EBF\u5361\uFF08\u4FE1\u606F\u5DF2\u88AB\u70ED\u529B\u56FE\u4E0E\u8D8B\u52BF\u8986\u76D6\uFF09\r\n  - \u5199\u4F5C\u6765\u6E90\u5E76\u5165\u300C\u5199\u4F5C\u4E0E\u65F6\u95F4\u8D8B\u52BF\u300D\u7B2C 4 \u4E2A tab\uFF1B\u6D3B\u8DC3\u65F6\u6BB5\u5E76\u5165\u8282\u5F8B\u77E9\u9635\u5361\u5207\u6362\r\n  - \u6708\u62A5\u6D77\u62A5\u4ECE\u5E38\u9A7B\u5361\u7247\u6539\u4E3A\u9875\u811A\u300C\u6708\u62A5\u300D\u6309\u94AE\u5F39\u7A97\uFF0C\u5BFC\u51FA PNG \u4FDD\u7559\r\n\r\n## [0.8.5] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- \u7EDF\u8BA1\u53E3\u5F84\uFF1AAgent \u7ECF API \u5199\u5165\u7684\u5185\u5BB9\u4E0D\u518D\u91CD\u590D\u8BA1\u5165\u4EBA\u7C7B\u5199\u4F5C\u6307\u6807\uFF08\u6765\u6E90\u6807\u8BB0 + \u6291\u5236\u7A97\u53E3\uFF09\uFF0C\u53EA\u8BA1 `aiWordsAdded`\r\n- \u7B14\u8BB0\u5F52\u5C5E\u65E5\u671F\u4F18\u5148\u8BFB frontmatter \u7684 `created` / `date`\uFF0C\u5BFC\u5165\u7684\u65E7\u7B14\u8BB0\u80FD\u5F52\u5230\u6B63\u786E\u7684\u65E5\u5B50\r\n- \u8D21\u732E\u5206\u6309\u53EF\u914D\u6743\u91CD\u8BA1\u7B97\u5E76\u652F\u6301\u5355\u65E5\u5C01\u9876\uFF0C\u63D0\u4F9B\u5168\u91CF\u91CD\u7B97\u4E0E\u5168\u5E93\u5386\u53F2\u91CD\u5EFA\u547D\u4EE4\r\n\r\n### \u65B0\u589E\r\n- \u901F\u8BB0\u652F\u6301\u7F16\u8F91 / \u5220\u9664 / \u5F52\u6863\uFF0C\u5E76\u4E0E\u65E5\u8BB0 Callout \u53CC\u5199\u540C\u6B65\r\n- \u7B14\u8BB0\u5065\u5EB7\u5EA6\u68C0\u67E5\uFF08\u5B64\u513F / \u65AD\u94FE / \u4E45\u672A\u66F4\u65B0\uFF09\uFF0C\u53EF\u4E00\u952E\u8F6C\u4E3A `#to-agent` \u4EFB\u52A1\r\n- \u6570\u636E\u5BFC\u51FA CSV / JSON\uFF0C\u9ED8\u8BA4\u8131\u654F\uFF08\u4E0D\u542B\u901F\u8BB0\u6B63\u6587\u3001\u6587\u4EF6\u8DEF\u5F84\u4E0E\u4EFB\u4F55\u4EE4\u724C\uFF09\uFF0C\u9700\u663E\u5F0F\u52FE\u9009\u624D\u5305\u542B\r\n- \u756A\u8304\u949F\u72B6\u6001\u6301\u4E45\u5316\u4E0E\u4F1A\u8BDD\u65E5\u5FD7\r\n- \u56FE\u8868\u53C2\u7167\u7EBF\uFF08\u5747\u503C / \u76EE\u6807\uFF09\u3001\u540C\u9875\u5237\u65B0\u4FDD\u7559\u6EDA\u52A8\u4F4D\u7F6E\u3001\u6BCF\u9875\u4E3B\u8272\u4E0E\u5361\u7247\u6750\u8D28\u3001\u70ED\u529B\u56FE\u65B9\u5411\u952E\u5BFC\u822A\r\n- \u754C\u9762\u8BED\u8A00\u5207\u6362\uFF08\u8DDF\u968F\u7CFB\u7EDF / \u4E2D\u6587 / English\uFF09\uFF0C\u8986\u76D6\u547D\u4EE4\u3001\u8BBE\u7F6E\u3001\u901F\u8BB0\u3001\u770B\u677F\u4E0E\u5F39\u7A97\r\n- \u7EAF\u51FD\u6570\u5355\u5143\u6D4B\u8BD5\u6846\u67B6\uFF08Node \u5185\u7F6E `node:test` + fake obsidian\uFF0C\u65E0\u65B0\u589E\u4F9D\u8D56\uFF09\uFF1A`npm run test:unit`\uFF0C`npm test` \u4E32\u8054\u5355\u6D4B\u4E0E MCP \u5192\u70DF\r\n\r\n## [0.8.4] - 2026-11-19\r\n\r\n### \u6539\u8FDB\r\n- \u6570\u636E\u4E0D\u8DB3 14 \u5929\u65F6\u6982\u89C8\u4E0E\u8D8B\u52BF\u56FE\u9ED8\u8BA4\u805A\u7126\u6700\u8FD1 14 \u5929\uFF1B\u6298\u7EBF\u52A0\u9762\u79EF\u6E10\u53D8\u3001\u975E\u96F6\u6563\u70B9\u4E0E\u5CF0\u503C\u6C14\u6CE1\r\n- \u5E74\u8F6E\u8865\u5168\u4E09\u5C42\u73AF\u5F62\u5E95\u8F68\u300112 \u6708\u523B\u5EA6\u4E0E\u5E74\u4EFD\u6C34\u5370\uFF0C\u5C04\u7EBF\u8BBE\u6700\u5C0F\u957F\u5EA6\r\n- \u5730\u5E73\u7EBF\u589E\u52A0\u8FDC\u666F\u5C71\u810A\u4E0E\u6C34\u6CE2\u5149\u5F71\r\n- \u4E09\u5F20\u6298\u7EBF\u56FE\u5408\u5E76\u4E3A\u300C\u5199\u4F5C\u4E0E\u65F6\u95F4\u8D8B\u52BF\u300D\u5206\u6BB5\u63A7\u4EF6\uFF0C\u77E5\u8BC6\u5730\u5C42\u52A0\u5438\u9876\u951A\u70B9\u5BFC\u822A\r\n- \u6295\u5165\u53BB\u5411\u6539\u4E3A\u6392\u540D\u8FDB\u5EA6\u6761\uFF08\u663E\u793A\u5B8C\u6574\u8DEF\u5F84\u3001\u5360\u6BD4\u4E0E\u5C55\u5F00\uFF09\r\n- \u8282\u5F8B\u77E9\u9635\u9ED8\u8BA4\u4EC5\u663E\u793A\u6D3B\u8DC3\u65E5\u671F\uFF0C\u7A7A\u884C\u538B\u7F29\u4E3A 4px\r\n- \u4ECA\u5929\u5361\u7247\u52A0\u76EE\u6807\u8FBE\u6210\u7387\u5706\u73AF\uFF0CAgent \u52A8\u6001\u884C\u5C3E\u663E\u793A\u76EE\u6807\u6587\u4EF6\u540D\uFF0C\u53D8\u66F4\u5BA1\u67E5\u52A0\u64CD\u4F5C\u7C7B\u578B\u5FBD\u7AE0\r\n\r\n### \u65B0\u589E\r\n- Agent \u6743\u9650\uFF1A\u7CFB\u7EDF\u76EE\u5F55 `.obsidian/` / `.git/` \u786C\u7F16\u7801\u62E6\u622A\uFF1B\u53EF\u9009\u767D\u540D\u5355\u6A21\u5F0F\u3001\u6309\u64CD\u4F5C\uFF08\u8BFB/\u5EFA/Patch/\u8986\u76D6/\u5220\u9664\uFF09\u5F00\u5173\uFF1B\u4FEE\u6539\u524D\u5FEB\u7167\u5F00\u5173\r\n- `patch_note` \u65B0\u589E `operation`\uFF08append/prepend/replace/update_frontmatter\uFF09\u3001`dryRun` Diff \u9884\u89C8\u3001`expectedMtime` \u4E50\u89C2\u9501\u3001`diffSummary`\u3001`createdHeading`\r\n- `replace_block` \u591A\u5904\u5339\u914D\u8FD4\u56DE `AMBIGUOUS_MATCH`\uFF1B\u6807\u9898\u4E0D\u5B58\u5728\u65F6\u81EA\u52A8\u521B\u5EFA\r\n- \u65B0\u589E MCP \u5DE5\u5177 `list_agent_changes` / `revert_agent_change` \u4E0E\u5BF9\u5E94 HTTP \u63A5\u53E3\uFF0CAgent \u53EF\u81EA\u67E5\u53D8\u66F4\u5E76\u56DE\u6EDA\r\n\r\n## [0.8.3] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- data.json \u81EA\u52A8\u5907\u4EFD\u5230\u5E93\u5185\u666E\u901A\u6587\u4EF6\u5939\uFF08\u9ED8\u8BA4 `sediment-backup/`\uFF09\uFF0C\u6309\u4EFD\u6570\u4FDD\u7559\uFF1B\u65B0\u589E\u300C\u5907\u4EFD\u7EDF\u8BA1\u6570\u636E\u5230\u5E93\u5185\u300D\u547D\u4EE4\r\n- Style Settings \u9002\u914D\uFF1A\u53EF\u53EF\u89C6\u5316\u8C03\u8282\u5361\u7247\u5706\u89D2\u3001\u5185\u8FB9\u8DDD\u3001\u6B63\u6587\u5B57\u53F7\u3001\u70ED\u529B\u56FE\u683C\u5B50\u5C3A\u5BF8\r\n- \u4EE3\u7801\u5757\u5D4C\u5165\uFF1A```sediment-heatmap``` \u4E0E ```sediment-today``` \u53EF\u5199\u8FDB Home.md\r\n- \u70ED\u529B\u56FE\u5BCC Tooltip\uFF08\u5F53\u5929\u7B14\u8BB0\u6807\u9898\u4E0E\u901F\u8BB0\u6458\u8981\uFF09\u3001\u6700\u957F\u8FDE\u7EED\u5929\u6570\u5FBD\u7AE0\r\n- \u901F\u8BB0\u5361\u7247 hover \u64CD\u4F5C\u680F\uFF08\u590D\u5236 / \u5206\u4EAB\u56FE / \u8F6C Agent\uFF09\u3001\u53CC\u51FB\u5165\u53E3\u9884\u7559\r\n- \u901F\u8BB0\u5206\u4EAB\u5361\u4E0E\u300C\u4ECA\u65E5\u6218\u62A5\u300DPNG \u5BFC\u51FA\uFF08\u6781\u7B80 / \u7968\u636E / \u6C34\u58A8\u4E09\u6A21\u677F\uFF09\r\n- Agent \u53D8\u66F4\u5BA1\u67E5\uFF1A\u6700\u8FD1\u53D8\u66F4\u5217\u8868\u3001\u5907\u4EFD Diff \u5E76\u6392\u5BF9\u6BD4\u3001\u4E00\u952E\u6062\u590D\r\n\r\n### \u4FEE\u590D\r\n- \u5F85\u529E\u6807\u9898\u8FC7\u957F\u65F6\u4E0D\u518D\u6491\u7834\u5361\u7247\uFF0C\u6539\u4E3A\u7701\u7565\u53F7\u622A\u65AD\r\n- \u4ECA\u65E5\u9875 bento \u5361\u7247\u7B49\u9AD8\u5BF9\u9F50\uFF1BAgent \u52A8\u6001\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\u6539\u4E3A\u5355\u5217\u4FE1\u606F\u6D41\uFF0C\u4E0D\u518D\u6324\u6210\u591A\u5217\u7A84\u6761\r\n- \u901F\u8BB0\u4FA7\u680F\u6C89\u6DC0\u5217\u8868\u6807\u9898\u5DE6\u5BF9\u9F50\u5E76\u53BB\u6389\u9ED8\u8BA4\u6309\u94AE\u767D\u5E95\u65B9\u5757\uFF0C\u5143\u4FE1\u606F\u66F4\u7D27\u51D1\r\n\r\n## [0.8.2] - 2026-11-19\r\n\r\n### \u6539\u8FDB\r\n- \u7ED3\u6784\u6027\u7F8E\u5316\uFF1A\u4ECA\u65E5\u8109\u51B2\u6539\u4E3A bento \u7F51\u683C\uFF08\u4ECA\u65E5/\u901F\u8BB0/\u5F85\u529E/Agent \u52A8\u6001\u9519\u843D\u6392\u5E03\uFF09\uFF0C\u6A2A\u5E45\u52A0\u5929\u7A7A\u6E10\u53D8\u3001\u4E91\u96FE\u3001\u5149\u6655\u4E0E\u9897\u7C92\u8D28\u611F\uFF0C\u4FA7\u680F\u6807\u7B7E\u4E0E\u8F93\u5165\u533A\u7EDF\u4E00\u4E3A\u80F6\u56CA\u5206\u6BB5\u63A7\u4EF6\u4E0E\u5185\u5D4C\u9762\u677F\uFF0C\u4E3B\u8981\u5361\u7247\u91C7\u7528\u53CC\u5C42\u5185\u5D4C\u8D28\u611F\r\n- \u770B\u677F\u89C6\u89C9\u5347\u7EA7\uFF1A\u7B49\u5BBD\u6570\u5B57\u3001\u66F4\u6E05\u6670\u7684\u6807\u9898\u5C42\u7EA7\u3001\u5217\u8868\u4E24\u680F\u5BF9\u9F50\u4E0E\u60AC\u505C\u53CD\u9988\u3001\u7A7A\u72B6\u6001\u91CD\u505A\u3001\u5361\u7247\u9519\u843D\u5165\u573A\u52A8\u753B\r\n- `#to-agent` \u901F\u8BB0\u8BB0\u4F4F\u539F\u5F85\u529E\u7684 `sourcePath` / `sourceLine`\uFF0C\u901F\u8BB0\u5361\u7247\u548C\u5F85\u529E\u6A21\u5757\u53EF\u4E00\u952E\u8DF3\u56DE\u539F\u590D\u9009\u6846\u5E76\u5B9A\u4F4D\u884C\u53F7\r\n- `add_memo` \u652F\u6301\u4F20\u5165\u6765\u6E90\u8DEF\u5F84\u4E0E\u884C\u53F7\r\n\r\n## [0.8.1] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u5F85\u529E\u6A21\u5757\uFF1A\u626B\u63CF vault \u539F\u751F `- [ ]` \u5F85\u529E\uFF0C\u5206\u4ECA\u65E5 / \u9057\u7559 / Agent \u4E09\u7C7B\u5C55\u793A\r\n- MCP \u5DE5\u5177 `list_tasks` / `complete_task` / `delegate_task` / `snapshot_tasks`\uFF0831 \u4E2A\u5DE5\u5177\uFF09\r\n- \u547D\u4EE4\u300C\u8BB0\u5F55\u4ECA\u65E5\u9057\u7559\u5F85\u529E\u5230\u65E5\u8BB0\u300D\uFF0C\u6309\u9700\u5199\u5165\uFF0C\u4E0D\u9ED8\u8BA4\u6539\u7B14\u8BB0\r\n\r\n### \u6539\u8FDB\r\n- \u6C89\u6DC0\u5217\u8868\u89C6\u89C9\uFF1A\u53BB\u6389\u6807\u9898\u65E5\u671F\u524D\u7F00\u3001\u5206\u7C7B\u5FBD\u7AE0\u4E0E\u8BA1\u6570\u3001\u76EE\u5F55/\u6807\u7B7E\u5143\u4FE1\u606F\u3001\u60AC\u505C\u9AD8\u4EAE\r\n\r\n## [0.8.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u672C\u5730\u8BED\u4E49\u641C\u7D22 `semantic_search`\uFF1ATF-IDF \u5411\u91CF + \u4E2D\u6587\u53CC\u5B57\u5207\u5206 + \u8F7B\u91CF\u540C\u4E49\u8BCD\u6269\u5C55\uFF0C\u6309\u610F\u4E49\u68C0\u7D22\u7B14\u8BB0\uFF0C\u4E0D\u8054\u7F51\u3001\u4E0D\u4E0B\u8F7D\u6A21\u578B\r\n- \u7D22\u5F15\u5E38\u9A7B\u5185\u5B58\uFF0Cvault \u53D8\u5316\u65F6\u81EA\u52A8\u5931\u6548\u91CD\u5EFA\uFF0C\u5E76\u9075\u5B88\u6587\u4EF6\u5939/\u6807\u7B7E\u9ED1\u540D\u5355\r\n- AGENTS.md \u5DE5\u4F5C\u6D41\u8865\u5145\u8BED\u4E49\u63A2\u7D22\u6B65\u9AA4\r\n\r\n## [0.7.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u8BBE\u7F6E\u9875\u300C\u4E00\u952E\u914D\u7F6E\u667A\u80FD\u4F53\u5BA2\u6237\u7AEF\u300D\uFF1A\u81EA\u52A8\u63A2\u6D4B OpenCode / Qoder / Claude Desktop / Cursor / Cline / Gemini CLI / Windsurf \u7B49\u914D\u7F6E\u6587\u4EF6\r\n- \u9009\u62E9\u5BA2\u6237\u7AEF\u540E\u4E00\u952E\u5199\u5165 MCP \u914D\u7F6E\uFF08\u81EA\u52A8\u5907\u4EFD\u539F\u6587\u4EF6\u3001\u4FDD\u7559\u5DF2\u6709\u914D\u7F6E\u3001\u590D\u7528\u5DF2\u5B58\u5728\u7684\u6865\u63A5\u8DEF\u5F84\uFF09\r\n- \u300C\u590D\u5236\u914D\u7F6E JSON\u300D\u6309\u94AE\uFF0C\u4FBF\u4E8E\u624B\u52A8\u7C98\u8D34\r\n\r\n## [0.6.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- P2 UI\uFF1A\u4E09\u6BB5\u5F0F\u4E3B\u770B\u677F\uFF08\u4ECA\u65E5\u8109\u51B2 / \u77E5\u8BC6\u5730\u5C42 / \u667A\u80FD\u4F53\u5DE5\u574A\uFF09\uFF0C\u77E5\u8BC6\u590D\u76D8\u79FB\u5165\u77E5\u8BC6\u5730\u5C42\r\n- \u667A\u80FD\u4F53\u5DE5\u574A\uFF1A\u8FDE\u63A5\u4E0E\u8C03\u7528\u72B6\u6001\u3001AI \u8349\u7A3F\u5BA1\u6838\u6D41\uFF08\u91C7\u7EB3 / \u5408\u5E76\u5230\u5173\u8054\u7B14\u8BB0 / \u9A73\u56DE\u5220\u9664\uFF09\u3001\u5DE5\u4F5C\u65E5\u5FD7\u5217\u8868\r\n- \u4EBA\u673A\u53CC\u8272\u70ED\u529B\u56FE\uFF1A\u6309 `aiWordsAdded` \u5360\u6BD4\u7528\u6E10\u53D8\u533A\u5206\u4EBA\u7C7B\u7F16\u8F91\u4E0E AI \u6C89\u6DC0\r\n- \u4ECA\u65E5\u8109\u51B2\u9875\u65B0\u589E\u5FEB\u901F\u901F\u8BB0\u6846\u4E0E\u300C\u4ECA\u65E5 Agent \u52A8\u6001\u300D\r\n- \u901F\u8BB0\u4FA7\u680F\u65B0\u589E\u300C\u4E0E\u5F53\u524D\u7B14\u8BB0\u76F8\u5173\u300D\u533A\u5757\uFF0C\u968F\u6253\u5F00\u7684\u6587\u4EF6\u81EA\u52A8\u66F4\u65B0\r\n\r\n## [0.5.1] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- `get_active_context` \u5728\u4E3B\u533A\u6253\u5F00\u770B\u677F/\u56FE\u8C31\u65F6\u56DE\u9000\u5230\u6700\u8FD1\u4E00\u4E2A Markdown \u6807\u7B7E\u9875\uFF0C\u4E0D\u518D\u8FD4\u56DE\u7A7A\u7ED3\u679C\r\n\r\n## [0.5.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- P1 \u7CBE\u51C6\u5199\u5165\uFF1A`patch_note`\uFF08\u6309\u6807\u9898/\u6587\u672C\u7247\u6BB5\u5C40\u90E8\u4FEE\u6539\u3001`vault.process` \u539F\u5B50\u5199\u5165\u3001\u5199\u524D\u81EA\u52A8\u5907\u4EFD\u3001`ifMatch` \u7248\u672C\u6821\u9A8C\uFF09\u4E0E `update_frontmatter`\r\n- `#to-agent` \u4EFB\u52A1\u95ED\u73AF\uFF1A`get_daily_context` \u8FD4\u56DE `agentTasks`\uFF0C\u65B0\u589E `claim_agent_task` / `complete_agent_task`\uFF0C\u72B6\u6001\u4ECE `#to-agent` \u2192 `#agent-in-progress` \u2192 `#agent-done`\r\n- \u5728 vault \u6839\u76EE\u5F55\u5199\u5165 `AGENTS.md` \u4E09\u9636\u6BB5\u534F\u4F5C\u534F\u8BAE\uFF08\u5F00\u5DE5\u5BF9\u9F50 / \u7CBE\u51C6\u8BFB\u5199 / \u6536\u5DE5\u6C89\u6DC0\uFF09\r\n- MCP \u5DE5\u5177\u589E\u81F3 26 \u4E2A\r\n\r\n## [0.4.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- P0 \u5DE5\u5177\u5C42\uFF1A`get_active_context`\uFF08\u5F53\u524D\u7B14\u8BB0/\u9009\u4E2D\u6587\u672C/\u5149\u6807\u6BB5\u843D\uFF09\u3001`get_note_metadata`\uFF08\u53EA\u8BFB\u5143\u6570\u636E\u7701 Token\uFF09\u3001`get_graph_neighbors`\uFF08\u51FA\u94FE/\u53CD\u94FE/\u540C\u6807\u7B7E\uFF09\u3001`get_tool_activity`\uFF08\u8C03\u7528\u7EDF\u8BA1\uFF09\r\n- \u65B0\u589E\u6587\u4EF6\u5939/\u6807\u7B7E\u9ED1\u540D\u5355\uFF0CAgent \u7684\u8BFB\u5199\u4E0E\u641C\u7D22\u5168\u90E8\u53D7\u63A7\r\n- Agent \u5199\u5165\u7684\u5185\u5BB9\u5355\u72EC\u8BA1\u5165 `aiWordsAdded`\uFF0C\u4E3A\u540E\u7EED\u4EBA\u673A\u53CC\u8272\u70ED\u529B\u56FE\u6253\u57FA\u7840\r\n- MCP/HTTP \u8C03\u7528\u5BA1\u8BA1\u65E5\u5FD7\uFF08\u9650 500 \u6761\uFF09\uFF0C\u5E76\u8BB0\u5F55\u5BA2\u6237\u7AEF\u540D `AGENT_NAME`\r\n- AI \u6C89\u6DC0\u7B14\u8BB0\u9ED8\u8BA4\u5E26 `sediment_status: draft`\r\n\r\n## [0.3.4] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u589E\u91CF\u53D8\u66F4\u8BB0\u5F55\uFF1A\u65B0\u589E `CHANGELOG.md`\uFF0C\u6309\u7248\u672C\u5206\u7EC4\u8BB0\u5F55\u65B0\u589E / \u53D8\u66F4 / \u4FEE\u590D\r\n- \u6784\u5EFA\u65F6\u81EA\u52A8\u540C\u6B65\u5230\u63D2\u4EF6\u5185\uFF0C\u770B\u677F\u9875\u811A\u300C\u66F4\u65B0\u8BB0\u5F55\u300D\u548C\u547D\u4EE4\u300C\u67E5\u770B\u66F4\u65B0\u8BB0\u5F55\u300D\u53EF\u968F\u65F6\u67E5\u770B\r\n- \u5347\u7EA7\u540E\u81EA\u52A8\u63D0\u793A\u65B0\u7248\u672C\u53F7\r\n- GitHub Release \u6B63\u6587\u4ECE\u5BF9\u5E94\u7248\u672C\u7684 CHANGELOG \u7AE0\u8282\u81EA\u52A8\u751F\u6210\uFF0C\u53D1\u5E03\u9875\u4E0E\u63D2\u4EF6\u5185\u8BF4\u660E\u4E00\u81F4\r\n\r\n## [0.3.3] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- Agent \u901A\u8FC7 MCP \u5199\u5165\u7B14\u8BB0\u540E\uFF0C\u770B\u677F\u4E0E\u901F\u8BB0\u9762\u677F 400ms \u5185\u81EA\u52A8\u5237\u65B0\uFF0C\u4E14\u4E0D\u6E05\u7A7A\u6B63\u5728\u8F93\u5165\u7684\u6587\u5B57\r\n- \u76D1\u542C create / modify / delete / rename \u4E8B\u4EF6\uFF0C\u8986\u76D6\u77E5\u8BC6\u5E93\u3001\u5DE5\u4F5C\u65E5\u5FD7\u4E0E\u65E5\u8BB0\u76EE\u5F55\r\n\r\n## [0.3.2] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- \u901F\u8BB0\u9762\u677F\u300C\u5168\u90E8\u300D\u9875\u7B7E\u4E0B\u7684\u6C89\u6DC0\u5217\u8868\u6539\u4E3A\u663E\u793A\u5168\u90E8\u7B14\u8BB0\uFF0C\u4E0D\u518D\u53EA\u663E\u793A 5 \u6761\r\n\r\n## [0.3.1] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u901F\u8BB0\u9762\u677F\u300C\u5168\u90E8\u300D\u9875\u7B7E\u4E0B\u65B9\u76F4\u63A5\u663E\u793A\u300C\u77E5\u8BC6\u6C89\u6DC0\u300D\u5C0F\u533A\u5757\uFF0C\u4E0D\u7528\u5207\u9875\u7B7E\u5373\u53EF\u770B\u5230\uFF0C\u5E26\u300C\u5168\u90E8\u300D\u8DF3\u8F6C\u6309\u94AE\r\n\r\n## [0.3.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u6C89\u6DC0\u9875\u7B7E\u6309\u5206\u7C7B\u5206\u7EC4\u663E\u793A\uFF08\u6280\u672F / \u65B9\u6CD5 / \u5DE5\u4F5C\u65E5\u5FD7\uFF09\r\n- \u667A\u80FD\u5206\u7C7B\uFF1AAgent \u4E0D\u4F20 category \u65F6\u6839\u636E\u6807\u9898\u3001\u6807\u7B7E\u3001\u6B63\u6587\u5173\u952E\u8BCD\u81EA\u52A8\u63A8\u65AD\uFF1B\u4E5F\u53EF\u4F20\u4EFB\u610F\u81EA\u5B9A\u4E49\u5206\u7C7B\u540D\r\n- \u65B0\u589E MCP \u5DE5\u5177 `list_categories`\r\n\r\n## [0.2.9] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u77E5\u8BC6\u5E93\u5206\u7C7B\uFF1A\u9ED8\u8BA4\u300C\u6280\u672F / \u9879\u76EE / \u65B9\u6CD5 / \u7075\u611F / \u590D\u76D8\u300D\uFF0C\u6C89\u6DC0\u65F6\u6309\u5206\u7C7B\u5EFA\u5B50\u76EE\u5F55\r\n- \u77E5\u8BC6\u7B14\u8BB0\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\u7684\u7248\u5F0F\u7F8E\u5316\uFF1Afrontmatter\u3001\u901F\u89C8 Callout\u3001\u6B63\u6587\u3001\u5173\u8054\u6765\u6E90\u3001\u6C89\u6DC0\u4FE1\u606F\r\n- \u5DF2\u6709 7 \u7BC7\u7B14\u8BB0\u6309\u5206\u7C7B\u91CD\u65B0\u6392\u7248\u5F52\u4F4D\r\n\r\n## [0.2.8] - 2026-11-19\r\n\r\n### \u53D8\u66F4\r\n- \u300C\u77E5\u8BC6\u6C89\u6DC0\u300D\u4ECE\u770B\u677F\u5E95\u90E8\u79FB\u5230\u901F\u8BB0\u9762\u677F\uFF0C\u4F5C\u4E3A\u7B2C\u4E94\u4E2A\u9875\u7B7E\r\n\r\n## [0.2.7] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u770B\u677F\u5E95\u90E8\u5217\u51FA Agent \u5199\u5165\u7684\u77E5\u8BC6\u7B14\u8BB0\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\uFF0C\u53EF\u70B9\u51FB\u6253\u5F00\r\n\r\n## [0.2.6] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- Obsidian \u91CD\u542F\u65F6\u4E3A\u5DF2\u6709\u6587\u4EF6\u8865\u53D1 create \u4E8B\u4EF6\uFF0C\u65E7\u7248\u4F1A\u8BEF\u7B97\u6210\u65B0\u5EFA\u7B14\u8BB0\uFF0822 \u7BC7 / 5512 \u5B57 / 121 \u5206\uFF09\r\n\r\n## [0.2.5] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- MCP \u6865\u63A5\u7684 GET \u5DE5\u5177\u53C2\u6570\u672A\u62FC\u8FDB URL\uFF0C\u5BFC\u81F4\u641C\u7D22\u65E0\u7ED3\u679C\u3001\u8BFB\u7B14\u8BB0\u62A5\u300C\u8DEF\u5F84\u4E0D\u80FD\u4E3A\u7A7A\u300D\r\n\r\n## [0.2.4] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- MCP \u6865\u63A5\u5728 Node 16 \u4E0B\u62A5 `fetch is not defined`\uFF0C\u6539\u7528 node:http\r\n\r\n## [0.2.3] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u5185\u7F6E\u756A\u8304\u949F\uFF0825/5/15 \u5206\u949F\uFF09\uFF0C\u72B6\u6001\u680F\u5012\u8BA1\u65F6\uFF0C\u5B8C\u6210\u8BB0\u5165 focusMinutes\uFF0CAgent \u4E5F\u53EF\u901A\u8FC7 MCP \u63A7\u5236\r\n- \u65B0\u589E `get_pomodoro` / `control_pomodoro`\r\n\r\n### \u4FEE\u590D\r\n- \u5730\u5E73\u7EBF\u91CD\u505A\u4E3A\u5C71\u810A + \u6E56\u9762\u5012\u5F71 + \u65E5\u6708 + \u5B63\u8282\u6811 + \u4E13\u6CE8\u65F6\u5E06\u8239\r\n- \u9875\u811A\u7248\u672C\u53F7\u6539\u4E3A\u52A8\u6001\u8BFB\u53D6 manifest\r\n\r\n## [0.2.2] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- \u77E5\u8BC6\u590D\u76D8\u4ECE\u539F\u59CB Markdown \u6539\u4E3A\u6E32\u67D3\u9884\u89C8\uFF0C\u5E76\u52A0\u590D\u5236\u6309\u94AE\r\n\r\n## [0.2.1] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u901F\u8BB0\uFF1A\u7C98\u8D34\u56FE\u7247\u81EA\u52A8\u5165\u5E93\u3001\u6BCF\u65E5\u56DE\u987E\uFF08\u53BB\u5E74\u4ECA\u65E5 / \u4E0A\u6708\u4ECA\u65E5\uFF09\u3001\u672C\u5730\u76F8\u4F3C\u5EA6\u6F2B\u6B65\u3001\u6807\u7B7E\u6811\r\n\r\n## [0.2.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u6570\u636E\u5206\u6790\u9875\uFF1A\u5199\u4F5C\u67F1\u72B6\u56FE\u3001\u5199\u4F5C\u53D8\u5316\u6298\u7EBF\u3001\u65F6\u95F4\u6295\u5165\u3001\u5199\u4F5C\u6765\u6E90\u3001\u6295\u5165\u53BB\u5411\u3001\u6D3B\u8DC3\u65F6\u6BB5\u3001\u6295\u5165\u8282\u5F8B\u77E9\u9635\r\n- \u5E74\u5EA6\u753B\u50CF\uFF1A\u5E74\u8F6E\u3001\u77E5\u8BC6\u6307\u7EB9\u3001\u6708\u76F8\u65E5\u5386\u3001\u77E5\u8BC6\u5730\u5C42\u3001\u6708\u62A5\u6D77\u62A5 PNG \u5BFC\u51FA\r\n- \u4E09\u79CD\u753B\u98CE\uFF08\u50CF\u7D20\u6E56\u9762 / \u6C34\u58A8\u5C71\u6C34 / \u50CF\u7D20\u57CE\u5E02\uFF09\u4E0E\u968F\u65F6\u6BB5\u79FB\u52A8\u7684\u65E5\u6708\u6A2A\u5E45\r\n\r\n## [0.1.3] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- \u65E7\u7248\u6B8B\u7559\u5728\u4FA7\u680F\u7684\u770B\u677F\u6807\u7B7E\u88AB\u590D\u7528\u5BFC\u81F4\u4E00\u76F4\u7A84\u5C4F\uFF0C\u6539\u4E3A\u5F3A\u5236\u5728\u4E3B\u533A\u65B0\u5F00\u6807\u7B7E\u9875\r\n\r\n## [0.1.2] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u5B8C\u6574\u4E3B\u89C6\u56FE\uFF1A\u901A\u680F\u6A2A\u5E45\u3001\u4ECA\u5929\u5361\u7247\u3001\u6982\u89C8\u5361 + SVG \u8D8B\u52BF\u300153 \u5468\u70ED\u529B\u56FE\u3001\u5730\u5E73\u7EBF\u3001\u56DB\u4E2A\u9875\u7B7E\r\n\r\n## [0.1.1] - 2026-11-19\r\n\r\n### \u4FEE\u590D\r\n- \u770B\u677F\u6539\u5230\u4E3B\u7F16\u8F91\u533A\u6253\u5F00\uFF0C\u901F\u8BB0\u7559\u5728\u53F3\u4FA7\u680F\r\n\r\n## [0.1.0] - 2026-11-19\r\n\r\n### \u65B0\u589E\r\n- \u9996\u4E2A\u7248\u672C\uFF1A\u70ED\u529B\u56FE\u770B\u677F\u3001\u5199\u4F5C\u7EDF\u8BA1\u3001flomo \u5F0F\u901F\u8BB0\u3001\u5468\u590D\u76D8\r\n- \u672C\u5730 HTTP API + MCP \u6865\u63A5\uFF0CAgent \u53EF\u8BFB\u5199\u77E5\u8BC6\u5E93\r\n- \u5DE5\u4F5C\u65E5\u5FD7\u4E0E\u77E5\u8BC6\u7B14\u8BB0\u6C89\u6DC0\uFF0CAgent \u4EA7\u51FA\u8BA1\u5165\u7EDF\u8BA1\r\n";
 
 // src/ui/changelog-modal.ts
 var ChangelogModal = class extends import_obsidian15.Modal {
@@ -6154,7 +6691,10 @@ function renderPendingWrites(view, root) {
     const row = list.createDiv({ cls: "sd-feed-row sd-feed-row-audit" });
     row.createSpan({ text: `${localStamp(item.time).slice(5)} \xB7 ${item.agent} \xB7 ${item.path}`, attr: { title: item.path } });
     const actions = row.createDiv({ cls: "sd-audit-actions" });
-    actions.createSpan({ cls: "sd-audit-badge", text: pendingToolLabel(item.tool) });
+    actions.createSpan({
+      cls: "sd-audit-badge",
+      text: item.source === "bridge" ? `${pendingToolLabel(item.tool)} \xB7 ${t("\u6587\u4EF6\u6865")}` : pendingToolLabel(item.tool)
+    });
     if (item.stale) {
       actions.createSpan({ cls: "sd-audit-badge is-stale", text: t("\u76EE\u6807\u5DF2\u5220\u9664/\u79FB\u52A8") });
       actions.createEl("button", { cls: "mod-cta", text: t("\u9A73\u56DE") }).onclick = () => void rejectPendingWrite(view, item.id);
@@ -8409,6 +8949,7 @@ ${tf("\u6062\u590D\u526F\u672C\uFF1A{path}", { path: this.store.recoveryCopyPath
     this.pomodoro = new PomodoroManager(this);
     this.tasks = new TaskManager(this);
     this.agentApi = new AgentApi(this);
+    this.fileBridge = new FileBridge(this);
     this.agentServer = new AgentServer(this);
     this.semantic = new SemanticIndex(this);
     this.registerView(DASHBOARD_VIEW_TYPE, (leaf) => new DashboardView(leaf, this));
@@ -8443,6 +8984,7 @@ ${tf("\u6062\u590D\u526F\u672C\uFF1A{path}", { path: this.store.recoveryCopyPath
       })
     );
     await this.agentServer.applySettings();
+    this.fileBridge.applySettings();
     this.registerObsidianProtocolHandler("sediment", (params) => {
       void this.handleProtocol(params);
     });
@@ -8582,16 +9124,19 @@ ${tf("\u6062\u590D\u526F\u672C\uFF1A{path}", { path: this.store.recoveryCopyPath
     });
   }
   async onunload() {
-    var _a2, _b;
+    var _a2, _b, _c;
     if (this.serverRestartTimer !== null) window.clearTimeout(this.serverRestartTimer);
     if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
     (_a2 = this.tracker) == null ? void 0 : _a2.stop();
     await ((_b = this.agentServer) == null ? void 0 : _b.stop());
+    (_c = this.fileBridge) == null ? void 0 : _c.stop();
     delete window.Sediment;
     await this.store.save();
   }
   async saveSettings() {
+    var _a2;
     await this.store.save();
+    (_a2 = this.fileBridge) == null ? void 0 : _a2.applySettings();
     if (this.serverRestartTimer !== null) window.clearTimeout(this.serverRestartTimer);
     this.serverRestartTimer = window.setTimeout(() => {
       this.serverRestartTimer = null;
