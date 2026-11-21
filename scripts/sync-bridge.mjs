@@ -4,7 +4,8 @@ import fs from "node:fs";
 // 一键配置时若库内缺 mcp-server/index.mjs，由 setup.ts 用这份源码落盘。
 const source = "mcp-server/index.mjs";
 const target = "src/agent/bridge-source.ts";
-const code = fs.readFileSync(source, "utf8");
+// 统一 LF：避免 Windows 的 CRLF 被固化进生成文件，导致 Linux CI 构建产物不一致。
+const code = fs.readFileSync(source, "utf8").replace(/\r\n/g, "\n");
 const output = `// 由 scripts/sync-bridge.mjs 从 mcp-server/index.mjs 自动生成，请勿手动修改。
 export const BRIDGE_SOURCE = ${JSON.stringify(code)};
 `;
