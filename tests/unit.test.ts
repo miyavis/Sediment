@@ -1531,6 +1531,8 @@ test("stampAgentProvenance：补登记来源；已有 source 不覆盖；幂等"
   assert.equal(stampAgentProvenance(stamped, "other", "2026-11-22"), stamped, "幂等");
   const human = "---\nsource: human\n---\nbody";
   assert.equal(stampAgentProvenance(human, "qoder", "2026-11-21"), human, "已有 source 不覆盖");
+  const unclosed = "---\n正文";
+  assert.equal(stampAgentProvenance(unclosed, "qoder", "2026-11-21"), unclosed, "未闭合 frontmatter 不抛错、不 stamp");
 });
 
 test("writeNote：知识目录内新建自动登记来源，预览即含 frontmatter；目录外不 stamp", async () => {

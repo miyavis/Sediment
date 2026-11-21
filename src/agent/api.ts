@@ -210,6 +210,8 @@ export function applyFrontmatterUpdate(text: string, updates: Record<string, unk
 /** 知识目录内的 Agent 新建笔记补登记来源；已有 source 时不覆盖（保留人工登记）。纯函数。 */
 export function stampAgentProvenance(content: string, agent: string, today: string): string {
   const head = content.match(/^---\r?\n[\s\S]*?\r?\n---/);
+  // 首行像 frontmatter 但未闭合：不猜测结构，原样放行（交给人工整理）。
+  if (!head && /^---\r?\n/.test(content)) return content;
   if (head && /^source\s*:/m.test(head[0])) return content;
   const updates: Record<string, unknown> = { source: "agent", sediment_status: "draft", agent };
   if (!head || !/^type\s*:/m.test(head[0])) updates.type = "knowledge";
