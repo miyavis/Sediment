@@ -3,7 +3,7 @@
 	"name": "Sediment",
 	"version": "1.0.1",
 	"minAppVersion": "1.6.0",
-	"description": "本地优先的知识工作看板与智能体知识沉淀插件。",
+	"description": "Local-first knowledge dashboard with heatmaps, quick memos, weekly reviews, and agent knowledge deposition via MCP.",
 	"author": "miyavis",
 	"authorUrl": "https://github.com/miyavis",
 	"isDesktopOnly": false

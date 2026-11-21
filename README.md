@@ -1,5 +1,11 @@
 # Sediment
 
+Local-first Obsidian plugin: knowledge statistics, heatmaps, quick memos, weekly reviews, and agent knowledge deposition via MCP.
+
+> 中文说明见下方 / Chinese documentation below.
+
+---
+
 > 把每天的工作，沉淀成自己的知识地层。
 
 Sediment 是一个本地优先的 Obsidian 插件，把知识工作统计、快速速记、周期复盘和受控的 Agent 协作放在同一个工作流中。
