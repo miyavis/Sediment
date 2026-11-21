@@ -3125,3 +3125,21 @@ test("scanKnowledgeState：空库返回零值；未登记列表封顶 20", () =>
   assert.equal(state.unregistered, 25);
   assert.equal(state.unregisteredPaths.length, 20);
 });
+
+// ── 阶段一 Task 5：看板「知识库现状」卡 ──
+
+test("脉冲概览：挂载知识库现状卡（实时扫描口径）", () => {
+  const src = fs.readFileSync("src/views/dashboard/sections/insights.ts", "utf8");
+  assert.ok(src.includes("renderKnowledgeState(view, content)"), "overview 分支须渲染现状卡");
+  assert.ok(src.includes("实时扫描"), "须明确实时扫描口径");
+});
+
+test("i18n：知识库现状卡英文条目已收录", () => {
+  setLocale("en");
+  try {
+    assert.equal(t("知识库现状"), "Knowledge base");
+    assert.equal(t("来源未登记"), "Unregistered source");
+  } finally {
+    setLocale("zh");
+  }
+});

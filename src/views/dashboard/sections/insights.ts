@@ -1,6 +1,7 @@
 /** 知识地层页签的渲染逻辑。所有共享状态/方法通过 view 访问。 */
 import { MarkdownRenderer, Notice, Platform } from "obsidian";
 import { buildWeeklyReview } from "../../../features/review";
+import { scanKnowledgeState } from "../../../features/knowledge-state";
 import { addDays, dateKey, lastNDays, parseKey } from "../../../utils/dates";
 import {
   barChart as barChartSvg,
@@ -14,6 +15,7 @@ import {
 import { METRICS } from "../../../types";
 import { t, tf } from "../../../i18n";
 import { aggregateStrata, recentStrataRange, type StrataMonth } from "../../../utils/strata";
+import { normalizeFolder } from "../../../utils/vault";
 import { RANGE_OPTIONS, WEEKDAYS, startOfWeekFor } from "../constants";
 import type { DashboardView } from "../../dashboard-view";
 
@@ -54,6 +56,7 @@ export function renderInsights(view: DashboardView, root: HTMLElement): void {
     renderHeatmap(view, folded);
   } else if (view.insightsSection === "overview") {
     renderInsightsSummary(view, content);
+    renderKnowledgeState(view, content);
     // insightsExpanded 真实控制详细概览的展开/收起（默认收起，与摘要卡提示文案一致）。
     if (view.insightsExpanded) renderOverview(view, content);
   } else if (view.insightsSection === "trend") {
@@ -96,6 +99,49 @@ export function renderInsightsSummary(view: DashboardView, root: HTMLElement): v
   item(t("Agent 待办"), String(tasks));
   if (!view.insightsExpanded) {
     card.createDiv({ cls: "sd-card-sub", text: t("详细图表与年度画像已收起，点击右上角展开。") });
+  }
+}
+
+/** 知识库现状：实时扫描，删除/移动立即反映；与历史活动统计口径互补。 */
+export function renderKnowledgeState(view: DashboardView, root: HTMLElement): void {
+  const plugin = view.plugin;
+  // 空目录会被扫描器当成「整个库」，清空设置时各项数字会虚高，故直接不渲染。
+  const knowledgeFolder = normalizeFolder(plugin.store.settings.knowledgeFolder);
+  if (!knowledgeFolder) return;
+  const files = plugin.app.vault.getMarkdownFiles().map((file) => ({
+    path: file.path,
+    mtime: file.stat.mtime,
+    frontmatter: plugin.app.metadataCache.getFileCache(file)?.frontmatter as
+      | Record<string, unknown>
+      | undefined,
+  }));
+  const state = scanKnowledgeState(files, knowledgeFolder);
+  const card = root.createDiv({ cls: "sd-card sd-knowledge-state" });
+  const head = card.createDiv({ cls: "sd-card-head" });
+  head.createDiv({ cls: "sd-card-title", text: t("知识库现状") });
+  head.createDiv({
+    cls: "sd-card-sub",
+    text: t("实时扫描，与历史活动统计口径不同：删除/移动会立即反映在这里。"),
+  });
+  const grid = card.createDiv({ cls: "sd-status-grid" });
+  const item = (label: string, value: string): void => {
+    const box = grid.createDiv({ cls: "sd-status-item" });
+    box.createDiv({ cls: "sd-mini-label", text: label });
+    box.createDiv({ cls: "sd-mini-value", text: value });
+  };
+  item(t("知识笔记"), String(state.total));
+  item(t("待审草稿"), String(state.drafts));
+  item(t("已采纳"), String(state.accepted));
+  item(t("来源未登记"), String(state.unregistered));
+  if (state.lastUpdated) item(t("最近更新"), state.lastUpdated);
+  if (state.categories.length > 0) {
+    card.createDiv({
+      cls: "sd-card-sub",
+      text: state.categories
+        .slice(0, 6)
+        .map((category) => `${category.name} ${category.count}`)
+        .join(" · "),
+    });
   }
 }
 
