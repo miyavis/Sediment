@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync, rmSync } from "fs";
 import type { SedimentPlugin } from "../main";
 import { detectAgents, type AgentTarget } from "../agent/setup";
-import { t, tf } from "../i18n";
+import { tf } from "../i18n";
 
 function readJson(raw: string): Record<string, unknown> | null {
   try {

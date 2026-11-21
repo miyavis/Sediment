@@ -8,7 +8,7 @@ Sediment 是一个本地优先的 Obsidian 插件，把知识工作统计、快�
 
 [![Obsidian](https://img.shields.io/badge/Obsidian-v1.8.7%2B-blue.svg)](https://obsidian.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v1.0.7-blue.svg)](https://github.com/miyavis/Sediment/releases)
+[![Version](https://img.shields.io/badge/version-v1.0.8-blue.svg)](https://github.com/miyavis/Sediment/releases)
 
 ## 核心入口
 
@@ -26,6 +26,8 @@ Sediment 是一个本地优先的 Obsidian 插件，把知识工作统计、快�
 - 可选语义检索指向本机 Ollama 服务（默认回环地址），不可用时自动回退 TF-IDF。
 - 「一键配置智能体客户端」只读写库外用户主目录 / `%APPDATA%` 下的 MCP 配置文件（如 `~/.claude.json`、`~/.cursor/mcp.json`、`~/.config/opencode/opencode.jsonc`），只增删 Sediment 条目；「一键卸载 MCP 接入」会移除该条目。
 - Node `fs` 仅用于上述 MCP 配置文件、插件自有的 `mcp-server/index.mjs` 和 `.obsidian/plugins/sediment/backups/` 快照，不扫描其它文件，不执行 shell 命令。
+- 看板统计会枚举库内笔记路径与元数据，用于生成热力图、趋势和知识健康度；这些数据只在本地处理，不上传笔记内容或路径清单。
+- 复制操作只在你点击「复制」按钮时，把周复盘或海报文本写入系统剪贴板。
 - 无遥测、无云端上传、无自更新、无广告。
 
 ## 快速开始

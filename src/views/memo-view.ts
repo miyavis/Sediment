@@ -57,8 +57,7 @@ export class MemoView extends ItemView {
   }
 
   private findScroller(): HTMLElement | null {
-    return (this.containerEl.closest(".view-content") as HTMLElement | null) ??
-      (this.containerEl.parentElement as HTMLElement | null);
+    return this.containerEl.closest<HTMLElement>(".view-content") ?? this.containerEl.parentElement;
   }
 
   render(): void {

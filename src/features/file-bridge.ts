@@ -245,7 +245,7 @@ export class FileBridge {
   }
 
   private adapter(): BridgeAdapter {
-    return this.plugin.app.vault.adapter as unknown as BridgeAdapter;
+    return this.plugin.app.vault.adapter;
   }
 
   private bridgeRoot(): string {

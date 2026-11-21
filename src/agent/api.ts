@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, unlinkSync, writeFileSync } from "fs";
+import { mkdirSync, readdirSync, unlinkSync, writeFileSync } from "fs";
 import { normalizePath, TFile } from "obsidian";
 import type { SedimentPlugin } from "../main";
 import { buildWeeklyReview } from "../features/review";

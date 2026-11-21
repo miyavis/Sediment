@@ -114,7 +114,7 @@ export function resolveBridgePath(plugin: SedimentPlugin, target?: AgentTarget):
       // OpenCode 条目可能在 v1 直挂或 v2 servers 位置；路径在 args（Claude 风格）或 command 数组里。
       const entries = [root.sediment, servers.sediment].filter(Boolean) as Array<{ args?: string[]; command?: unknown }>;
       for (const entry of entries) {
-        const command = Array.isArray(entry.command) ? (entry.command.filter((x) => typeof x === "string") as string[]) : [];
+        const command = Array.isArray(entry.command) ? entry.command.filter((x): x is string => typeof x === "string") : [];
         const candidates = [...(entry.args ?? []), ...command];
         const existing = candidates.find((arg) => arg.endsWith("index.mjs") && existsSync(arg));
         if (existing) {

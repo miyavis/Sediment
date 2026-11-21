@@ -1,5 +1,5 @@
 import { Notice } from "obsidian";
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "http";
+import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import { createHash, timingSafeEqual } from "crypto";
 import type { SedimentPlugin } from "../main";
 import { AGENT_API_VERSION, ApiError } from "./api";
@@ -19,7 +19,7 @@ export function tokensMatch(supplied: string, expected: string): boolean {
 
 /** 127.0.0.1 上的轻量 HTTP API，供 MCP 桥接与本地脚本调用。 */
 export class AgentServer {
-  private server: Server | null = null;
+  private server: ReturnType<typeof createServer> | null = null;
   private running: { enabled: boolean; port: number; token: string } | null = null;
 
   constructor(private plugin: SedimentPlugin) {}

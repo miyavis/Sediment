@@ -2,6 +2,12 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [1.0.8] - 2026-11-21
+
+### 审核整改
+- 清理自动审核的代码卫生告警：删除未使用的导入与变量，用类型谓词替代多余断言，笔记链接读取统一走 `frontmatterOf`，本地 API 服务器句柄改用 `ReturnType<typeof createServer>`。
+- README 与中文 README 补充行为披露：看板统计仅在本地枚举库内笔记路径与元数据，不上传；剪贴板写入只发生在点击「复制」时。
+
 ## [1.0.7] - 2026-11-21
 
 ### 上架反馈

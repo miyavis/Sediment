@@ -6,7 +6,7 @@ Sediment is a local-first Obsidian plugin that turns daily work into a personal 
 
 [![Obsidian](https://img.shields.io/badge/Obsidian-v1.8.7%2B-blue.svg)](https://obsidian.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v1.0.7-blue.svg)](https://github.com/miyavis/Sediment/releases)
+[![Version](https://img.shields.io/badge/version-v1.0.8-blue.svg)](https://github.com/miyavis/Sediment/releases)
 
 ## What it does
 
@@ -24,6 +24,8 @@ Three layout densities are available: compact, standard, and full. The plugin is
 - Optional semantic search targets an Ollama endpoint (local loopback by default) and falls back to TF-IDF when it is unavailable.
 - "Configure agent clients" reads and writes MCP configuration files **outside the vault**, under your user home or `%APPDATA%` (for example `~/.claude.json`, `~/.cursor/mcp.json`, `~/.config/opencode/opencode.jsonc`). It only adds or removes the Sediment entry; "Uninstall MCP access" removes that entry again.
 - Direct filesystem access uses Node's `fs` module only for those MCP configuration files, the plugin's own `mcp-server/index.mjs`, and note snapshots under `.obsidian/plugins/sediment/backups/`. The plugin does not run shell commands.
+- Dashboard statistics enumerate in-vault note paths and metadata to build heatmaps, trends, and knowledge health. This is local only: no note content or path list is uploaded.
+- Copy actions write the weekly review or poster text to the system clipboard only when you click the Copy button.
 - No telemetry, no cloud upload, no self-update, and no advertising.
 
 ## Install

@@ -314,7 +314,7 @@ export function renderDrafts(view: DashboardView, root: HTMLElement): void {
 
 export async function mergeDraft(view: DashboardView, file: TFile): Promise<void> {
   const cache = view.plugin.app.metadataCache.getFileCache(file);
-  const links = cache?.frontmatter?.links;
+  const links = frontmatterOf(cache)?.links;
   const first = Array.isArray(links) && links.length > 0 ? String(links[0]) : "";
   if (!first) {
     new Notice(t("这张草稿没有关联笔记，无法合并"));
