@@ -72,6 +72,7 @@ import {
 } from "../src/views/dashboard/review-queue";
 import { SETTINGS_SECTIONS, settingsSection } from "../src/ui/settings-sections";
 import { renderYearly } from "../src/views/dashboard/sections/insights";
+import { scanKnowledgeState, type KnowledgeFile } from "../src/features/knowledge-state";
 
 const day = (partial: Partial<DayRecord> = {}): DayRecord => ({ ...createEmptyDay(), ...partial });
 const settings = (partial: Partial<PulseSettings> = {}): PulseSettings => ({
@@ -3083,4 +3084,44 @@ test("i18n：stale 相关英文条目已收录", () => {
   } finally {
     setLocale("zh");
   }
+});
+
+// ── 阶段一 Task 4：知识库现状纯函数 ──
+
+test("scanKnowledgeState：只统计知识目录，来源缺失记未登记（不定罪）", () => {
+  const files: KnowledgeFile[] = [
+    { path: "knowledge/技术/a.md", mtime: Date.UTC(2026, 10, 20), frontmatter: { sediment_status: "draft", source: "agent" } },
+    { path: "knowledge/技术/b.md", mtime: Date.UTC(2026, 10, 21), frontmatter: { sediment_status: "accepted", source: "human" } },
+    { path: "knowledge/项目/c.md", mtime: Date.UTC(2026, 10, 19), frontmatter: {} },
+    { path: "knowledge/root.md", mtime: Date.UTC(2026, 10, 18), frontmatter: { category: "方法" } },
+    { path: "notes/outside.md", mtime: Date.now(), frontmatter: {} },
+  ];
+  const state = scanKnowledgeState(files, "knowledge");
+  assert.equal(state.total, 4);
+  assert.equal(state.drafts, 1);
+  assert.equal(state.accepted, 1);
+  assert.equal(state.agentSourced, 1);
+  assert.equal(state.humanSourced, 1);
+  assert.equal(state.unregistered, 2);
+  assert.deepEqual(state.unregisteredPaths.sort(), ["knowledge/root.md", "knowledge/项目/c.md"]);
+  assert.deepEqual(state.categories, [
+    { name: "技术", count: 2 },
+    { name: "方法", count: 1 },
+    { name: "项目", count: 1 },
+  ]);
+  assert.equal(state.lastUpdated, dateKey(new Date(Date.UTC(2026, 10, 21))));
+});
+
+test("scanKnowledgeState：空库返回零值；未登记列表封顶 20", () => {
+  const empty = scanKnowledgeState([], "knowledge");
+  assert.equal(empty.total, 0);
+  assert.equal(empty.lastUpdated, null);
+  const many: KnowledgeFile[] = Array.from({ length: 25 }, (_, i) => ({
+    path: `knowledge/x/f${i}.md`,
+    mtime: 0,
+    frontmatter: {},
+  }));
+  const state = scanKnowledgeState(many, "knowledge");
+  assert.equal(state.unregistered, 25);
+  assert.equal(state.unregisteredPaths.length, 20);
 });
