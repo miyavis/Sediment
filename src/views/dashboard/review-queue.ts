@@ -35,14 +35,15 @@ export function pendingChangeRows(
   }));
 }
 
-/** 待审的 Agent 变更：POST 调用、按路径去重、仅 md/json、排除已审查（kept/reverted）。 */
+/** 待审的 Agent 变更：POST 调用、按路径去重、仅 md/json、排除已审查（kept/reverted）。
+ *  confirm 档挂起中的调用（held）尚未落盘，只在「待审写入」出现，不在这里重复计数。 */
 export function pendingReviewChanges(
   calls: ToolCallRecord[],
   reviewed: Record<string, unknown>
 ): ToolCallRecord[] {
   const seen = new Set<string>();
   return calls
-    .filter((call) => call.tool.startsWith("POST "))
+    .filter((call) => call.tool.startsWith("POST ") && !call.held)
     .filter((call) => {
       if (!call.path || seen.has(call.path)) return false;
       seen.add(call.path);

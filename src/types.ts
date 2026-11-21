@@ -41,6 +41,10 @@ export interface ToolCallRecord {
   tool: string;
   agent: string;
   path: string;
+  /** confirm 档挂起中、尚未落盘；不计入变更审查，驳回后移除 */
+  held?: boolean;
+  /** 关联的待审写入 id，用于采纳/驳回时结算这条调用 */
+  pendingId?: string;
 }
 
 /** 单客户端调用聚合：不受 toolCalls 500 条上限影响，用于看板的长窗口口径。 */

@@ -8,7 +8,7 @@ Sediment 是一个本地优先的 Obsidian 插件，把知识工作统计、快�
 
 [![Obsidian](https://img.shields.io/badge/Obsidian-v1.8.7%2B-blue.svg)](https://obsidian.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v1.0.10-blue.svg)](https://github.com/miyavis/Sediment/releases)
+[![Version](https://img.shields.io/badge/version-v1.0.11-blue.svg)](https://github.com/miyavis/Sediment/releases)
 
 ## 核心入口
 
@@ -69,7 +69,7 @@ Release 只提供 Obsidian 会安装的三个文件，并附带 GitHub build pro
 
 - **写作统计**：新增词数、编辑会话、新建笔记、完成任务和专注分钟。
 - **速记**：普通 Markdown Callout、图片附件、标签筛选、回顾、漫步和沉淀。
-- **待办**：扫描原生复选框；可委派给 Agent，并定位回原笔记和行号。
+- **待办**：只扫描日记目录与带 `#task` / `#todo` 的笔记；模板和知识笔记里的验收清单不算待办。可委派给 Agent，并定位回原笔记和行号。
 - **周复盘与分析**：本期结论、未完成事项、知识成果、下一步行动和详细图表。
 - **Agent 草稿**：保留来源，可采纳、合并、驳回或恢复。
 - **本地数据**：核心数据保存在 `.obsidian/plugins/sediment/data.json`；支持库内备份和脱敏导出。

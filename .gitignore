@@ -8,3 +8,4 @@ tests/.unit.bundle.cjs
 tests/.bench.bundle.cjs
 .impeccable/
 docs/
+vibe_images/

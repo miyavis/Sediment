@@ -150,8 +150,9 @@ export class AgentServer {
       const agent = str(query.get("agent"), "") || String(request.headers["x-agent"] ?? "");
       const loggedPath =
         (typeof body.path === "string" ? body.path : "") || str(query.get("path"), "");
-      api.logToolCall(`${request.method} ${url.pathname}`, agent, redactAuditPath(loggedPath));
-      api.setCallContext(`${request.method} ${url.pathname}`, agent);
+      const tool = `${request.method} ${url.pathname}`;
+      const call = api.logToolCall(tool, agent, redactAuditPath(loggedPath));
+      api.setCallContext(tool, agent, call);
 
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":

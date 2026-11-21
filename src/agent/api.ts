@@ -5,7 +5,7 @@ import type { PomodoroState } from "../features/pomodoro";
 import { toggleCheckboxLine } from "../features/tasks";
 import { countWords } from "../tracking/tracker";
 import { restoreBackup } from "../features/audit";
-import type { DayRecord, MemoRecord, PendingWriteRecord, WorkLogRecord } from "../types";
+import type { DayRecord, MemoRecord, PendingWriteRecord, ToolCallRecord, WorkLogRecord } from "../types";
 import { addDays, dailyNotePath, dateKey, hhmm, lastNDays, parseKey } from "../utils/dates";
 import { ensureFolder, normalizeFolder } from "../utils/vault";
 import { logError } from "../utils/log-error";
@@ -305,10 +305,13 @@ export class AgentApi {
 
   private currentTool = "";
   private currentAgent = "";
+  /** 本次调用在 toolCalls 里的记录；挂起时据此标记 held，避免同一写入进两张卡。 */
+  private currentCall: ToolCallRecord | null = null;
 
-  setCallContext(tool: string, agent: string): void {
+  setCallContext(tool: string, agent: string, call: ToolCallRecord | null = null): void {
     this.currentTool = tool;
     this.currentAgent = agent;
+    this.currentCall = call;
   }
 
   /** 写入前把原文快照存到插件 backups 目录，返回快照 id。 */
@@ -427,6 +430,10 @@ export class AgentApi {
         ? { source: "bridge" as const, proposalId: meta.proposalId }
         : {}),
     });
+    // 文件桥导入不经过 HTTP 调用记录；仅把当前请求的调用标记为挂起，防止重复计数。
+    if (meta.source !== "bridge") {
+      this.plugin.store.markToolCallHeld(this.currentCall, id);
+    }
     const message = tf("confirm 模式下写入已挂起待审：{path}", { path });
     this.plugin.store.logDiagnostic("storage", message, `${id} · ${tool}`);
     return { pending: true, pendingId: id, path, message };
@@ -443,6 +450,28 @@ export class AgentApi {
     return (this.plugin.store.data.pendingWrites ?? []).find((item) => item.id === id) ?? null;
   }
 
+  /**
+   * 结算待审写入对应的调用流水：挂起期间它只属于「待审写入」。
+   * 采纳后转入「变更审查」（保留原记录与回滚能力）；驳回则整条移除，不留幽灵行。
+   * 文件桥导入没有 HTTP 调用记录，采纳时补一条但不重复计入客户端调用统计。
+   */
+  private settlePendingCall(record: PendingWriteRecord, landed: boolean): void {
+    if (!landed) {
+      this.plugin.store.dropPendingToolCall(record.id);
+      return;
+    }
+    if (this.plugin.store.releaseToolCall(record.id)) return;
+    this.plugin.store.logToolCall(
+      {
+        time: new Date().toISOString(),
+        tool: `POST ${record.tool}`,
+        agent: record.agent,
+        path: record.path,
+      },
+      false
+    );
+  }
+
   /** 采纳：按挂起时保存的原请求重放对应的落盘函数（重放前再次过门禁）。 */
   async approvePendingWrite(id: string): Promise<{ path: string }> {
     const record = this.getPendingWrite(id);
@@ -457,6 +486,7 @@ export class AgentApi {
     }
     await this.replayPending(record.request, record.agent);
     this.plugin.store.removePendingWrite(id);
+    this.settlePendingCall(record, true);
     // 只有文件桥来源才写决策；MCP/HTTP 待审记录完全不受影响。
     if (record.source === "bridge") {
       this.bridgeSink?.notifyDecision(record, "approved", "user_approved");
@@ -470,6 +500,7 @@ export class AgentApi {
   rejectPendingWrite(id: string): { ok: true; path: string } {
     const removed = this.plugin.store.removePendingWrite(id);
     if (!removed) throw new ApiError("NOT_FOUND", tf("待审写入不存在：{id}", { id }), 404);
+    this.settlePendingCall(removed, false);
     if (removed.source === "bridge") {
       this.bridgeSink?.notifyDecision(removed, "rejected", removed.stale ? "stale" : "user_rejected");
     }
@@ -1089,8 +1120,8 @@ export class AgentApi {
     return { path: safe, version: versionOf(result) };
   }
 
-  logToolCall(tool: string, agent: string, path: string): void {
-    this.plugin.store.logToolCall({ time: new Date().toISOString(), tool, agent, path });
+  logToolCall(tool: string, agent: string, path: string): ToolCallRecord {
+    return this.plugin.store.logToolCall({ time: new Date().toISOString(), tool, agent, path });
   }
 
   getToolActivity(): {

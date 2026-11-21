@@ -402,11 +402,42 @@ export class Store {
     this.scheduleSave();
   }
 
-  logToolCall(record: ToolCallRecord): void {
+  /** 记录一次调用；返回记录本身，供 confirm 档随后标记为挂起。
+   *  countUsage=false 用于采纳补记，避免同一次请求在客户端调用统计里算两次。 */
+  logToolCall(record: ToolCallRecord, countUsage = true): ToolCallRecord {
     this.data.toolCalls.unshift(record);
     if (this.data.toolCalls.length > 500) this.data.toolCalls.length = 500;
-    recordAgentUsage(this.data.agentUsage, record.agent, record.time, record.tool);
+    if (countUsage) recordAgentUsage(this.data.agentUsage, record.agent, record.time, record.tool);
     this.scheduleSave(2000);
+    return record;
+  }
+
+  /** 把当前请求的调用标记为挂起中：它还没落盘，不能进变更审查。 */
+  markToolCallHeld(call: ToolCallRecord | null, pendingId: string): void {
+    if (!call) return;
+    call.held = true;
+    call.pendingId = pendingId;
+    this.scheduleSave(2000);
+  }
+
+  /** 采纳后让原调用进入变更审查（去掉 held）；返回是否命中挂起记录。 */
+  releaseToolCall(pendingId: string): boolean {
+    const call = this.data.toolCalls.find((item) => item.pendingId === pendingId && item.held);
+    if (!call) return false;
+    delete call.held;
+    this.scheduleSave(2000);
+    return true;
+  }
+
+  /** 驳回后移除从未落盘的调用记录，避免留下「目标已删除」的幽灵审计行。 */
+  dropPendingToolCall(pendingId: string): boolean {
+    const index = this.data.toolCalls.findIndex(
+      (item) => item.pendingId === pendingId && item.held
+    );
+    if (index < 0) return false;
+    this.data.toolCalls.splice(index, 1);
+    this.scheduleSave(2000);
+    return true;
   }
 
   reviewChange(key: string, decision: "kept" | "reverted"): void {

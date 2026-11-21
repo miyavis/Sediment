@@ -465,6 +465,7 @@ const EN: Record<string, string> = {
   "恢复": "Restore",
   "已恢复到最近备份": "Restored to the latest backup",
   "待办 · 今日 / 遗留 / Agent": "Tasks · today / overdue / agent",
+  "只收集日记与 #task 笔记；知识笔记的检查清单不会进入待办。": "Only daily notes and #task notes are scanned; checklists in knowledge notes are ignored.",
   "Agent 待办": "Agent tasks",
   "没有委派的 Agent 待办。": "No delegated Agent tasks.",
   "待审 {n} 项": "{n} awaiting review",

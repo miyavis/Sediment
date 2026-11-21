@@ -305,6 +305,12 @@ export class DashboardView extends ItemView {
       cls: "sd-card-title",
       text: agentOnly ? t("Agent 待办") : t("待办 · 今日 / 遗留 / Agent"),
     });
+    if (!agentOnly) {
+      card.createDiv({
+        cls: "sd-card-sub",
+        text: t("只收集日记与 #task 笔记；知识笔记的检查清单不会进入待办。"),
+      });
+    }
     const list = card.createDiv({ cls: "sd-task-list" });
     list.createDiv({ cls: "sd-empty", text: t("加载中…") });
     const load = agentOnly

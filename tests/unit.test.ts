@@ -1504,6 +1504,31 @@ function fakeConfirmPlugin(partial: Partial<PulseSettings> = {}, files: Record<s
       const index = pendingWrites.findIndex((item) => item.id === id);
       return index < 0 ? undefined : pendingWrites.splice(index, 1)[0];
     },
+    logToolCall: (record: Record<string, any>) => {
+      store.data.toolCalls.unshift(record);
+      return record;
+    },
+    markToolCallHeld: (call: Record<string, any> | null, pendingId: string) => {
+      if (!call) return;
+      call.held = true;
+      call.pendingId = pendingId;
+    },
+    releaseToolCall: (pendingId: string) => {
+      const call = store.data.toolCalls.find(
+        (item: Record<string, any>) => item.pendingId === pendingId && item.held
+      );
+      if (!call) return false;
+      delete call.held;
+      return true;
+    },
+    dropPendingToolCall: (pendingId: string) => {
+      const index = store.data.toolCalls.findIndex(
+        (item: Record<string, any>) => item.pendingId === pendingId && item.held
+      );
+      if (index < 0) return false;
+      store.data.toolCalls.splice(index, 1);
+      return true;
+    },
     addWorkLog: (record: Record<string, any>) => {
       store.data.workLogs.unshift(record);
     },
@@ -1565,6 +1590,41 @@ test("confirm 档：writeNote 挂起不落盘；采纳落盘、驳回丢弃、�
   const denied = fakeConfirmPlugin({ agentWorkMode: "confirm", deniedFolders: "notes" });
   await assert.rejects(denied.api.writeNote("notes/c.md", "x"), (error) => asApiError(error).code === "FORBIDDEN");
   assert.equal(denied.pendingWrites.length, 0, "越权写入不得转挂起");
+});
+
+test("confirm 档：挂起写入只算待审，不重复计入变更审查；采纳转入审查，驳回不留痕", async () => {
+  const ctx = fakeConfirmPlugin({ agentWorkMode: "confirm" });
+  const call = ctx.store.logToolCall({
+    time: new Date().toISOString(), tool: "POST /note", agent: "qoder", path: "notes/a.md",
+  });
+  ctx.api.setCallContext("POST /note", "qoder", call);
+  const held = (await ctx.api.writeNote("notes/a.md", "内容", "create")) as HoldResult;
+  assert.equal(call.held, true);
+  assert.equal(call.pendingId, ctx.pendingWrites[0].id);
+  assert.equal(pendingReviewChanges(ctx.store.data.toolCalls, {}).length, 0, "挂起期间不进变更审查");
+  assert.equal(reviewBadgeCount({ drafts: 0, changes: 0, pendingWrites: 1 }), 1, "同一次写入只计 1");
+
+  await ctx.api.approvePendingWrite(pendingIdOf(held));
+  assert.equal(ctx.store.data.toolCalls.length, 1);
+  assert.equal(ctx.store.data.toolCalls[0].held, undefined, "采纳后解除挂起");
+  assert.deepEqual(
+    pendingReviewChanges(ctx.store.data.toolCalls, {}).map((item) => item.path),
+    ["notes/a.md"],
+    "采纳后转入变更审查，保留回滚入口"
+  );
+
+  const call2 = ctx.store.logToolCall({
+    time: new Date().toISOString(), tool: "POST /note", agent: "qoder", path: "notes/b.md",
+  });
+  ctx.api.setCallContext("POST /note", "qoder", call2);
+  const rejected = (await ctx.api.writeNote("notes/b.md", "x", "create")) as HoldResult;
+  ctx.api.rejectPendingWrite(pendingIdOf(rejected));
+  assert.equal(
+    ctx.store.data.toolCalls.some((item: Record<string, any>) => item.path === "notes/b.md"),
+    false,
+    "驳回后移除挂起调用，不留幽灵行"
+  );
+  assert.equal(pendingReviewChanges(ctx.store.data.toolCalls, {}).length, 1);
 });
 
 test("stampAgentProvenance：补登记来源；已有 source 不覆盖；幂等", () => {
@@ -1701,7 +1761,7 @@ test("confirm 档：速记 / 工作日志 / 勾选待办挂起，采纳走真实
 });
 
 test("confirm 档：delegateTask 挂起不落盘，采纳走 memo 重放；bypass 面直接生效；readonly 拒、auto 不受影响", async () => {
-  const taskFile = { "notes/a.md": "- [ ] 交给agent\n- [ ] 别的\n" };
+  const taskFile = { "notes/a.md": "- [ ] 交给agent #task\n- [ ] 别的\n" };
 
   // confirm：挂起为 memo 同款待审项，不落盘
   const ctx = fakeConfirmPlugin({ agentWorkMode: "confirm" }, taskFile);
@@ -1803,10 +1863,33 @@ test("移交项 2：dailyNotePath 统一三处路径口径", () => {
   assert.equal(dailyNotePath({ dailyNoteFolder: "daily", dailyNoteFormat: "YYYY/MM/DD" }, new Date(2026, 0, 5)), "daily/2026/01/05.md");
 });
 
+test("待办来源：只扫日记与 #task 笔记，模板和知识笔记验收清单不进入待办", async () => {
+  const today = dateKey(new Date());
+  const ctx = fakeConfirmPlugin({}, {
+    [`Sediment/daily/${today}.md`]: "- [ ] 日记待办\n",
+    "Templates/知识笔记模板.md": "#task\n- [ ] 模板占位\n",
+    "Sediment/knowledge/灵感/旧片.md": "---\ntype: knowledge\n---\n- [ ] 验收项\n",
+    "Sediment/knowledge/灵感/新片.md": "---\ntype: knowledge\n---\n#task\n- [ ] 显式任务\n",
+    "项目/甲.md": "#task\n- [ ] 项目待办\n",
+  });
+
+  const all = await ctx.tasks.list("all");
+  assert.deepEqual(
+    all.map((item) => item.text),
+    ["日记待办", "显式任务", "项目待办"],
+    "日记默认纳入；知识笔记只有 #task 才纳入；模板永远不纳入"
+  );
+  assert.ok(!all.some((item) => item.text === "验收项"), "知识笔记里的验收清单不得混入待办");
+  assert.ok(!all.some((item) => item.text === "模板占位"), "模板占位复选框不得混入待办");
+
+  const todayTasks = await ctx.tasks.list("today");
+  assert.deepEqual(todayTasks.map((item) => item.text), ["日记待办"]);
+});
+
 test("移交项 1：越权目录待办不进入 Agent listTasks / snapshotTasks，人用 UI 不过滤", async () => {
   const files = {
-    "daily/2020-01-01.md": "- [ ] 公开待办\n",
-    "私有/2020-01-01.md": "- [ ] 私密待办\n",
+    "Sediment/daily/2020-01-01.md": "- [ ] 公开待办\n",
+    "私有/2020-01-01.md": "#task\n- [ ] 私密待办\n",
   };
   const ctx = fakeConfirmPlugin({ agentWorkMode: "auto", deniedFolders: "私有" }, files);
 
@@ -1827,8 +1910,8 @@ test("移交项 1：越权目录待办不进入 Agent listTasks / snapshotTasks�
 
 test("confirm 档：snapshotTasks 预览同样只数可访问待办", async () => {
   const files = {
-    "daily/2020-01-01.md": "- [ ] 公开待办\n",
-    "私有/2020-01-01.md": "- [ ] 私密待办\n",
+    "Sediment/daily/2020-01-01.md": "- [ ] 公开待办\n",
+    "私有/2020-01-01.md": "#task\n- [ ] 私密待办\n",
   };
   const ctx = fakeConfirmPlugin({ agentWorkMode: "confirm", deniedFolders: "私有" }, files);
   const res = (await ctx.api.snapshotTasks()) as HoldResult;
@@ -2374,6 +2457,7 @@ test("pendingReviewChanges：POST 去重 + 仅 md/json + 排除已审查，徽�
     { time: "2026-11-20T07:00:00.000Z", tool: "POST write_note", agent: "a", path: "img.png" }, // 非 md/json
     { time: "2026-11-20T06:00:00.000Z", tool: "POST write_note", agent: "a", path: "done.json" },
     { time: "2026-11-20T05:00:00.000Z", tool: "POST write_note", agent: "a", path: "" }, // 无路径
+    { time: "2026-11-20T11:00:00.000Z", tool: "POST write_note", agent: "a", path: "held.md", held: true }, // 挂起中未落盘
   ];
   const reviewed = { "2026-11-20T06:00:00.000Z|done.json": "kept" as const };
   const pending = pendingReviewChanges(calls, reviewed);
@@ -3107,7 +3191,7 @@ test("终审 2：recordWorkLog 目标已存在按 patch 过门禁——draft 档
 });
 
 test("终审 3：snapshotTasks 日记缺失按 create 过门禁——patch=true/create=false 不得凭空建日记", async () => {
-  const files = { "notes/a.md": "- [ ] 遗留任务\n" };
+  const files = { "Sediment/daily/2020-01-01.md": "- [ ] 遗留任务\n" };
   const ctx = fakeConfirmPlugin({ agentWorkMode: "auto", agentAllowCreate: false, agentAllowPatch: true }, files);
   const dailyPath = dailyNotePath(ctx.store.settings, new Date());
   await assert.rejects(ctx.api.snapshotTasks(), (error) => {

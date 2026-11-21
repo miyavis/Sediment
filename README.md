@@ -6,7 +6,7 @@ Sediment is a local-first Obsidian plugin that turns daily work into a personal 
 
 [![Obsidian](https://img.shields.io/badge/Obsidian-v1.8.7%2B-blue.svg)](https://obsidian.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v1.0.10-blue.svg)](https://github.com/miyavis/Sediment/releases)
+[![Version](https://img.shields.io/badge/version-v1.0.11-blue.svg)](https://github.com/miyavis/Sediment/releases)
 
 ## What it does
 
@@ -52,7 +52,7 @@ Releases contain only the three files Obsidian installs, with GitHub build prove
 
 - **Writing statistics** — words added, editing sessions, notes created, tasks completed, and focus minutes.
 - **Quick memos** — Markdown callouts, image attachments, tag filtering, daily recall, similarity browsing, and knowledge deposition.
-- **Tasks** — scans native checkboxes; tasks can be delegated to an agent and linked back to the source note and line.
+- **Tasks** — scans native checkboxes in daily notes and notes tagged `#task`/`#todo`; templates and acceptance checklists in knowledge notes are ignored. Tasks can be delegated to an agent and linked back to the source note and line.
 - **Weekly review** — conclusions, unfinished items, knowledge output, next actions, and detailed charts.
 - **Agent drafts** — keep source references; accept, merge, reject, or restore.
 - **Local data** — core data lives in `.obsidian/plugins/sediment/data.json`; in-vault backup and redacted export are supported.

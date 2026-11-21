@@ -21,6 +21,15 @@ export interface TaskReadOptions {
 }
 
 const CHECKBOX = /^(\s*[-*+]\s+)\[([ xX])\]\s+(.*)$/;
+/** 非日记笔记里的复选框默认不算待办；写 #task / #todo 才显式纳入。 */
+const TASK_TAG = /(^|\s)#(task|todo)\b/i;
+/** 模板里的“检查清单/完成标准”是占位内容，永远不当成待办。 */
+const TEMPLATE_FOLDER = /(^|\/)[Tt]emplates\//;
+
+function inFolder(path: string, folder: string): boolean {
+  if (!folder) return /^[^/]*\d{4}-\d{2}-\d{2}[^/]*\.md$/.test(path);
+  return path === folder || path.startsWith(`${folder}/`);
+}
 
 /** 把一行复选框置为已勾选（供落盘与待审预览共用，避免两份实现漂移）。 */
 export function toggleCheckboxLine(line: string): string {
@@ -35,6 +44,12 @@ export class TaskManager {
     const match = file.path.match(/(\d{4}-\d{2}-\d{2})/);
     if (match) return match[1];
     return dateKey(new Date(file.stat.ctime));
+  }
+
+  /** 日记目录是默认任务源；其它笔记只有显式写 #task / #todo 才扫描。 */
+  private isTaskSource(path: string, text: string, dailyFolder: string): boolean {
+    if (TEMPLATE_FOLDER.test(path)) return false;
+    return inFolder(path, dailyFolder) || TASK_TAG.test(text);
   }
 
   async list(scope: "today" | "overdue" | "all" | "agent" = "all", opts: TaskReadOptions = {}): Promise<TaskItem[]> {
@@ -53,10 +68,12 @@ export class TaskManager {
         }));
     }
     const today = dateKey(new Date());
+    const dailyFolder = normalizeFolder(this.plugin.store.settings.dailyNoteFolder);
     const result: TaskItem[] = [];
     for (const file of this.plugin.app.vault.getMarkdownFiles()) {
       if (opts.accessible && !opts.accessible(file.path)) continue;
       const text = await this.plugin.app.vault.cachedRead(file);
+      if (!this.isTaskSource(file.path, text, dailyFolder)) continue;
       const date = this.dateOf(file);
       const lines = text.split("\n");
       for (let index = 0; index < lines.length; index += 1) {
