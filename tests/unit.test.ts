@@ -3345,7 +3345,11 @@ test("EN locale：健康任务文本零 CJK", async () => {
 // ── 阶段二 Task 11：检索标题英文化 ──
 
 test("EN locale：searchNotes 的速记/工作日志/草稿标题零 CJK", async () => {
-  const ctx = fakeConfirmPlugin({});
+  // 草稿分支靠 basename 命中 + frontmatter.sediment_status，正文不含 needle，
+  // 因此三条结果分别来自 memo / worklog / draft 三个分支。
+  const ctx = fakeConfirmPlugin({}, { "knowledge/english-draft.md": "Awaiting review.\n" });
+  ctx.plugin.app.metadataCache.getFileCache = (file: { path: string }) =>
+    file.path === "knowledge/english-draft.md" ? { frontmatter: { sediment_status: "draft" } } : undefined;
   ctx.plugin.store.data.memos.push({
     id: "m1", date: "2026-11-21", time: "10:00", text: "english note", tags: [], converted: false,
   });
@@ -3357,11 +3361,19 @@ test("EN locale：searchNotes 的速记/工作日志/草稿标题零 CJK", async
   setLocale("en");
   try {
     const hits = await ctx.api.searchNotes("english");
-    assert.ok(hits.length >= 2);
+    assert.equal(hits.length, 3, JSON.stringify(hits));
     for (const hit of hits) {
       assert.equal(/[\u4e00-\u9fff]/.test(hit.title), false, hit.title);
     }
+    assert.equal(hits.find((hit) => hit.kind === "memo")?.title, "Memo 2026-11-21 10:00");
+    assert.equal(hits.find((hit) => hit.kind === "worklog")?.title, "Work log 2026-11-21 11:00 · qoder");
+    const draft = hits.find((hit) => hit.kind === "draft");
+    assert.ok(draft, "须命中草稿标题");
+    assert.equal(draft.title, "english-draft");
+    assert.equal(draft.snippet, "Knowledge draft pending review");
   } finally {
     setLocale("zh");
   }
+  const zhHits = await ctx.api.searchNotes("english");
+  assert.equal(zhHits.find((hit) => hit.kind === "memo")?.title, "速记 2026-11-21 10:00");
 });
