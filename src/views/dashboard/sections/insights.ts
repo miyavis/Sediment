@@ -315,11 +315,12 @@ export function renderStrata(view: DashboardView, root: HTMLElement): void {
 
   const showTip = (event: MouseEvent, month: StrataMonth): void => {
     view.hideHeatTooltip();
-    const tip = document.body.createDiv({ cls: "sd-heat-tooltip" });
+    const doc = slot.ownerDocument;
+    const tip = doc.body.createDiv({ cls: "sd-heat-tooltip" });
     tip.createDiv({ cls: "sd-tip-date", text: month.month });
     tip.createDiv({ cls: "sd-tip-metric", text: tf("人写 {human} 字 · AI 写 {agent} 字", { human: month.human, agent: month.agent }) });
     tip.createDiv({ cls: "sd-tip-metric", text: tf("完成任务 {tasks} 个 · 专注 {focus} 分钟", { tasks: month.tasks, focus: month.focus }) });
-    document.body.appendChild(tip);
+    doc.body.appendChild(tip);
     view.heatTooltip = tip;
     view.moveHeatTooltip(event);
   };

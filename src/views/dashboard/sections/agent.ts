@@ -6,6 +6,7 @@ import { DraftPreviewModal } from "../../../ui/draft-preview-modal";
 import { confirmAction } from "../../../ui/confirm-modal";
 import { listBackups, readBackup, restoreBackup } from "../../../features/audit";
 import { scanKnowledgeState } from "../../../features/knowledge-state";
+import { summarizeAgentUsage } from "../../../data/agent-usage";
 import { localStamp } from "../../../utils/dates";
 import { frontmatterOf, normalizeFolder } from "../../../utils/vault";
 import { t, tf } from "../../../i18n";
@@ -221,13 +222,37 @@ export function renderAgentChanges(view: DashboardView, root: HTMLElement): void
   }
 }
 
-export function renderAgentStatus(view: DashboardView, root: HTMLElement): void {
-  const card = root.createDiv({ cls: "sd-card" });
+/** 客户端 id → 展示名；未知 id 原样显示，空 id 归为「未署名客户端」。 */
+const AGENT_LABELS: Record<string, string> = {
+  opencode: "OpenCode",
+  qoder: "Qoder",
+  "qoder-cn": "Qoder CN",
+  "claude-desktop": "Claude Desktop",
+  cursor: "Cursor",
+  cline: "Cline CLI",
+  "cline-ide": "Cline (VS Code)",
+  gemini: "Gemini CLI",
+  windsurf: "Windsurf",
+  "windsurf-next": "Windsurf Next",
+};
+
+export function agentLabel(agent: string): string {
+  if (!agent || agent === "unknown") return t("未署名客户端");
+  return AGENT_LABELS[agent] ?? agent;
+}
+
+/** 只重绘状态卡本体，供看板定时刷新（不触碰滚动位置与其它卡片）。 */
+export function paintAgentStatus(view: DashboardView, card: HTMLElement): void {
+  card.empty();
   card.createDiv({ cls: "sd-card-title", text: t("连接与调用状态") });
   const settings = view.plugin.store.settings;
-  const calls = view.plugin.store.data.toolCalls;
-  const byAgent: Record<string, number> = {};
-  for (const call of calls) byAgent[call.agent || "unknown"] = (byAgent[call.agent || "unknown"] ?? 0) + 1;
+  const now = Date.now();
+  const usage = view.plugin.store.data.agentUsage ?? {};
+  const agents = summarizeAgentUsage(usage, now);
+  const total = agents.reduce((sum, agent) => sum + agent.total, 0);
+  const last24h = agents.reduce((sum, agent) => sum + agent.last24h, 0);
+  const last7d = agents.reduce((sum, agent) => sum + agent.last7d, 0);
+
   const grid = card.createDiv({ cls: "sd-status-grid" });
   const item = (label: string, value: string): void => {
     const box = grid.createDiv({ cls: "sd-status-item" });
@@ -235,10 +260,38 @@ export function renderAgentStatus(view: DashboardView, root: HTMLElement): void 
     box.createDiv({ cls: "sd-mini-value", text: value });
   };
   item(t("本地 API"), settings.agentServerEnabled ? `${t("在线")} · ${settings.agentServerPort}` : t("未启用"));
-  item(t("累计调用"), String(calls.length));
-  for (const [agent, count] of Object.entries(byAgent)) item(agent, tf("{n} 次", { n: count }));
-  const last = calls[0];
-  if (last) card.createDiv({ cls: "sd-card-sub", text: `${t("最近调用")}：${localStamp(last.time)} · ${last.tool}` });
+  item(t("累计调用"), String(total));
+  item(t("近 24 小时"), String(last24h));
+  item(t("近 7 天"), String(last7d));
+
+  card.createDiv({ cls: "sd-card-sub sd-agent-section-label", text: t("客户端") });
+  if (agents.length === 0) {
+    card.createDiv({ cls: "sd-empty", text: t("尚无 Agent 调用。客户端首次调用后会显示在这里。") });
+    return;
+  }
+  const list = card.createDiv({ cls: "sd-agent-rows" });
+  for (const agent of agents) {
+    const row = list.createDiv({ cls: "sd-agent-row" });
+    if (agent.active) row.addClass("is-live");
+    const head = row.createDiv({ cls: "sd-agent-head" });
+    head.createSpan({ cls: "sd-agent-name", text: agentLabel(agent.agent) });
+    if (agent.active) head.createSpan({ cls: "sd-agent-live", text: t("5 分钟内调用过") });
+    head.createSpan({
+      cls: "sd-agent-window",
+      text: `${t("近 24 小时")} ${agent.last24h} · ${t("近 7 天")} ${agent.last7d} · ${tf("{n} 次", { n: agent.total })}`,
+    });
+    if (agent.lastAt) {
+      row.createDiv({
+        cls: "sd-agent-last",
+        text: `${t("最近调用")}：${localStamp(agent.lastAt)}${agent.lastTool ? ` · ${agent.lastTool}` : ""}`,
+      });
+    }
+  }
+}
+
+export function renderAgentStatus(view: DashboardView, root: HTMLElement): void {
+  const card = root.createDiv({ cls: "sd-card sd-agent-status-card" });
+  paintAgentStatus(view, card);
 }
 
 /** 扫描 vault 中 sediment_status=draft 的笔记（徽章计数与草稿卡共用同一口径）。 */

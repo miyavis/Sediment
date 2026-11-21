@@ -33,6 +33,15 @@ export class PulseSettingTab extends PluginSettingTab {
   }
 
   display(): void {
+    this.renderSettings();
+  }
+
+  /**
+   * 实际渲染入口。Obsidian 在 1.13+ 弃用 display()，但声明式设置 API 需要
+   * 整体重写 800 行设置页；这里把刷新调用收敛到私有方法，兼容旧版的同时
+   * 避免在类内反复触发弃用提示。
+   */
+  private renderSettings(): void {
     const { containerEl } = this;
     containerEl.empty();
     new Setting(containerEl).setName(t("Sediment 设置")).setHeading();
@@ -74,7 +83,7 @@ export class PulseSettingTab extends PluginSettingTab {
             setLocale(resolveLocale(settings.language));
             save();
             this.plugin.refreshViews();
-            this.display();
+            this.renderSettings();
           })
       );
 
@@ -275,7 +284,7 @@ export class PulseSettingTab extends PluginSettingTab {
                 settings.agentAllowDelete = false;
               }
               save();
-              this.display();
+              this.renderSettings();
             });
           })
       );
@@ -474,7 +483,7 @@ export class PulseSettingTab extends PluginSettingTab {
       parts.push(tf("失败 {from}（{reason}）", { from: item.from, reason: item.reason }));
     }
     new Notice(parts.join("；"), outcome.failed.length > 0 ? 15_000 : 6_000);
-    if (outcome.migrated.length > 0) this.display();
+    if (outcome.migrated.length > 0) this.renderSettings();
   }
 
   private renderBackup(containerEl: HTMLElement, settings: PulseSettings, save: () => void): void {
@@ -568,7 +577,7 @@ export class PulseSettingTab extends PluginSettingTab {
               new Notice(tf("已从 {name} 恢复，恢复副本：{path}", { name: backup.name, path: result.recoveryPath }));
             }
             this.plugin.refreshViews();
-            this.display();
+            this.renderSettings();
           }).catch((error) => {
             new Notice(error instanceof Error ? error.message : String(error));
           });
@@ -728,7 +737,7 @@ export class PulseSettingTab extends PluginSettingTab {
         button.setButtonText(t("生成新令牌")).onClick(() => {
           settings.agentServerToken = generateToken();
           save();
-          this.display();
+          this.renderSettings();
         })
       );
 
@@ -766,7 +775,7 @@ export class PulseSettingTab extends PluginSettingTab {
             try {
               configureAgent(this.plugin, agent);
               new Notice(tfAgentConfigured(agent.name));
-              this.display();
+              this.renderSettings();
             } catch (error) {
               new Notice(`${t("配置失败")}: ${error instanceof Error ? error.message : String(error)}`);
             }
@@ -782,7 +791,7 @@ export class PulseSettingTab extends PluginSettingTab {
                 ? `${t("卸载失败")}: ${result.failures.join("；")}`
                 : `${agent.name} ${t("MCP 配置已移除，重启客户端后生效")}`
             );
-            this.display();
+            this.renderSettings();
           });
         });
     }

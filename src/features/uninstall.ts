@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, writeFileSync, rmSync } from "fs";
 import type { SedimentPlugin } from "../main";
+import { fileExists, readTextFile, removePath, writeTextFile } from "../utils/node";
 import { detectAgents, type AgentTarget } from "../agent/setup";
 import { tf } from "../i18n";
 
@@ -32,8 +32,8 @@ export function listMcpInstallations(plugin: SedimentPlugin): {
   const clients: McpInstallation[] = [];
   for (const target of detectAgents()) {
     let configured = false;
-    if (existsSync(target.configPath)) {
-      const data = readJson(readFileSync(target.configPath, "utf8"));
+    if (fileExists(target.configPath)) {
+      const data = readJson(readTextFile(target.configPath, "utf8"));
       const root = (data?.[target.rootKey] ?? {}) as Record<string, unknown>;
       const servers = (root.servers ?? {}) as Record<string, unknown>;
       configured = Boolean(root.sediment || servers.sediment);
@@ -46,13 +46,13 @@ export function listMcpInstallations(plugin: SedimentPlugin): {
       configured,
     });
   }
-  return { clients, bridgePath, bridgeExists: Boolean(bridgePath && existsSync(bridgePath)) };
+  return { clients, bridgePath, bridgeExists: Boolean(bridgePath && fileExists(bridgePath)) };
 }
 
 /** 从选中的客户端配置中移除 sediment 条目；写前备份为 .bak。 */
 function removeFromClient(target: AgentTarget): boolean {
-  if (!existsSync(target.configPath)) return false;
-  const raw = readFileSync(target.configPath, "utf8");
+  if (!fileExists(target.configPath)) return false;
+  const raw = readTextFile(target.configPath, "utf8");
   const data = readJson(raw);
   if (!data) return false;
   const root = (data[target.rootKey] ?? {}) as Record<string, unknown>;
@@ -65,8 +65,8 @@ function removeFromClient(target: AgentTarget): boolean {
     else root.servers = servers;
   }
   data[target.rootKey] = root;
-  writeFileSync(`${target.configPath}.bak`, raw, "utf8");
-  writeFileSync(target.configPath, JSON.stringify(data, null, 2), "utf8");
+  writeTextFile(`${target.configPath}.bak`, raw, "utf8");
+  writeTextFile(target.configPath, JSON.stringify(data, null, 2), "utf8");
   return true;
 }
 
@@ -94,8 +94,8 @@ export function uninstallMcp(
     try {
       const sep = Math.max(state.bridgePath.lastIndexOf("/"), state.bridgePath.lastIndexOf("\\"));
       const dir = state.bridgePath.slice(0, sep);
-      rmSync(state.bridgePath, { recursive: true, force: true });
-      rmSync(dir, { recursive: true, force: true });
+      removePath(state.bridgePath, { recursive: true, force: true });
+      removePath(dir, { recursive: true, force: true });
       bridge = true;
     } catch (error) {
       failures.push(tf("桥接脚本：{detail}", { detail: error instanceof Error ? error.message : String(error) }));

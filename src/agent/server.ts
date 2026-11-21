@@ -1,7 +1,15 @@
 import { Notice } from "obsidian";
-import { createServer, type IncomingMessage, type ServerResponse } from "http";
-import { createHash, timingSafeEqual } from "crypto";
 import type { SedimentPlugin } from "../main";
+import {
+  concatBytes,
+  constantTimeEqual,
+  createHttpServer,
+  decodeUtf8,
+  sha256Digest,
+  type NodeHttpRequest,
+  type NodeHttpResponse,
+  type NodeHttpServer,
+} from "../utils/node";
 import { AGENT_API_VERSION, ApiError } from "./api";
 import { redactAuditPath } from "./security";
 import { t, tf } from "../i18n";
@@ -12,14 +20,14 @@ import { logError } from "../utils/log-error";
  * 与长度侧信道），再用 timingSafeEqual 比较。
  */
 export function tokensMatch(supplied: string, expected: string): boolean {
-  const a = createHash("sha256").update(String(supplied), "utf8").digest();
-  const b = createHash("sha256").update(String(expected), "utf8").digest();
-  return timingSafeEqual(a, b);
+  const a = sha256Digest(String(supplied));
+  const b = sha256Digest(String(expected));
+  return constantTimeEqual(a, b);
 }
 
 /** 127.0.0.1 上的轻量 HTTP API，供 MCP 桥接与本地脚本调用。 */
 export class AgentServer {
-  private server: ReturnType<typeof createServer> | null = null;
+  private server: NodeHttpServer | null = null;
   private running: { enabled: boolean; port: number; token: string } | null = null;
 
   constructor(private plugin: SedimentPlugin) {}
@@ -42,7 +50,7 @@ export class AgentServer {
 
     if (!desired.enabled) return;
 
-    const server = createServer((request, response) => {
+    const server = createHttpServer((request, response) => {
       void this.handle(request, response);
     });
     try {
@@ -72,7 +80,7 @@ export class AgentServer {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 
-  private json(response: ServerResponse, status: number, payload: unknown): void {
+  private json(response: NodeHttpResponse, status: number, payload: unknown): void {
     // 仅本机回环使用，不开放跨域，避免网页脚本借令牌读写知识库。
     response.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8",
@@ -80,26 +88,26 @@ export class AgentServer {
     response.end(JSON.stringify(payload));
   }
 
-  private async readBody(request: IncomingMessage): Promise<Record<string, unknown>> {
-    const chunks: Buffer[] = [];
+  private async readBody(request: NodeHttpRequest): Promise<Record<string, unknown>> {
+    const chunks: Uint8Array[] = [];
     let size = 0;
     let oversized = false;
     // 注意：不能在 for await 内直接 throw——异步迭代器 return() 会销毁请求流，
     // 413 响应将随连接一起被重置。超限后停止缓冲但继续排空上传，再抛错。
     for await (const chunk of request) {
-      size += (chunk as Buffer).length;
+      size += chunk.length;
       if (size > 1024 * 1024) {
         oversized = true;
         chunks.length = 0;
         continue;
       }
-      if (!oversized) chunks.push(chunk as Buffer);
+      if (!oversized) chunks.push(chunk);
     }
     if (oversized) throw new ApiError("PAYLOAD_TOO_LARGE", t("请求体过大（上限 1MB）"), 413);
     if (chunks.length === 0) return {};
     let parsed: unknown;
     try {
-      parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      parsed = JSON.parse(decodeUtf8(concatBytes(chunks)));
     } catch {
       throw new ApiError("INVALID_JSON", "请求体必须是合法的 JSON 对象", 400);
     }
@@ -109,7 +117,7 @@ export class AgentServer {
     return parsed as Record<string, unknown>;
   }
 
-  private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  private async handle(request: NodeHttpRequest, response: NodeHttpResponse): Promise<void> {
     let url: URL;
     try {
       url = new URL(request.url ?? "/", "http://127.0.0.1");

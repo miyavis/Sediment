@@ -1312,6 +1312,62 @@ settings:
   border-radius: 8px;
 }
 
+/* 连接与调用状态：按客户端列出累计/24h/7d 与最近调用。 */
+.sd-agent-section-label {
+  margin-top: 14px;
+}
+
+.sd-agent-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.sd-agent-row {
+  padding: 9px 12px;
+  background: var(--background-secondary);
+  border-left: 3px solid transparent;
+  border-radius: 8px;
+}
+
+.sd-agent-row.is-live {
+  border-left-color: var(--color-green);
+}
+
+.sd-agent-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.sd-agent-name {
+  font-size: var(--font-ui-small);
+  font-weight: 600;
+}
+
+.sd-agent-live {
+  padding: 1px 6px;
+  font-size: 10px;
+  color: var(--color-green);
+  background: color-mix(in srgb, var(--color-green) 14%, transparent);
+  border-radius: 6px;
+}
+
+.sd-agent-window {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.sd-agent-last {
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
 .sd-draft-list {
   display: flex;
   flex-direction: column;

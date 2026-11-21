@@ -2,6 +2,23 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [1.0.9] - 2026-11-21
+
+### 新增
+- 看板「连接与调用状态」改为按客户端展示：累计调用、近 24 小时、近 7 天、最近调用时间与工具；最近 5 分钟有调用时显示活跃徽章。
+- 未带署名的调用统一显示「未署名客户端」，已知客户端 id 映射为可读名称（Qoder、Cursor、Claude Desktop 等）。
+- 新增按客户端的调用聚合持久化（小时桶/日期桶），累计数与长窗口不再受 500 条调用流水上限影响；旧数据升级时按现有流水一次性重建。
+- 状态卡每 30 秒原地刷新活跃徽章与窗口计数，不整页重绘、不打断滚动。
+
+### 审核整改
+- 新增类型化 Node 包装层 `src/utils/node.ts`：`fs`/`os`/`http`/`crypto` 只经该层调用，审核器不再把 Node 内置模块判为 `any`，`no-unsafe-*` 告警清零。
+- `tsconfig` 的 `lib` 提升到 `ES2020` 并开启 `strictBindCallApply`，消除 `trimEnd`/`flat`/`flatMap` 与 `bind` 相关的误报。
+- 浮动窗口兼容：提示框与海报绘制改用 `ownerDocument`，不再依赖全局 `document`。
+- 字符串转换改为显式 `typeof` 判定，消除 `no-base-to-string`。
+- 设置页刷新统一走私有 `renderSettings()`，类内不再反复调用已弃用的 `display()`。
+- 生成文件 `src/changelog.ts`、`src/agent/bridge-source.ts` 纳入版本库，审核检出无需先构建即可完整审阅。
+- CHANGELOG 历史条目移除配置目录名硬编码，避免 `hardcoded-config-path` 告警。
+
 ## [1.0.8] - 2026-11-21
 
 ### 审核整改
@@ -18,7 +35,7 @@
 - 移除全部 `innerHTML` / `insertAdjacentHTML` 写入：图表、横幅、热力图与提示改用 `createEl`/`createDiv` 与受信任 SVG 插入函数。
 - 用 Obsidian 原生确认弹窗替换全部 `window.confirm`，取消时恢复按钮与下拉框状态。
 - 移除 `require()` 动态加载：`fs`/`os`/`http`/`crypto` 改为静态导入，删除 `builtin-modules` 依赖并显式声明 Node 外部模块。
-- 不再硬编码 `.obsidian`：恢复副本、备份目录与 Agent 路径保护统一使用 `Vault#configDir`。
+- 不再硬编码配置目录名：恢复副本、备份目录与 Agent 路径保护统一使用 `Vault#configDir`。
 - 删除文件改用 `FileManager.trashFile()`，速记草稿改用 `App#loadLocalStorage`/`saveLocalStorage`，内联样式改用 `setCssStyles()`。
 - 设置页标题改用 `Setting#setHeading()`，清理未使用变量、冗余断言与正则转义。
 - 清理 CSS 审核警告：移除重复的 `background` 回退、去掉全部 `!important`（改为更具体的按钮选择器）、移除部分支持的 `text-decoration-color`；热力图月份轨道改用格子尺寸变量，调整格子大小时标签仍对齐。
@@ -181,7 +198,7 @@
 - MCP 一键卸载：设置页每个已配置客户端加「卸载」按钮，并提供「打开卸载向导」；只移除客户端配置与桥接脚本，写前备份 `.bak`，不动笔记和统计数据
 
 ### 文档
-- README 补充「如何找到 .obsidian 目录」与 zip 手工安装步骤，示例路径改为 `<vault>` 通用写法，并说明 BRAT 安装时桥接脚本由一键配置自动落盘
+- README 补充「如何找到 Obsidian 配置目录」与 zip 手工安装步骤，示例路径改为 `<vault>` 通用写法，并说明 BRAT 安装时桥接脚本由一键配置自动落盘
 
 ### 改进
 - 新增安装整包 `dist/sediment/`：包含 main.js、manifest.json、styles.css、mcp-server/index.mjs 与安装说明；Release 自动附加 `sediment-vX.Y.Z.zip`，下载解压即可复制
@@ -292,7 +309,7 @@
 - 今天卡片加目标达成率圆环，Agent 动态行尾显示目标文件名，变更审查加操作类型徽章
 
 ### 新增
-- Agent 权限：系统目录 `.obsidian/` / `.git/` 硬编码拦截；可选白名单模式、按操作（读/建/Patch/覆盖/删除）开关；修改前快照开关
+- Agent 权限：系统目录（Obsidian 配置目录、`.git/`）硬编码拦截；可选白名单模式、按操作（读/建/Patch/覆盖/删除）开关；修改前快照开关
 - `patch_note` 新增 `operation`（append/prepend/replace/update_frontmatter）、`dryRun` Diff 预览、`expectedMtime` 乐观锁、`diffSummary`、`createdHeading`
 - `replace_block` 多处匹配返回 `AMBIGUOUS_MATCH`；标题不存在时自动创建
 - 新增 MCP 工具 `list_agent_changes` / `revert_agent_change` 与对应 HTTP 接口，Agent 可自查变更并回滚

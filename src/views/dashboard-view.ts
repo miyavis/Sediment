@@ -10,7 +10,7 @@ import { t, tf } from "../i18n";
 import { appendSvg, setSvg } from "../utils/dom";
 import { TABS, type RangeKey, type TabKey } from "./dashboard/constants";
 import { filterAgentTasks, pendingReviewChanges, reviewBadgeCount } from "./dashboard/review-queue";
-import { listDraftFiles, renderAgentHub } from "./dashboard/sections/agent";
+import { listDraftFiles, paintAgentStatus, renderAgentHub } from "./dashboard/sections/agent";
 import { renderInsights } from "./dashboard/sections/insights";
 import { renderToday } from "./dashboard/sections/today";
 
@@ -61,6 +61,7 @@ export class DashboardView extends ItemView {
   async onOpen(): Promise<void> {
     this.render();
     this.registerInterval(window.setInterval(() => this.updateBanner(), 60_000));
+    this.registerInterval(window.setInterval(() => this.refreshAgentStatusCard(), 30_000));
     this.unsubscribePomodoro = this.plugin.pomodoro.subscribe(() => this.updatePomodoroButton());
   }
 
@@ -220,8 +221,9 @@ export class DashboardView extends ItemView {
 
   showHeatTooltip(event: MouseEvent, key: string): void {
     this.hideHeatTooltip();
+    const doc = this.containerEl.ownerDocument;
     const day = this.plugin.store.getDay(key);
-    const tip = document.body.createDiv({ cls: "sd-heat-tooltip" });
+    const tip = doc.body.createDiv({ cls: "sd-heat-tooltip" });
     tip.createDiv({ cls: "sd-tip-date", text: key });
     tip.createDiv({
       cls: "sd-tip-metric",
@@ -237,7 +239,7 @@ export class DashboardView extends ItemView {
     if (notes.length > 0) tip.createDiv({ cls: "sd-tip-notes", text: tf("笔记：{list}", { list: notes.join(t("、")) }) });
     const memos = this.plugin.store.data.memos.filter((memo) => memo.date === key).slice(0, 2);
     if (memos.length > 0) tip.createDiv({ cls: "sd-tip-notes", text: tf("速记：{list}", { list: memos.map((memo) => memo.text).join(" / ") }) });
-    document.body.appendChild(tip);
+    doc.body.appendChild(tip);
     this.heatTooltip = tip;
     this.moveHeatTooltip(event);
   }
@@ -490,6 +492,12 @@ ${celestial}
 
   updateBanner(): void {
     if (this.bannerEl) setSvg(this.bannerEl, this.bannerSvg());
+  }
+
+  /** 活跃徽章与 24h/7d 计数随时间变化：只重绘状态卡，不整页刷新。 */
+  refreshAgentStatusCard(): void {
+    const card = this.contentEl.querySelector<HTMLElement>(".sd-agent-status-card");
+    if (card) paintAgentStatus(this, card);
   }
 
   updatePomodoroButton(): void {

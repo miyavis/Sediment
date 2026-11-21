@@ -17,6 +17,7 @@ import {
 } from "../types";
 import { t, tf } from "../i18n";
 import { reconcilePendingWrites, markStaleByPaths } from "../agent/reconcile";
+import { rebuildAgentUsage, recordAgentUsage, sanitizeAgentUsage } from "./agent-usage";
 import { dateKey } from "../utils/dates";
 import { ensureFolder, normalizeFolder } from "../utils/vault";
 import { logError } from "../utils/log-error";
@@ -152,6 +153,7 @@ export class Store {
       memos: Array.isArray(loaded.memos) ? loaded.memos : [],
       workLogs: Array.isArray(loaded.workLogs) ? loaded.workLogs : [],
       toolCalls: Array.isArray(loaded.toolCalls) ? loaded.toolCalls : [],
+      agentUsage: {},
       snapshots: Array.isArray(loaded.snapshots) ? loaded.snapshots : [],
       reviewedChanges:
         loaded.reviewedChanges && typeof loaded.reviewedChanges === "object" && !Array.isArray(loaded.reviewedChanges)
@@ -181,6 +183,15 @@ export class Store {
       pomodoro: loaded.pomodoro ?? null,
       settings: { ...DEFAULT_SETTINGS, ...(loaded.settings && typeof loaded.settings === "object" ? loaded.settings : {}) },
     };
+
+    // 聚合字段是后加的：缺失/形状异常，或字段为空但流水已有记录时，按现有流水重建。
+    // 流水本身最多 500 条，更早的历史无法补回，这是升级时的一次性近似。
+    const usage = sanitizeAgentUsage(loaded.agentUsage);
+    this.data.agentUsage =
+      usage && (Object.keys(usage).length > 0 || this.data.toolCalls.length === 0)
+        ? usage
+        : rebuildAgentUsage(this.data.toolCalls);
+
     if (migratedVersion) {
       this.logDiagnostic("migration", "已自动补齐数据版本号 v1", undefined, false);
     }
@@ -394,6 +405,7 @@ export class Store {
   logToolCall(record: ToolCallRecord): void {
     this.data.toolCalls.unshift(record);
     if (this.data.toolCalls.length > 500) this.data.toolCalls.length = 500;
+    recordAgentUsage(this.data.agentUsage, record.agent, record.time, record.tool);
     this.scheduleSave(2000);
   }
 

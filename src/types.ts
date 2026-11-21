@@ -43,6 +43,22 @@ export interface ToolCallRecord {
   path: string;
 }
 
+/** 单客户端调用聚合：不受 toolCalls 500 条上限影响，用于看板的长窗口口径。 */
+export interface AgentUsageStat {
+  /** 自该字段启用以来的累计调用数 */
+  total: number;
+  /** 最近一次调用时间（ISO） */
+  lastAt: string;
+  /** 最近一次调用的工具名 */
+  lastTool: string;
+  /** epoch 小时 -> 调用数，仅保留最近 25 小时 */
+  hours: Record<string, number>;
+  /** 本地日期 -> 调用数，仅保留最近 8 天 */
+  days: Record<string, number>;
+}
+
+export type AgentUsageMap = Record<string, AgentUsageStat>;
+
 /** 真实环境诊断记录 */
 export interface DiagnosticRecord {
   time: string;
@@ -243,6 +259,8 @@ export interface PulseData {
   memos: MemoRecord[];
   workLogs: WorkLogRecord[];
   toolCalls: ToolCallRecord[];
+  /** 按客户端的调用聚合；旧数据缺失时由 toolCalls 重建 */
+  agentUsage: AgentUsageMap;
   snapshots: SnapshotRecord[];
   /** 已审查的 Agent 变更：key -> kept | reverted */
   reviewedChanges: Record<string, "kept" | "reverted">;
@@ -363,6 +381,7 @@ export const DEFAULT_DATA: PulseData = {
   memos: [],
   workLogs: [],
   toolCalls: [],
+  agentUsage: {},
   snapshots: [],
   reviewedChanges: {},
   pendingWrites: [],

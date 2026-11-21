@@ -1,6 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { homedir } from "os";
 import type { SedimentPlugin } from "../main";
+import {
+  appDataDirectory,
+  ensureDirectory,
+  fileExists,
+  homeDirectory,
+  readTextFile,
+  writeTextFile,
+} from "../utils/node";
 import { BRIDGE_SOURCE } from "./bridge-source";
 
 export interface AgentTarget {
@@ -52,7 +58,7 @@ export function agentCandidates(home: string, appdata: string): AgentTarget[] {
 
 /** 探测本机已存在配置文件的智能体客户端。 */
 export function detectAgents(): AgentTarget[] {
-  return agentCandidates(homedir(), String(process.env.APPDATA ?? "")).filter((target) => existsSync(target.configPath));
+  return agentCandidates(homeDirectory(), appDataDirectory()).filter((target) => fileExists(target.configPath));
 }
 
 function stripComments(raw: string): string {
@@ -69,9 +75,9 @@ function readJson(raw: string): Record<string, unknown> {
 
 /** 该客户端是否已经写入过 Sediment 配置（OpenCode 兼容 v1 直挂与 v2 servers 两个位置）。 */
 export function isAgentConfigured(target: AgentTarget): boolean {
-  if (!existsSync(target.configPath)) return false;
+  if (!fileExists(target.configPath)) return false;
   try {
-    const data = readJson(readFileSync(target.configPath, "utf8"));
+    const data = readJson(readTextFile(target.configPath, "utf8"));
     const root = (data[target.rootKey] ?? {}) as Record<string, unknown>;
     if (target.rootKey === "mcp") {
       const servers = (root.servers ?? {}) as Record<string, unknown>;
@@ -97,18 +103,18 @@ export function resolveBridgePath(plugin: SedimentPlugin, target?: AgentTarget):
   const syncVaultBridge = (): string => {
     if (!vaultBridge) return "";
     try {
-      if (existsSync(vaultBridge) && readFileSync(vaultBridge, "utf8") === BRIDGE_SOURCE) return vaultBridge;
+      if (fileExists(vaultBridge) && readTextFile(vaultBridge, "utf8") === BRIDGE_SOURCE) return vaultBridge;
       const sep = Math.max(vaultBridge.lastIndexOf("/"), vaultBridge.lastIndexOf("\\"));
-      if (sep > 0) mkdirSync(vaultBridge.slice(0, sep), { recursive: true });
-      writeFileSync(vaultBridge, BRIDGE_SOURCE, "utf8");
-      return existsSync(vaultBridge) ? vaultBridge : "";
+      if (sep > 0) ensureDirectory(vaultBridge.slice(0, sep), { recursive: true });
+      writeTextFile(vaultBridge, BRIDGE_SOURCE, "utf8");
+      return fileExists(vaultBridge) ? vaultBridge : "";
     } catch {
       return "";
     }
   };
   if (target) {
     try {
-      const data = readJson(readFileSync(target.configPath, "utf8"));
+      const data = readJson(readTextFile(target.configPath, "utf8"));
       const root = (data[target.rootKey] ?? {}) as Record<string, unknown>;
       const servers = (root.servers ?? {}) as Record<string, unknown>;
       // OpenCode 条目可能在 v1 直挂或 v2 servers 位置；路径在 args（Claude 风格）或 command 数组里。
@@ -116,7 +122,7 @@ export function resolveBridgePath(plugin: SedimentPlugin, target?: AgentTarget):
       for (const entry of entries) {
         const command = Array.isArray(entry.command) ? entry.command.filter((x): x is string => typeof x === "string") : [];
         const candidates = [...(entry.args ?? []), ...command];
-        const existing = candidates.find((arg) => arg.endsWith("index.mjs") && existsSync(arg));
+        const existing = candidates.find((arg) => arg.endsWith("index.mjs") && fileExists(arg));
         if (existing) {
           // 引用的正是库内副本时先同步；库外路径属用户自有文件，不覆盖。
           if (vaultBridge && samePath(existing, vaultBridge)) return syncVaultBridge();
@@ -183,7 +189,7 @@ export function configSnippet(plugin: SedimentPlugin, id = "opencode"): string {
 export function configureAgent(plugin: SedimentPlugin, target: AgentTarget): void {
   const bridge = resolveBridgePath(plugin, target);
   if (!bridge) throw new Error("找不到 mcp-server/index.mjs，无法配置");
-  const raw = readFileSync(target.configPath, "utf8");
+  const raw = readTextFile(target.configPath, "utf8");
   const data = readJson(raw);
   if (target.rootKey === "mcp") {
     const layout = detectOpenCodeLayout(data);
@@ -208,6 +214,6 @@ export function configureAgent(plugin: SedimentPlugin, target: AgentTarget): voi
     root.sediment = buildEntry(plugin, target, bridge);
     data[target.rootKey] = root;
   }
-  writeFileSync(`${target.configPath}.bak`, raw, "utf8");
-  writeFileSync(target.configPath, JSON.stringify(data, null, 2), "utf8");
+  writeTextFile(`${target.configPath}.bak`, raw, "utf8");
+  writeTextFile(target.configPath, JSON.stringify(data, null, 2), "utf8");
 }

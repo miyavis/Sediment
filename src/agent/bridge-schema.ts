@@ -183,7 +183,9 @@ export function parseBridgeProposal(id: string, raw: unknown): BridgeParseResult
   if (!isRecord(raw)) return fail("invalid_schema", "提案必须是 JSON 对象");
   if (raw.id !== undefined && raw.id !== id) return fail("invalid_schema", "提案 id 与文件名不一致");
   if (raw.version !== undefined && raw.version !== BRIDGE_VERSION) {
-    return fail("unsupported_version", `不支持的提案版本：${String(raw.version)}`);
+    const version =
+      typeof raw.version === "string" || typeof raw.version === "number" ? String(raw.version) : "unknown";
+    return fail("unsupported_version", `不支持的提案版本：${version}`);
   }
   const agent = normalizeBridgeAgent(raw.agent);
   if (!agent) return fail("invalid_schema", "agent 必须是非空字符串（≤64 字符）");

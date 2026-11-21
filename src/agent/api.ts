@@ -1,4 +1,3 @@
-import { mkdirSync, readdirSync, unlinkSync, writeFileSync } from "fs";
 import { normalizePath, TFile } from "obsidian";
 import type { SedimentPlugin } from "../main";
 import { buildWeeklyReview } from "../features/review";
@@ -10,6 +9,7 @@ import type { DayRecord, MemoRecord, PendingWriteRecord, WorkLogRecord } from ".
 import { addDays, dailyNotePath, dateKey, hhmm, lastNDays, parseKey } from "../utils/dates";
 import { ensureFolder, normalizeFolder } from "../utils/vault";
 import { logError } from "../utils/log-error";
+import { ensureDirectory, listDirectory, removeFile, writeTextFile } from "../utils/node";
 import { t, tf } from "../i18n";
 import {
   inferCategory,
@@ -322,14 +322,14 @@ export class AgentApi {
       const directory = adapter.getFullPath(
         `${this.plugin.app.vault.configDir}/plugins/sediment/backups`
       );
-      mkdirSync(directory, { recursive: true });
+      ensureDirectory(directory, { recursive: true });
       const id = `${Date.now()}-${path.replace(/[\\/]/g, "_")}`;
-      writeFileSync(`${directory}/${id}`, content, "utf8");
-      const files = readdirSync(directory).sort();
+      writeTextFile(`${directory}/${id}`, content, "utf8");
+      const files = listDirectory(directory).sort();
       // 文件保留数与快照索引上限（200）一致，避免索引里有记录但文件已被清理。
       while (files.length > 200) {
         const old = files.shift();
-        if (old) unlinkSync(`${directory}/${old}`);
+        if (old) removeFile(`${directory}/${old}`);
       }
       const remaining = new Set(files);
       this.plugin.store.data.snapshots = this.plugin.store.data.snapshots.filter(
@@ -520,7 +520,12 @@ export class AgentApi {
   private async replayPending(request: PendingWriteRecord["request"], agent = ""): Promise<void> {
     const meta: WriteMeta = agent ? { agent } : {};
     const args = request.args;
-    const str = (value: unknown): string => String(value ?? "");
+    const str = (value: unknown): string =>
+      typeof value === "string"
+        ? value
+        : typeof value === "number" || typeof value === "boolean"
+          ? String(value)
+          : "";
     switch (request.kind) {
       case "write_note":
         await this.writeNote(

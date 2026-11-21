@@ -13,6 +13,7 @@ import {
   computeContribution,
   createEmptyDay,
   DEFAULT_SETTINGS,
+  type AgentUsageMap,
   type DayRecord,
   type FocusSessionRecord,
   type MemoRecord,
@@ -45,6 +46,16 @@ import { TaskManager } from "../src/features/tasks";
 import { buildStatsCsv, buildExportJson, DEFAULT_EXPORT_OPTIONS } from "../src/features/export";
 import { todayLine } from "../src/features/embed";
 import { Store } from "../src/data/store";
+import {
+  isAgentActive,
+  rebuildAgentUsage,
+  recentDayCount,
+  recentHourCount,
+  recordAgentUsage,
+  sanitizeAgentUsage,
+  summarizeAgentUsage,
+  totalAgentCalls,
+} from "../src/data/agent-usage";
 import { AgentApi, ApiError, safeAgentPath, stampAgentProvenance } from "../src/agent/api";
 import { FileBridge } from "../src/features/file-bridge";
 import { reconcilePendingWrites, markStaleByPaths } from "../src/agent/reconcile";
@@ -4369,5 +4380,89 @@ test("文件桥轮询：禁用后直接扫描不导入、不写决策", async ()
   assert.equal(ctx.imported.length, 0, "禁用后不得导入");
   assert.equal(ctx.files.has(decisionPath("after-stop")), false, "禁用后不得写决策");
   assert.equal(ctx.pendingWrites.length, 0);
+});
+
+// ── 连接与调用状态：按客户端聚合（低成本方案） ──
+
+test("Agent 聚合：累计/24h/7d/活跃口径互不混淆，且不受 500 条流水上限影响", () => {
+  const now = Date.parse("2026-11-21T12:00:00.000Z");
+  const usage: AgentUsageMap = {};
+  recordAgentUsage(usage, "qoder", new Date(now - 2 * 60_000).toISOString(), "search_notes", now);
+  recordAgentUsage(usage, "qoder", new Date(now - 3 * 3600_000).toISOString(), "read_note", now);
+  recordAgentUsage(usage, "qoder", new Date(now - 3 * 86400_000).toISOString(), "write_note", now);
+  recordAgentUsage(usage, "qoder", new Date(now - 10 * 86400_000).toISOString(), "patch_note", now);
+  const stat = usage.qoder;
+  assert.equal(stat.total, 4, "累计数包含所有历史，即使小时/日期桶已过期");
+  assert.equal(recentHourCount(stat, now), 2, "24h 只算当前小时与之前 23 个小时桶");
+  assert.equal(recentDayCount(stat, now), 3, "7d 只算今天及之前 6 个本地日期");
+  assert.equal(isAgentActive(stat, now), true, "2 分钟内调用过应视为活跃");
+  assert.equal(stat.lastTool, "search_notes", "最近工具取时间最新的一次");
+  assert.equal(totalAgentCalls(usage), 4);
+});
+
+test("Agent 聚合：超过 5 分钟不算活跃，空名字归到未署名键", () => {
+  const now = Date.parse("2026-11-21T12:00:00.000Z");
+  const usage: AgentUsageMap = {};
+  recordAgentUsage(usage, "", new Date(now - 6 * 60_000).toISOString(), "list_notes", now);
+  assert.equal(isAgentActive(usage[""], now), false);
+  const summary = summarizeAgentUsage(usage, now);
+  assert.equal(summary.length, 1);
+  assert.equal(summary[0].agent, "", "空 agent 保持独立键，由渲染层显示为未署名客户端");
+  assert.equal(summary[0].active, false);
+});
+
+test("Agent 聚合：摘要按最近调用倒序，重建时取最新一条作为最近工具", () => {
+  const now = Date.parse("2026-11-21T12:00:00.000Z");
+  const older = new Date(now - 3600_000).toISOString();
+  const newer = new Date(now - 60_000).toISOString();
+  const usage = rebuildAgentUsage(
+    [
+      { time: newer, tool: "write_note", agent: "cursor", path: "" },
+      { time: older, tool: "read_note", agent: "qoder", path: "" },
+    ],
+    now
+  );
+  assert.equal(usage.qoder.total, 1);
+  assert.equal(usage.cursor.lastTool, "write_note");
+  const summary = summarizeAgentUsage(usage, now);
+  assert.deepEqual(summary.map((item) => item.agent), ["cursor", "qoder"]);
+});
+
+test("Agent 聚合：持久化形状异常时回退重建，单条坏数据被跳过", () => {
+  assert.equal(sanitizeAgentUsage(null), null);
+  assert.equal(sanitizeAgentUsage([]), null);
+  const salvaged = sanitizeAgentUsage({
+    qoder: { total: 3, lastAt: "x", lastTool: "search_notes", hours: { "1": 2 }, days: { "2026-11-21": 1 } },
+    broken: { total: "3" },
+  });
+  assert.deepEqual(Object.keys(salvaged ?? {}), ["qoder"]);
+  assert.deepEqual(salvaged?.qoder.hours, { "1": 2 });
+});
+
+test("Store.load：旧数据缺少聚合字段时按现有流水重建", async () => {
+  const fakePlugin = {
+    loadData: async () => ({
+      version: 1,
+      toolCalls: [
+        { time: new Date().toISOString(), tool: "search_notes", agent: "qoder", path: "" },
+      ],
+    }),
+  } as unknown as Parameters<typeof Store>[0];
+  const store = new Store(fakePlugin);
+  await store.load();
+  assert.equal(store.data.agentUsage.qoder.total, 1);
+  assert.equal(store.data.agentUsage.qoder.lastTool, "search_notes");
+});
+
+test("i18n：连接与调用状态卡新增英文条目已收录", () => {
+  setLocale("en");
+  try {
+    assert.equal(t("客户端"), "Clients");
+    assert.equal(t("近 24 小时"), "Last 24 hours");
+    assert.equal(t("5 分钟内调用过"), "Active in the last 5 min");
+    assert.equal(t("未署名客户端"), "Unattributed client");
+  } finally {
+    setLocale("zh");
+  }
 });
 

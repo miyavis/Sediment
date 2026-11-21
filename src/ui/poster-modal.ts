@@ -84,9 +84,10 @@ export class PosterModal extends Modal {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     // 画布色跟随主题 CSS 变量；取不到时保留原浅色兜底，导出不再无视深色主题。
-    const css = getComputedStyle(document.body);
+    const doc = canvas.ownerDocument;
+    const css = doc.defaultView?.getComputedStyle(doc.body);
     const themeColor = (name: string, fallback: string): string =>
-      css.getPropertyValue(name).trim() || fallback;
+      css?.getPropertyValue(name).trim() || fallback;
     ctx.fillStyle = themeColor("--background-primary", "#f4f7fb");
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = themeColor("--interactive-accent", "#2f6fb2");
