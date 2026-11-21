@@ -676,6 +676,27 @@ const EN: Record<string, string> = {
   "_在这里写下本期复盘。_": "_Write your review here._",
   "，单日封顶 {cap}": ", daily cap {cap}",
   "口径：贡献分 = 新建笔记×{n} + 编辑会话×{e} + 完成任务×{t} + 新增词数/{w} + 专注分钟/{f}{cap}；未记录日期不视作零。": "Formula: contribution = notes created ×{n} + edit sessions ×{e} + tasks done ×{t} + added words/{w} + focus minutes/{f}{cap}; days without records are not counted as zero.",
+
+  // 阶段二 Task 10：知识笔记 / 工作日志 / 健康任务（未分类、任务、工作日志、标签已在上方收录）
+  "速览": "Summary",
+  "正文": "Body",
+  "关联与来源": "Links and sources",
+  "来源：{value}": "Source: {value}",
+  "关联：{value}": "Related: {value}",
+  "沉淀信息": "Deposition info",
+  "由 {agent} 于 {date} 写入 · Sediment": "Written by {agent} on {date} · Sediment",
+  "未命名笔记": "Untitled note",
+  "完成了什么": "What was done",
+  "关键决策": "Key decisions",
+  "涉及文件": "Files touched",
+  "学到的东西": "Lessons learned",
+  "待确认": "Open questions",
+  "标签：{tags}": "Tags: {tags}",
+  "没有出链也没有反链，可能是一座孤岛": "No outgoing or incoming links; possibly an island",
+  "断链：{links}": "Broken links: {links}",
+  "等 {n} 处": "and {n} more",
+  "已 {days} 天未更新": "Untouched for {days} days",
+  "【笔记健康】{label}：{path}（{detail}）。请整理：补双链/修断链/更新或归档，完成后用 complete_agent_task 关联产出。": "[Note health] {label}: {path} ({detail}). Please tidy up: add backlinks / fix broken links / update or archive, then link the result with complete_agent_task.",
 };
 
 /** 取当前语言的文案；英文未收录时回退中文源串。 */

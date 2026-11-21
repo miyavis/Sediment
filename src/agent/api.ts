@@ -1210,19 +1210,19 @@ export class AgentApi {
     const block = [
       `## ${log.time} · ${log.agent}`,
       "",
-      "> [!summary] 任务",
+      `> [!summary] ${t("任务")}`,
       `> ${log.task || "—"}`,
       "",
-      "**完成了什么**",
+      `**${t("完成了什么")}**`,
       log.summary || "—",
       "",
-      ...(log.decisions ? ["> [!tip] 关键决策", `> ${log.decisions}`, ""] : []),
+      ...(log.decisions ? [`> [!tip] ${t("关键决策")}`, `> ${log.decisions}`, ""] : []),
       ...(log.files.length
-        ? ["> [!example] 涉及文件", ...log.files.map((item) => `> - \`${item}\``), ""]
+        ? [`> [!example] ${t("涉及文件")}`, ...log.files.map((item) => `> - \`${item}\``), ""]
         : []),
-      ...(log.learnings ? ["> [!note] 学到的东西", `> ${log.learnings}`, ""] : []),
-      ...(log.openQuestions ? ["> [!question] 待确认", `> ${log.openQuestions}`, ""] : []),
-      log.tags.length ? `标签：${log.tags.map((tag) => `#${tag}`).join(" ")}` : "",
+      ...(log.learnings ? [`> [!note] ${t("学到的东西")}`, `> ${log.learnings}`, ""] : []),
+      ...(log.openQuestions ? [`> [!question] ${t("待确认")}`, `> ${log.openQuestions}`, ""] : []),
+      log.tags.length ? tf("标签：{tags}", { tags: log.tags.map((tag) => `#${tag}`).join(" ") }) : "",
       "",
     ].join("\n");
 
@@ -1233,7 +1233,7 @@ export class AgentApi {
       // before 只记真实旧内容：目标不存在时留空串，对账/采纳守卫据此判断
       // 「挂起时目标已存在」，避免把新建工作日志误判为失效。新建时的首行标题
       // 由重放流程 create 时写入，仅用于 after 预览。
-      const preview = logExists ? previous : `# 工作日志 ${log.date}\n\n`;
+      const preview = logExists ? previous : `# ${t("工作日志")} ${log.date}\n\n`;
       return this.holdForConfirm(
         "record_work_log",
         path,
@@ -1249,7 +1249,7 @@ export class AgentApi {
     const file: TFile =
       abstract instanceof TFile
         ? abstract
-        : await this.vault.create(path, `# 工作日志 ${log.date}\n\n`);
+        : await this.vault.create(path, `# ${t("工作日志")} ${log.date}\n\n`);
     const previous = await this.vault.read(file);
 
     this.plugin.tracker.markAgentWrite(path);
@@ -1266,9 +1266,9 @@ export class AgentApi {
     input: KnowledgeInput,
     bypassConfirm = false
   ): Promise<{ path: string; note?: string; pending?: true; pendingId?: string; message?: string }> {
-    const title = String(input.title || "未命名笔记").trim();
+    const title = String(input.title || t("未命名笔记")).trim();
     const safeTitle =
-      title.replace(/[\\/:*?"<>|#\[\]]/g, "-").slice(0, 80) || "未命名笔记";
+      title.replace(/[\\/:*?"<>|#\[\]]/g, "-").slice(0, 80) || t("未命名笔记");
     const base = normalizeFolder(this.plugin.store.settings.knowledgeFolder);
     const categories = this.categories();
     const tags = Array.isArray(input.tags)
@@ -1290,7 +1290,7 @@ export class AgentApi {
       (tags.length || String(input.content ?? "").length > 0
         ? this.inferCategory(title, String(input.content ?? ""), tags)
         : categories[0]) ||
-      "未分类";
+      t("未分类");
     const sub = normalizeFolder(input.folder ?? "")
       .split("/")
       .filter((part) => part && part !== "." && part !== "..")
@@ -1333,23 +1333,23 @@ export class AgentApi {
       "",
       `# ${title}`,
       "",
-      "> [!abstract] 速览",
+      `> [!abstract] ${t("速览")}`,
       `> ${summary}`,
       "",
-      "## 正文",
+      `## ${t("正文")}`,
       "",
       body || "—",
       "",
-      "## 关联与来源",
-      ...(input.source ? [`- 来源：\`${String(input.source)}\``] : []),
-      ...(links.length ? links.map((link) => `- 关联：[[${link}]]`) : ["- 关联：—"]),
+      `## ${t("关联与来源")}`,
+      ...(input.source ? [`- ${tf("来源：{value}", { value: `\`${String(input.source)}\`` })}`] : []),
+      ...(links.length ? links.map((link) => `- ${tf("关联：{value}", { value: `[[${link}]]` })}`) : [`- ${tf("关联：{value}", { value: "—" })}`]),
       "",
-      "## 标签",
+      `## ${t("标签")}`,
       tags.length ? tags.map((tag) => `#${tag}`).join(" ") : "—",
       "",
       "---",
-      "> [!info]- 沉淀信息",
-      `> 由 **${agent}** 于 ${today} 写入 · Sediment`,
+      `> [!info]- ${t("沉淀信息")}`,
+      `> ${tf("由 {agent} 于 {date} 写入 · Sediment", { agent: `**${agent}**`, date: today })}`,
       "",
     ].join("\n");
 

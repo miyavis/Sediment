@@ -73,7 +73,7 @@ import {
 import { SETTINGS_SECTIONS, settingsSection } from "../src/ui/settings-sections";
 import { renderYearly } from "../src/views/dashboard/sections/insights";
 import { scanKnowledgeState, type KnowledgeFile } from "../src/features/knowledge-state";
-import { scanNoteHealth } from "../src/features/health";
+import { delegateHealthIssues, HEALTH_LABEL, scanNoteHealth } from "../src/features/health";
 
 const day = (partial: Partial<DayRecord> = {}): DayRecord => ({ ...createEmptyDay(), ...partial });
 const settings = (partial: Partial<PulseSettings> = {}): PulseSettings => ({
@@ -3287,4 +3287,57 @@ test("健康度：知识目录外的 draft 不触发草稿滞留", () => {
   );
   const issues = scanNoteHealth(plugin);
   assert.equal(issues.some((issue) => issue.kind === "draft-stale"), false);
+});
+
+// ── 阶段二 Task 10：知识笔记 / 工作日志 / 健康任务英文化 ──
+
+test("EN locale：addKnowledge 生成的知识笔记零 CJK", async () => {
+  const ctx = fakeConfirmPlugin({ agentWorkMode: "auto", knowledgeFolder: "knowledge" });
+  setLocale("en");
+  try {
+    const result = await ctx.api.addKnowledge({
+      title: "Local search",
+      content: "TF-IDF baseline with optional embeddings.",
+      tags: ["search"],
+      category: "tech",
+    });
+    const doc = ctx.files.get(result.path) ?? "";
+    assert.equal(/[\u4e00-\u9fff]/.test(doc), false, doc);
+    assert.match(doc, /Summary/);
+  } finally {
+    setLocale("zh");
+  }
+});
+
+test("EN locale：recordWorkLog 生成的工作日志零 CJK", async () => {
+  const ctx = fakeConfirmPlugin({ agentWorkMode: "auto" });
+  setLocale("en");
+  try {
+    await ctx.api.recordWorkLog({
+      agent: "qoder",
+      task: "Ship stale guard",
+      summary: "Added STALE_PENDING rejection.",
+    });
+    // R4：workLogFolder 默认 agent-logs，路径不是库根。
+    const doc = ctx.files.get(`agent-logs/${dateKey(new Date())}.md`) ?? "";
+    assert.equal(/[\u4e00-\u9fff]/.test(doc), false, doc);
+  } finally {
+    setLocale("zh");
+  }
+});
+
+test("EN locale：健康任务文本零 CJK", async () => {
+  const ctx = fakeConfirmPlugin({});
+  setLocale("en");
+  try {
+    await delegateHealthIssues(ctx.plugin as never, [
+      { kind: "orphan", path: "notes/a.md", detail: "no links" },
+    ]);
+    const memo = ctx.plugin.store.data.memos[0];
+    assert.ok(memo, "须创建任务速记");
+    assert.equal(/[\u4e00-\u9fff]/.test(memo.text), false, memo.text);
+    assert.ok(memo.text.includes(t(HEALTH_LABEL.orphan)), memo.text);
+  } finally {
+    setLocale("zh");
+  }
 });

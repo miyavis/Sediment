@@ -64,19 +64,21 @@ export function scanNoteHealth(plugin: SedimentPlugin): HealthIssue[] {
     const outgoing = Object.keys(resolved[file.path] ?? {}).length;
     const incoming = backlinkCount.get(file.path) ?? 0;
     if (outgoing === 0 && incoming === 0) {
-      issues.push({ kind: "orphan", path: file.path, detail: "没有出链也没有反链，可能是一座孤岛" });
+      issues.push({ kind: "orphan", path: file.path, detail: t("没有出链也没有反链，可能是一座孤岛") });
     }
     const broken = Object.keys(unresolved[file.path] ?? {});
     if (broken.length > 0) {
       issues.push({
         kind: "broken-link",
         path: file.path,
-        detail: `断链：${broken.slice(0, 3).join("、")}${broken.length > 3 ? ` 等 ${broken.length} 处` : ""}`,
+        detail: tf("断链：{links}", {
+          links: `${broken.slice(0, 3).join(", ")}${broken.length > 3 ? ` ${tf("等 {n} 处", { n: broken.length })}` : ""}`,
+        }),
       });
     }
     if (file.stat.mtime < staleBefore && (outgoing > 0 || incoming > 0)) {
       const days = Math.floor((Date.now() - file.stat.mtime) / 86400000);
-      issues.push({ kind: "stale", path: file.path, detail: `已 ${days} 天未更新` });
+      issues.push({ kind: "stale", path: file.path, detail: tf("已 {days} 天未更新", { days }) });
     }
     if (
       knowledgeBase &&
@@ -128,7 +130,10 @@ export async function delegateHealthIssues(
 ): Promise<number> {
   let created = 0;
   for (const issue of issues.slice(0, 50)) {
-    const text = `【笔记健康】${HEALTH_LABEL[issue.kind]}：${issue.path}（${issue.detail}）。请整理：补双链/修断链/更新或归档，完成后用 complete_agent_task 关联产出。`;
+    const text = tf(
+      "【笔记健康】{label}：{path}（{detail}）。请整理：补双链/修断链/更新或归档，完成后用 complete_agent_task 关联产出。",
+      { label: t(HEALTH_LABEL[issue.kind]), path: issue.path, detail: issue.detail }
+    );
     const duplicate = plugin.store.data.memos.some(
       (memo) => memo.text === text && !memo.converted && !memo.archived
     );
