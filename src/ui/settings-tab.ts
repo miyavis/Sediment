@@ -51,6 +51,7 @@ export class PulseSettingTab extends PluginSettingTab {
       else if (section.id === "agent") this.renderAgent(containerEl, settings, save);
       else if (section.id === "backup") this.renderBackup(containerEl, settings, save);
       else if (section.id === "stats") this.renderStats(containerEl, settings, save);
+      else if (section.id === "search") this.renderSearch(containerEl, settings, save);
       else if (section.id === "connection") this.renderConnection(containerEl, settings, save);
       else this.renderClients(containerEl);
     }
@@ -560,6 +561,48 @@ export class PulseSettingTab extends PluginSettingTab {
     containerEl.createDiv({
       cls: "sd-setup-hint",
       text: t("修改权重或封顶后会立即全量重算历史贡献分。Agent 写入只计「AI 新增词」，不重复计入人类写作统计。"),
+    });
+  }
+
+  private renderSearch(containerEl: HTMLElement, settings: PulseSettings, save: () => void): void {
+    const invalidate = () => this.plugin.semantic.invalidate();
+    new Setting(containerEl)
+      .setName(t("语义检索引擎"))
+      .setDesc(t("默认 TF-IDF 纯本地。选 Embedding 需本机运行 Ollama，不可用时自动回退 TF-IDF。"))
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("tfidf", t("TF-IDF（纯本地）"))
+          .addOption("embedding", t("Embedding（Ollama）"))
+          .setValue(settings.semanticEngine)
+          .onChange((value) => {
+            settings.semanticEngine = value as "tfidf" | "embedding";
+            save();
+            invalidate();
+          })
+      );
+    new Setting(containerEl)
+      .setName(t("Ollama 地址"))
+      .setDesc(t("默认 http://127.0.0.1:11434，仅本机回环。"))
+      .addText((text) =>
+        text.setPlaceholder("http://127.0.0.1:11434").setValue(settings.embeddingEndpoint).onChange((value) => {
+          settings.embeddingEndpoint = value.trim() || "http://127.0.0.1:11434";
+          save();
+          invalidate();
+        })
+      );
+    new Setting(containerEl)
+      .setName(t("Embedding 模型"))
+      .setDesc(t("需先 ollama pull，例如 bge-m3。更换模型会重建向量。"))
+      .addText((text) =>
+        text.setPlaceholder("bge-m3").setValue(settings.embeddingModel).onChange((value) => {
+          settings.embeddingModel = value.trim() || "bge-m3";
+          save();
+          invalidate();
+        })
+      );
+    containerEl.createDiv({
+      cls: "sd-setup-hint",
+      text: t("Embedding 只发文本到本机 Ollama，不访问外网；关闭即回到零依赖 TF-IDF。"),
     });
   }
 

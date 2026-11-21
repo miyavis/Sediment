@@ -66,6 +66,10 @@ const moment = () => ({ format: () => "" });
 moment.locale = () => "zh";
 const Platform = { isMobile: false, isDesktop: true };
 
+async function requestUrl() {
+  throw new Error("requestUrl 未在测试桩中实现：请注入假请求函数");
+}
+
 module.exports = {
   TFile,
   TFolder,
@@ -82,4 +86,5 @@ module.exports = {
   normalizePath,
   moment,
   Platform,
+  requestUrl,
 };

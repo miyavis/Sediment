@@ -194,6 +194,12 @@ export interface PulseSettings {
   agentServerEnabled: boolean;
   /** Agent HTTP API 端口 */
   agentServerPort: number;
+  /** 语义检索引擎：tfidf 纯本地；embedding 需本机 Ollama（可选增强） */
+  semanticEngine: "tfidf" | "embedding";
+  /** Ollama 端点，仅本机回环 */
+  embeddingEndpoint: string;
+  /** Embedding 模型名（需先 ollama pull） */
+  embeddingModel: string;
   /** Agent HTTP API / MCP 访问令牌 */
   agentServerToken: string;
 }
@@ -303,6 +309,9 @@ export const DEFAULT_SETTINGS: PulseSettings = {
   focusMinutesPerPoint: 25,
   agentServerEnabled: false,
   agentServerPort: 27123,
+  semanticEngine: "tfidf",
+  embeddingEndpoint: "http://127.0.0.1:11434",
+  embeddingModel: "bge-m3",
   agentServerToken: "",
 };
 

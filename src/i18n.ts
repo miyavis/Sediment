@@ -705,6 +705,18 @@ const EN: Record<string, string> = {
 
   // 阶段三 Task 13：设置分层
   "高级权重（默认值已调好，一般无需修改）": "Advanced weights (defaults are tuned; usually no need to change)",
+
+  // 阶段三 Task 14：检索增强设置
+  "检索增强（可选）": "Search enhancement (optional)",
+  "语义检索引擎": "Semantic search engine",
+  "默认 TF-IDF 纯本地。选 Embedding 需本机运行 Ollama，不可用时自动回退 TF-IDF。": "TF-IDF is fully local by default. Embedding needs a local Ollama instance and falls back to TF-IDF automatically when unavailable.",
+  "TF-IDF（纯本地）": "TF-IDF (fully local)",
+  "Embedding（Ollama）": "Embedding (Ollama)",
+  "Ollama 地址": "Ollama endpoint",
+  "默认 http://127.0.0.1:11434，仅本机回环。": "Defaults to http://127.0.0.1:11434 (localhost only).",
+  "Embedding 模型": "Embedding model",
+  "需先 ollama pull，例如 bge-m3。更换模型会重建向量。": "Pull it first (e.g. ollama pull bge-m3). Changing the model rebuilds vectors.",
+  "Embedding 只发文本到本机 Ollama，不访问外网；关闭即回到零依赖 TF-IDF。": "Embedding only sends text to your local Ollama, never to the internet; turn it off to return to dependency-free TF-IDF.",
 };
 
 /** 取当前语言的文案；英文未收录时回退中文源串。 */

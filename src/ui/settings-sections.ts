@@ -66,6 +66,11 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     ],
   },
   {
+    id: "search",
+    title: "检索增强（可选）",
+    keys: ["semanticEngine", "embeddingEndpoint", "embeddingModel"],
+  },
+  {
     id: "connection",
     title: "Agent 接入（本地 HTTP / MCP）",
     keys: ["agentServerEnabled", "agentServerPort", "agentServerToken"],

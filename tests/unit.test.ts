@@ -71,6 +71,7 @@ import {
   reviewBadgeCount,
 } from "../src/views/dashboard/review-queue";
 import { SETTINGS_SECTIONS, settingsSection } from "../src/ui/settings-sections";
+import { OllamaEmbeddingClient, cosineSimilarity, hashText, normalizeEndpoint } from "../src/agent/embedding";
 import { renderYearly } from "../src/views/dashboard/sections/insights";
 import { scanKnowledgeState, type KnowledgeFile } from "../src/features/knowledge-state";
 import { delegateHealthIssues, HEALTH_LABEL, scanNoteHealth } from "../src/features/health";
@@ -3411,4 +3412,33 @@ test("EN locale：searchNotes 的速记/工作日志/草稿标题零 CJK", async
   }
   const zhHits = await ctx.api.searchNotes("english");
   assert.equal(zhHits.find((hit) => hit.kind === "memo")?.title, "速记 2026-11-21 10:00");
+});
+
+// ── 阶段三 Task 14：Embedding 设置项 + 客户端 ──
+
+test("embedding：Ollama 客户端形状校验与错误路径", async () => {
+  const calls: Array<{ url: string; body: string }> = [];
+  const client = new OllamaEmbeddingClient("http://127.0.0.1:11434/", "bge-m3", async (options) => {
+    calls.push({ url: options.url, body: options.body ?? "" });
+    const body = JSON.parse(options.body ?? "{}") as { input: string[] };
+    return { status: 200, json: { embeddings: body.input.map(() => [0.1, 0.2, 0.3]) } };
+  });
+  const vectors = await client.embed(["a", "b"]);
+  assert.equal(vectors.length, 2);
+  assert.equal(calls[0].url, "http://127.0.0.1:11434/api/embed", "端点去尾斜杠");
+  const failing = new OllamaEmbeddingClient("http://127.0.0.1:11434", "bge-m3", async () => ({ status: 500, json: {} }));
+  await assert.rejects(failing.embed(["x"]), /HTTP 500/);
+  const malformed = new OllamaEmbeddingClient("http://127.0.0.1:11434", "bge-m3", async () => ({
+    status: 200,
+    json: { embeddings: [["bad"]] },
+  }));
+  await assert.rejects(malformed.embed(["x"]), /格式非法/);
+});
+
+test("embedding：余弦相似度与文本哈希稳定", () => {
+  assert.equal(cosineSimilarity([1, 0], [1, 0]), 1);
+  assert.equal(cosineSimilarity([1, 0], [0, 1]), 0);
+  assert.equal(cosineSimilarity([0, 0], [1, 1]), 0);
+  assert.equal(hashText("abc"), hashText("abc"));
+  assert.notEqual(hashText("abc"), hashText("abd"));
 });
