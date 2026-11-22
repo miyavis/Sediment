@@ -7463,8 +7463,8 @@ function renderAgentHub(view, root) {
   renderPendingWrites(view, body);
   renderUnregisteredSources(view, body);
   renderAgentChanges(view, body);
-  renderChangeTimeline(view, body);
   view.renderTasksCard(body, true);
+  renderChangeTimeline(view, body);
 }
 function renderPendingWrites(view, root) {
   var _a2;

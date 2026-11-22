@@ -19,8 +19,9 @@ export function renderAgentHub(view: DashboardView, root: HTMLElement): void {
   renderPendingWrites(view, body);
   renderUnregisteredSources(view, body);
   renderAgentChanges(view, body);
-  renderChangeTimeline(view, body);
+  // 待办卡较短，放在长列表之前，避免被时间线顶到屏幕外。
   view.renderTasksCard(body, true);
+  renderChangeTimeline(view, body);
 }
 
 /** confirm 档挂起的 Agent 写入：预览走 DiffModal，采纳才真正落盘。 */
