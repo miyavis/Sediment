@@ -2,6 +2,14 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [1.2.1] - 2026-11-22
+
+### 变更
+- 番茄钟重新定位为「专注时长采集」：入口从今日页主操作行移到知识地层页，按钮空闲时显示「开始专注（记入统计）」；新增 `focusTrackingEnabled` 设置（默认开），关闭后不显示按钮且地层专注层为 0。专注数据仍只写入当日统计与导出，不进入变更时间线。
+
+### 修复
+- 处理 Obsidian 审核器告警：恢复 Node 模块类型化封装消除 `no-unsafe-*`；移除 `AgentApi` 的类/接口合并，改为显式委托；设置页用 CSS 类替代直接样式赋值；时间线用 `createEl` 辅助；`onunload` 改为同步签名；`window.setTimeout` 跨窗口兼容；跨窗口 `instanceof`。
+
 ## [1.2.0] - 2026-11-22
 
 ### 新增
