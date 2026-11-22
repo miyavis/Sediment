@@ -22,8 +22,8 @@ import {
   splitList,
   type AgentOperation,
 } from "./access";
-import type { BridgeRejectReason } from "./bridge-schema";
-import { reviewMethods, type ReviewMethods } from "./api-review";
+import type { BridgeProposal, BridgeRejectReason } from "./bridge-schema";
+import { reviewMethods } from "./api-review";
 import {
   applyFrontmatterUpdate,
   findSection,
@@ -1302,8 +1302,53 @@ export class AgentApi {
     const anchor = date ? parseKey(date) : new Date();
     return { date: dateKey(anchor), markdown: buildWeeklyReview(this.plugin.store, anchor) };
   }
-}
 
-// 审核队列方法以原型混入挂上，保持 AgentApi 对外 API 不变（见 api-review.ts）。
-export interface AgentApi extends ReviewMethods {}
-Object.assign(AgentApi.prototype, reviewMethods);
+  // 审核队列：显式委托到 api-review.ts，保持对外 API 不变，避免类/接口合并告警。
+  isConfirmMode(): boolean {
+    return reviewMethods.isConfirmMode.call(this);
+  }
+
+  holdForConfirm(
+    tool: string,
+    path: string,
+    kind: string,
+    args: Record<string, unknown>,
+    before: string,
+    after: string,
+    meta: WriteMeta = {}
+  ): AgentPendingResult {
+    return reviewMethods.holdForConfirm.call(this, tool, path, kind, args, before, after, meta);
+  }
+
+  listPendingWrites(limit = 50) {
+    return reviewMethods.listPendingWrites.call(this, limit);
+  }
+
+  getPendingWrite(id: string): PendingWriteRecord | null {
+    return reviewMethods.getPendingWrite.call(this, id);
+  }
+
+  settlePendingCall(record: PendingWriteRecord, landed: boolean): void {
+    reviewMethods.settlePendingCall.call(this, record, landed);
+  }
+
+  assertPendingUnchanged(record: PendingWriteRecord): Promise<void> {
+    return reviewMethods.assertPendingUnchanged.call(this, record);
+  }
+
+  approvePendingWrite(id: string): Promise<{ path: string }> {
+    return reviewMethods.approvePendingWrite.call(this, id);
+  }
+
+  rejectPendingWrite(id: string): { ok: true; path: string } {
+    return reviewMethods.rejectPendingWrite.call(this, id);
+  }
+
+  importBridgeProposal(proposal: BridgeProposal): Promise<{ pendingId: string; path: string }> {
+    return reviewMethods.importBridgeProposal.call(this, proposal);
+  }
+
+  replayPending(request: PendingWriteRecord["request"], agent = ""): Promise<void> {
+    return reviewMethods.replayPending.call(this, request, agent);
+  }
+}

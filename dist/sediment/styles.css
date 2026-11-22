@@ -2567,3 +2567,6 @@ button.sd-task-open:not(.clickable-icon):hover {
 .sd-audit-summary { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 14px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s); color: var(--text-muted); font-size: 12px; }
 .sd-audit-summary > span:first-child { color: var(--text-normal); font-weight: 600; }
 .sd-audit-summary-hint { margin-left: auto; font-style: italic; }
+
+/* 简洁设置模式下隐藏的高级项 */
+.sd-hidden-setting { display: none; }

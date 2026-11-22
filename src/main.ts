@@ -273,14 +273,18 @@ export class SedimentPlugin extends Plugin {
   private serverRestartTimer: number | null = null;
   private refreshTimer: number | null = null;
 
-  async onunload(): Promise<void> {
+  onunload(): void {
     if (this.serverRestartTimer !== null) window.clearTimeout(this.serverRestartTimer);
     if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
     this.tracker?.stop();
     this.pomodoro?.shutdown();
     this.fileBridge?.stop();
     delete (window as Window & { Sediment?: unknown }).Sediment;
-    // 按顺序收尾：先关 HTTP（释放端口），再冲刷在途保存。
+    // Plugin.onunload 约定 void；异步收尾放到独立方法，按顺序关 HTTP 再冲刷保存。
+    void this.shutdown();
+  }
+
+  private async shutdown(): Promise<void> {
     await this.agentServer?.stop();
     await this.store.flush();
   }

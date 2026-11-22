@@ -471,7 +471,7 @@ export function renderChangeTimeline(view: DashboardView, root: HTMLElement): vo
       more.hide();
       return;
     }
-    for (const event of events) list.appendChild(timelineRow(event));
+    for (const event of events) timelineRow(list, event);
     const total = buildChangeTimeline(view.plugin.store.data, {
       includeReads: readsToggle.checked,
       agent: agentInput.value.trim() || undefined,
@@ -487,20 +487,19 @@ export function renderChangeTimeline(view: DashboardView, root: HTMLElement): vo
   paint();
 }
 
-function timelineRow(event: ChangeTimelineEvent): HTMLElement {
-  const row = document.createElement("div");
-  row.className = "sd-feed-row sd-timeline-row";
-  const badge = document.createElement("span");
-  badge.className = `sd-audit-badge${event.status === "stale" ? " is-stale" : ""}`;
-  badge.textContent = timelineBadge(event);
-  row.appendChild(badge);
-  const meta = document.createElement("span");
-  meta.textContent = `${localStamp(event.time).slice(5)} · ${event.agent} · ${event.tool} · ${event.path || "—"}`;
+function timelineRow(parent: HTMLElement, event: ChangeTimelineEvent): HTMLElement {
+  const row = parent.createDiv({ cls: "sd-feed-row sd-timeline-row" });
+  row.createSpan({
+    cls: `sd-audit-badge${event.status === "stale" ? " is-stale" : ""}`,
+    text: timelineBadge(event),
+  });
+  const meta = row.createSpan({
+    text: `${localStamp(event.time).slice(5)} · ${event.agent} · ${event.tool} · ${event.path || "—"}`,
+  });
   meta.setAttribute(
     "title",
     `${event.title}${event.hash ? ` · sha256:${event.hash.slice(0, 12)}` : ""}${event.snapshotId ? ` · snapshot:${event.snapshotId}` : ""}`
   );
-  row.appendChild(meta);
   return row;
 }
 

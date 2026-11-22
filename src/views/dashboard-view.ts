@@ -48,7 +48,7 @@ export class DashboardView extends ItemView {
   isEditing(): boolean {
     const active = document.activeElement;
     if (!active || !this.contentEl.contains(active)) return false;
-    return active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement ||
+    return active instanceof window.HTMLInputElement || active instanceof window.HTMLTextAreaElement ||
       (active as HTMLElement).isContentEditable === true;
   }
 

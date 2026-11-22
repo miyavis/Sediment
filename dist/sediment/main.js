@@ -1536,20 +1536,25 @@ var import_http = require("http");
 var import_crypto = require("crypto");
 var import_fs = require("fs");
 var import_os = require("os");
-var fileExists = import_fs.existsSync;
-var ensureDirectory = import_fs.mkdirSync;
-var readTextFile = (path, encoding) => (0, import_fs.readFileSync)(path, encoding);
-var writeTextFile = (path, content, encoding) => {
-  (0, import_fs.writeFileSync)(path, content, encoding);
-};
-var listDirectory = (path) => [...(0, import_fs.readdirSync)(path)];
-var fileMtimeMs = (path) => ({ mtimeMs: (0, import_fs.statSync)(path).mtimeMs });
-var removeFile = import_fs.unlinkSync;
-var removePath = import_fs.rmSync;
-var homeDirectory = import_os.homedir;
+function typed(value) {
+  return value;
+}
+var fileExists = typed(import_fs.existsSync);
+var ensureDirectory = typed(
+  import_fs.mkdirSync
+);
+var readTextFile = typed(import_fs.readFileSync);
+var writeTextFile = typed(import_fs.writeFileSync);
+var listDirectory = typed(import_fs.readdirSync);
+var fileMtimeMs = typed(import_fs.statSync);
+var removeFile = typed(import_fs.unlinkSync);
+var removePath = typed(import_fs.rmSync);
+var homeDirectory = typed(import_os.homedir);
 function appDataDirectory() {
   var _a2, _b, _c;
-  const runtime = window;
+  const runtime = typed(
+    typeof window === "undefined" ? {} : window
+  );
   return (_c = (_b = (_a2 = runtime.process) == null ? void 0 : _a2.env) == null ? void 0 : _b.APPDATA) != null ? _c : "";
 }
 function concatBytes(chunks) {
@@ -1566,12 +1571,13 @@ function decodeUtf8(bytes) {
   return new TextDecoder().decode(bytes);
 }
 function sha256Digest(input) {
-  return new Uint8Array((0, import_crypto.createHash)("sha256").update(input, "utf8").digest());
+  const createHash = typed(import_crypto.createHash);
+  return createHash("sha256").update(input, "utf8").digest();
 }
-function constantTimeEqual(a, b) {
-  return (0, import_crypto.timingSafeEqual)(a, b);
-}
-var createHttpServer = (listener) => (0, import_http.createServer)(listener);
+var constantTimeEqual = typed(
+  import_crypto.timingSafeEqual
+);
+var createHttpServer = typed(import_http.createServer);
 
 // src/features/audit.ts
 function backupDirectory(vault) {
@@ -3120,8 +3126,38 @@ ${block}`);
     const anchor = date ? parseKey(date) : /* @__PURE__ */ new Date();
     return { date: dateKey(anchor), markdown: buildWeeklyReview(this.plugin.store, anchor) };
   }
+  // 审核队列：显式委托到 api-review.ts，保持对外 API 不变，避免类/接口合并告警。
+  isConfirmMode() {
+    return reviewMethods.isConfirmMode.call(this);
+  }
+  holdForConfirm(tool, path, kind, args, before, after, meta = {}) {
+    return reviewMethods.holdForConfirm.call(this, tool, path, kind, args, before, after, meta);
+  }
+  listPendingWrites(limit = 50) {
+    return reviewMethods.listPendingWrites.call(this, limit);
+  }
+  getPendingWrite(id) {
+    return reviewMethods.getPendingWrite.call(this, id);
+  }
+  settlePendingCall(record, landed) {
+    reviewMethods.settlePendingCall.call(this, record, landed);
+  }
+  assertPendingUnchanged(record) {
+    return reviewMethods.assertPendingUnchanged.call(this, record);
+  }
+  approvePendingWrite(id) {
+    return reviewMethods.approvePendingWrite.call(this, id);
+  }
+  rejectPendingWrite(id) {
+    return reviewMethods.rejectPendingWrite.call(this, id);
+  }
+  importBridgeProposal(proposal) {
+    return reviewMethods.importBridgeProposal.call(this, proposal);
+  }
+  replayPending(request, agent = "") {
+    return reviewMethods.replayPending.call(this, request, agent);
+  }
 };
-Object.assign(AgentApi.prototype, reviewMethods);
 
 // src/agent/server.ts
 var import_obsidian5 = require("obsidian");
@@ -4139,6 +4175,12 @@ function summarizeAgentUsage(usage, nowMs = Date.now()) {
 
 // src/data/store.ts
 var DIAGNOSTICS_CAP = 300;
+function delay(ms) {
+  return new Promise((resolve) => {
+    if (typeof window !== "undefined") window.setTimeout(resolve, ms);
+    else globalThis.setTimeout(resolve, ms);
+  });
+}
 function isRecord2(value) {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
@@ -4338,7 +4380,7 @@ var Store = class {
         return;
       } catch (error) {
         lastError = error;
-        if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 120 * 2 ** attempt));
+        if (attempt < 2) await delay(120 * 2 ** attempt);
       }
     }
     logError(this, "\u4FDD\u5B58 data.json \u5931\u8D25", lastError);
@@ -4421,12 +4463,12 @@ var Store = class {
   get isPersistenceBlocked() {
     return this.persistenceBlocked;
   }
-  scheduleSave(delay = 800) {
+  scheduleSave(delay2 = 800) {
     if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
     this.saveTimer = window.setTimeout(() => {
       this.saveTimer = null;
       void this.save();
-    }, delay);
+    }, delay2);
   }
   get settings() {
     return this.data.settings;
@@ -6558,6 +6600,13 @@ var PulseSettingTab = class extends import_obsidian16.PluginSettingTab {
     this.weightTimers.clear();
     super.hide();
   }
+  /**
+   * 1.13+ 的声明式设置 API 与现有 800 行命令式设置页二选一：返回非空会完全取代 display()，
+   * 为了同时兼容 1.8.7+ 与自定义分区/隐藏逻辑，这里保留命令式渲染，声明式清单留空。
+   */
+  getSettingDefinitions() {
+    return [];
+  }
   display() {
     this.renderSettings();
   }
@@ -6603,7 +6652,7 @@ var PulseSettingTab = class extends import_obsidian16.PluginSettingTab {
       const advanced = /* @__PURE__ */ new Set([t("\u77E5\u8BC6\u5E93\u5206\u7C7B"), t("Agent \u7981\u6B62\u8BBF\u95EE\u7684\u6807\u7B7E"), t("Agent \u5DE5\u4F5C\u65E5\u5FD7\u76EE\u5F55")]);
       for (const el of Array.from(containerEl.querySelectorAll(".setting-item"))) {
         const name = (_c = (_b = (_a2 = el.querySelector(".setting-item-name")) == null ? void 0 : _a2.textContent) == null ? void 0 : _b.trim()) != null ? _c : "";
-        if (advanced.has(name)) el.style.display = "none";
+        if (advanced.has(name)) el.addClass("sd-hidden-setting");
       }
     }
   }
@@ -7868,7 +7917,7 @@ function renderChangeTimeline(view, root) {
       more.hide();
       return;
     }
-    for (const event of events) list.appendChild(timelineRow(event));
+    for (const event of events) timelineRow(list, event);
     const total = buildChangeTimeline(view.plugin.store.data, {
       includeReads: readsToggle.checked,
       agent: agentInput.value.trim() || void 0,
@@ -7896,20 +7945,19 @@ function renderChangeTimeline(view, root) {
   };
   paint();
 }
-function timelineRow(event) {
-  const row = document.createElement("div");
-  row.className = "sd-feed-row sd-timeline-row";
-  const badge = document.createElement("span");
-  badge.className = `sd-audit-badge${event.status === "stale" ? " is-stale" : ""}`;
-  badge.textContent = timelineBadge(event);
-  row.appendChild(badge);
-  const meta = document.createElement("span");
-  meta.textContent = `${localStamp(event.time).slice(5)} \xB7 ${event.agent} \xB7 ${event.tool} \xB7 ${event.path || "\u2014"}`;
+function timelineRow(parent, event) {
+  const row = parent.createDiv({ cls: "sd-feed-row sd-timeline-row" });
+  row.createSpan({
+    cls: `sd-audit-badge${event.status === "stale" ? " is-stale" : ""}`,
+    text: timelineBadge(event)
+  });
+  const meta = row.createSpan({
+    text: `${localStamp(event.time).slice(5)} \xB7 ${event.agent} \xB7 ${event.tool} \xB7 ${event.path || "\u2014"}`
+  });
   meta.setAttribute(
     "title",
     `${event.title}${event.hash ? ` \xB7 sha256:${event.hash.slice(0, 12)}` : ""}${event.snapshotId ? ` \xB7 snapshot:${event.snapshotId}` : ""}`
   );
-  row.appendChild(meta);
   return row;
 }
 function timelineBadge(event) {
@@ -8590,15 +8638,15 @@ function renderAnalytics(view, root, section = "all") {
     } else {
       const totalWords = days.reduce((sum, day) => sum + day.wordsAdded, 0);
       const captured = days.reduce((sum, day) => sum + day.capturedWords, 0);
-      const typed = Math.max(0, totalWords - captured);
+      const typed2 = Math.max(0, totalWords - captured);
       const bar = trendContent.createDiv({ cls: "sd-source-bar" });
       bar.createDiv({ cls: "sd-source-typed" }).setCssStyles({
-        width: `${totalWords ? typed / totalWords * 100 : 0}%`
+        width: `${totalWords ? typed2 / totalWords * 100 : 0}%`
       });
       bar.createDiv({ cls: "sd-source-capture" }).setCssStyles({
         width: `${totalWords ? captured / totalWords * 100 : 0}%`
       });
-      trendContent.createDiv({ cls: "sd-card-sub", text: tf("\u9010\u6B65\u5199\u5165 {typed} \u5B57 \xB7 \u5927\u6BB5\u6355\u83B7 {captured} \u5B57", { typed, captured }) });
+      trendContent.createDiv({ cls: "sd-card-sub", text: tf("\u9010\u6B65\u5199\u5165 {typed} \u5B57 \xB7 \u5927\u6BB5\u6355\u83B7 {captured} \u5B57", { typed: typed2, captured }) });
     }
   }
   if (section === "all" || section === "folders") {
@@ -9004,7 +9052,7 @@ var DashboardView = class extends import_obsidian23.ItemView {
   isEditing() {
     const active = document.activeElement;
     if (!active || !this.contentEl.contains(active)) return false;
-    return active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active.isContentEditable === true;
+    return active instanceof window.HTMLInputElement || active instanceof window.HTMLTextAreaElement || active.isContentEditable === true;
   }
   /** 徽章与工坊各卡共用同一次全库扫描。 */
   agentScan() {
@@ -10191,15 +10239,19 @@ ${tf("\u6062\u590D\u526F\u672C\uFF1A{path}", { path: this.store.recoveryCopyPath
       }
     });
   }
-  async onunload() {
-    var _a2, _b, _c, _d;
+  onunload() {
+    var _a2, _b, _c;
     if (this.serverRestartTimer !== null) window.clearTimeout(this.serverRestartTimer);
     if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
     (_a2 = this.tracker) == null ? void 0 : _a2.stop();
     (_b = this.pomodoro) == null ? void 0 : _b.shutdown();
     (_c = this.fileBridge) == null ? void 0 : _c.stop();
     delete window.Sediment;
-    await ((_d = this.agentServer) == null ? void 0 : _d.stop());
+    void this.shutdown();
+  }
+  async shutdown() {
+    var _a2;
+    await ((_a2 = this.agentServer) == null ? void 0 : _a2.stop());
     await this.store.flush();
   }
   async saveSettings() {

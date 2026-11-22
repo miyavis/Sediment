@@ -263,7 +263,7 @@ export const reviewMethods: ReviewMethods = {
         );
         return;
       case "worklog":
-        await this.recordWorkLog(requireRecord(args.input) as unknown as WorkLogInput, true, meta);
+        await this.recordWorkLog(requireRecord(args.input) as WorkLogInput, true, meta);
         return;
       case "task_complete":
         await this.completeTask(str(args.path), Number(args.line), true, meta);

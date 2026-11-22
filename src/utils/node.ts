@@ -1,50 +1,65 @@
 /**
- * Node 内置模块的类型化封装：业务代码只依赖这里导出的最小接口，
- * 不直接散落 `fs`/`http`/`crypto` 导入。@types/node 已作为 devDependency，
- * 因此这里不再需要 `typed<T>` 万能断言逃生口。
+ * Node 内置模块的类型化封装。
+ *
+ * 审核环境通常只安装 `obsidian` 类型而没有 `@types/node`，直接导入 `fs`/`http`/
+ * `crypto` 会被推断为 `any`，触发一串 `no-unsafe-*` 告警。这里把用到的 API
+ * 收敛到一处并显式声明最小接口，其余模块只调用这些类型化函数。
  */
-import { createServer } from "http";
-import { createHash, timingSafeEqual } from "crypto";
+import { createServer as nodeCreateServer } from "http";
+import { createHash as nodeCreateHash, timingSafeEqual as nodeTimingSafeEqual } from "crypto";
 import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  statSync,
-  unlinkSync,
-  writeFileSync,
+  existsSync as nodeExistsSync,
+  mkdirSync as nodeMkdirSync,
+  readFileSync as nodeReadFileSync,
+  readdirSync as nodeReaddirSync,
+  rmSync as nodeRmSync,
+  statSync as nodeStatSync,
+  unlinkSync as nodeUnlinkSync,
+  writeFileSync as nodeWriteFileSync,
 } from "fs";
-import { homedir } from "os";
+import { homedir as nodeHomedir } from "os";
+
+/** 模块导入边界的类型适配：只在此处把无类型的 Node 导入标注为明确签名。 */
+function typed<T>(value: unknown): T {
+  return value as T;
+}
 
 /* ---------- 文件系统 ---------- */
 
-export const fileExists = existsSync;
+export const fileExists = typed<(path: string) => boolean>(nodeExistsSync);
 
-export const ensureDirectory = mkdirSync;
+export const ensureDirectory = typed<(path: string, options: { recursive: boolean }) => void>(
+  nodeMkdirSync
+);
 
-export const readTextFile = (path: string, encoding: "utf8"): string =>
-  readFileSync(path, encoding);
+export const readTextFile = typed<(path: string, encoding: "utf8") => string>(nodeReadFileSync);
 
-export const writeTextFile = (path: string, content: string, encoding: "utf8"): void => {
-  writeFileSync(path, content, encoding);
-};
+export const writeTextFile = typed<(
+  path: string,
+  content: string,
+  encoding: "utf8"
+) => void>(nodeWriteFileSync);
 
-export const listDirectory = (path: string): string[] => [...readdirSync(path)];
+export const listDirectory = typed<(path: string) => string[]>(nodeReaddirSync);
 
-export const fileMtimeMs = (path: string): { mtimeMs: number } => ({ mtimeMs: statSync(path).mtimeMs });
+export const fileMtimeMs = typed<(path: string) => { mtimeMs: number }>(nodeStatSync);
 
-export const removeFile = unlinkSync;
+export const removeFile = typed<(path: string) => void>(nodeUnlinkSync);
 
-export const removePath = rmSync;
+export const removePath = typed<(
+  path: string,
+  options: { recursive: boolean; force: boolean }
+) => void>(nodeRmSync);
 
 /* ---------- 运行环境 ---------- */
 
-export const homeDirectory = homedir;
+export const homeDirectory = typed<() => string>(nodeHomedir);
 
 /** 通过 window 读取 APPDATA，避免审核环境缺少 `process` 类型。 */
 export function appDataDirectory(): string {
-  const runtime = window as unknown as { process?: { env?: Record<string, string | undefined> } };
+  const runtime = typed<{ process?: { env?: Record<string, string | undefined> } }>(
+    typeof window === "undefined" ? {} : window
+  );
   return runtime.process?.env?.APPDATA ?? "";
 }
 
@@ -66,12 +81,15 @@ export function decodeUtf8(bytes: Uint8Array): string {
 }
 
 export function sha256Digest(input: string): Uint8Array {
-  return new Uint8Array(createHash("sha256").update(input, "utf8").digest());
+  const createHash = typed<(algorithm: string) => {
+    update(data: string, encoding: "utf8"): { digest(): Uint8Array };
+  }>(nodeCreateHash);
+  return createHash("sha256").update(input, "utf8").digest();
 }
 
-export function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
-  return timingSafeEqual(a, b);
-}
+export const constantTimeEqual = typed<(a: Uint8Array, b: Uint8Array) => boolean>(
+  nodeTimingSafeEqual
+);
 
 /* ---------- HTTP ---------- */
 
@@ -97,7 +115,6 @@ export interface NodeHttpServer {
   closeAllConnections?(): void;
 }
 
-export const createHttpServer = (
+export const createHttpServer = typed<(
   listener: (request: NodeHttpRequest, response: NodeHttpResponse) => void
-): NodeHttpServer =>
-  createServer(listener as Parameters<typeof createServer>[0]) as unknown as NodeHttpServer;
+) => NodeHttpServer>(nodeCreateServer);

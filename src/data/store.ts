@@ -26,6 +26,14 @@ import { logError } from "../utils/log-error";
 /** 诊断日志保留上限：超出后丢弃最旧记录。诊断弹窗按此上限提示「还有更多」。 */
 export const DIAGNOSTICS_CAP = 300;
 
+/** 弹窗窗口兼容：优先用 window.setTimeout；测试环境无 window 时回退全局定时器。 */
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof window !== "undefined") window.setTimeout(resolve, ms);
+    else globalThis.setTimeout(resolve, ms);
+  });
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
@@ -282,7 +290,7 @@ export class Store {
         return;
       } catch (error) {
         lastError = error;
-        if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 120 * 2 ** attempt));
+        if (attempt < 2) await delay(120 * 2 ** attempt);
       }
     }
     logError(this, "保存 data.json 失败", lastError);

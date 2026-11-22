@@ -1,4 +1,4 @@
-import { App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, PluginSettingTab, Setting, type SettingDefinitionItem } from "obsidian";
 import { configureAgent, configSnippet, detectAgents, isAgentConfigured } from "../agent/setup";
 import { uninstallMcp } from "../features/uninstall";
 import { migrateLegacyFolders, planFolderMigrations, type FolderMigrationOutcome } from "../features/folder-migration";
@@ -30,6 +30,14 @@ export class PulseSettingTab extends PluginSettingTab {
     for (const id of this.weightTimers) window.clearTimeout(id);
     this.weightTimers.clear();
     super.hide();
+  }
+
+  /**
+   * 1.13+ 的声明式设置 API 与现有 800 行命令式设置页二选一：返回非空会完全取代 display()，
+   * 为了同时兼容 1.8.7+ 与自定义分区/隐藏逻辑，这里保留命令式渲染，声明式清单留空。
+   */
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    return [];
   }
 
   display(): void {
@@ -91,7 +99,7 @@ export class PulseSettingTab extends PluginSettingTab {
       const advanced = new Set([t("知识库分类"), t("Agent 禁止访问的标签"), t("Agent 工作日志目录")]);
       for (const el of Array.from(containerEl.querySelectorAll<HTMLElement>(".setting-item"))) {
         const name = el.querySelector(".setting-item-name")?.textContent?.trim() ?? "";
-        if (advanced.has(name)) el.style.display = "none";
+        if (advanced.has(name)) el.addClass("sd-hidden-setting");
       }
     }
   }
