@@ -93,7 +93,7 @@ mcp-server/index.mjs
 - 审计：`get_change_timeline`
 - 只读工作区状态：`get_workspace_state`
 
-参见 [`examples/SECURE-AGENT-SETUP.md`](./examples/SECURE-AGENT-SETUP.md)、`examples/claude-code/` 的 skill，以及 `examples/` 下的 OpenCode / Cursor 片段。
+参见 [`examples/SECURE-AGENT-SETUP.md`](./examples/SECURE-AGENT-SETUP.md)、`examples/claude-code/` 的 skill，以及 `examples/` 下的 OpenCode / Cursor 片段。另附 [`examples/AGENTS.md`](./examples/AGENTS.md) 模板，告诉 Agent 一律走 MCP 写入、confirm 档等待人工审批、不要把令牌写进笔记。
 
 ### 文件桥（非 MCP Agent，实验性）
 

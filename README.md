@@ -94,7 +94,7 @@ Public MCP surface (14 task-oriented tools, `AGENT_API_VERSION = 1`; read-only a
 - Audit: `get_change_timeline`
 - Read-only workspace state: `get_workspace_state`
 
-See [`examples/SECURE-AGENT-SETUP.md`](./examples/SECURE-AGENT-SETUP.md), the Claude Code skill in `examples/claude-code/`, and the OpenCode / Cursor snippets in `examples/`.
+See [`examples/SECURE-AGENT-SETUP.md`](./examples/SECURE-AGENT-SETUP.md), the Claude Code skill in `examples/claude-code/`, and the OpenCode / Cursor snippets in `examples/`. A ready-to-copy [`examples/AGENTS.md`](./examples/AGENTS.md) template tells agents to write through MCP, wait for human approval in confirm mode, and keep tokens out of notes.
 
 ### File bridge (non-MCP agents, experimental)
 
