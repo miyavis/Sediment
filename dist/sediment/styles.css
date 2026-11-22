@@ -2597,6 +2597,11 @@ button.sd-task-open:not(.clickable-icon):hover {
 /* 工坊审核总览条与下方卡片留出间距 */
 .sd-audit-strip-workshop { margin-bottom: var(--sd-space-xl); }
 
+/* 空队列卡片：保留骨架但更紧凑，避免占用过多纵向空间 */
+.sd-card-empty { padding: 12px 16px; margin-bottom: 10px; }
+.sd-card-empty .sd-card-title { font-size: 13px; color: var(--text-muted); }
+.sd-card-empty .sd-card-sub { margin-top: 2px; }
+
 /* 统计数据缺失提示 */
 .sd-stats-missing-hint { margin-top: var(--sd-space-lg); padding: var(--sd-space-md) var(--sd-space-lg); border-left: 2px solid var(--sd-color-warning); color: var(--text-muted); font-size: var(--sediment-body-size); }
 

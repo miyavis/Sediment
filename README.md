@@ -4,7 +4,7 @@
 
 [![Obsidian](https://img.shields.io/badge/Obsidian-v1.8.7%2B-blue.svg)](https://obsidian.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v1.2.8-blue.svg)](https://github.com/miyavis/Sediment/releases)
+[![Version](https://img.shields.io/badge/version-v1.2.9-blue.svg)](https://github.com/miyavis/Sediment/releases)
 
 > **Local, controllable AI write auditing for your knowledge vault.**
 > Every write an agent makes into your notes can be approved, rolled back, and traced.

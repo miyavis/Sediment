@@ -358,9 +358,9 @@ export class DashboardView extends ItemView {
     void load.then((items) => {
       list.empty();
       if (items.length === 0) {
-        // 工坊的 Agent 待办为空时整卡隐藏，避免把长列表继续往下推。
-        if (agentOnly) card.remove();
-        else list.createDiv({ cls: "sd-empty", text: t("没有未完成待办。") });
+        // 卡片始终保留（含空状态），避免「没数据就什么都不显示」；空卡用紧凑样式。
+        card.addClass("sd-card-empty");
+        list.createDiv({ cls: "sd-empty", text: t("没有未完成待办。") });
         return;
       }
       for (const task of items.slice(0, 12)) {

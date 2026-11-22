@@ -40,7 +40,7 @@ export function renderAgentHub(view: DashboardView, root: HTMLElement): void {
       : t("在下方卡片中逐条审查"),
   });
 
-  // 有内容的队列才展开卡片；空队列不渲染，保持紧凑。
+  // 所有审核卡始终渲染（含空状态），让用户一眼看到四个队列的当前状态。
   renderDrafts(view, body);
   renderPendingWrites(view, body);
   renderAgentChanges(view, body);
@@ -51,11 +51,20 @@ export function renderAgentHub(view: DashboardView, root: HTMLElement): void {
   renderChangeTimeline(view, body);
 }
 
+/** 空队列也保留卡片骨架，避免「没数据就什么都不显示」的突兀感；用紧凑样式少占空间。 */
+function auditEmptyCard(root: HTMLElement, title: string, message: string): void {
+  const card = root.createDiv({ cls: "sd-card sd-card-empty" });
+  card.createDiv({ cls: "sd-card-title", text: title });
+  card.createDiv({ cls: "sd-card-sub", text: message });
+}
+
 /** confirm 档挂起的 Agent 写入：预览走 DiffModal，采纳才真正落盘。 */
 export function renderPendingWrites(view: DashboardView, root: HTMLElement): void {
   const pending = view.plugin.store.data.pendingWrites ?? [];
-  // 空列表不渲染卡片，避免占满首屏、把时间线推到屏幕外。
-  if (pending.length === 0) return;
+  if (pending.length === 0) {
+    auditEmptyCard(root, t("待审写入"), t("暂无待审写入；「确认后写入」档下的写操作会挂起在这里。"));
+    return;
+  }
   const card = root.createDiv({ cls: "sd-card" });
   card.createDiv({ cls: "sd-card-title", text: tf("待审写入 · {n}", { n: pending.length }) });
   card.createDiv({ cls: "sd-card-sub", text: t("「确认后写入」档下，Agent 的写操作挂起在这里，采纳后才真正落盘；驳回则丢弃。") });
@@ -177,7 +186,10 @@ export function renderAgentChanges(view: DashboardView, root: HTMLElement): void
     view.plugin.store.data.reviewedChanges,
     (path) => view.plugin.app.vault.getAbstractFileByPath(path) instanceof TFile
   ).slice(0, 8);
-  if (rows.length === 0) return;
+  if (rows.length === 0) {
+    auditEmptyCard(root, t("Agent 变更审查"), t("暂无待审查的变更；Agent 的写入记录会出现在这里。"));
+    return;
+  }
 
   const card = root.createDiv({ cls: "sd-card" });
   card.createDiv({ cls: "sd-card-title", text: t("Agent 变更审查") });
@@ -342,7 +354,10 @@ export function listDraftFiles(view: DashboardView): TFile[] {
 
 export function renderDrafts(view: DashboardView, root: HTMLElement): void {
   const drafts = view.agentScan().drafts;
-  if (drafts.length === 0) return;
+  if (drafts.length === 0) {
+    auditEmptyCard(root, t("AI 沉淀审核"), t("暂无草稿；Agent 产出的沉淀会进入这里等待审核。"));
+    return;
+  }
   const card = root.createDiv({ cls: "sd-card" });
   const head = card.createDiv({ cls: "sd-card-head" });
   head.createDiv({ cls: "sd-card-title", text: t("AI 沉淀审核") });
