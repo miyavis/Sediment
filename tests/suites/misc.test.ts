@@ -328,7 +328,7 @@ test("上架准备：manifest 描述为英文且桌面专用，README 有英文�
   assert.match(manifest.description, /Local-first/i);
   assert.equal(manifest.isDesktopOnly, true, "使用 Node API 须标记桌面专用");
   const readme = fs.readFileSync("README.md", "utf8");
-  assert.match(readme, /local-first Obsidian plugin/i);
+  assert.match(readme, /local, controllable AI write auditing/i);
   // 社区目录以英文为主：主 README 不得混入中文字面量，中文完整文档在 README.zh-CN.md。
   assert.equal(/[\u4e00-\u9fff]/.test(readme), false, "README.md 应保持纯英文");
   const readmeZh = fs.readFileSync("README.zh-CN.md", "utf8");

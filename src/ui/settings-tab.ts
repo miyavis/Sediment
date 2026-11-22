@@ -55,8 +55,27 @@ export class PulseSettingTab extends PluginSettingTab {
     const settings = this.plugin.store.settings;
     const save = () => void this.plugin.saveSettings();
 
+    // 详略切换：simple 只显示审计核心；all 显示全部。字段保留，设置不丢。
+    const simple = settings.settingsDetail !== "all";
+    new Setting(containerEl)
+      .setName(t("设置详略"))
+      .setDesc(t("简洁模式只显示审计核心设置；其余统计权重、检索增强与实验性选项在「全部」中。"))
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("simple", t("简洁（推荐）"))
+          .addOption("all", t("全部设置"))
+          .setValue(simple ? "simple" : "all")
+          .onChange((value) => {
+            settings.settingsDetail = value as "simple" | "all";
+            save();
+            this.renderSettings();
+          })
+      );
+
     // 分区 IA 的单一事实源在 settings-sections.ts；这里按声明顺序渲染标题与内容。
+    const SIMPLE_SECTIONS = new Set(["agent", "connection", "clients"]);
     for (const section of SETTINGS_SECTIONS) {
+      if (simple && !SIMPLE_SECTIONS.has(section.id)) continue;
       new Setting(containerEl).setName(t(section.title)).setHeading();
       if (section.id === "basics") this.renderBasics(containerEl, settings, save);
       else if (section.id === "agent") this.renderAgent(containerEl, settings, save);
@@ -65,6 +84,15 @@ export class PulseSettingTab extends PluginSettingTab {
       else if (section.id === "search") this.renderSearch(containerEl, settings, save);
       else if (section.id === "connection") this.renderConnection(containerEl, settings, save);
       else this.renderClients(containerEl);
+    }
+
+    // 简洁模式再隐藏少数高级项：字段与数据保留，只是不占首屏。
+    if (simple) {
+      const advanced = new Set([t("知识库分类"), t("Agent 禁止访问的标签"), t("Agent 工作日志目录")]);
+      for (const el of Array.from(containerEl.querySelectorAll<HTMLElement>(".setting-item"))) {
+        const name = el.querySelector(".setting-item-name")?.textContent?.trim() ?? "";
+        if (advanced.has(name)) el.style.display = "none";
+      }
     }
   }
 

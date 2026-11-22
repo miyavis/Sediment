@@ -58,7 +58,7 @@ Sediment 不打算做聊天客户端或搜索引擎。它是你现有 Agent 之�
 ## 快速开始
 
 1. **安装** —— BRAT：把 `miyavis/Sediment` 加为 beta 插件。手动：从 [Releases](https://github.com/miyavis/Sediment/releases) 下载 `main.js`、`manifest.json`、`styles.css` 放入 `<vault>/.obsidian/plugins/sediment/`。
-2. **工作模式设为「确认后写入」**，并打开「修改前快照」，让采纳后的每次写入都有回滚点。
+2. **工作模式设为「确认后写入」**，并打开「修改前快照」，让采纳后的每次写入都有回滚点。设置页默认是「简洁」模式，只显示审计核心项；切到「全部设置」可查看权重、检索增强与实验性选项。
 3. **接入 Agent** —— 启用本地 Agent API，保留生成的令牌，然后用「一键配置智能体客户端」或复制 [`examples/`](./examples/) 中的片段。
 4. **发起一次写入** —— Agent 得到 `pending: true`；你在工坊审查；结果出现在时间线。
 

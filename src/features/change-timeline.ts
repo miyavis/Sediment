@@ -26,6 +26,10 @@ export interface TimelineOptions {
   limit?: number;
   agent?: string;
   path?: string;
+  /** 是否包含 GET 等只读调用；默认 false，时间线只展示写入审计链 */
+  includeReads?: boolean;
+  /** 从第几条开始（用于分页） */
+  offset?: number;
 }
 
 /** 兼容旧数据：reviewedChanges 的值可能是字符串或带时间戳的对象。 */
@@ -54,6 +58,7 @@ export function buildChangeTimeline(data: PulseData, options: TimelineOptions = 
   const reviewed = data.reviewedChanges ?? {};
 
   for (const call of calls) {
+    if (!options.includeReads && call.tool.startsWith("GET ")) continue;
     events.push({
       id: `call:${call.time}|${call.path}|${call.tool}`,
       time: call.time,
@@ -110,7 +115,8 @@ export function buildChangeTimeline(data: PulseData, options: TimelineOptions = 
     return true;
   });
   result = result.sort((a, b) => (a.time < b.time ? 1 : a.time > b.time ? -1 : 0));
-  return options.limit && options.limit > 0 ? result.slice(0, options.limit) : result;
+  const start = Math.max(0, options.offset ?? 0);
+  return options.limit && options.limit > 0 ? result.slice(start, start + options.limit) : result;
 }
 
 function pendingEvent(item: PendingWriteRecord): ChangeTimelineEvent {

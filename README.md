@@ -59,7 +59,7 @@ Supporting views exist to explain and feed the audit story: writing statistics, 
 ## Quick start
 
 1. **Install** — BRAT: add `miyavis/Sediment` as a beta plugin. Manual: copy `main.js`, `manifest.json` and `styles.css` from [Releases](https://github.com/miyavis/Sediment/releases) into `<vault>/.obsidian/plugins/sediment/`.
-2. **Set the work mode to Confirm before write** in settings. Enable "Snapshot before changes" so accepted writes have a rollback point.
+2. **Set the work mode to Confirm before write** in settings. Enable "Snapshot before changes" so accepted writes have a rollback point. Settings default to *Simple* mode showing only the audit essentials; switch to *All settings* for weights, search enhancement and experimental options.
 3. **Connect an agent** — enable the local Agent API, keep the generated token, then use "Configure agent clients" or copy a snippet from [`examples/`](./examples/).
 4. **Make a write** — the agent gets `pending: true`; you review it in the workshop; the result appears in the timeline.
 

@@ -438,23 +438,40 @@ export function renderChangeTimeline(view: DashboardView, root: HTMLElement): vo
   const pathInput = filter.createEl("input", {
     attr: { type: "text", placeholder: t("按路径过滤"), "aria-label": t("按路径过滤") },
   });
+  const readsLabel = filter.createEl("label", { cls: "sd-timeline-reads" });
+  const readsToggle = readsLabel.createEl("input", { attr: { type: "checkbox" } });
+  readsLabel.appendText(t("包含只读调用"));
   const list = card.createDiv({ cls: "sd-feed-list" });
+  const more = card.createEl("button", { cls: "sd-timeline-more", text: t("显示更多") });
 
+  const PAGE = 20;
+  let shown = PAGE;
   const paint = (): void => {
     list.empty();
     const events = buildChangeTimeline(view.plugin.store.data, {
-      limit: 50,
+      limit: shown,
       agent: agentInput.value.trim() || undefined,
       path: pathInput.value.trim() || undefined,
+      includeReads: readsToggle.checked,
     });
     if (events.length === 0) {
       list.createDiv({ cls: "sd-empty", text: t("暂无审计记录。") });
+      more.hide();
       return;
     }
     for (const event of events) list.appendChild(timelineRow(event));
+    const total = buildChangeTimeline(view.plugin.store.data, {
+      includeReads: readsToggle.checked,
+      agent: agentInput.value.trim() || undefined,
+      path: pathInput.value.trim() || undefined,
+      limit: 0,
+    }).length;
+    if (events.length < total) more.show(); else more.hide();
   };
-  agentInput.oninput = paint;
-  pathInput.oninput = paint;
+  agentInput.oninput = () => { shown = PAGE; paint(); };
+  pathInput.oninput = () => { shown = PAGE; paint(); };
+  readsToggle.onchange = () => { shown = PAGE; paint(); };
+  more.onclick = () => { shown += PAGE; paint(); };
   paint();
 }
 

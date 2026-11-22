@@ -246,6 +246,8 @@ export interface PulseSettings {
   showPoster: boolean;
   /** 实验性功能：多画风切换，默认关闭（固定像素湖面） */
   multiArtStyle: boolean;
+  /** 设置页详略：simple 只显示审计核心，all 显示全部 */
+  settingsDetail: "simple" | "all";
   /** Agent HTTP API / MCP 访问令牌 */
   agentServerToken: string;
 }
@@ -365,6 +367,7 @@ export const DEFAULT_SETTINGS: PulseSettings = {
   showMemoWander: false,
   showPoster: false,
   multiArtStyle: false,
+  settingsDetail: "simple",
   agentServerToken: "",
 };
 
