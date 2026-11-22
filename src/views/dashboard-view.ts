@@ -46,9 +46,9 @@ export class DashboardView extends ItemView {
 
   /** 用户正在看板内输入时不自动重绘，避免写日记/速记时丢焦点。 */
   isEditing(): boolean {
-    const active = document.activeElement;
+    const active = activeDocument.activeElement;
     if (!active || !this.contentEl.contains(active)) return false;
-    return active instanceof window.HTMLInputElement || active instanceof window.HTMLTextAreaElement ||
+    return active.instanceOf(window.HTMLInputElement) || active.instanceOf(window.HTMLTextAreaElement) ||
       (active as HTMLElement).isContentEditable === true;
   }
 

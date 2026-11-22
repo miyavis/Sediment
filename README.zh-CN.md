@@ -130,6 +130,8 @@ npm run test:release
 - `npm run build`：同步版本 / CHANGELOG / 桥接、类型检查、打包 `main.js` 与 `dist/sediment/`
 - `npm test`：i18n lint + 单测分套 + MCP 冒烟
 - `npm run test:release`：校验版本、CHANGELOG 与发布产物
+- `npm run check`：一条命令跑完全部 lint / 类型 / 测试 / 发布校验
+- `npm run audit:prod`：只扫生产依赖（开发工具链的漏洞不会进入发布产物）
 
 **版本唯一源** 是 `package.json`；`scripts/version-bump.mjs` 同步到 lockfile、manifest、`versions.json`、MCP `serverInfo` 与两份 README 徽章。生成文件统一 LF，Windows / Linux 构建字节一致。
 

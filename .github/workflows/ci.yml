@@ -19,6 +19,9 @@ jobs:
       - run: npm run test:typecheck
       - run: npm run lint:eslint
       - run: npm run lint:stylelint
+      # 只扫生产依赖：本项目生产依赖为空，dev 工具链的已知传递漏洞由锁文件固定并定期评估，
+      # 不应卡住发版（esbuild 开发服务器 / eslint 工具链漏洞不进入发布产物）。
+      - run: npm audit --omit=dev --audit-level=moderate
       - run: node scripts/verify-release.mjs
       - name: Ensure build left the tree clean
         run: git diff --exit-code -- package.json package-lock.json manifest.json versions.json src/changelog.ts src/agent/bridge-source.ts main.js dist/sediment

@@ -26,11 +26,13 @@ import { logError } from "../utils/log-error";
 /** 诊断日志保留上限：超出后丢弃最旧记录。诊断弹窗按此上限提示「还有更多」。 */
 export const DIAGNOSTICS_CAP = 300;
 
-/** 弹窗窗口兼容：优先用 window.setTimeout；测试环境无 window 时回退全局定时器。 */
+/** 弹窗窗口兼容：Obsidian 环境用 activeWindow.setTimeout；纯 Node 测试环境回退到顶层 setTimeout。 */
+const nodeSetTimeout: (fn: () => void, ms: number) => unknown =
+  typeof activeWindow === "undefined" ? setTimeout : activeWindow.setTimeout.bind(activeWindow);
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
-    if (typeof window !== "undefined") window.setTimeout(resolve, ms);
-    else globalThis.setTimeout(resolve, ms);
+    nodeSetTimeout(resolve, ms);
   });
 }
 

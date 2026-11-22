@@ -131,6 +131,8 @@ npm run test:release
 - `npm run build` — sync versions/changelog/bridge, type-check, bundle `main.js`, package `dist/sediment/`
 - `npm test` — i18n lint, unit suites, MCP smoke test
 - `npm run test:release` — verify version, changelog, and release artifacts
+- `npm run check` — run all lint/type/test/release checks in one pass
+- `npm run audit:prod` — audit production dependencies only (dev toolchain advisories do not ship)
 
 **One version source**: `version` in `package.json`. `scripts/version-bump.mjs` syncs it to the lockfile, manifest, `versions.json`, MCP `serverInfo`, and both README badges. Generated files use LF so Windows and Linux builds are byte-identical.
 

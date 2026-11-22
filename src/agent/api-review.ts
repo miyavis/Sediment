@@ -5,7 +5,7 @@ import { t, tf } from "../i18n";
 import { contentHash } from "../utils/hash";
 import type { PendingWriteRecord } from "../types";
 import { bridgePendingId, type BridgeProposal } from "./bridge-schema";
-import { ApiError, type AgentApi, type AgentPendingResult, type KnowledgeInput, type WorkLogInput, type WriteMeta } from "./api";
+import { ApiError, type AgentApi, type AgentPendingResult, type KnowledgeInput, type WriteMeta } from "./api";
 
 export interface ReviewMethods {
   isConfirmMode(): boolean;
@@ -263,7 +263,7 @@ export const reviewMethods: ReviewMethods = {
         );
         return;
       case "worklog":
-        await this.recordWorkLog(requireRecord(args.input) as WorkLogInput, true, meta);
+        await this.recordWorkLog(requireRecord(args.input), true, meta);
         return;
       case "task_complete":
         await this.completeTask(str(args.path), Number(args.line), true, meta);
