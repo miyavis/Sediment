@@ -10,9 +10,11 @@
 
 Sediment 是一个本地优先的 Obsidian 插件 + MCP 服务，面向「让 AI Agent 写入知识库、但要有证据而非凭感觉」的人。Agent 的写入会变成待审提案：冻结预览、按哈希绑定你的审批；采纳后进入持久、可检索的变更时间线，附带快照与审批决定。不上传任何内容，也不执行任何 shell 命令。
 
-<!-- SCREENSHOT-1: Agent 工坊 / 待审写入 diff -->
-<!-- SCREENSHOT-2: 变更时间线 -->
-<!-- SCREENSHOT-3: MCP 连接状态 -->
+![智能体工坊、待审写入与变更时间线](assets/agent-workshop-timeline.png)
+
+![今日视图与本地 API / 按客户端调用状态](assets/today-connection-status.png)
+
+![采纳前的待审写入 diff](assets/pending-write-diff.png)
 
 ## 为什么不是又一个看板？
 

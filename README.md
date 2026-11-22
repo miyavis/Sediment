@@ -11,9 +11,11 @@
 
 Sediment is a local-first Obsidian plugin and MCP server for people who let AI agents write into their knowledge base — and want **evidence, not vibes**. Agent writes become pending proposals with a frozen preview; your approval is bound to the content by a hash; after acceptance the change stays in a persistent, searchable timeline with snapshots and decisions. Nothing is uploaded, and no shell command is ever executed.
 
-<!-- SCREENSHOT-1: Agent workshop / pending write with diff -->
-<!-- SCREENSHOT-2: Change timeline -->
-<!-- SCREENSHOT-3: MCP connection status -->
+![Agent workshop, pending writes and change timeline](assets/agent-workshop-timeline.png)
+
+![Today view with local API and per-client call status](assets/today-connection-status.png)
+
+![Pending write diff before approval](assets/pending-write-diff.png)
 
 ## Why another Obsidian plugin?
 
