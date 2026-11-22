@@ -439,11 +439,12 @@ export async function mergeDraft(view: DashboardView, file: TFile): Promise<void
 /** 数据快照恢复已挪至设置页备份分区（低频维护操作不占审核页），见 settings-tab.renderRecoveryList。 */
 
 export function renderWorkLogs(view: DashboardView, root: HTMLElement): void {
-  const card = root.createDiv({ cls: "sd-card" });
-  card.createDiv({ cls: "sd-card-title", text: t("智能体工作日志") });
   const logs = view.plugin.store.data.workLogs.slice(0, 10);
+  // 空状态用紧凑卡样式，与工坊审核卡保持一致；有日志时走正常卡片。
+  const card = root.createDiv({ cls: logs.length === 0 ? "sd-card sd-card-empty" : "sd-card" });
+  card.createDiv({ cls: "sd-card-title", text: t("智能体工作日志") });
   if (logs.length === 0) {
-    card.createDiv({ cls: "sd-empty", text: t("还没有工作日志。") });
+    card.createDiv({ cls: "sd-card-sub", text: t("还没有工作日志。") });
     return;
   }
   const list = card.createDiv({ cls: "sd-feed-list" });
