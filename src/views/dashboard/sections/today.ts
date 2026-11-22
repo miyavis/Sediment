@@ -5,15 +5,23 @@ import { dateKey, isSameLocalDay, localHHmm } from "../../../utils/dates";
 import { goalRing as goalRingSvg } from "../../../utils/charts";
 import { t, tf } from "../../../i18n";
 import { appendSvg } from "../../../utils/dom";
-import { renderAgentStatus, renderWorkLogs } from "./agent";
+import { renderWorkLogs } from "./agent";
+import { pendingReviewChanges } from "../review-queue";
 import type { DashboardView } from "../../dashboard-view";
 
 export function renderToday(view: DashboardView, root: HTMLElement): void {
   const body = root.createDiv({ cls: "sd-body" });
+  renderAuditSummary(view, body);
+  // 空库（刚安装/数据重置）时不渲染一片 0 的 bento，改为引导卡。
+  if (isEmptyVault(view)) {
+    renderOnboarding(view, body);
+    return;
+  }
   const actions = body.createDiv({ cls: "sd-today-actions" });
   const memoAction = actions.createEl("button", {
     cls: "sd-today-action is-primary",
-    text: t("去记速记"),
+    text: `↓ ${t("去记速记")}`,
+    attr: { title: t("滚动到下方速记输入框") },
   });
   memoAction.onclick = () => {
     const area = root.querySelector<HTMLTextAreaElement>(".sd-quick-memo textarea");
@@ -23,7 +31,8 @@ export function renderToday(view: DashboardView, root: HTMLElement): void {
   };
   const taskAction = actions.createEl("button", {
     cls: "sd-today-action",
-    text: t("查看今日任务"),
+    text: `↓ ${t("查看今日任务")}`,
+    attr: { title: t("滚动到下方待办卡片") },
   });
   taskAction.onclick = () => {
     const tasks = root.querySelector<HTMLElement>(".sd-tasks");
@@ -38,11 +47,66 @@ export function renderToday(view: DashboardView, root: HTMLElement): void {
   bento.querySelector(".sd-quick-memo")?.addClass("sd-bento-memo");
   bento.querySelector(".sd-tasks")?.addClass("sd-bento-tasks");
   bento.querySelector(".sd-agent-feed")?.addClass("sd-bento-agent");
-  // 工作日志保持可达（D2=B 迁移意图，compact 下不隐藏）；连接状态卡沿用旧隐藏规则。
+  // 工作日志保持可达；连接状态卡已归入智能体工坊页。
   renderWorkLogs(view, body.createDiv({ cls: "sd-secondary" }));
-  const secondary = body.createDiv({ cls: "sd-secondary sd-agent-secondary" });
-  renderAgentStatus(view, secondary);
   renderHints(view, body);
+}
+
+function isEmptyVault(view: DashboardView): boolean {
+  const data = view.plugin.store.data;
+  return Object.keys(data.days ?? {}).length === 0 &&
+    (data.memos ?? []).length === 0 &&
+    (data.toolCalls ?? []).length === 0;
+}
+
+/** 空库引导：告诉用户下一步做什么，而不是展示一片 0。 */
+function renderOnboarding(view: DashboardView, root: HTMLElement): void {
+  const card = root.createDiv({ cls: "sd-card sd-onboarding-card" });
+  card.createDiv({ cls: "sd-card-title", text: t("开始使用 Sediment") });
+  card.createDiv({
+    cls: "sd-card-sub",
+    text: t("这是一个本地优先的知识库插件。先确认工作模式与目录，再让 Agent 接入——所有写入都可审批、可回滚、可追溯。"),
+  });
+  const steps = card.createDiv({ cls: "sd-onboarding-steps" });
+  const step = (n: number, text: string, action?: () => void, label?: string): void => {
+    const row = steps.createDiv({ cls: "sd-onboarding-step" });
+    row.createSpan({ cls: "sd-onboarding-num", text: String(n) });
+    row.createSpan({ text });
+    if (action && label) row.createEl("button", { text: label }).onclick = action;
+  };
+  step(1, t("在设置中确认日记目录与「确认后写入」模式"));
+  step(2, t("把 examples/AGENTS.md 复制到库根目录，让 Agent 走 MCP 写入"));
+  step(3, t("让 Agent 写入一次笔记，在智能体工坊审批——变更会出现在审计时间线"), () => {
+    view.tab = "agent";
+    view.render();
+  }, t("查看工坊"));
+}
+
+/** 审计摘要：把差异化信号（待审/变更/快照/最近采纳）前置到今日页首屏。 */
+function renderAuditSummary(view: DashboardView, root: HTMLElement): void {
+  const data = view.plugin.store.data;
+  const pending = data.pendingWrites?.length ?? 0;
+  const changes = pendingReviewChanges(data.toolCalls, data.reviewedChanges).length;
+  const snapshots = data.snapshots?.length ?? 0;
+  const lastKept = Object.entries(data.reviewedChanges ?? {})
+    .filter(([, value]) => typeof value === "string" ? value === "kept" : value.decision === "kept")
+    .map(([key, value]) => ({
+      time: typeof value === "string" ? key.split("|")[0] ?? "" : (value as { time?: string }).time ?? "",
+      path: key.split("|").slice(1).join("|"),
+    }))
+    .sort((a, b) => (a.time < b.time ? 1 : -1))[0];
+  const summary = root.createDiv({ cls: "sd-audit-strip sd-today-audit" });
+  summary.createSpan({ cls: "sd-audit-strip-title", text: t("Agent 写入审计") });
+  summary.createSpan({
+    text: `${t("待审")} ${pending} · ${t("变更审查")} ${changes} · ${t("快照")} ${snapshots}` +
+      (lastKept?.time ? ` · ${tf("最近采纳 {time}", { time: localHHmm(lastKept.time) })}` : ""),
+    attr: { title: lastKept?.path || "" },
+  });
+  const open = summary.createEl("button", { cls: "sd-audit-strip-open", text: t("查看审计") });
+  open.onclick = () => {
+    view.tab = "agent";
+    view.render();
+  };
 }
 
 export function renderHints(view: DashboardView, root: HTMLElement): void {

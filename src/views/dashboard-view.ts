@@ -25,13 +25,12 @@ export class DashboardView extends ItemView {
   range: RangeKey = "1y";
   trendTab: "writing" | "changes" | "time" | "source" = "writing";
   rhythmTab: "matrix" | "hours" = "matrix";
-  yearlyTab: "wheel" | "fingerprint" | "moon" = "wheel";
   rhythmActiveOnly = true;
   foldersExpanded = false;
   insightsExpanded = false;
   /** 附属热力图折叠状态：重渲染（切指标/选日期）后保持展开。 */
   strataHeatmapOpen = false;
-  insightsSection: "strata" | "overview" | "trend" | "folders" | "yearly" | "review" = "strata";
+  insightsSection: "strata" | "trend" | "folders" | "wheel" | "fingerprint" | "moon" | "review" = "strata";
   selected: string | null = null;
   posterMonth = new Date().getMonth();
   bannerEl: HTMLElement | null = null;
@@ -330,7 +329,7 @@ export class DashboardView extends ItemView {
         this.render();
       };
     }
-    const refresh = bar.createEl("button", { cls: "sd-refresh", text: t("重绘看板") });
+    const refresh = bar.createEl("button", { cls: "sd-refresh", text: t("刷新视图"), attr: { title: t("重新渲染当前看板（数据已由后台自动更新）") } });
     refresh.onclick = () => this.render();
   }
 

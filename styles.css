@@ -43,6 +43,18 @@ settings:
   --sediment-cell-size: 15px;
   /* 吸顶导航栏高度：子页签与今日操作栏的 sticky 偏移统一引用此变量，避免硬编码 53px 漂移。 */
   --sediment-navbar-height: 53px;
+  /* 间距阶梯：新样式优先引用，避免散落的 4/6/8/10/12px 硬编码。 */
+  --sd-space-xs: 4px;
+  --sd-space-sm: 6px;
+  --sd-space-md: 8px;
+  --sd-space-lg: 10px;
+  --sd-space-xl: 12px;
+  /* 语义色：图表/画风使用，与 Obsidian 主题变量分开，便于统一调整。 */
+  --sd-color-danger: #d9544d;
+  --sd-color-warning: #d59a5b;
+  --sd-color-accent-2: #3f9d8f;
+  --sd-color-accent-3: #8a63d2;
+  --sd-color-accent-4: #d98a3d;
 }
 
 .sd-dashboard {
@@ -110,7 +122,7 @@ settings:
 
 /* 数据恢复卡的重操作警示（写入暂停 / 恢复副本失败相关提示）。 */
 .sd-recovery-warning {
-  color: var(--text-error, #d9544d);
+  color: var(--text-error, var(--sd-color-danger));
   font-weight: 600;
 }
 
@@ -2103,7 +2115,7 @@ button.sd-knowledge-open:not(.clickable-icon):hover,
 }
 
 .sd-diff-line.is-remove {
-  background: color-mix(in srgb, var(--text-error, #d9544d) 14%, transparent);
+  background: color-mix(in srgb, var(--text-error, var(--sd-color-danger)) 14%, transparent);
 }
 
 .sd-diff-line.is-placeholder {
@@ -2355,11 +2367,11 @@ button.sd-task-open:not(.clickable-icon):hover {
 }
 
 .sd-diagnostic-row.is-security {
-  border-left-color: var(--text-error, #d9544d);
+  border-left-color: var(--text-error, var(--sd-color-danger));
 }
 
 .sd-diagnostic-row.is-performance {
-  border-left-color: var(--text-warning, #d59a5b);
+  border-left-color: var(--text-warning, var(--sd-color-warning));
 }
 
 .sd-diagnostic-row.is-migration {
@@ -2521,18 +2533,18 @@ button.sd-task-open:not(.clickable-icon):hover {
 /* ===== P2：每页主色 + 材质 + 热力图键盘焦点 ===== */
 /* 按页签覆盖局部 --interactive-accent，看板内所有图表/圆环/按钮自动继承各自的主色。 */
 .sd-dashboard[data-tab="today"] {
-  --interactive-accent: #d98a3d;
-  --sd-accent: #d98a3d;
+  --interactive-accent: var(--sd-color-accent-4);
+  --sd-accent: var(--sd-color-accent-4);
 }
 
 .sd-dashboard[data-tab="insights"] {
-  --interactive-accent: #3f9d8f;
-  --sd-accent: #3f9d8f;
+  --interactive-accent: var(--sd-color-accent-2);
+  --sd-accent: var(--sd-color-accent-2);
 }
 
 .sd-dashboard[data-tab="agent"] {
-  --interactive-accent: #8a63d2;
-  --sd-accent: #8a63d2;
+  --interactive-accent: var(--sd-color-accent-3);
+  --sd-accent: var(--sd-color-accent-3);
 }
 
 /* 卡片材质：主色描边顶缘 + 轻微磨砂与投影，随页签主色变化。 */
@@ -2559,18 +2571,25 @@ button.sd-task-open:not(.clickable-icon):hover {
 }
 
 /* 变更时间线：过滤条与分页按钮 */
-.sd-timeline-filter { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
-.sd-timeline-reads { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); }
-.sd-timeline-more { margin-top: 8px; }
-
-/* 审核队列全空时的紧凑状态条 */
-.sd-audit-summary { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 14px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s); color: var(--text-muted); font-size: 12px; }
-.sd-audit-summary > span:first-child { color: var(--text-normal); font-weight: 600; }
-.sd-audit-summary-hint { margin-left: auto; font-style: italic; }
+.sd-timeline-filter { display: flex; align-items: center; gap: var(--sd-space-md); flex-wrap: wrap; margin-bottom: var(--sd-space-md); }
+.sd-timeline-reads { display: inline-flex; align-items: center; gap: var(--sd-space-xs); font-size: var(--sediment-body-size); color: var(--text-muted); }
+.sd-timeline-more { margin-top: var(--sd-space-md); }
 
 /* 简洁设置模式下隐藏的高级项 */
 .sd-hidden-setting { display: none; }
 
 /* 地层页的专注采集控件 */
-.sd-strata-focus { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 4px 0 8px; }
+.sd-strata-focus { display: flex; align-items: center; gap: var(--sd-space-md); flex-wrap: wrap; margin: var(--sd-space-xs) 0 var(--sd-space-md); }
 .sd-pomodoro-button { min-width: 160px; }
+
+/* 今日页审计摘要条：差异化信号前置 */
+.sd-audit-strip { display: flex; align-items: center; gap: var(--sd-space-xl); flex-wrap: wrap; padding: var(--sd-space-lg) 14px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s); color: var(--text-muted); font-size: var(--sediment-body-size); }
+.sd-today-audit { margin-bottom: var(--sd-space-xl); }
+.sd-audit-strip-title { color: var(--text-normal); font-weight: 600; }
+.sd-audit-strip-open { margin-left: auto; }
+
+/* 空库引导卡 */
+.sd-onboarding-steps { display: flex; flex-direction: column; gap: var(--sd-space-lg); margin-top: var(--sd-space-xl); }
+.sd-onboarding-step { display: flex; align-items: center; gap: var(--sd-space-lg); font-size: var(--sediment-body-size); }
+.sd-onboarding-step > button { margin-left: auto; }
+.sd-onboarding-num { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--interactive-accent); color: var(--text-on-accent); font-size: 12px; font-weight: 600; flex-shrink: 0; }

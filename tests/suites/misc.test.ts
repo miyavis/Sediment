@@ -277,7 +277,7 @@ test("终审 4：年轮图月份标签走 tf()（EN 无中文泄漏），SVG 带
   };
   const card = { setAttribute: () => {}, querySelector: () => undefined, createDiv: () => slot };
   const view = {
-    yearlyTab: "wheel",
+    insightsSection: "wheel",
     analyticsCard: () => card,
     render: () => {},
     plugin: { store: { settings: { showMoonPhase: true }, data: { days }, getDay: (key: string) => days[key] ?? createEmptyDay() } },

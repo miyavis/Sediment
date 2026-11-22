@@ -25,12 +25,14 @@ export function renderInsights(view: DashboardView, root: HTMLElement): void {
   const subnav = body.createDiv({ cls: "sd-subnav" });
   const sections: Array<[typeof view.insightsSection, string]> = [
     ["strata", t("地层剖面")],
-    ["overview", t("脉冲概览")],
     ["trend", t("写作趋势")],
     ["folders", t("投入分布")],
-    ["yearly", t("年度画像")],
+    ["wheel", t("年轮")],
+    ["fingerprint", t("知识指纹")],
+    ...(view.plugin.store.settings.showMoonPhase ? [["moon", t("月相")] as [typeof view.insightsSection, string]] : []),
     ["review", t("本周复盘")],
   ];
+  if (!view.plugin.store.settings.showMoonPhase && view.insightsSection === "moon") view.insightsSection = "wheel";
   for (const [key, label] of sections) {
     // 所有入口都保留：窄屏由 CSS 横向滚动承载，不静默阉割功能。
     const button = subnav.createEl("button", {
@@ -54,17 +56,16 @@ export function renderInsights(view: DashboardView, root: HTMLElement): void {
     };
     folded.createEl("summary", { text: t("年度活跃热力图（附属）") });
     renderHeatmap(view, folded);
-  } else if (view.insightsSection === "overview") {
+    // 原「脉冲概览」并入地层页：摘要 + 知识现状常驻，详细图表按需展开。
     renderInsightsSummary(view, content);
     renderKnowledgeState(view, content);
-    // insightsExpanded 真实控制详细概览的展开/收起（默认收起，与摘要卡提示文案一致）。
     if (view.insightsExpanded) renderOverview(view, content);
   } else if (view.insightsSection === "trend") {
     renderAnalytics(view, content, "trend");
   } else if (view.insightsSection === "folders") {
     renderAnalytics(view, content, "folders");
     renderAnalytics(view, content, "rhythm");
-  } else if (view.insightsSection === "yearly") {
+  } else if (view.insightsSection === "wheel" || view.insightsSection === "fingerprint" || view.insightsSection === "moon") {
     renderYearly(view, content);
   } else {
     renderReview(view, content);
@@ -691,25 +692,8 @@ export function renderYearly(view: DashboardView, root: HTMLElement): void {
   const entries = Object.entries(view.plugin.store.data.days).filter(([key]) => key.startsWith(`${year}-`));
   const card = view.analyticsCard(root, t("年度画像"), tf("{year} 年", { year }));
   card.setAttribute("id", "sd-yearly");
-  const yearlyTabs = card.querySelector(".sd-card-head")?.createDiv({ cls: "sd-trend-tabs" });
-  const yearlyOptions: Array<["wheel" | "fingerprint" | "moon", string]> = [
-    ["wheel", t("年轮")],
-    ["fingerprint", t("指纹")],
-    ...(view.plugin.store.settings.showMoonPhase ? [["moon", t("月相")] as ["moon", string]] : []),
-  ];
-  if (!view.plugin.store.settings.showMoonPhase && view.yearlyTab === "moon") view.yearlyTab = "wheel";
-  for (const [key, title] of yearlyOptions) {
-    const button = yearlyTabs?.createEl("button", {
-      cls: key === view.yearlyTab ? "is-active" : "",
-      text: title,
-    });
-    if (button) button.onclick = () => {
-      view.yearlyTab = key;
-      view.render();
-    };
-  }
 
-  if (view.yearlyTab === "wheel") {
+  if (view.insightsSection === "wheel") {
     const petals = entries
       .map(([key, day]) => {
         const dayOfYear = Math.floor((parseKey(key).getTime() - new Date(year, 0, 0).getTime()) / 86400000);
@@ -745,7 +729,7 @@ export function renderYearly(view: DashboardView, root: HTMLElement): void {
     return;
   }
 
-  if (view.yearlyTab === "fingerprint") {
+  if (view.insightsSection === "fingerprint") {
     const fingerprintSvg = Array.from({ length: 12 }, (_, month) => {
       const bars = Array.from({ length: 31 }, (_, index) => {
         const key = `${year}-${String(month + 1).padStart(2, "0")}-${String(index + 1).padStart(2, "0")}`;
