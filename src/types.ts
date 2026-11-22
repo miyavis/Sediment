@@ -248,6 +248,8 @@ export interface PulseSettings {
   multiArtStyle: boolean;
   /** 设置页详略：simple 只显示审计核心，all 显示全部 */
   settingsDetail: "simple" | "all";
+  /** 是否启用专注时长采集（番茄钟），关闭后地层专注层为 0 */
+  focusTrackingEnabled: boolean;
   /** Agent HTTP API / MCP 访问令牌 */
   agentServerToken: string;
 }
@@ -368,6 +370,7 @@ export const DEFAULT_SETTINGS: PulseSettings = {
   showPoster: false,
   multiArtStyle: false,
   settingsDetail: "simple",
+  focusTrackingEnabled: true,
   agentServerToken: "",
 };
 

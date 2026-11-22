@@ -88,11 +88,7 @@ export function renderTodayCard(view: DashboardView, root: HTMLElement): void {
   const row = card.createDiv({ cls: "sd-today-row" });
   row.createSpan({ text: tf("写作 {words} / {goal} 字", { words: day.wordsAdded, goal: goal.toLocaleString() }) });
   row.createSpan({ text: tf("连续 {streak} 天 · 最长 {longest} 天", { streak, longest: view.longestStreak() }) });
-  const pomoButton = row.createEl("button", { cls: "sd-pomodoro-button" });
-  pomoButton.onclick = () => view.plugin.pomodoro.toggle();
-  view.updatePomodoroButton();
-  const skip = row.createEl("button", { cls: "sd-pomodoro-skip", text: t("跳过") });
-  skip.onclick = () => view.plugin.pomodoro.skip();
+  // 专注计时器已挪到「知识地层」页（作为人类专注时长的数据源），今日页不再占用主操作行。
   const progress = card.createDiv({ cls: "sd-progress" });
   progress.createDiv({ cls: "sd-progress-fill" }).setCssStyles({
     width: `${Math.min(100, (day.wordsAdded / goal) * 100)}%`,

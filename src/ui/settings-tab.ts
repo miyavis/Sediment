@@ -285,6 +285,17 @@ export class PulseSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName(t("启用专注时长采集"))
+      .setDesc(t("在「知识地层」显示专注按钮；完成后计入当日专注分钟与地层专注层。关闭后专注层为 0。"))
+      .addToggle((toggle) =>
+        toggle.setValue(settings.focusTrackingEnabled).onChange((value) => {
+          settings.focusTrackingEnabled = value;
+          save();
+          this.plugin.refreshViews();
+        })
+      );
+
+    new Setting(containerEl)
       .setName(t("减少动态效果"))
       .setDesc(t("关闭横幅和卡片动画，保留必要状态反馈。"))
       .addToggle((toggle) =>

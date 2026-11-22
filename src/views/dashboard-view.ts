@@ -545,8 +545,11 @@ ${celestial}
     const state = this.plugin.pomodoro.state();
     const minutes = String(Math.floor(state.remaining / 60)).padStart(2, "0");
     const seconds = String(state.remaining % 60).padStart(2, "0");
-    const mode = state.mode === "focus" ? t("番茄") : state.mode === "short" ? t("短休") : t("长休");
-    button.textContent = `${state.running ? "⏸" : "▶"} ${mode} ${minutes}:${seconds}`;
+    const mode = state.mode === "focus" ? t("专注") : state.mode === "short" ? t("短休") : t("长休");
+    // 空闲时给出明确动作文案；运行时显示倒计时。
+    button.textContent = state.running
+      ? `⏸ ${mode} ${minutes}:${seconds}`
+      : t("开始专注（记入统计）");
   }
 
   /** 画风直选菜单：一步选中目标画风，替代旧的循环切换。 */

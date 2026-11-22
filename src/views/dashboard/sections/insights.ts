@@ -235,6 +235,25 @@ export function renderStrata(view: DashboardView, root: HTMLElement): void {
   head.createDiv({ cls: "sd-card-title", text: t("知识地层剖面") });
   head.createDiv({ cls: "sd-card-sub", text: tf("近 {n} 个月 · 人 / AI / 任务 / 专注按月沉积。「AI 写」仅统计经本地 API/MCP 的写入；绕过 API 的直写计入人写。", { n: months.length }) });
 
+  // 专注时长采集：番茄钟不再是独立效率功能，而是地层「专注层」的数据源。
+  if (store.settings.focusTrackingEnabled) {
+    const focusRow = card.createDiv({ cls: "sd-strata-focus" });
+    const button = focusRow.createEl("button", {
+      cls: "sd-pomodoro-button",
+      attr: { title: t("完成后计入当日专注分钟与知识地层的专注层。") },
+    });
+    button.onclick = () => view.plugin.pomodoro.toggle();
+    const skip = focusRow.createEl("button", { cls: "sd-pomodoro-skip", text: t("跳过") });
+    skip.onclick = () => view.plugin.pomodoro.skip();
+    focusRow.createSpan({
+      cls: "sd-card-sub",
+      text: t("专注时长会计入当日统计与地层专注层。"),
+    });
+    view.updatePomodoroButton();
+  } else {
+    for (const month of months) month.focus = 0;
+  }
+
   const totals = months.reduce(
     (sum, month) => ({
       human: sum.human + month.human,

@@ -548,6 +548,11 @@ var EN = {
   "\u7B80\u6D01\u6A21\u5F0F\u53EA\u663E\u793A\u5BA1\u8BA1\u6838\u5FC3\u8BBE\u7F6E\uFF1B\u5176\u4F59\u7EDF\u8BA1\u6743\u91CD\u3001\u68C0\u7D22\u589E\u5F3A\u4E0E\u5B9E\u9A8C\u6027\u9009\u9879\u5728\u300C\u5168\u90E8\u300D\u4E2D\u3002": "Simple mode shows only the audit essentials; weights, search enhancement and experimental options live in All.",
   "\u7B80\u6D01\uFF08\u63A8\u8350\uFF09": "Simple (recommended)",
   "\u5168\u90E8\u8BBE\u7F6E": "All settings",
+  "\u5B8C\u6210\u540E\u8BA1\u5165\u5F53\u65E5\u4E13\u6CE8\u5206\u949F\u4E0E\u77E5\u8BC6\u5730\u5C42\u7684\u4E13\u6CE8\u5C42\u3002": "On completion, adds to today's focus minutes and the strata focus layer.",
+  "\u4E13\u6CE8\u65F6\u957F\u4F1A\u8BA1\u5165\u5F53\u65E5\u7EDF\u8BA1\u4E0E\u5730\u5C42\u4E13\u6CE8\u5C42\u3002": "Focus time is added to daily stats and the strata focus layer.",
+  "\u5F00\u59CB\u4E13\u6CE8\uFF08\u8BB0\u5165\u7EDF\u8BA1\uFF09": "Start focus (tracked)",
+  "\u542F\u7528\u4E13\u6CE8\u65F6\u957F\u91C7\u96C6": "Track focus time",
+  "\u5728\u300C\u77E5\u8BC6\u5730\u5C42\u300D\u663E\u793A\u4E13\u6CE8\u6309\u94AE\uFF1B\u5B8C\u6210\u540E\u8BA1\u5165\u5F53\u65E5\u4E13\u6CE8\u5206\u949F\u4E0E\u5730\u5C42\u4E13\u6CE8\u5C42\u3002\u5173\u95ED\u540E\u4E13\u6CE8\u5C42\u4E3A 0\u3002": "Show the focus button in Knowledge Strata; completed sessions add to daily focus minutes and the strata focus layer. When off, the focus layer is 0.",
   "\u5BA1\u6838\u961F\u5217": "Review queues",
   "\u53D8\u66F4\u5BA1\u67E5": "Change review",
   "Agent \u5199\u5165\u4F1A\u5728\u8FD9\u91CC\u7B49\u5F85\u4F60\u7684\u5BA1\u67E5\u3002": "Agent writes will wait here for your review.",
@@ -4004,6 +4009,7 @@ var DEFAULT_SETTINGS = {
   showPoster: false,
   multiArtStyle: false,
   settingsDetail: "simple",
+  focusTrackingEnabled: true,
   agentServerToken: ""
 };
 function createEmptyDay() {
@@ -6754,6 +6760,13 @@ var PulseSettingTab = class extends import_obsidian16.PluginSettingTab {
         this.plugin.refreshViews();
       })
     );
+    new import_obsidian16.Setting(containerEl).setName(t("\u542F\u7528\u4E13\u6CE8\u65F6\u957F\u91C7\u96C6")).setDesc(t("\u5728\u300C\u77E5\u8BC6\u5730\u5C42\u300D\u663E\u793A\u4E13\u6CE8\u6309\u94AE\uFF1B\u5B8C\u6210\u540E\u8BA1\u5165\u5F53\u65E5\u4E13\u6CE8\u5206\u949F\u4E0E\u5730\u5C42\u4E13\u6CE8\u5C42\u3002\u5173\u95ED\u540E\u4E13\u6CE8\u5C42\u4E3A 0\u3002")).addToggle(
+      (toggle) => toggle.setValue(settings.focusTrackingEnabled).onChange((value) => {
+        settings.focusTrackingEnabled = value;
+        save();
+        this.plugin.refreshViews();
+      })
+    );
     new import_obsidian16.Setting(containerEl).setName(t("\u51CF\u5C11\u52A8\u6001\u6548\u679C")).setDesc(t("\u5173\u95ED\u6A2A\u5E45\u548C\u5361\u7247\u52A8\u753B\uFF0C\u4FDD\u7559\u5FC5\u8981\u72B6\u6001\u53CD\u9988\u3002")).addToggle(
       (toggle) => toggle.setValue(settings.reducedMotion).onChange((value) => {
         settings.reducedMotion = value;
@@ -8360,6 +8373,23 @@ function renderStrata(view, root) {
   const head = card.createDiv({ cls: "sd-card-head" });
   head.createDiv({ cls: "sd-card-title", text: t("\u77E5\u8BC6\u5730\u5C42\u5256\u9762") });
   head.createDiv({ cls: "sd-card-sub", text: tf("\u8FD1 {n} \u4E2A\u6708 \xB7 \u4EBA / AI / \u4EFB\u52A1 / \u4E13\u6CE8\u6309\u6708\u6C89\u79EF\u3002\u300CAI \u5199\u300D\u4EC5\u7EDF\u8BA1\u7ECF\u672C\u5730 API/MCP \u7684\u5199\u5165\uFF1B\u7ED5\u8FC7 API \u7684\u76F4\u5199\u8BA1\u5165\u4EBA\u5199\u3002", { n: months.length }) });
+  if (store.settings.focusTrackingEnabled) {
+    const focusRow = card.createDiv({ cls: "sd-strata-focus" });
+    const button = focusRow.createEl("button", {
+      cls: "sd-pomodoro-button",
+      attr: { title: t("\u5B8C\u6210\u540E\u8BA1\u5165\u5F53\u65E5\u4E13\u6CE8\u5206\u949F\u4E0E\u77E5\u8BC6\u5730\u5C42\u7684\u4E13\u6CE8\u5C42\u3002") }
+    });
+    button.onclick = () => view.plugin.pomodoro.toggle();
+    const skip = focusRow.createEl("button", { cls: "sd-pomodoro-skip", text: t("\u8DF3\u8FC7") });
+    skip.onclick = () => view.plugin.pomodoro.skip();
+    focusRow.createSpan({
+      cls: "sd-card-sub",
+      text: t("\u4E13\u6CE8\u65F6\u957F\u4F1A\u8BA1\u5165\u5F53\u65E5\u7EDF\u8BA1\u4E0E\u5730\u5C42\u4E13\u6CE8\u5C42\u3002")
+    });
+    view.updatePomodoroButton();
+  } else {
+    for (const month of months) month.focus = 0;
+  }
   const totals = months.reduce(
     (sum, month) => ({
       human: sum.human + month.human,
@@ -8924,11 +8954,6 @@ function renderTodayCard(view, root) {
   const row = card.createDiv({ cls: "sd-today-row" });
   row.createSpan({ text: tf("\u5199\u4F5C {words} / {goal} \u5B57", { words: day.wordsAdded, goal: goal.toLocaleString() }) });
   row.createSpan({ text: tf("\u8FDE\u7EED {streak} \u5929 \xB7 \u6700\u957F {longest} \u5929", { streak, longest: view.longestStreak() }) });
-  const pomoButton = row.createEl("button", { cls: "sd-pomodoro-button" });
-  pomoButton.onclick = () => view.plugin.pomodoro.toggle();
-  view.updatePomodoroButton();
-  const skip = row.createEl("button", { cls: "sd-pomodoro-skip", text: t("\u8DF3\u8FC7") });
-  skip.onclick = () => view.plugin.pomodoro.skip();
   const progress = card.createDiv({ cls: "sd-progress" });
   progress.createDiv({ cls: "sd-progress-fill" }).setCssStyles({
     width: `${Math.min(100, day.wordsAdded / goal * 100)}%`
@@ -9499,8 +9524,8 @@ ${celestial}
     const state = this.plugin.pomodoro.state();
     const minutes = String(Math.floor(state.remaining / 60)).padStart(2, "0");
     const seconds = String(state.remaining % 60).padStart(2, "0");
-    const mode = state.mode === "focus" ? t("\u756A\u8304") : state.mode === "short" ? t("\u77ED\u4F11") : t("\u957F\u4F11");
-    button.textContent = `${state.running ? "\u23F8" : "\u25B6"} ${mode} ${minutes}:${seconds}`;
+    const mode = state.mode === "focus" ? t("\u4E13\u6CE8") : state.mode === "short" ? t("\u77ED\u4F11") : t("\u957F\u4F11");
+    button.textContent = state.running ? `\u23F8 ${mode} ${minutes}:${seconds}` : t("\u5F00\u59CB\u4E13\u6CE8\uFF08\u8BB0\u5165\u7EDF\u8BA1\uFF09");
   }
   /** 画风直选菜单：一步选中目标画风，替代旧的循环切换。 */
   showArtStyleMenu(event) {

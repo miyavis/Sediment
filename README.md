@@ -54,7 +54,7 @@ Sediment does not try to be a chat client or a search engine. It is the **write-
 
 ![Today view with local API and per-client call status](assets/today-connection-status.png)
 
-Supporting views exist to explain and feed the audit story: writing statistics, heatmaps, contribution trends, knowledge strata, quick memos, weekly reviews, task scanning and health checks. A pomodoro and poster export are experimental and off by default.
+Supporting views exist to explain and feed the audit story: writing statistics, heatmaps, contribution trends, knowledge strata, quick memos, weekly reviews, task scanning and health checks. Focus-time tracking lives in Knowledge Strata as the data source for the human-vs-AI stratification; it is on by default and can be disabled in settings. Poster export and art-style switching are experimental and off by default.
 
 ## Quick start
 
