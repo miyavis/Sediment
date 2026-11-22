@@ -2,7 +2,7 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
-## [Unreleased]
+## [1.2.4] - 2026-11-22
 
 ### 变更
 - 工程工具链升级：接入 `eslint-plugin-obsidianmd` 本地复现审核器规则（不再等外部审核才发现）；ESLint 9 扁平配置 + typescript-eslint 8，CI 增加 `npm audit --omit=dev` 生产依赖漏洞扫描。
