@@ -1,6 +1,7 @@
 import type { SedimentPlugin } from "../main";
 import {
   appDataDirectory,
+  localAppDataDirectory,
   ensureDirectory,
   fileExists,
   homeDirectory,
@@ -49,7 +50,7 @@ export function detectOpenCodeLayout(data: Record<string, unknown>, probe?: () =
 }
 
 /** 候选客户端清单（纯函数，便于测试）。路径均对照各客户端官方文档核实。 */
-export function agentCandidates(home: string, appdata: string): AgentTarget[] {
+export function agentCandidates(home: string, appdata: string, localappdata = ""): AgentTarget[] {
   return [
     { id: "opencode", name: "OpenCode", configPath: `${home}/.config/opencode/opencode.jsonc`, rootKey: "mcp", envKey: "environment" },
     { id: "qoder", name: "Qoder", configPath: `${home}/.qoder/settings.json`, rootKey: "mcpServers", envKey: "env" },
@@ -65,14 +66,19 @@ export function agentCandidates(home: string, appdata: string): AgentTarget[] {
     // 以下为非 JSON 客户端：格式在 format 字段标注，读写走 config-formats 适配。
     { id: "claude-code", name: "Claude Code", configPath: `${home}/.claude.json`, rootKey: "mcpServers", envKey: "env", format: "json" },
     { id: "codex", name: "OpenAI Codex", configPath: `${home}/.codex/config.toml`, rootKey: "mcp_servers", envKey: "env", format: "toml" },
-    { id: "hermes", name: "Hermes Agent", configPath: `${home}/.hermes/config.yaml`, rootKey: "mcp_servers", envKey: "env", format: "yaml" },
+    // Hermes 在 Windows 用 %LOCALAPPDATA%\hermes\（非 Roaming），POSIX 用 ~/.hermes/。
+    { id: "hermes", name: "Hermes Agent", configPath: localappdata ? `${localappdata}/hermes/config.yaml` : `${home}/.hermes/config.yaml`, rootKey: "mcp_servers", envKey: "env", format: "yaml" },
     { id: "vscode", name: "VS Code / Copilot", configPath: `${appdata}/Code/User/mcp.json`, rootKey: "servers", envKey: "env", format: "json" },
   ];
 }
 
 /** 全部受支持的客户端候选（供设置页展示，含未检测到的）。参数可选，便于测试注入路径。 */
-export function allAgentCandidates(home = homeDirectory(), appdata = appDataDirectory()): AgentTarget[] {
-  return agentCandidates(home, appdata);
+export function allAgentCandidates(
+  home = homeDirectory(),
+  appdata = appDataDirectory(),
+  localappdata = localAppDataDirectory()
+): AgentTarget[] {
+  return agentCandidates(home, appdata, localappdata);
 }
 
 /** 探测本机已存在配置文件的智能体客户端。 */

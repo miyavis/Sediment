@@ -2,6 +2,11 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [1.2.8] - 2026-11-22
+
+### 修复
+- Hermes Agent 探测路径：Windows 下改用 `%LOCALAPPDATA%\hermes\config.yaml`（此前错误地探测 Roaming 与 `~/.hermes`，导致本机已安装却检测不到）；POSIX 仍用 `~/.hermes/config.yaml`。
+
 ## [1.2.7] - 2026-11-22
 
 ### 新增

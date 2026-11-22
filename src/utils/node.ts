@@ -63,6 +63,14 @@ export function appDataDirectory(): string {
   return runtime.process?.env?.APPDATA ?? "";
 }
 
+/** 通过 window 读取 LOCALAPPDATA（Windows 本地应用数据），POSIX 下为空。 */
+export function localAppDataDirectory(): string {
+  const runtime = typed<{ process?: { env?: Record<string, string | undefined> } }>(
+    typeof window === "undefined" ? {} : window
+  );
+  return runtime.process?.env?.LOCALAPPDATA ?? "";
+}
+
 /* ---------- 字节与摘要 ---------- */
 
 export function concatBytes(chunks: Uint8Array[]): Uint8Array {

@@ -1098,6 +1098,9 @@ test("新客户端：agentCandidates 包含 Claude Code / Codex / Hermes / VS Co
   const hermes = all.find((a) => a.id === "hermes")!;
   assert.equal(hermes.format, "yaml");
   assert.ok(hermes.configPath.endsWith("config.yaml"));
+  // Windows：Hermes 用 %LOCALAPPDATA%\hermes\，不是 Roaming 也不是 ~/.hermes
+  const win = setupNs.allAgentCandidates("C:/Users/u", "C:/Users/u/AppData/Roaming", "C:/Users/u/AppData/Local");
+  assert.ok(win.find((a) => a.id === "hermes")!.configPath.includes("AppData/Local"));
 });
 
 test("新客户端：Claude Code 使用 mcpServers（JSON），配置写入 mcpServers.sediment", () => {
