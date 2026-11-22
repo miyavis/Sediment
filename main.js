@@ -548,6 +548,9 @@ var EN = {
   "\u7B80\u6D01\u6A21\u5F0F\u53EA\u663E\u793A\u5BA1\u8BA1\u6838\u5FC3\u8BBE\u7F6E\uFF1B\u5176\u4F59\u7EDF\u8BA1\u6743\u91CD\u3001\u68C0\u7D22\u589E\u5F3A\u4E0E\u5B9E\u9A8C\u6027\u9009\u9879\u5728\u300C\u5168\u90E8\u300D\u4E2D\u3002": "Simple mode shows only the audit essentials; weights, search enhancement and experimental options live in All.",
   "\u7B80\u6D01\uFF08\u63A8\u8350\uFF09": "Simple (recommended)",
   "\u5168\u90E8\u8BBE\u7F6E": "All settings",
+  "\u5BA1\u6838\u961F\u5217": "Review queues",
+  "\u53D8\u66F4\u5BA1\u67E5": "Change review",
+  "Agent \u5199\u5165\u4F1A\u5728\u8FD9\u91CC\u7B49\u5F85\u4F60\u7684\u5BA1\u67E5\u3002": "Agent writes will wait here for your review.",
   "\u5BA1\u8BA1\u5305\uFF08\u53D8\u66F4\u65F6\u95F4\u7EBF\uFF09": "Audit bundle (change timeline)",
   "\u5F00\u542F\u540E\u5BFC\u51FA\u8C01/\u4F55\u65F6/\u6539\u4E86\u4EC0\u4E48/\u54C8\u5E0C/\u5BA1\u6279\u51B3\u5B9A/\u5FEB\u7167\uFF0C\u8DEF\u5F84\u9ED8\u8BA4\u4EE5\u77ED\u54C8\u5E0C\u4EE3\u66FF\u3002": "Export who/when/what/hash/approval/snapshot; paths are replaced with short hashes by default.",
   "CSV \u53EA\u542B\u6BCF\u65E5\u805A\u5408\u6307\u6807\uFF1BJSON \u542B\u5929\u8BB0\u5F55\u3001\u901F\u8BB0\u5143\u6570\u636E\u4E0E\u5DE5\u4F5C\u65E5\u5FD7\u3002\u5BA1\u8BA1\u5305\u4E0B CSV/JSON \u5747\u4E3A\u4E8B\u4EF6\u6D41\u3002": "CSV has daily aggregates; JSON has days, memo metadata and work logs. For audit bundles both formats are event streams.",
@@ -7458,12 +7461,31 @@ var DraftPreviewModal = class extends import_obsidian20.Modal {
 
 // src/views/dashboard/sections/agent.ts
 function renderAgentHub(view, root) {
+  var _a2, _b, _c;
   const body = root.createDiv({ cls: "sd-body" });
-  renderDrafts(view, body);
-  renderPendingWrites(view, body);
+  const data = view.plugin.store.data;
+  const drafts = view.agentScan().drafts.length;
+  const pending = (_b = (_a2 = data.pendingWrites) == null ? void 0 : _a2.length) != null ? _b : 0;
+  const changes = pendingChangeRows(
+    data.toolCalls,
+    data.reviewedChanges,
+    (path) => view.plugin.app.vault.getAbstractFileByPath(path) instanceof import_obsidian21.TFile
+  ).length;
+  const tasks = ((_c = data.memos) != null ? _c : []).filter(
+    (memo) => memo.tags.includes("to-agent") && !memo.converted && !memo.archived
+  ).length;
+  if (drafts + pending + changes + tasks === 0) {
+    const strip = body.createDiv({ cls: "sd-audit-summary" });
+    strip.createSpan({ text: t("\u5BA1\u6838\u961F\u5217") });
+    strip.createSpan({ text: `${t("\u8349\u7A3F")} ${drafts} \xB7 ${t("\u5F85\u5BA1\u5199\u5165")} ${pending} \xB7 ${t("\u53D8\u66F4\u5BA1\u67E5")} ${changes} \xB7 ${t("Agent \u5F85\u529E")} ${tasks}` });
+    strip.createSpan({ cls: "sd-audit-summary-hint", text: t("Agent \u5199\u5165\u4F1A\u5728\u8FD9\u91CC\u7B49\u5F85\u4F60\u7684\u5BA1\u67E5\u3002") });
+  } else {
+    renderDrafts(view, body);
+    renderPendingWrites(view, body);
+    renderAgentChanges(view, body);
+    view.renderTasksCard(body, true);
+  }
   renderUnregisteredSources(view, body);
-  renderAgentChanges(view, body);
-  view.renderTasksCard(body, true);
   renderChangeTimeline(view, body);
 }
 function renderPendingWrites(view, root) {

@@ -15,12 +15,32 @@ import type { DashboardView } from "../../dashboard-view";
 
 export function renderAgentHub(view: DashboardView, root: HTMLElement): void {
   const body = root.createDiv({ cls: "sd-body" });
-  renderDrafts(view, body);
-  renderPendingWrites(view, body);
+  const data = view.plugin.store.data;
+  const drafts = view.agentScan().drafts.length;
+  const pending = data.pendingWrites?.length ?? 0;
+  const changes = pendingChangeRows(
+    data.toolCalls,
+    data.reviewedChanges,
+    (path) => view.plugin.app.vault.getAbstractFileByPath(path) instanceof TFile
+  ).length;
+  const tasks = (data.memos ?? []).filter(
+    (memo) => memo.tags.includes("to-agent") && !memo.converted && !memo.archived
+  ).length;
+
+  if (drafts + pending + changes + tasks === 0) {
+    // 全部为空时用一条紧凑状态条保留入口提示，不四张大空卡，也不完全隐藏。
+    const strip = body.createDiv({ cls: "sd-audit-summary" });
+    strip.createSpan({ text: t("审核队列") });
+    strip.createSpan({ text: `${t("草稿")} ${drafts} · ${t("待审写入")} ${pending} · ${t("变更审查")} ${changes} · ${t("Agent 待办")} ${tasks}` });
+    strip.createSpan({ cls: "sd-audit-summary-hint", text: t("Agent 写入会在这里等待你的审查。") });
+  } else {
+    renderDrafts(view, body);
+    renderPendingWrites(view, body);
+    renderAgentChanges(view, body);
+    // 待办卡较短，放在长列表之前，避免被时间线顶到屏幕外。
+    view.renderTasksCard(body, true);
+  }
   renderUnregisteredSources(view, body);
-  renderAgentChanges(view, body);
-  // 待办卡较短，放在长列表之前，避免被时间线顶到屏幕外。
-  view.renderTasksCard(body, true);
   renderChangeTimeline(view, body);
 }
 
