@@ -217,8 +217,9 @@ test("pomodoro：检测到另一存活实例则禁用，心跳过期则正常接
   const h = pomodoroHarness(saved, now);
   assert.equal(h.manager.state().disabled, true);
   h.manager.start();
-  assert.equal(h.manager.state().running, false); // 禁用后不可启动
-  assert.equal(h.store.data.pomodoro?.instanceId, "other-instance"); // 不覆盖对方状态
+  assert.equal(h.manager.state().running, false); // 禁用后 start 会先接管，不直接启动
+  assert.equal(h.manager.state().disabled, false, "toggle/start 路径可显式接管恢复");
+  assert.notEqual(h.store.data.pomodoro?.instanceId, "other-instance", "接管后写入本实例标识");
 
   const stale = pomodoroHarness({ ...saved, heartbeatAt: now - 120_000 }, now);
   assert.equal(stale.manager.state().disabled, false); // 心跳过期 → 接管

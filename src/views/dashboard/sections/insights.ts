@@ -242,7 +242,11 @@ export function renderStrata(view: DashboardView, root: HTMLElement): void {
       cls: "sd-pomodoro-button",
       attr: { title: t("完成后计入当日专注分钟与知识地层的专注层。") },
     });
-    button.onclick = () => view.plugin.pomodoro.toggle();
+    button.onclick = () => {
+      const pomodoro = view.plugin.pomodoro;
+      if (pomodoro.state().disabled) pomodoro.takeOver();
+      else pomodoro.toggle();
+    };
     const skip = focusRow.createEl("button", { cls: "sd-pomodoro-skip", text: t("跳过") });
     skip.onclick = () => view.plugin.pomodoro.skip();
     focusRow.createSpan({

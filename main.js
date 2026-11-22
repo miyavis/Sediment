@@ -551,6 +551,9 @@ var EN = {
   "\u5B8C\u6210\u540E\u8BA1\u5165\u5F53\u65E5\u4E13\u6CE8\u5206\u949F\u4E0E\u77E5\u8BC6\u5730\u5C42\u7684\u4E13\u6CE8\u5C42\u3002": "On completion, adds to today's focus minutes and the strata focus layer.",
   "\u4E13\u6CE8\u65F6\u957F\u4F1A\u8BA1\u5165\u5F53\u65E5\u7EDF\u8BA1\u4E0E\u5730\u5C42\u4E13\u6CE8\u5C42\u3002": "Focus time is added to daily stats and the strata focus layer.",
   "\u5F00\u59CB\u4E13\u6CE8\uFF08\u8BB0\u5165\u7EDF\u8BA1\uFF09": "Start focus (tracked)",
+  "\u68C0\u6D4B\u5230\u53E6\u4E00\u4E2A\u5B9E\u4F8B\u6B63\u5728\u4F7F\u7528\u756A\u8304\u949F\uFF0C\u672C\u5B9E\u4F8B\u5DF2\u7981\u7528\uFF0C\u53EF\u5728\u77E5\u8BC6\u5730\u5C42\u9875\u70B9\u51FB\u63A5\u7BA1\u6062\u590D": "Another instance appears to be using the focus timer. This one is disabled \u2014 open Knowledge Strata and click Take over to recover.",
+  "\u5DF2\u63A5\u7BA1\u756A\u8304\u949F\uFF0C\u672C\u5B9E\u4F8B\u53EF\u6B63\u5E38\u4F7F\u7528": "Focus timer taken over; this instance is ready.",
+  "\u63A5\u7BA1\u756A\u8304\u949F": "Take over timer",
   "\u542F\u7528\u4E13\u6CE8\u65F6\u957F\u91C7\u96C6": "Track focus time",
   "\u5728\u300C\u77E5\u8BC6\u5730\u5C42\u300D\u663E\u793A\u4E13\u6CE8\u6309\u94AE\uFF1B\u5B8C\u6210\u540E\u8BA1\u5165\u5F53\u65E5\u4E13\u6CE8\u5206\u949F\u4E0E\u5730\u5C42\u4E13\u6CE8\u5C42\u3002\u5173\u95ED\u540E\u4E13\u6CE8\u5C42\u4E3A 0\u3002": "Show the focus button in Knowledge Strata; completed sessions add to daily focus minutes and the strata focus layer. When off, the focus layer is 0.",
   "\u5BA1\u6838\u961F\u5217": "Review queues",
@@ -4852,7 +4855,7 @@ var PomodoroManager = class {
     if (cleanExit) this.clearReleased();
     if (!cleanExit && saved.instanceId && saved.instanceId !== this.instanceId && typeof saved.heartbeatAt === "number" && this.now() - saved.heartbeatAt < INSTANCE_ALIVE_MS) {
       this.disabled = true;
-      new import_obsidian9.Notice(t("\u68C0\u6D4B\u5230\u53E6\u4E00\u4E2A\u5B9E\u4F8B\u6B63\u5728\u4F7F\u7528\u756A\u8304\u949F\uFF0C\u672C\u5B9E\u4F8B\u756A\u8304\u529F\u80FD\u5DF2\u7981\u7528"));
+      new import_obsidian9.Notice(t("\u68C0\u6D4B\u5230\u53E6\u4E00\u4E2A\u5B9E\u4F8B\u6B63\u5728\u4F7F\u7528\u756A\u8304\u949F\uFF0C\u672C\u5B9E\u4F8B\u5DF2\u7981\u7528\uFF0C\u53EF\u5728\u77E5\u8BC6\u5730\u5C42\u9875\u70B9\u51FB\u63A5\u7BA1\u6062\u590D"));
       return;
     }
     this.mode = saved.mode;
@@ -4944,7 +4947,11 @@ var PomodoroManager = class {
     return () => this.listeners.delete(callback);
   }
   start() {
-    if (this.disabled || this.running) return;
+    if (this.disabled) {
+      this.takeOver();
+      return;
+    }
+    if (this.running) return;
     this.runStartedAt = this.now();
     this.runStartRemaining = this.remaining;
     this.running = true;
@@ -4976,9 +4983,22 @@ var PomodoroManager = class {
     this.persist();
     this.emit();
   }
+  /** 用户显式接管：清除误判的禁用状态，以本实例重新持有心跳。 */
+  takeOver() {
+    if (!this.disabled) return;
+    this.clearReleased();
+    this.disabled = false;
+    this.running = false;
+    this.runStartedAt = null;
+    this.remaining = DURATION.focus;
+    this.mode = "focus";
+    this.persist();
+    this.emit();
+    new import_obsidian9.Notice(t("\u5DF2\u63A5\u7BA1\u756A\u8304\u949F\uFF0C\u672C\u5B9E\u4F8B\u53EF\u6B63\u5E38\u4F7F\u7528"));
+  }
   toggle() {
     if (this.disabled) {
-      new import_obsidian9.Notice(t("\u68C0\u6D4B\u5230\u53E6\u4E00\u4E2A\u5B9E\u4F8B\u6B63\u5728\u4F7F\u7528\u756A\u8304\u949F\uFF0C\u672C\u5B9E\u4F8B\u756A\u8304\u529F\u80FD\u5DF2\u7981\u7528"));
+      this.takeOver();
       return;
     }
     if (this.running) this.pause();
@@ -8379,7 +8399,11 @@ function renderStrata(view, root) {
       cls: "sd-pomodoro-button",
       attr: { title: t("\u5B8C\u6210\u540E\u8BA1\u5165\u5F53\u65E5\u4E13\u6CE8\u5206\u949F\u4E0E\u77E5\u8BC6\u5730\u5C42\u7684\u4E13\u6CE8\u5C42\u3002") }
     });
-    button.onclick = () => view.plugin.pomodoro.toggle();
+    button.onclick = () => {
+      const pomodoro = view.plugin.pomodoro;
+      if (pomodoro.state().disabled) pomodoro.takeOver();
+      else pomodoro.toggle();
+    };
     const skip = focusRow.createEl("button", { cls: "sd-pomodoro-skip", text: t("\u8DF3\u8FC7") });
     skip.onclick = () => view.plugin.pomodoro.skip();
     focusRow.createSpan({
@@ -9522,6 +9546,10 @@ ${celestial}
     const button = this.contentEl.querySelector(".sd-pomodoro-button");
     if (!button) return;
     const state = this.plugin.pomodoro.state();
+    if (state.disabled) {
+      button.textContent = t("\u63A5\u7BA1\u756A\u8304\u949F");
+      return;
+    }
     const minutes = String(Math.floor(state.remaining / 60)).padStart(2, "0");
     const seconds = String(state.remaining % 60).padStart(2, "0");
     const mode = state.mode === "focus" ? t("\u4E13\u6CE8") : state.mode === "short" ? t("\u77ED\u4F11") : t("\u957F\u4F11");

@@ -543,6 +543,10 @@ ${celestial}
     const button = this.contentEl.querySelector<HTMLButtonElement>(".sd-pomodoro-button");
     if (!button) return;
     const state = this.plugin.pomodoro.state();
+    if (state.disabled) {
+      button.textContent = t("接管番茄钟");
+      return;
+    }
     const minutes = String(Math.floor(state.remaining / 60)).padStart(2, "0");
     const seconds = String(state.remaining % 60).padStart(2, "0");
     const mode = state.mode === "focus" ? t("专注") : state.mode === "short" ? t("短休") : t("长休");

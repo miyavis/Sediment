@@ -117,7 +117,7 @@ export class PomodoroManager {
     ) {
       // 另一实例仍存活：不恢复、不写入，避免干扰对方计时与心跳。
       this.disabled = true;
-      new Notice(t("检测到另一个实例正在使用番茄钟，本实例番茄功能已禁用"));
+      new Notice(t("检测到另一个实例正在使用番茄钟，本实例已禁用，可在知识地层页点击接管恢复"));
       return;
     }
     this.mode = saved.mode;
@@ -222,7 +222,11 @@ export class PomodoroManager {
   }
 
   start(): void {
-    if (this.disabled || this.running) return;
+    if (this.disabled) {
+      this.takeOver();
+      return;
+    }
+    if (this.running) return;
     this.runStartedAt = this.now();
     this.runStartRemaining = this.remaining;
     this.running = true;
@@ -258,9 +262,24 @@ export class PomodoroManager {
     this.emit();
   }
 
+  /** 用户显式接管：清除误判的禁用状态，以本实例重新持有心跳。 */
+  takeOver(): void {
+    if (!this.disabled) return;
+    this.clearReleased();
+    this.disabled = false;
+    this.running = false;
+    this.runStartedAt = null;
+    this.remaining = DURATION.focus;
+    this.mode = "focus";
+    this.persist();
+    this.emit();
+    new Notice(t("已接管番茄钟，本实例可正常使用"));
+  }
+
   toggle(): void {
     if (this.disabled) {
-      new Notice(t("检测到另一个实例正在使用番茄钟，本实例番茄功能已禁用"));
+      // 控制台/命令等无 UI 入口时，toggle 直接尝试接管，不让用户卡死。
+      this.takeOver();
       return;
     }
     if (this.running) this.pause();
