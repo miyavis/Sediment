@@ -200,6 +200,18 @@ const TOOLS = [
       required: ["action"],
     },
   },
+  {
+    name: "get_change_timeline",
+    description: "只读审计时间线：合并 Agent 调用、待审写入、审批决定与快照，可按 agent / 路径过滤。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        limit: { type: "number", description: "最多返回条数，默认 50" },
+        agent: { type: "string", description: "按客户端名过滤" },
+        path: { type: "string", description: "按目标路径子串过滤" },
+      },
+    },
+  },
 ];
 
 function request(url, method, payload, extraHeaders = {}) {
@@ -381,6 +393,12 @@ async function dispatch(name, args) {
       if (args.action === "list") return call("/agent/audit", { limit: args.limit ?? 20 });
       if (args.action === "revert") return call("/agent/revert", { snapshotId: args.snapshotId }, "POST");
       throw new Error("manage_changes.action 无效");
+    case "get_change_timeline":
+      return call("/change-timeline", {
+        limit: args.limit ?? 50,
+        agent: args.agent ?? "",
+        path: args.path ?? "",
+      });
   }
 }
 
@@ -399,7 +417,7 @@ async function handle(message) {
         result: {
           protocolVersion: "2024-11-05",
           capabilities: { tools: {} },
-          serverInfo: { name: "sediment", version: "1.1.1" },
+          serverInfo: { name: "sediment", version: "1.2.0" },
         },
       });
       break;

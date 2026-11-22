@@ -71,6 +71,14 @@ export interface DiagnosticRecord {
   detail?: string;
 }
 
+/** 审批决定：旧数据为字符串，新数据带时间戳 */
+export type ReviewDecision = "kept" | "reverted";
+export interface ReviewDecisionRecord {
+  decision: ReviewDecision;
+  time: string;
+}
+export type ReviewChangeValue = ReviewDecision | ReviewDecisionRecord;
+
 /** 修改前的全文快照记录 */
 export interface SnapshotRecord {
   id: string;
@@ -278,8 +286,8 @@ export interface PulseData {
   /** 按客户端的调用聚合；旧数据缺失时由 toolCalls 重建 */
   agentUsage: AgentUsageMap;
   snapshots: SnapshotRecord[];
-  /** 已审查的 Agent 变更：key -> kept | reverted */
-  reviewedChanges: Record<string, "kept" | "reverted">;
+  /** 已审查的 Agent 变更：key -> 决定（旧数据为字符串，新数据带时间戳） */
+  reviewedChanges: Record<string, ReviewChangeValue>;
   /** confirm 模式下挂起待审的 Agent 写入，采纳/驳回后移除；重启后保留 */
   pendingWrites: PendingWriteRecord[];
   diagnostics: DiagnosticRecord[];

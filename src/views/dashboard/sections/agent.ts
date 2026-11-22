@@ -5,6 +5,7 @@ import { DiffModal } from "../../../ui/diff-modal";
 import { DraftPreviewModal } from "../../../ui/draft-preview-modal";
 import { confirmAction } from "../../../ui/confirm-modal";
 import { listBackupsMap, readBackup, restoreBackup } from "../../../features/audit";
+import { buildChangeTimeline, type ChangeTimelineEvent } from "../../../features/change-timeline";
 import { summarizeAgentUsage } from "../../../data/agent-usage";
 import { localStamp } from "../../../utils/dates";
 import { frontmatterOf, normalizeFolder } from "../../../utils/vault";
@@ -18,6 +19,7 @@ export function renderAgentHub(view: DashboardView, root: HTMLElement): void {
   renderPendingWrites(view, body);
   renderUnregisteredSources(view, body);
   renderAgentChanges(view, body);
+  renderChangeTimeline(view, body);
   view.renderTasksCard(body, true);
 }
 
@@ -420,4 +422,62 @@ export function renderWorkLogs(view: DashboardView, root: HTMLElement): void {
     row.createSpan({ text: `${log.date} ${log.time} · ${log.agent}` });
     row.createEl("strong", { text: log.task });
   }
+}
+
+/** 变更时间线：调用 → 挂起 → 审批 → 快照，按 Agent / 路径过滤。 */
+export function renderChangeTimeline(view: DashboardView, root: HTMLElement): void {
+  const card = root.createDiv({ cls: "sd-card sd-timeline" });
+  const head = card.createDiv({ cls: "sd-card-head" });
+  head.createDiv({ cls: "sd-card-title", text: t("变更时间线") });
+  head.createDiv({ cls: "sd-card-sub", text: t("谁、何时、改了什么、哈希、审批决定与快照，按时间倒序。") });
+
+  const filter = card.createDiv({ cls: "sd-timeline-filter" });
+  const agentInput = filter.createEl("input", {
+    attr: { type: "text", placeholder: t("按 Agent 过滤"), "aria-label": t("按 Agent 过滤") },
+  });
+  const pathInput = filter.createEl("input", {
+    attr: { type: "text", placeholder: t("按路径过滤"), "aria-label": t("按路径过滤") },
+  });
+  const list = card.createDiv({ cls: "sd-feed-list" });
+
+  const paint = (): void => {
+    list.empty();
+    const events = buildChangeTimeline(view.plugin.store.data, {
+      limit: 50,
+      agent: agentInput.value.trim() || undefined,
+      path: pathInput.value.trim() || undefined,
+    });
+    if (events.length === 0) {
+      list.createDiv({ cls: "sd-empty", text: t("暂无审计记录。") });
+      return;
+    }
+    for (const event of events) list.appendChild(timelineRow(event));
+  };
+  agentInput.oninput = paint;
+  pathInput.oninput = paint;
+  paint();
+}
+
+function timelineRow(event: ChangeTimelineEvent): HTMLElement {
+  const row = document.createElement("div");
+  row.className = "sd-feed-row sd-timeline-row";
+  const badge = document.createElement("span");
+  badge.className = `sd-audit-badge${event.status === "stale" ? " is-stale" : ""}`;
+  badge.textContent = timelineBadge(event);
+  row.appendChild(badge);
+  const meta = document.createElement("span");
+  meta.textContent = `${localStamp(event.time).slice(5)} · ${event.agent} · ${event.tool} · ${event.path || "—"}`;
+  meta.setAttribute(
+    "title",
+    `${event.title}${event.hash ? ` · sha256:${event.hash.slice(0, 12)}` : ""}${event.snapshotId ? ` · snapshot:${event.snapshotId}` : ""}`
+  );
+  row.appendChild(meta);
+  return row;
+}
+
+function timelineBadge(event: ChangeTimelineEvent): string {
+  if (event.kind === "decision") return event.decision === "kept" ? t("保留") : t("撤销");
+  if (event.kind === "snapshot") return t("快照");
+  if (event.kind === "pending") return event.status === "stale" ? t("已失效") : t("待审");
+  return t("调用");
 }

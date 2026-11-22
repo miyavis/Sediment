@@ -492,7 +492,7 @@ export class Store {
   }
 
   reviewChange(key: string, decision: "kept" | "reverted"): void {
-    this.data.reviewedChanges[key] = decision;
+    this.data.reviewedChanges[key] = { decision, time: new Date().toISOString() };
     this.logDiagnostic("storage", `Agent 变更已审查：${decision}`, key);
     this.scheduleSave();
   }

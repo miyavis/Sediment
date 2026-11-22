@@ -3,3 +3,4 @@ import "./suites/core.test";
 import "./suites/agent.test";
 import "./suites/views.test";
 import "./suites/misc.test";
+import "./suites/timeline.test";

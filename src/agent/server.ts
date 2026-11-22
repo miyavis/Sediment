@@ -303,6 +303,13 @@ export class AgentServer {
         case "GET /activity":
           this.json(response, 200, api.getToolActivity());
           return;
+        case "GET /change-timeline":
+          this.json(response, 200, api.getChangeTimeline(
+            num(query.get("limit"), 50),
+            str(query.get("agent"), "") || undefined,
+            str(query.get("path"), "") || undefined
+          ));
+          return;
         case "GET /tasks":
           this.json(response, 200, await api.listTasks(str(query.get("scope"), "all")));
           return;

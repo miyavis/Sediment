@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "sediment": {
+      "command": "node",
+      "args": ["<vault>/.obsidian/plugins/sediment/mcp-server/index.mjs"],
+      "env": {
+        "SEDIMENT_URL": "http://127.0.0.1:27123",
+        "SEDIMENT_TOKEN": "token from Sediment settings",
+        "AGENT_NAME": "cursor"
+      }
+    }
+  }
+}

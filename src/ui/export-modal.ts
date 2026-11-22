@@ -21,8 +21,17 @@ export class ExportModal extends Modal {
     });
 
     new Setting(contentEl)
+      .setName(t("审计包（变更时间线）"))
+      .setDesc(t("开启后导出谁/何时/改了什么/哈希/审批决定/快照，路径默认以短哈希代替。"))
+      .addToggle((toggle) =>
+        toggle.setValue(Boolean(this.options.audit)).onChange((value) => {
+          this.options.audit = value;
+        })
+      );
+
+    new Setting(contentEl)
       .setName(t("格式"))
-      .setDesc(t("CSV 只含每日聚合指标；JSON 含天记录、速记元数据与工作日志。"))
+      .setDesc(t("CSV 只含每日聚合指标；JSON 含天记录、速记元数据与工作日志。审计包下 CSV/JSON 均为事件流。"))
       .addDropdown((dropdown) =>
         dropdown
           .addOption("json", t("JSON（完整结构）"))

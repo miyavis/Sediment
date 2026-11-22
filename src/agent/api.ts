@@ -1,6 +1,7 @@
 import { normalizePath, TFile } from "obsidian";
 import type { SedimentPlugin } from "../main";
 import { buildWeeklyReview } from "../features/review";
+import { buildChangeTimeline } from "../features/change-timeline";
 import type { PomodoroState } from "../features/pomodoro";
 import { toggleCheckboxLine } from "../features/tasks";
 import { countWords } from "../tracker";
@@ -842,6 +843,11 @@ export class AgentApi {
       byAgent,
       recent: this.plugin.store.data.toolCalls.slice(0, 20),
     };
+  }
+
+  /** 变更时间线：合并调用流水、待审写入、审批决定与快照。只读。 */
+  getChangeTimeline(limit = 50, agent?: string, path?: string) {
+    return buildChangeTimeline(this.plugin.store.data, { limit, agent, path });
   }
 
   private categories(): string[] {

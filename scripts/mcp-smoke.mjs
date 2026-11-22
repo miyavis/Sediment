@@ -51,6 +51,7 @@ const requiredTools = [
   "record_work_log",
   "manage_tasks",
   "manage_changes",
+  "get_change_timeline",
   "get_workspace_state",
 ];
 const names = new Set(list.result.tools.map((tool) => tool.name));
@@ -59,8 +60,8 @@ if (missingTools.length > 0) {
   console.error(`MCP tool inventory missing: ${missingTools.join(", ")}`);
   process.exit(1);
 }
-if (list.result.tools.length !== 13) {
-  console.error(`MCP public tool count expected 13, got ${list.result.tools.length}`);
+if (list.result.tools.length !== 14) {
+  console.error(`MCP public tool count expected 14, got ${list.result.tools.length}`);
   process.exit(1);
 }
 const removedTools = [

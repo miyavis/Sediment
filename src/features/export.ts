@@ -1,9 +1,13 @@
 import type { Store } from "../data/store";
+import { buildChangeTimeline } from "./change-timeline";
+import { contentHash } from "../utils/hash";
 import { dateKey } from "../utils/dates";
 import { ensureFolder, normalizeFolder } from "../utils/vault";
 import type { Vault } from "obsidian";
 
 export interface ExportOptions {
+  /** true = 审计包（变更时间线），false = 每日指标/数据快照 */
+  audit?: boolean;
   format: "csv" | "json";
   /** 是否包含速记正文（默认关，脱敏） */
   includeMemoText: boolean;
@@ -87,6 +91,49 @@ export function buildExportJson(store: Store, options: ExportOptions): string {
   return JSON.stringify(payload, null, 2);
 }
 
+/** 审计包：变更时间线的 JSON / CSV 导出。路径默认以短哈希代替，需显式勾选才包含原文。 */
+export function buildAuditExport(store: Store, options: ExportOptions): string {
+  const events = buildChangeTimeline(store.data);
+  const showPath = (path: string): string =>
+    options.includePaths ? path : path ? `path:${contentHash(path).slice(0, 10)}` : "";
+  const rows = events.map((event) => ({
+    time: event.time,
+    kind: event.kind,
+    agent: event.agent,
+    tool: event.tool,
+    path: showPath(event.path),
+    title: event.title,
+    decision: event.decision ?? "",
+    hash: event.hash ?? "",
+    snapshotId: event.snapshotId ?? "",
+    pendingId: event.pendingId ?? "",
+    status: event.status ?? "",
+  }));
+
+  if (options.format === "csv") {
+    const header = ["time", "kind", "agent", "tool", "path", "title", "decision", "hash", "snapshotId", "pendingId", "status"];
+    return [
+      header.join(","),
+      ...rows.map((row) => header.map((key) => csvEscape(row[key as keyof typeof row])).join(",")),
+    ].join("\n");
+  }
+
+  return JSON.stringify(
+    {
+      exportedAt: new Date().toISOString(),
+      plugin: "sediment",
+      kind: "audit-bundle",
+      sanitization: {
+        paths: options.includePaths ? "included" : "hashed",
+        secrets: "never-exported",
+      },
+      events: rows,
+    },
+    null,
+    2
+  );
+}
+
 /** 写入库内 sediment-export/ 目录，返回文件路径。 */
 export async function exportData(
   store: Store,
@@ -97,14 +144,16 @@ export async function exportData(
   await ensureFolder(vault, folder);
   const stamp = dateKey(new Date());
   const extension = options.format === "csv" ? "csv" : "json";
-  let path = `${folder}/sediment-${stamp}.${extension}`;
+  const prefix = options.audit ? "sediment-audit" : "sediment";
+  let path = `${folder}/${prefix}-${stamp}.${extension}`;
   let counter = 2;
   while (vault.getAbstractFileByPath(path)) {
-    path = `${folder}/sediment-${stamp}-${counter}.${extension}`;
+    path = `${folder}/${prefix}-${stamp}-${counter}.${extension}`;
     counter += 1;
   }
-  const content =
-    options.format === "csv" ? buildStatsCsv(store) : buildExportJson(store, options);
+  const content = options.audit
+    ? buildAuditExport(store, options)
+    : options.format === "csv" ? buildStatsCsv(store) : buildExportJson(store, options);
   await vault.create(path, content);
   return path;
 }

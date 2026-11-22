@@ -2,32 +2,80 @@
 
 [English](README.md) | [Chinese](README.zh-CN.md)
 
-Sediment is a local-first Obsidian plugin that turns daily work into a personal knowledge stratum: writing statistics, heatmaps, quick memos, periodic reviews, and controlled agent collaboration in one workflow.
+> **Local, controllable AI write auditing for your knowledge vault.**
+> Every write an agent makes into your notes can be approved, rolled back, and traced.
 
 [![Obsidian](https://img.shields.io/badge/Obsidian-v1.8.7%2B-blue.svg)](https://obsidian.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v1.1.1-blue.svg)](https://github.com/miyavis/Sediment/releases)
+[![Version](https://img.shields.io/badge/version-v1.2.0-blue.svg)](https://github.com/miyavis/Sediment/releases)
 
-## What it does
+Sediment is a local-first Obsidian plugin and MCP server for people who let AI agents write into their knowledge base — and want **evidence, not vibes**. Agent writes become pending proposals with a frozen preview; your approval is bound to the content by a hash; after acceptance the change stays in a persistent, searchable timeline with snapshots and decisions. Nothing is uploaded, and no shell command is ever executed.
 
-| Area | Highlights |
-| --- | --- |
-| **Today** | Daily goal, quick memos, pomodoro, local tasks, and agent activity |
-| **Knowledge** | Heatmaps, writing trends, focus distribution, yearly profile, and periodic reviews |
-| **Agent** | Draft review, task claiming, change review, snapshot restore, and work logs |
+<!-- SCREENSHOT-1: Agent workshop / pending write with diff -->
+<!-- SCREENSHOT-2: Change timeline -->
+<!-- SCREENSHOT-3: MCP connection status -->
 
-Three layout densities are available: compact, standard, and full. The plugin is desktop-only (`isDesktopOnly`), because agent client setup, snapshots, and uninstall rely on Node's filesystem access.
+## Why another Obsidian plugin?
+
+Most tools in this space solve a different problem:
+
+| Tool | What it does | Write governance |
+| --- | --- | --- |
+| Copilot for Obsidian | Agent container, chat, autocomplete | Permission tiers and a session diff — its docs call it a *review aid, not a complete audit*: shell changes are not recorded, a revoke is not sent back to the agent, and the diff is lost on restart |
+| MCP bridges (mcp-obsidian, local-rest-api) | Vault access over MCP/HTTP | Authentication and optimistic locking, but no approval queue, diff, rollback, or provenance |
+| Smart Connections / Tracker / Heatmap Calendar | Semantic search and statistics | Read-only; no write path |
+| Notion AI / Capacities | Cloud AI knowledge work | Approval previews exist, but no local model and no vault-level audit trail |
+
+Sediment is built for the gap: **a durable, local, auditable write workflow**. If an agent writes into your vault, you can answer later *who wrote what, when, under which approval, and what the previous version was*.
+
+## Core: the write audit loop
+
+1. **Gate** — path denylist/allowlist, per-operation switches, four work modes (read-only / draft / confirm / auto).
+2. **Hold** — in confirm mode the write is frozen: request, `before`/`after` preview, and a SHA-256 hash of `before`. Nothing lands yet.
+3. **Verify** — at approval time the target is re-read; if it was modified or created in the meantime, approval is refused (`CONTENT_CHANGED`). This closes the "approve A, write B" race.
+4. **Decide** — accept (replay through the same guarded write path) or reject (drop the pending call and its audit row).
+5. **Record** — a snapshot, a review decision with timestamp, and a timeline event persist in `data.json`; bridge submissions also get a `decisions/<id>.json` the agent can poll.
+
+The result is a chain: **MCP call → pending write → approval → snapshot → timeline**, all local.
+
+## Change timeline
+
+The workshop shows a searchable timeline of agent activity: agent name, timestamp, tool, target path, content hash, approval decision, and snapshot id. Events from tool calls, pending writes, review decisions, and bridge decisions are merged into one view.
+
+- Filter by agent, operation, or time.
+- Export an audit bundle (JSON/CSV) with redaction by default.
+- Read it from an agent with the `get_change_timeline` MCP tool.
 
 ## Network and file access
 
 - The optional local Agent API is off by default and listens on `127.0.0.1` only; requests require the token shown in settings.
-- Optional semantic search targets an Ollama endpoint (local loopback by default) and falls back to TF-IDF when it is unavailable.
-- "Configure agent clients" reads and writes MCP configuration files **outside the vault**, under your user home or `%APPDATA%` (for example `~/.claude.json`, `~/.cursor/mcp.json`, `~/.config/opencode/opencode.jsonc`). It only adds or removes the Sediment entry; "Uninstall MCP access" removes that entry again.
-- Direct filesystem access uses Node's `fs` module only for those MCP configuration files, the plugin's own `mcp-server/index.mjs`, and note snapshots under `.obsidian/plugins/sediment/backups/`. The plugin does not run shell commands.
-- Dashboard statistics enumerate in-vault note paths and metadata to build heatmaps, trends, and knowledge health. This is local only: no note content or path list is uploaded.
-- Agent call statistics (client name, call counts, last-call time) are aggregated and stored locally in the plugin's `data.json`; they are never uploaded.
-- Copy actions write the weekly review or poster text to the system clipboard only when you click the Copy button.
-- No telemetry, no cloud upload, no self-update, and no advertising.
+- Optional semantic search targets an Ollama endpoint (local loopback by default) and falls back to TF-IDF when unavailable.
+- "Configure agent clients" reads and writes MCP configuration files **outside the vault**, under your user home or `%APPDATA%` (for example `~/.claude.json`, `~/.cursor/mcp.json`, `~/.config/opencode/opencode.jsonc`). It only adds or removes the Sediment entry.
+- Direct filesystem access uses Node's `fs` only for those MCP config files, the plugin's own `mcp-server/index.mjs`, and note snapshots under `.obsidian/plugins/sediment/backups/`. **The plugin never runs shell commands.**
+- Dashboard statistics enumerate in-vault note paths and metadata locally; no note content or path list is uploaded.
+- Agent call statistics are aggregated and stored locally in `data.json`; never uploaded.
+- No telemetry, no cloud upload, no self-update, no advertising.
+
+See `examples/SECURE-AGENT-SETUP.md` for the threat model and recommended settings.
+
+## Supporting views
+
+These exist to feed and explain the audit workflow, not to compete with dedicated single-purpose plugins:
+
+- Writing statistics, heatmap, contribution trend, and knowledge strata — a local, explainable view of where time went.
+- Quick memos with daily-note double write and source-line anchors.
+- Weekly review generation, task scanning, and health checks.
+- A pomodoro timer and monthly poster export (experimental, off by default).
+
+Contribution score (weights and daily cap configurable):
+
+```text
+score = notes created × 2 + editing sessions + tasks completed
+      + floor(words added / 100)
+      + floor(focus minutes / 25)
+```
+
+It is a supporting metric, not a measure of knowledge quality.
 
 ## Install
 
@@ -46,72 +94,16 @@ Three layout densities are available: compact, standard, and full. The plugin is
 
 Releases contain only the three files Obsidian installs, with GitHub build provenance attestations. The MCP bridge is written into the plugin folder's `mcp-server/` directory when you configure agent clients, so a BRAT install without that folder is expected.
 
-`.obsidian` is a hidden folder at the vault root, not in this repository. On Windows, enable hidden items in Explorer or paste `<vault>\.obsidian\plugins\sediment` into the address bar. On macOS, press `Cmd + Shift + .` in Finder. On Linux, press `Ctrl + H` or run `ls -a`.
-
-## Features
-
-- **Writing statistics** — words added, editing sessions, notes created, tasks completed, and focus minutes.
-- **Quick memos** — Markdown callouts, image attachments, tag filtering, daily recall, similarity browsing, and knowledge deposition.
-- **Tasks** — scans native checkboxes in daily notes and notes tagged `#task`/`#todo`; templates and acceptance checklists in knowledge notes are ignored. Tasks can be delegated to an agent and linked back to the source note and line.
-- **Weekly review** — conclusions, unfinished items, knowledge output, next actions, and detailed charts.
-- **Agent drafts** — keep source references; accept, merge, reject, or restore.
-- **Local data** — core data lives in `.obsidian/plugins/sediment/data.json`; in-vault backup and redacted export are supported.
-- **Interface** — Chinese and English, light and dark themes, narrow layouts, reduced motion, and layout density.
-
-Contribution score:
-
-```text
-score = notes created × 2 + editing sessions + tasks completed
-      + floor(words added / 100)
-      + floor(focus minutes / 25)
-```
-
-Weights and the daily cap are configurable. The score is a supporting metric, not a measure of knowledge quality.
-
-## Commands
-
-- Open the knowledge dashboard
-- Open the memo panel
-- Add a memo
-- Generate this week's review
-- Record today's leftover tasks to the daily note
-- Back up statistics into the vault
-- Export today's report image
-- View diagnostic logs
-- Uninstall MCP access
-- View changelog
-
-## Settings
-
-- Daily note folder, filename format, and memo section heading
-- Review folder, work log folder, and knowledge folder
-- Heatmap metric, editing-session tracking, writing goal, and contribution formula
-- Agent blocked folders/tags, allowlist, and per-operation permissions
-- Snapshot before modification, in-vault backup folder, and retention count
-- Layout density, art style, language, and reduced motion
-- Local Agent API port and token
-
-Agent work modes:
-
-| Mode | Effect |
-| --- | --- |
-| Read-only | Search and read within allowed paths |
-| Draft | Create drafts without modifying existing notes |
-| Confirm before write | Preview and confirm writes, with snapshots |
-| Auto | Execute only within explicitly allowed operations |
-
-Per-operation switches remain hard limits in every mode.
+`.obsidian` is a hidden folder at the vault root, not in this repository. On Windows, enable hidden items in Explorer or paste `<vault>\.obsidian\plugins\sediment` into the address bar. On macOS, press `Cmd + Shift + .` in Finder. On Linux, press `Ctrl + H`.
 
 ## Agent integration
 
-Agents can connect through the in-plugin API, the local HTTP API, or the MCP stdio bridge.
-
 ```text
-OpenCode / Qoder / Claude Code / Cursor
+Claude Code / OpenCode / Qoder / Cursor / Claude Desktop
         │ MCP stdio
         ▼
 mcp-server/index.mjs
-        │ HTTP
+        │ HTTP + Bearer token
         ▼
 127.0.0.1:27123
 ```
@@ -120,32 +112,11 @@ Setup:
 
 1. Enable the local Agent API in settings.
 2. Keep the generated access token.
-3. Use "Configure agent clients", or copy the JSON snippet.
+3. Use **Configure agent clients**, or copy a snippet from [`examples/`](./examples/).
 4. Restart the client.
+5. Set the work mode to **Confirm before write** to get the full audit loop.
 
-OpenCode example (replace `<vault>` with your vault root):
-
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "mcp": {
-    "sediment": {
-      "type": "local",
-      "command": ["node", "<vault>/.obsidian/plugins/sediment/mcp-server/index.mjs"],
-      "environment": {
-        "SEDIMENT_URL": "http://127.0.0.1:27123",
-        "SEDIMENT_TOKEN": "token from settings",
-        "AGENT_NAME": "opencode"
-      },
-      "enabled": true
-    }
-  }
-}
-```
-
-The public MCP surface is 13 task-oriented tools covering context, search, notes, memos, knowledge deposition, tasks, change review, and read-only workspace state. Older fine-grained tool names were removed without compatibility aliases.
-
-Main entry points:
+The public MCP surface is **14 task-oriented tools** (read-only additions do not change `AGENT_API_VERSION = 1`):
 
 - Context: `get_daily_context`, `get_active_context`
 - Search and read: `search_notes`, `list_notes`, `read_note`
@@ -153,27 +124,16 @@ Main entry points:
 - Deposition: `add_memo`, `add_knowledge`, `record_work_log`
 - Tasks: `manage_tasks`
 - Changes: `manage_changes`
-- Read-only workspace state: `get_workspace_state` (statistics, graph, pomodoro, weekly review, tool activity, work logs, categories)
+- Audit: `get_change_timeline`
+- Read-only workspace state: `get_workspace_state`
+
+See [`examples/SECURE-AGENT-SETUP.md`](./examples/SECURE-AGENT-SETUP.md) and the per-client snippets in `examples/`.
 
 ### File bridge (non-MCP agents, experimental)
 
-Off by default. When enabled under **Settings → Agent access (local HTTP / MCP)**, the plugin creates `proposals/` and `decisions/` under `.obsidian/plugins/sediment/bridge/`. Any agent that can write files may submit a proposal; proposals only enter the workshop's pending queue and are written only after the user accepts them.
+Off by default. When enabled, the plugin creates `proposals/` and `decisions/` under `.obsidian/plugins/sediment/bridge/`. Any agent that can write files may submit a proposal; proposals only enter the pending queue and are written after you accept them. Each file is limited to 256 KB; only `write_note`, `patch_note`, and `add_knowledge` are supported.
 
-`proposals/<id>.json` (`<id>` is 1–64 characters from `[A-Za-z0-9._-]`, starting with a letter or digit):
-
-```json
-{
-  "version": 1,
-  "agent": "opencode",
-  "tool": "write_note",
-  "args": { "path": "Sediment/knowledge/example.md", "content": "# Example", "mode": "create" },
-  "note": "why this note"
-}
-```
-
-Only `write_note`, `patch_note`, and `add_knowledge` are supported; `args.input` for the latter two matches the MCP tool of the same name. Each file is limited to 256 KB.
-
-After acceptance or rejection, the plugin writes `decisions/<id>.json`:
+After a decision, `decisions/<id>.json` is written for the agent to poll:
 
 ```json
 {
@@ -186,30 +146,25 @@ After acceptance or rejection, the plugin writes `decisions/<id>.json`:
 }
 ```
 
-Agents can poll `decisions/<id>.json` for the result. Proposals are never applied automatically; imports still obey blocked folders/tags, the allowlist, and operation switches. Existing decisions are never overwritten, so resend with a new id.
+Existing decisions are never overwritten, so resend with a new id.
 
 Security boundaries:
 
-- The local server listens on `127.0.0.1` only.
-- Requests without a valid token are rejected.
+- The local server listens on `127.0.0.1` only; requests without a valid token are rejected.
 - `.obsidian/` and `.git/` are always blocked.
 - Blocked folders and tags cannot be read, written, or searched.
 - High-risk operations can be reviewed with snapshots, diffs, and restore points.
-
-The complete tool list is available through MCP `tools/list`.
-
-**API version**: `AGENT_API_VERSION = 1` (`/health` returns `agentApiVersion`). The version increments when tool names or parameter shapes change. Tool inventory may change between plugin releases: the 13 task-oriented tools replaced the earlier fine-grained names in a single breaking change; consult the CHANGELOG before upgrading automations.
+- No shell execution, no cloud upload.
 
 ## Data and recovery
 
 - Main data: `.obsidian/plugins/sediment/data.json`
-- Daily notes: determined by the daily note folder and filename format
-- Default folders live under `Sediment/` in the vault: `Sediment/daily`, `Sediment/reviews`, `Sediment/agent-logs`, `Sediment/knowledge`, `Sediment/backups`
-- Upgrading from the old defaults (`daily` / `reviews` / `agent-logs` / `knowledge` / `sediment-backup`) can be done with "Migrate legacy folders" in settings; files are moved one by one with Obsidian links preserved
-- Unknown data versions or malformed data: writing pauses and a recovery copy is kept
-- Uninstalling the plugin does not delete normal folders, daily notes, or backups in the vault
+- Default folders live under `Sediment/` in the vault: `daily`, `reviews`, `agent-logs`, `knowledge`, `backups`
+- "Migrate legacy folders" in settings moves old defaults one file at a time, preserving Obsidian links.
+- Unknown data versions or malformed data: writing pauses and a recovery copy is kept.
+- Backups and the audit export are local; uninstalling the plugin does not delete normal folders, daily notes, or backups.
 
-Back up statistics into the vault before upgrading. When reporting issues, do not include tokens, private note contents, or a full `data.json`.
+When reporting issues, do not include tokens, private note contents, or a full `data.json`.
 
 ## Development
 
@@ -218,42 +173,33 @@ npm install
 npm run dev
 npm run build
 npm test
+npm run test:typecheck
+npm run lint:eslint
+npm run lint:stylelint
 npm run test:release
 ```
 
 - `npm run build` — sync versions/changelog/MCP bridge, type-check, bundle `main.js`, and package `dist/sediment/`
-- `npm test` — i18n lint, unit tests, and MCP smoke test (`npm run test:typecheck`, `npm run lint:eslint`, `npm run lint:stylelint` are separate)
+- `npm test` — i18n lint, unit tests, MCP smoke test
 - `npm run test:release` — verify version, changelog, and release artifacts
 
-**One version source**: `version` in `package.json`. During the build, `version-bump.mjs` syncs it to `package-lock.json`, `manifest.json`, `versions.json`, the MCP `serverInfo`, and the version badges in both READMEs. Release flow:
-
-```sh
-npm run release:prepare -- 1.0.5   # finalize [Unreleased] in CHANGELOG and bump package.json
-npm run build                      # sync everything and generate dist/sediment
-git add -A
-git commit -m "release: 1.0.5"
-git tag 1.0.5                      # must match manifest.version exactly, without "v"
-git push origin main --tags
-```
-
-Community directory releases require a tag identical to `manifest.json`'s `version`, without a `v` prefix. Tags with `v` still trigger the release workflow but must not be used for community submissions.
-
-Project layout:
+**One version source**: `version` in `package.json`. `scripts/version-bump.mjs` syncs it to `package-lock.json`, `manifest.json`, `versions.json`, the MCP `serverInfo`, and both README badges. Generated files are normalized to LF so builds are reproducible across Windows and Linux.
 
 ```text
-src/                 plugin entry, data, statistics, agent, UI
-tests/               unit tests and Obsidian stubs
+src/                 plugin entry, data, agent, timeline, UI
+tests/               unit suites (tests/suites/) + shared helpers
 scripts/             build sync, tests, and release verification
+examples/            agent client setup snippets and threat model
 mcp-server/          MCP stdio bridge
 .github/workflows/   CI and release
 ```
 
 ## Known limitations
 
-- No cloud authorization or cloud sync; core content is never uploaded.
-- Semantic search uses local TF-IDF by default; optional local Ollama embeddings (loopback only, automatic TF-IDF fallback) are supported.
-- Desktop-only: the plugin uses Node's filesystem for client setup, snapshots, and uninstall; `isDesktopOnly` is set.
-- Migration and large-vault performance still need continuous benchmark validation.
+- Desktop-only: client setup, snapshots, and uninstall use Node's filesystem (`isDesktopOnly` is set).
+- Semantic search uses local TF-IDF by default; optional local Ollama embeddings are loopback-only with automatic fallback.
+- The timeline is bounded by the retained tool-call log (500 entries) and snapshot index (200); export regularly if you need a permanent record.
+- Agent approval is a workflow aid, not a cryptographic guarantee: an agent with direct filesystem access outside Sediment can still edit notes. Keep the vault in a trusted environment and review the threat model in `examples/SECURE-AGENT-SETUP.md`.
 
 ## Changelog and license
 
