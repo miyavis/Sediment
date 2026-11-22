@@ -27,16 +27,13 @@ export function renderAgentHub(view: DashboardView, root: HTMLElement): void {
 /** confirm 档挂起的 Agent 写入：预览走 DiffModal，采纳才真正落盘。 */
 export function renderPendingWrites(view: DashboardView, root: HTMLElement): void {
   const pending = view.plugin.store.data.pendingWrites ?? [];
-  if (pending.length === 0 && view.plugin.store.settings.agentWorkMode !== "confirm") return;
+  // 空列表不渲染卡片，避免占满首屏、把时间线推到屏幕外。
+  if (pending.length === 0) return;
   const card = root.createDiv({ cls: "sd-card" });
   card.createDiv({ cls: "sd-card-title", text: tf("待审写入 · {n}", { n: pending.length }) });
   card.createDiv({ cls: "sd-card-sub", text: t("「确认后写入」档下，Agent 的写操作挂起在这里，采纳后才真正落盘；驳回则丢弃。") });
   card.createDiv({ cls: "sd-card-sub", text: t("文件若在挂起后被修改，采纳会因版本冲突失败；可驳回后让 Agent 重发。") });
   card.createDiv({ cls: "sd-card-sub", text: t("失效项（目标被删除/移动）只能驳回，让 Agent 重发。") });
-  if (pending.length === 0) {
-    card.createDiv({ cls: "sd-empty", text: t("没有挂起的待审写入。") });
-    return;
-  }
   const list = card.createDiv({ cls: "sd-feed-list" });
   for (const item of pending.slice(0, 20)) {
     const row = list.createDiv({ cls: "sd-feed-row sd-feed-row-audit" });
@@ -148,18 +145,15 @@ async function markHumanSource(view: DashboardView, path: string): Promise<void>
 }
 
 export function renderAgentChanges(view: DashboardView, root: HTMLElement): void {
-  const card = root.createDiv({ cls: "sd-card" });
-  card.createDiv({ cls: "sd-card-title", text: t("Agent 变更审查") });
   const rows = pendingChangeRows(
     view.plugin.store.data.toolCalls,
     view.plugin.store.data.reviewedChanges,
     (path) => view.plugin.app.vault.getAbstractFileByPath(path) instanceof TFile
   ).slice(0, 8);
+  if (rows.length === 0) return;
 
-  if (rows.length === 0) {
-    card.createDiv({ cls: "sd-empty", text: t("暂无 Agent 变更记录。") });
-    return;
-  }
+  const card = root.createDiv({ cls: "sd-card" });
+  card.createDiv({ cls: "sd-card-title", text: t("Agent 变更审查") });
   const list = card.createDiv({ cls: "sd-feed-list" });
   const backupsByPath = listBackupsMap(
     view.plugin,
@@ -320,6 +314,8 @@ export function listDraftFiles(view: DashboardView): TFile[] {
 }
 
 export function renderDrafts(view: DashboardView, root: HTMLElement): void {
+  const drafts = view.agentScan().drafts;
+  if (drafts.length === 0) return;
   const card = root.createDiv({ cls: "sd-card" });
   const head = card.createDiv({ cls: "sd-card-head" });
   head.createDiv({ cls: "sd-card-title", text: t("AI 沉淀审核") });
@@ -334,11 +330,6 @@ export function renderDrafts(view: DashboardView, root: HTMLElement): void {
     text: t("当前工作模式：") + (modeLabels[view.plugin.store.settings.agentWorkMode] ?? "confirm") +
       t("。草稿需手动审核；「确认后写入」档下 Agent 的写操作会挂起在「待审写入」列表，采纳后才落盘；「自动执行」档不挂起。"),
   });
-  const drafts = view.agentScan().drafts;
-  if (drafts.length === 0) {
-    card.createDiv({ cls: "sd-empty", text: t("没有待审核的 AI 草稿。") });
-    return;
-  }
   // 截断展示时卡头给出总数，避免用户误以为只有 20 份。
   if (drafts.length > 20) head.createDiv({ cls: "sd-card-sub", text: tf("共 {n} 份草稿", { n: drafts.length }) });
   const list = card.createDiv({ cls: "sd-draft-list" });

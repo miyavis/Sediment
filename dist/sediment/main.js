@@ -7469,16 +7469,12 @@ function renderAgentHub(view, root) {
 function renderPendingWrites(view, root) {
   var _a2;
   const pending = (_a2 = view.plugin.store.data.pendingWrites) != null ? _a2 : [];
-  if (pending.length === 0 && view.plugin.store.settings.agentWorkMode !== "confirm") return;
+  if (pending.length === 0) return;
   const card = root.createDiv({ cls: "sd-card" });
   card.createDiv({ cls: "sd-card-title", text: tf("\u5F85\u5BA1\u5199\u5165 \xB7 {n}", { n: pending.length }) });
   card.createDiv({ cls: "sd-card-sub", text: t("\u300C\u786E\u8BA4\u540E\u5199\u5165\u300D\u6863\u4E0B\uFF0CAgent \u7684\u5199\u64CD\u4F5C\u6302\u8D77\u5728\u8FD9\u91CC\uFF0C\u91C7\u7EB3\u540E\u624D\u771F\u6B63\u843D\u76D8\uFF1B\u9A73\u56DE\u5219\u4E22\u5F03\u3002") });
   card.createDiv({ cls: "sd-card-sub", text: t("\u6587\u4EF6\u82E5\u5728\u6302\u8D77\u540E\u88AB\u4FEE\u6539\uFF0C\u91C7\u7EB3\u4F1A\u56E0\u7248\u672C\u51B2\u7A81\u5931\u8D25\uFF1B\u53EF\u9A73\u56DE\u540E\u8BA9 Agent \u91CD\u53D1\u3002") });
   card.createDiv({ cls: "sd-card-sub", text: t("\u5931\u6548\u9879\uFF08\u76EE\u6807\u88AB\u5220\u9664/\u79FB\u52A8\uFF09\u53EA\u80FD\u9A73\u56DE\uFF0C\u8BA9 Agent \u91CD\u53D1\u3002") });
-  if (pending.length === 0) {
-    card.createDiv({ cls: "sd-empty", text: t("\u6CA1\u6709\u6302\u8D77\u7684\u5F85\u5BA1\u5199\u5165\u3002") });
-    return;
-  }
   const list = card.createDiv({ cls: "sd-feed-list" });
   for (const item of pending.slice(0, 20)) {
     const row = list.createDiv({ cls: "sd-feed-row sd-feed-row-audit" });
@@ -7577,17 +7573,14 @@ async function markHumanSource(view, path) {
 }
 function renderAgentChanges(view, root) {
   var _a2, _b;
-  const card = root.createDiv({ cls: "sd-card" });
-  card.createDiv({ cls: "sd-card-title", text: t("Agent \u53D8\u66F4\u5BA1\u67E5") });
   const rows = pendingChangeRows(
     view.plugin.store.data.toolCalls,
     view.plugin.store.data.reviewedChanges,
     (path) => view.plugin.app.vault.getAbstractFileByPath(path) instanceof import_obsidian21.TFile
   ).slice(0, 8);
-  if (rows.length === 0) {
-    card.createDiv({ cls: "sd-empty", text: t("\u6682\u65E0 Agent \u53D8\u66F4\u8BB0\u5F55\u3002") });
-    return;
-  }
+  if (rows.length === 0) return;
+  const card = root.createDiv({ cls: "sd-card" });
+  card.createDiv({ cls: "sd-card-title", text: t("Agent \u53D8\u66F4\u5BA1\u67E5") });
   const list = card.createDiv({ cls: "sd-feed-list" });
   const backupsByPath = listBackupsMap(
     view.plugin,
@@ -7727,6 +7720,8 @@ function renderAgentStatus(view, root) {
 }
 function renderDrafts(view, root) {
   var _a2, _b, _c;
+  const drafts = view.agentScan().drafts;
+  if (drafts.length === 0) return;
   const card = root.createDiv({ cls: "sd-card" });
   const head = card.createDiv({ cls: "sd-card-head" });
   head.createDiv({ cls: "sd-card-title", text: t("AI \u6C89\u6DC0\u5BA1\u6838") });
@@ -7740,11 +7735,6 @@ function renderDrafts(view, root) {
     cls: "sd-card-sub",
     text: t("\u5F53\u524D\u5DE5\u4F5C\u6A21\u5F0F\uFF1A") + ((_a2 = modeLabels[view.plugin.store.settings.agentWorkMode]) != null ? _a2 : "confirm") + t("\u3002\u8349\u7A3F\u9700\u624B\u52A8\u5BA1\u6838\uFF1B\u300C\u786E\u8BA4\u540E\u5199\u5165\u300D\u6863\u4E0B Agent \u7684\u5199\u64CD\u4F5C\u4F1A\u6302\u8D77\u5728\u300C\u5F85\u5BA1\u5199\u5165\u300D\u5217\u8868\uFF0C\u91C7\u7EB3\u540E\u624D\u843D\u76D8\uFF1B\u300C\u81EA\u52A8\u6267\u884C\u300D\u6863\u4E0D\u6302\u8D77\u3002")
   });
-  const drafts = view.agentScan().drafts;
-  if (drafts.length === 0) {
-    card.createDiv({ cls: "sd-empty", text: t("\u6CA1\u6709\u5F85\u5BA1\u6838\u7684 AI \u8349\u7A3F\u3002") });
-    return;
-  }
   if (drafts.length > 20) head.createDiv({ cls: "sd-card-sub", text: tf("\u5171 {n} \u4EFD\u8349\u7A3F", { n: drafts.length }) });
   const list = card.createDiv({ cls: "sd-draft-list" });
   for (const file of drafts.slice(0, 20)) {
@@ -9266,10 +9256,8 @@ var DashboardView = class extends import_obsidian23.ItemView {
       var _a2;
       list.empty();
       if (items.length === 0) {
-        list.createDiv({
-          cls: "sd-empty",
-          text: agentOnly ? t("\u6CA1\u6709\u59D4\u6D3E\u7684 Agent \u5F85\u529E\u3002") : t("\u6CA1\u6709\u672A\u5B8C\u6210\u5F85\u529E\u3002")
-        });
+        if (agentOnly) card.remove();
+        else list.createDiv({ cls: "sd-empty", text: t("\u6CA1\u6709\u672A\u5B8C\u6210\u5F85\u529E\u3002") });
         return;
       }
       for (const task of items.slice(0, 12)) {

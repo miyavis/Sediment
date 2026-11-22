@@ -359,10 +359,9 @@ export class DashboardView extends ItemView {
     void load.then((items) => {
       list.empty();
       if (items.length === 0) {
-        list.createDiv({
-          cls: "sd-empty",
-          text: agentOnly ? t("没有委派的 Agent 待办。") : t("没有未完成待办。"),
-        });
+        // 工坊的 Agent 待办为空时整卡隐藏，避免把长列表继续往下推。
+        if (agentOnly) card.remove();
+        else list.createDiv({ cls: "sd-empty", text: t("没有未完成待办。") });
         return;
       }
       for (const task of items.slice(0, 12)) {
