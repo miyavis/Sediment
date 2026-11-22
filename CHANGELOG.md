@@ -2,6 +2,11 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [1.2.3] - 2026-11-22
+
+### 文档
+- 新增 `examples/AGENTS.md` 模板：告诉编码 Agent 一律通过 MCP 写入、confirm 档等待人工审批、不要把令牌写进笔记；中英文 README 明确建议把它复制到库根目录作为 `AGENTS.md`。
+
 ## [1.2.2] - 2026-11-22
 
 ### 修复
