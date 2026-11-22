@@ -98,6 +98,13 @@ export function renderInsightsSummary(view: DashboardView, root: HTMLElement): v
   item(t("近 7 天新增词"), String(words));
   item(t("未处理速记"), String(pending));
   item(t("Agent 待办"), String(tasks));
+  // 重装/数据重置后 days 为空但笔记仍在：解释口径不一致，避免用户误以为统计坏了。
+  if (Object.keys(store.data.days ?? {}).length === 0) {
+    card.createDiv({
+      cls: "sd-stats-missing-hint",
+      text: t("暂无统计数据（笔记仍在）。若刚重装过插件，可在设置 → 数据备份中用快照恢复统计。"),
+    });
+  }
   if (!view.insightsExpanded) {
     card.createDiv({ cls: "sd-card-sub", text: t("详细图表与年度画像已收起，点击右上角展开。") });
   }

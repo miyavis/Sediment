@@ -1042,7 +1042,7 @@ settings:
 
 /* 热力图降为附属：默认折叠在剖面之下 */
 .sd-strata-heatmap {
-  margin-top: 14px;
+  margin-top: var(--sd-space-xl);
 }
 
 .sd-strata-heatmap > summary {
@@ -1115,8 +1115,8 @@ settings:
 .sd-footer {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 6px 4px 0;
+  gap: var(--sd-space-xl);
+  padding: var(--sd-space-sm) 4px 0;
   font-size: 10px;
   color: var(--text-faint);
 }
@@ -2593,3 +2593,9 @@ button.sd-task-open:not(.clickable-icon):hover {
 .sd-onboarding-step { display: flex; align-items: center; gap: var(--sd-space-lg); font-size: var(--sediment-body-size); }
 .sd-onboarding-step > button { margin-left: auto; }
 .sd-onboarding-num { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--interactive-accent); color: var(--text-on-accent); font-size: 12px; font-weight: 600; flex-shrink: 0; }
+
+/* 工坊审核总览条与下方卡片留出间距 */
+.sd-audit-strip-workshop { margin-bottom: var(--sd-space-xl); }
+
+/* 统计数据缺失提示 */
+.sd-stats-missing-hint { margin-top: var(--sd-space-lg); padding: var(--sd-space-md) var(--sd-space-lg); border-left: 2px solid var(--sd-color-warning); color: var(--text-muted); font-size: var(--sediment-body-size); }

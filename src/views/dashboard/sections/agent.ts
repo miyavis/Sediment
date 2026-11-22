@@ -28,7 +28,7 @@ export function renderAgentHub(view: DashboardView, root: HTMLElement): void {
   ).length;
 
   // 紧凑状态条始终显示：作为审计队列总览，避免 0→1 项时的高度跳动。
-  const strip = body.createDiv({ cls: "sd-audit-strip" });
+  const strip = body.createDiv({ cls: "sd-audit-strip sd-audit-strip-workshop" });
   strip.createSpan({ cls: "sd-audit-strip-title", text: t("审核队列") });
   strip.createSpan({
     text: `${t("草稿")} ${drafts} · ${t("待审写入")} ${pending} · ${t("变更审查")} ${changes} · ${t("Agent 待办")} ${tasks}`,

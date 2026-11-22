@@ -74,7 +74,7 @@ function renderOnboarding(view: DashboardView, root: HTMLElement): void {
     row.createSpan({ text });
     if (action && label) row.createEl("button", { text: label }).onclick = action;
   };
-  step(1, t("在设置中确认日记目录与「确认后写入」模式"));
+  step(1, t("在 Obsidian 设置 → 第三方插件 → Sediment 中确认日记目录与「确认后写入」模式"));
   step(2, t("把 examples/AGENTS.md 复制到库根目录，让 Agent 走 MCP 写入"));
   step(3, t("让 Agent 写入一次笔记，在智能体工坊审批——变更会出现在审计时间线"), () => {
     view.tab = "agent";
