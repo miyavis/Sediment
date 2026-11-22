@@ -1,5 +1,5 @@
 import { App, Notice, PluginSettingTab, Setting, type SettingDefinitionItem } from "obsidian";
-import { configureAgent, configSnippet, detectAgents, isAgentConfigured } from "../agent/setup";
+import { configureAgent, configSnippet, allAgentCandidates, detectAgents, isAgentConfigured } from "../agent/setup";
 import { uninstallMcp } from "../features/uninstall";
 import { migrateLegacyFolders, planFolderMigrations, type FolderMigrationOutcome } from "../features/folder-migration";
 import { McpUninstallModal } from "./mcp-uninstall-modal";
@@ -828,13 +828,11 @@ export class PulseSettingTab extends PluginSettingTab {
     hint.setText(
       t("自动探测本机已安装的智能体，勾选后一键写入 MCP 配置。写入前会备份原文件，重启客户端即可生效。")
     );
-    const agents = detectAgents();
-    if (agents.length === 0) {
-      containerEl.createDiv({ cls: "sd-empty", text: t("没有探测到受支持的智能体客户端。") });
-    }
-    for (const agent of agents) {
+    const detected = new Set(detectAgents().map((a) => a.id));
+    const all = allAgentCandidates();
+    const renderAgentRow = (host: HTMLElement, agent: typeof all[number]): void => {
       const configured = isAgentConfigured(agent);
-      new Setting(containerEl)
+      new Setting(host)
         .setName(`${agent.name}${configured ? ` · ${t("已配置")}` : ""}`)
         .setDesc(agent.configPath)
         .addButton((button) =>
@@ -861,6 +859,23 @@ export class PulseSettingTab extends PluginSettingTab {
             this.renderSettings();
           });
         });
+    };
+
+    // 已检测到的客户端优先展示
+    for (const agent of all.filter((a) => detected.has(a.id))) renderAgentRow(containerEl, agent);
+
+    // 未检测到的默认折叠：始终展示支持范围，避免用户以为只支持已有的那几个
+    const undetected = all.filter((a) => !detected.has(a.id));
+    if (undetected.length > 0) {
+      const details = containerEl.createEl("details", { cls: "sd-agents-undetected" });
+      details.createEl("summary", {
+        text: tf("未检测到 {n} 个受支持的客户端（点击展开）", { n: undetected.length }),
+      });
+      for (const agent of undetected) {
+        const row = details.createDiv({ cls: "sd-agent-undetected" });
+        row.createSpan({ text: `${agent.name} · ${t("未检测到配置文件")}` });
+        row.createSpan({ cls: "sd-agent-undetected-hint", text: agent.configPath });
+      }
     }
     new Setting(containerEl)
       .setName(t("一键卸载 MCP 接入"))

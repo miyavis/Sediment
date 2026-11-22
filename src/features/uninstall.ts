@@ -1,6 +1,7 @@
 import type { SedimentPlugin } from "../main";
 import { fileExists, readTextFile, removePath, writeTextFile } from "../utils/node";
-import { detectAgents, type AgentTarget } from "../agent/setup";
+import { detectAgents, isAgentConfigured, type AgentTarget } from "../agent/setup";
+import { removeTomlServer, removeYamlServer } from "../agent/config-formats";
 import { tf } from "../i18n";
 
 function readJson(raw: string): Record<string, unknown> | null {
@@ -15,7 +16,7 @@ export interface McpInstallation {
   id: string;
   label: string;
   configPath: string;
-  rootKey: "mcp" | "mcpServers";
+  rootKey: AgentTarget["rootKey"];
   configured: boolean;
 }
 
@@ -31,13 +32,7 @@ export function listMcpInstallations(plugin: SedimentPlugin): {
   ) ?? "";
   const clients: McpInstallation[] = [];
   for (const target of detectAgents()) {
-    let configured = false;
-    if (fileExists(target.configPath)) {
-      const data = readJson(readTextFile(target.configPath, "utf8"));
-      const root = (data?.[target.rootKey] ?? {}) as Record<string, unknown>;
-      const servers = (root.servers ?? {}) as Record<string, unknown>;
-      configured = Boolean(root.sediment || servers.sediment);
-    }
+    const configured = isAgentConfigured(target);
     clients.push({
       id: target.id,
       label: target.name,
@@ -53,6 +48,20 @@ export function listMcpInstallations(plugin: SedimentPlugin): {
 function removeFromClient(target: AgentTarget): boolean {
   if (!fileExists(target.configPath)) return false;
   const raw = readTextFile(target.configPath, "utf8");
+  if (target.format === "toml") {
+    const updated = removeTomlServer(raw, "sediment");
+    if (updated === raw) return false;
+    writeTextFile(`${target.configPath}.bak`, raw, "utf8");
+    writeTextFile(target.configPath, updated, "utf8");
+    return true;
+  }
+  if (target.format === "yaml") {
+    const updated = removeYamlServer(raw, "sediment");
+    if (updated === raw) return false;
+    writeTextFile(`${target.configPath}.bak`, raw, "utf8");
+    writeTextFile(target.configPath, updated, "utf8");
+    return true;
+  }
   const data = readJson(raw);
   if (!data) return false;
   const root = (data[target.rootKey] ?? {}) as Record<string, unknown>;

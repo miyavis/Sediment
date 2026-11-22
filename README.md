@@ -4,7 +4,7 @@
 
 [![Obsidian](https://img.shields.io/badge/Obsidian-v1.8.7%2B-blue.svg)](https://obsidian.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v1.2.6-blue.svg)](https://github.com/miyavis/Sediment/releases)
+[![Version](https://img.shields.io/badge/version-v1.2.7-blue.svg)](https://github.com/miyavis/Sediment/releases)
 
 > **Local, controllable AI write auditing for your knowledge vault.**
 > Every write an agent makes into your notes can be approved, rolled back, and traced.
@@ -68,6 +68,8 @@ Supporting views exist to explain and feed the audit story: writing statistics, 
 2. **Set the work mode to Confirm before write** in settings. Enable "Snapshot before changes" so accepted writes have a rollback point. Settings default to *Simple* mode showing only the audit essentials; switch to *All settings* for weights, search enhancement and experimental options.
 3. **Connect an agent** — enable the local Agent API, keep the generated token, then use "Configure agent clients" or copy a snippet from [`examples/`](./examples/).
 4. **Make a write** — the agent gets `pending: true`; you review it in the workshop; the result appears in the timeline.
+
+**One-click client setup supports 14 clients**: OpenCode, Qoder (+ CN), Claude Desktop, Claude Code, Cursor, Cline (CLI + VS Code), Gemini CLI, Windsurf (+ Next), OpenAI Codex (TOML), Hermes Agent (YAML), and VS Code / Copilot. Detected clients are listed first; supported-but-not-installed clients are shown in a collapsed section so you always see the full support range.
 
 ## Security, in brief
 

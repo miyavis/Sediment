@@ -13,6 +13,7 @@ export default defineConfig([
     "tests/**",
     "examples/**",
     "mcp-server/**",
+    ".obsidian/**",
   ]),
   ...obsidianmd.configs.recommended,
   {

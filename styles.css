@@ -2599,3 +2599,9 @@ button.sd-task-open:not(.clickable-icon):hover {
 
 /* 统计数据缺失提示 */
 .sd-stats-missing-hint { margin-top: var(--sd-space-lg); padding: var(--sd-space-md) var(--sd-space-lg); border-left: 2px solid var(--sd-color-warning); color: var(--text-muted); font-size: var(--sediment-body-size); }
+
+/* 未检测到的客户端折叠区 */
+.sd-agents-undetected { margin: 8px 0; }
+.sd-agents-undetected > summary { cursor: pointer; font-size: 12px; color: var(--text-muted); }
+.sd-agent-undetected { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; font-size: 12px; color: var(--text-muted); }
+.sd-agent-undetected-hint { font-size: 10px; color: var(--text-faint); word-break: break-all; }

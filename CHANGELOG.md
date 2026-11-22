@@ -2,6 +2,12 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [1.2.7] - 2026-11-22
+
+### 新增
+- 一键配置新增 4 种客户端：Claude Code（JSON）、OpenAI Codex（TOML）、Hermes Agent（YAML）、VS Code / Copilot（JSON），共支持 14 种。新增格式适配层以纯文本方式 upsert TOML/YAML 的 MCP 段，不引入新依赖。
+- 设置页客户端列表改为「已检测到的优先显示 + 未检测到的折叠展示」，始终可见完整支持范围。
+
 ## [1.2.6] - 2026-11-22
 
 ### 修复

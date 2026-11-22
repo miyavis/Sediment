@@ -473,6 +473,8 @@ const EN: Record<string, string> = {
   "变更审查": "Change review",
   "Agent 写入会在这里等待你的审查。": "Agent writes will wait here for your review.",
   "在下方卡片中逐条审查": "Review each item in the cards below",
+  "未检测到 {n} 个受支持的客户端（点击展开）": "{n} supported clients not detected (click to expand)",
+  "未检测到配置文件": "config file not found",
   "暂无统计数据（笔记仍在）。若刚重装过插件，可在设置 → 数据备份中用快照恢复统计。": "No stats data (notes are intact). If you just reinstalled the plugin, restore stats from a snapshot in Settings → Data backup.",
   "审计包（变更时间线）": "Audit bundle (change timeline)",
   "Agent 写入审计": "Agent write audit",

@@ -4,7 +4,7 @@
 
 [![Obsidian](https://img.shields.io/badge/Obsidian-v1.8.7%2B-blue.svg)](https://obsidian.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v1.2.6-blue.svg)](https://github.com/miyavis/Sediment/releases)
+[![Version](https://img.shields.io/badge/version-v1.2.7-blue.svg)](https://github.com/miyavis/Sediment/releases)
 
 > **本地可控的 AI 写入审计层 —— 让 Agent 写进你知识库的每一笔都可审批、可回滚、可追溯。**
 
@@ -67,6 +67,8 @@ Sediment 不打算做聊天客户端或搜索引擎。它是你现有 Agent 之�
 2. **工作模式设为「确认后写入」**，并打开「修改前快照」，让采纳后的每次写入都有回滚点。设置页默认是「简洁」模式，只显示审计核心项；切到「全部设置」可查看权重、检索增强与实验性选项。
 3. **接入 Agent** —— 启用本地 Agent API，保留生成的令牌，然后用「一键配置智能体客户端」或复制 [`examples/`](./examples/) 中的片段。
 4. **发起一次写入** —— Agent 得到 `pending: true`；你在工坊审查；结果出现在时间线。
+
+**一键配置支持 14 种客户端**：OpenCode、Qoder（含 CN）、Claude Desktop、Claude Code、Cursor、Cline（CLI + VS Code）、Gemini CLI、Windsurf（含 Next）、OpenAI Codex（TOML）、Hermes Agent（YAML）、VS Code / Copilot。已检测到的优先显示；支持但未安装的客户端收在折叠区，始终能看到完整支持范围。
 
 ## 安全，简要版
 

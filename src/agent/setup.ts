@@ -8,14 +8,23 @@ import {
   writeTextFile,
 } from "../utils/node";
 import { BRIDGE_SOURCE } from "./bridge-source";
+import {
+  hasTomlServer,
+  hasYamlServer,
+  upsertTomlServer,
+  upsertYamlServer,
+  type ConfigFormat,
+} from "./config-formats";
 
 export interface AgentTarget {
   id: string;
   name: string;
   configPath: string;
   /** OpenCode 用 mcp.environment，其它客户端多用 mcpServers.env */
-  rootKey: "mcp" | "mcpServers";
+  rootKey: "mcp" | "mcpServers" | "servers" | "mcp_servers";
   envKey: "environment" | "env";
+  /** 配置文件格式，默认 JSON；Codex 用 TOML，Hermes 用 YAML */
+  format?: ConfigFormat;
 }
 
 /**
@@ -53,12 +62,22 @@ export function agentCandidates(home: string, appdata: string): AgentTarget[] {
     { id: "gemini", name: "Gemini CLI", configPath: `${home}/.gemini/settings.json`, rootKey: "mcpServers", envKey: "env" },
     { id: "windsurf", name: "Windsurf", configPath: `${home}/.codeium/windsurf/mcp_config.json`, rootKey: "mcpServers", envKey: "env" },
     { id: "windsurf-next", name: "Windsurf Next", configPath: `${home}/.codeium/windsurf-next/mcp_config.json`, rootKey: "mcpServers", envKey: "env" },
+    // 以下为非 JSON 客户端：格式在 format 字段标注，读写走 config-formats 适配。
+    { id: "claude-code", name: "Claude Code", configPath: `${home}/.claude.json`, rootKey: "mcpServers", envKey: "env", format: "json" },
+    { id: "codex", name: "OpenAI Codex", configPath: `${home}/.codex/config.toml`, rootKey: "mcp_servers", envKey: "env", format: "toml" },
+    { id: "hermes", name: "Hermes Agent", configPath: `${home}/.hermes/config.yaml`, rootKey: "mcp_servers", envKey: "env", format: "yaml" },
+    { id: "vscode", name: "VS Code / Copilot", configPath: `${appdata}/Code/User/mcp.json`, rootKey: "servers", envKey: "env", format: "json" },
   ];
+}
+
+/** 全部受支持的客户端候选（供设置页展示，含未检测到的）。参数可选，便于测试注入路径。 */
+export function allAgentCandidates(home = homeDirectory(), appdata = appDataDirectory()): AgentTarget[] {
+  return agentCandidates(home, appdata);
 }
 
 /** 探测本机已存在配置文件的智能体客户端。 */
 export function detectAgents(): AgentTarget[] {
-  return agentCandidates(homeDirectory(), appDataDirectory()).filter((target) => fileExists(target.configPath));
+  return allAgentCandidates().filter((target) => fileExists(target.configPath));
 }
 
 function stripComments(raw: string): string {
@@ -76,8 +95,11 @@ function readJson(raw: string): Record<string, unknown> {
 /** 该客户端是否已经写入过 Sediment 配置（OpenCode 兼容 v1 直挂与 v2 servers 两个位置）。 */
 export function isAgentConfigured(target: AgentTarget): boolean {
   if (!fileExists(target.configPath)) return false;
+  const raw = readTextFile(target.configPath, "utf8");
+  if (target.format === "toml") return hasTomlServer(raw, "sediment");
+  if (target.format === "yaml") return hasYamlServer(raw, "sediment");
   try {
-    const data = readJson(readTextFile(target.configPath, "utf8"));
+    const data = readJson(raw);
     const root = (data[target.rootKey] ?? {}) as Record<string, unknown>;
     if (target.rootKey === "mcp") {
       const servers = (root.servers ?? {}) as Record<string, unknown>;
@@ -168,14 +190,24 @@ function buildOpenCodeEntry(plugin: SedimentPlugin, target: AgentTarget, bridge:
 /** 返回可复制的 JSON 片段（OpenCode 按本机版本输出 v1/v2 原生结构）。 */
 export function configSnippet(plugin: SedimentPlugin, id = "opencode"): string {
   const isOpenCode = id === "opencode";
+  const format: ConfigFormat = id === "codex" ? "toml" : id === "hermes" ? "yaml" : "json";
   const target: AgentTarget = {
     id,
     name: id,
     configPath: "",
-    rootKey: isOpenCode ? "mcp" : "mcpServers",
+    rootKey: isOpenCode ? "mcp" : id === "codex" || id === "hermes" ? "mcp_servers" : id === "vscode" ? "servers" : "mcpServers",
     envKey: isOpenCode ? "environment" : "env",
+    format,
   };
   const bridge = resolveBridgePath(plugin);
+  if (format === "toml" || format === "yaml") {
+    const entry = buildEntry(plugin, target, bridge);
+    const env = entry[target.envKey] as Record<string, string>;
+    const mcpEntry = { command: String(entry.command), args: entry.args as string[], env };
+    return format === "toml"
+      ? upsertTomlServer("", "sediment", mcpEntry)
+      : upsertYamlServer("", "sediment", mcpEntry);
+  }
   if (isOpenCode) {
     const layout = detectOpenCodeLayout({});
     const entry = buildOpenCodeEntry(plugin, target, bridge, layout);
@@ -190,6 +222,20 @@ export function configureAgent(plugin: SedimentPlugin, target: AgentTarget): voi
   const bridge = resolveBridgePath(plugin, target);
   if (!bridge) throw new Error("找不到 mcp-server/index.mjs，无法配置");
   const raw = readTextFile(target.configPath, "utf8");
+
+  // TOML / YAML：走格式适配层，只替换目标条目。
+  if (target.format === "toml" || target.format === "yaml") {
+    const entry = buildEntry(plugin, target, bridge);
+    const env = entry[target.envKey] as Record<string, string>;
+    const mcpEntry = { command: String(entry.command), args: entry.args as string[], env };
+    const updated = target.format === "toml"
+      ? upsertTomlServer(raw, "sediment", mcpEntry)
+      : upsertYamlServer(raw, "sediment", mcpEntry);
+    writeTextFile(`${target.configPath}.bak`, raw, "utf8");
+    writeTextFile(target.configPath, updated, "utf8");
+    return;
+  }
+
   const data = readJson(raw);
   if (target.rootKey === "mcp") {
     const layout = detectOpenCodeLayout(data);

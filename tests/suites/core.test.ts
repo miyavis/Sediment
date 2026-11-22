@@ -1085,3 +1085,89 @@ test("computeDiff：逐行标记新增与删除，未变化行保留", () => {
   assert.equal(lines.find((line) => line.type === "remove")?.oldLine, "b");
   assert.ok(lines.some((line) => line.type === "add" && line.newLine === "d"));
 });
+
+test("新客户端：agentCandidates 包含 Claude Code / Codex / Hermes / VS Code 四种格式", () => {
+  const all = setupNs.allAgentCandidates("C:/Users/test", "C:/Users/test/AppData/Roaming");
+  const ids = all.map((a) => a.id);
+  for (const id of ["claude-code", "codex", "hermes", "vscode"]) {
+    assert.ok(ids.includes(id), `应包含 ${id}`);
+  }
+  const codex = all.find((a) => a.id === "codex")!;
+  assert.equal(codex.format, "toml");
+  assert.ok(codex.configPath.endsWith("config.toml"));
+  const hermes = all.find((a) => a.id === "hermes")!;
+  assert.equal(hermes.format, "yaml");
+  assert.ok(hermes.configPath.endsWith("config.yaml"));
+});
+
+test("新客户端：Claude Code 使用 mcpServers（JSON），配置写入 mcpServers.sediment", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sediment-claudecode-"));
+  try {
+    const cfgPath = path.join(tmp, ".claude.json");
+    fs.writeFileSync(cfgPath, JSON.stringify({ mcpServers: {} }), "utf8");
+    const target = setupNs.allAgentCandidates(tmp, tmp).find((a) => a.id === "claude-code")!;
+    target.configPath = cfgPath;
+    assert.equal(isAgentConfigured(target), false);
+    configureAgent(fakeSetupPlugin(tmp), target);
+    const data = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+    assert.ok(data.mcpServers.sediment, "应写入 mcpServers.sediment");
+    assert.equal(isAgentConfigured(target), true);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("新客户端：Codex 写入 TOML [mcp_servers.sediment]，可重复覆盖", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sediment-codex-"));
+  try {
+    const cfgPath = path.join(tmp, "config.toml");
+    fs.writeFileSync(cfgPath, "model = \"gpt-6\"\n\n[mcp_servers.other]\ncommand = \"x\"\n", "utf8");
+    const target = setupNs.allAgentCandidates(tmp, tmp).find((a) => a.id === "codex")!;
+    target.configPath = cfgPath;
+    configureAgent(fakeSetupPlugin(tmp), target);
+    let raw = fs.readFileSync(cfgPath, "utf8");
+    assert.match(raw, /\[mcp_servers\.sediment\]/);
+    assert.match(raw, /command = "node"/);
+    assert.match(raw, /SEDIMENT_TOKEN = "/);
+    assert.match(raw, /\[mcp_servers\.other\]/, "其它段应保留");
+    assert.equal(isAgentConfigured(target), true);
+    // 重复写入不应产生两个 sediment 段
+    configureAgent(fakeSetupPlugin(tmp), target);
+    raw = fs.readFileSync(cfgPath, "utf8");
+    assert.equal((raw.match(/\[mcp_servers\.sediment\]/g) || []).length, 1);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("新客户端：Hermes 写入 YAML mcp_servers.sediment，可重复覆盖并保留其它键", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sediment-hermes-"));
+  try {
+    const cfgPath = path.join(tmp, "config.yaml");
+    fs.writeFileSync(cfgPath, "model: gpt-6\nmcp_servers:\n  other:\n    command: x\n", "utf8");
+    const target = setupNs.allAgentCandidates(tmp, tmp).find((a) => a.id === "hermes")!;
+    target.configPath = cfgPath;
+    configureAgent(fakeSetupPlugin(tmp), target);
+    let raw = fs.readFileSync(cfgPath, "utf8");
+    assert.match(raw, /mcp_servers:/);
+    assert.match(raw, /  sediment:/);
+    assert.match(raw, /    command: "node"/);
+    assert.match(raw, /^model: gpt-6$/m, "其它顶层键应保留");
+    assert.match(raw, /  other:/, "其它 MCP 段应保留");
+    assert.equal(isAgentConfigured(target), true);
+    configureAgent(fakeSetupPlugin(tmp), target);
+    raw = fs.readFileSync(cfgPath, "utf8");
+    assert.equal((raw.match(/^  sediment:/gm) || []).length, 1);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("新客户端：VS Code 使用 servers（JSON），configSnippet 输出对应结构", () => {
+  const vscodeSnippet = JSON.parse(configSnippet(fakeSetupPlugin(""), "vscode"));
+  assert.ok(vscodeSnippet.servers.sediment, "VS Code 片段应使用 servers 键");
+  const codexSnippet = configSnippet(fakeSetupPlugin(""), "codex");
+  assert.match(codexSnippet, /\[mcp_servers\.sediment\]/);
+  const hermesSnippet = configSnippet(fakeSetupPlugin(""), "hermes");
+  assert.match(hermesSnippet, /mcp_servers:/);
+});
