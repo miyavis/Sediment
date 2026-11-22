@@ -19,7 +19,9 @@ export async function ensureFolder(vault: Vault, path: string): Promise<void> {
       try {
         await vault.createFolder(current);
       } catch (error) {
-        // 并发创建时目录可能已被其它流程建好，忽略即可。
+        // 并发创建或元数据缓存滞后时目录可能已存在；两种信号都视为成功。
+        const message = error instanceof Error ? error.message : String(error);
+        if (/already exists/i.test(message)) continue;
         if (!vault.getAbstractFileByPath(current)) throw error;
       }
     }

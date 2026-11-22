@@ -48,6 +48,8 @@ async function ensureFolder(vault, path) {
       try {
         await vault.createFolder(current);
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (/already exists/i.test(message)) continue;
         if (!vault.getAbstractFileByPath(current)) throw error;
       }
     }
