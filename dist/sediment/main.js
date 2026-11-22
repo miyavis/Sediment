@@ -155,8 +155,8 @@ var EN = {
   "\u6253\u5F00\u901F\u8BB0\u9762\u677F": "Open memo panel",
   "\u8BB0\u4E00\u6761\u901F\u8BB0": "Add a memo",
   "\u751F\u6210\u672C\u5468\u5DE5\u4F5C\u590D\u76D8": "Generate this week's review",
-  "\u5F00\u59CB / \u6682\u505C\u756A\u8304\u949F": "Start / pause pomodoro",
-  "\u8DF3\u8FC7\u5F53\u524D\u756A\u8304 / \u4F11\u606F": "Skip current pomodoro / break",
+  "\u5F00\u59CB / \u6682\u505C\u4E13\u6CE8\u8BA1\u65F6": "Start / pause focus timer",
+  "\u8DF3\u8FC7\u5F53\u524D\u4E13\u6CE8 / \u4F11\u606F": "Skip current focus / break",
   "\u8BB0\u5F55\u4ECA\u65E5\u9057\u7559\u5F85\u529E\u5230\u65E5\u8BB0": "Snapshot today's pending tasks to daily note",
   "\u5BFC\u51FA\u4ECA\u65E5\u6218\u62A5\u56FE\u7247": "Export today's report image",
   "\u5907\u4EFD\u7EDF\u8BA1\u6570\u636E\u5230\u5E93\u5185": "Back up stats into the vault",
@@ -241,7 +241,7 @@ var EN = {
   "\u4E13\u6CE8\u5206\u949F": "Focus minutes",
   "\u7EFC\u5408\u52A0\u6743\u5F97\u5206\uFF08\u53EF\u5728\u8BBE\u7F6E\u4E2D\u8C03\u6574\u6743\u91CD\u4E0E\u5355\u65E5\u5C01\u9876\uFF09": "Weighted score (weights and daily cap are configurable in settings)",
   "\u6B63\u6587\u65B0\u589E\u8BCD\u6570\uFF08\u542B\u5927\u6BB5\u7C98\u8D34\uFF0C\u5355\u6B21\u5199\u5165\u6709\u4E0A\u9650\uFF09": "Words added to note bodies (includes large pastes; capped per write)",
-  "\u5185\u7F6E\u756A\u8304\u949F\u5B9E\u9645\u5B8C\u6210\u7684\u4E13\u6CE8\u65F6\u957F\uFF08\u4F11\u606F\u4E0D\u8BA1\uFF09": "Actual focus time completed by the built-in pomodoro (breaks excluded)",
+  "\u5185\u7F6E\u4E13\u6CE8\u8BA1\u65F6\u5B9E\u9645\u5B8C\u6210\u7684\u65F6\u957F\uFF08\u4F11\u606F\u4E0D\u8BA1\uFF09": "Actual focus time completed by the built-in focus timer (breaks excluded)",
   "\u7EFC\u5408\u52A0\u6743\u5F97\u5206": "Weighted composite score",
   "\u81EA\u5DF1\u6253\u7684\u5B57": "Words you typed",
   "\u6709\u6548\u7F16\u8F91\u6B21\u6570": "Effective edit count",
@@ -551,9 +551,9 @@ var EN = {
   "\u5B8C\u6210\u540E\u8BA1\u5165\u5F53\u65E5\u4E13\u6CE8\u5206\u949F\u4E0E\u77E5\u8BC6\u5730\u5C42\u7684\u4E13\u6CE8\u5C42\u3002": "On completion, adds to today's focus minutes and the strata focus layer.",
   "\u4E13\u6CE8\u65F6\u957F\u4F1A\u8BA1\u5165\u5F53\u65E5\u7EDF\u8BA1\u4E0E\u5730\u5C42\u4E13\u6CE8\u5C42\u3002": "Focus time is added to daily stats and the strata focus layer.",
   "\u5F00\u59CB\u4E13\u6CE8\uFF08\u8BB0\u5165\u7EDF\u8BA1\uFF09": "Start focus (tracked)",
-  "\u68C0\u6D4B\u5230\u53E6\u4E00\u4E2A\u5B9E\u4F8B\u6B63\u5728\u4F7F\u7528\u756A\u8304\u949F\uFF0C\u672C\u5B9E\u4F8B\u5DF2\u7981\u7528\uFF0C\u53EF\u5728\u77E5\u8BC6\u5730\u5C42\u9875\u70B9\u51FB\u63A5\u7BA1\u6062\u590D": "Another instance appears to be using the focus timer. This one is disabled \u2014 open Knowledge Strata and click Take over to recover.",
-  "\u5DF2\u63A5\u7BA1\u756A\u8304\u949F\uFF0C\u672C\u5B9E\u4F8B\u53EF\u6B63\u5E38\u4F7F\u7528": "Focus timer taken over; this instance is ready.",
-  "\u63A5\u7BA1\u756A\u8304\u949F": "Take over timer",
+  "\u68C0\u6D4B\u5230\u53E6\u4E00\u4E2A\u5B9E\u4F8B\u6B63\u5728\u4F7F\u7528\u4E13\u6CE8\u8BA1\u65F6\uFF0C\u672C\u5B9E\u4F8B\u5DF2\u7981\u7528\uFF0C\u53EF\u5728\u77E5\u8BC6\u5730\u5C42\u9875\u70B9\u51FB\u63A5\u7BA1\u6062\u590D": "Another instance appears to be using the focus timer. This one is disabled \u2014 open Knowledge Strata and click Take over to recover.",
+  "\u5DF2\u63A5\u7BA1\u4E13\u6CE8\u8BA1\u65F6\uFF0C\u672C\u5B9E\u4F8B\u53EF\u6B63\u5E38\u4F7F\u7528": "Focus timer taken over; this instance is ready.",
+  "\u63A5\u7BA1\u4E13\u6CE8\u8BA1\u65F6": "Take over timer",
   "\u542F\u7528\u4E13\u6CE8\u65F6\u957F\u91C7\u96C6": "Track focus time",
   "\u5728\u300C\u77E5\u8BC6\u5730\u5C42\u300D\u663E\u793A\u4E13\u6CE8\u6309\u94AE\uFF1B\u5B8C\u6210\u540E\u8BA1\u5165\u5F53\u65E5\u4E13\u6CE8\u5206\u949F\u4E0E\u5730\u5C42\u4E13\u6CE8\u5C42\u3002\u5173\u95ED\u540E\u4E13\u6CE8\u5C42\u4E3A 0\u3002": "Show the focus button in Knowledge Strata; completed sessions add to daily focus minutes and the strata focus layer. When off, the focus layer is 0.",
   "\u5BA1\u6838\u961F\u5217": "Review queues",
@@ -600,7 +600,7 @@ var EN = {
   "\u591A\u753B\u98CE\u5207\u6362": "Multiple art styles",
   "\u5F00\u653E\u50CF\u7D20\u6E56\u9762 / \u6C34\u58A8 / \u57CE\u5E02\u4E09\u79CD\u753B\u98CE\u5207\u6362\uFF08\u9ED8\u8BA4\u5173\u95ED\uFF0C\u56FA\u5B9A\u6E56\u9762\uFF09\u3002": "Enable lake / ink / city art style switching (off by default; lake only).",
   "\u591A\u753B\u98CE\u4E3A\u5B9E\u9A8C\u6027\u529F\u80FD\uFF0C\u8BF7\u5728\u8BBE\u7F6E\u4E2D\u5F00\u542F": "Multiple art styles are experimental; enable them in settings",
-  "\u6D3B\u8DC3\u4F30\u7B97\uFF085 \u5206\u949F\u6876\uFF09+ \u756A\u8304\u4E13\u6CE8": "Estimated active time (5-min buckets) + pomodoro focus",
+  "\u6D3B\u8DC3\u4F30\u7B97\uFF085 \u5206\u949F\u6876\uFF09+ \u4E13\u6CE8\u8BA1\u65F6": "Estimated active time (5-min buckets) + focus timer",
   "\u8FD1 {n} \u4E2A\u6708 \xB7 \u4EBA / AI / \u4EFB\u52A1 / \u4E13\u6CE8\u6309\u6708\u6C89\u79EF\u3002\u300CAI \u5199\u300D\u4EC5\u7EDF\u8BA1\u7ECF\u672C\u5730 API/MCP \u7684\u5199\u5165\uFF1B\u7ED5\u8FC7 API \u7684\u76F4\u5199\u8BA1\u5165\u4EBA\u5199\u3002": 'Last {n} months \xB7 human / AI / tasks / focus by month. "AI written" only counts writes through the local API/MCP; direct writes that bypass the API count as human.',
   "{active} \u5929\u6709\u8BB0\u5F55 \xB7 \u65E5\u5747 {avg} \u5206\uFF08\u4E0D\u542B\u7A7A\u5929\uFF09": "{active} days with records \xB7 daily average {avg} (empty days excluded)",
   "\u53BB\u8BB0\u901F\u8BB0": "Go to memo input",
@@ -677,10 +677,9 @@ var EN = {
   "\u756A\u8304": "Focus",
   "\u77ED\u4F11": "Short break",
   "\u957F\u4F11": "Long break",
-  "\u756A\u8304\u5B8C\u6210\uFF0C\u5DF2\u8BB0\u5165 25 \u5206\u949F\u4E13\u6CE8\uFF08\u5B9E\u6D4B\uFF09": "Pomodoro complete; 25 focus minutes recorded (measured)",
+  "\u4E13\u6CE8\u5B8C\u6210\uFF0C\u5DF2\u8BB0\u5165 25 \u5206\u949F\uFF08\u5B9E\u6D4B\uFF09": "Focus session complete; 25 minutes recorded (measured)",
   "\u4F11\u606F\u7ED3\u675F": "Break over",
-  "\u68C0\u6D4B\u5230\u53E6\u4E00\u4E2A\u5B9E\u4F8B\u6B63\u5728\u4F7F\u7528\u756A\u8304\u949F\uFF0C\u672C\u5B9E\u4F8B\u756A\u8304\u529F\u80FD\u5DF2\u7981\u7528": "Another instance is using the pomodoro timer; pomodoro is disabled in this instance",
-  "\u756A\u8304\u5DF2\u7981\u7528": "Pomodoro disabled",
+  "\u4E13\u6CE8\u8BA1\u65F6\u5DF2\u7981\u7528": "Focus timer disabled",
   "\u5E74\u5EA6\u6D3B\u8DC3\u70ED\u529B\u56FE\uFF0C\u65B9\u5411\u952E\u79FB\u52A8\uFF0C\u56DE\u8F66\u9009\u4E2D": "Yearly activity heatmap; arrow keys to move, Enter to select",
   "\u5747\u503C {n}": "Mean {n}",
   "\u76EE\u6807 {n}": "Goal {n}",
@@ -743,7 +742,7 @@ var EN = {
   "\u8FD1 {n} \u4E2A\u6708 \xB7 \u4EBA / AI / \u4EFB\u52A1 / \u4E13\u6CE8\u6309\u6708\u6C89\u79EF": "Last {n} months \xB7 human / AI / tasks / focus deposited monthly",
   "\u4EBA\u5199": "Human",
   "AI \u5199": "AI",
-  "\u8FD8\u6CA1\u6709\u6C89\u79EF\u8BB0\u5F55\uFF1A\u5199\u70B9\u7B14\u8BB0\u3001\u52FE\u6389\u5F85\u529E\u6216\u8DD1\u4E00\u4E2A\u756A\u8304\u949F\uFF0C\u5730\u5C42\u4F1A\u968F\u6708\u4EFD\u751F\u957F\u3002": "No deposits yet: write a note, check off a task, or run a pomodoro \u2014 the strata grow month by month.",
+  "\u8FD8\u6CA1\u6709\u6C89\u79EF\u8BB0\u5F55\uFF1A\u5199\u70B9\u7B14\u8BB0\u3001\u52FE\u6389\u5F85\u529E\u6216\u5B8C\u6210\u4E00\u8F6E\u4E13\u6CE8\uFF0C\u5730\u5C42\u4F1A\u968F\u6708\u4EFD\u751F\u957F\u3002": "No deposits yet: write a note, check off a task, or complete a focus session \u2014 the strata grow month by month.",
   "\u5730\u5C42\u5256\u9762\uFF1A{months} \u4E2A\u6708\uFF0C\u4EBA\u5199 {human} \u5B57\uFF0CAI \u5199 {agent} \u5B57\uFF0C\u5B8C\u6210\u4EFB\u52A1 {tasks} \u4E2A\uFF0C\u4E13\u6CE8 {focus} \u5206\u949F": "Strata profile: {months} months, {human} human words, {agent} AI words, {tasks} tasks completed, {focus} focus minutes",
   "\u4EBA\u5199 {human} \u5B57 \xB7 AI \u5199 {agent} \u5B57": "{human} human words \xB7 {agent} AI words",
   "\u5B8C\u6210\u4EFB\u52A1 {tasks} \u4E2A \xB7 \u4E13\u6CE8 {focus} \u5206\u949F": "{tasks} tasks done \xB7 {focus} focus minutes",
@@ -3959,7 +3958,7 @@ var METRICS = [
   { key: "edits", label: "\u7F16\u8F91\u4F1A\u8BDD", hint: "\u6709\u6548\u7F16\u8F91\u6B21\u6570" },
   { key: "notesCreated", label: "\u65B0\u5EFA\u7B14\u8BB0", hint: "\u5F53\u5929\u6709\u5185\u5BB9\u7684\u65B0\u7B14\u8BB0" },
   { key: "tasksCompleted", label: "\u5B8C\u6210\u4EFB\u52A1", hint: "\u65B0\u589E\u52FE\u9009\u7684\u5F85\u529E" },
-  { key: "focusMinutes", label: "\u4E13\u6CE8\u5206\u949F", hint: "\u5185\u7F6E\u756A\u8304\u949F\u5B9E\u9645\u5B8C\u6210\u7684\u4E13\u6CE8\u65F6\u957F\uFF08\u4F11\u606F\u4E0D\u8BA1\uFF09" }
+  { key: "focusMinutes", label: "\u4E13\u6CE8\u5206\u949F", hint: "\u5185\u7F6E\u4E13\u6CE8\u8BA1\u65F6\u5B9E\u9645\u5B8C\u6210\u7684\u65F6\u957F\uFF08\u4F11\u606F\u4E0D\u8BA1\uFF09" }
 ];
 var DEFAULT_SETTINGS = {
   language: "auto",
@@ -4855,7 +4854,7 @@ var PomodoroManager = class {
     if (cleanExit) this.clearReleased();
     if (!cleanExit && saved.instanceId && saved.instanceId !== this.instanceId && typeof saved.heartbeatAt === "number" && this.now() - saved.heartbeatAt < INSTANCE_ALIVE_MS) {
       this.disabled = true;
-      new import_obsidian9.Notice(t("\u68C0\u6D4B\u5230\u53E6\u4E00\u4E2A\u5B9E\u4F8B\u6B63\u5728\u4F7F\u7528\u756A\u8304\u949F\uFF0C\u672C\u5B9E\u4F8B\u5DF2\u7981\u7528\uFF0C\u53EF\u5728\u77E5\u8BC6\u5730\u5C42\u9875\u70B9\u51FB\u63A5\u7BA1\u6062\u590D"));
+      new import_obsidian9.Notice(t("\u68C0\u6D4B\u5230\u53E6\u4E00\u4E2A\u5B9E\u4F8B\u6B63\u5728\u4F7F\u7528\u4E13\u6CE8\u8BA1\u65F6\uFF0C\u672C\u5B9E\u4F8B\u5DF2\u7981\u7528\uFF0C\u53EF\u5728\u77E5\u8BC6\u5730\u5C42\u9875\u70B9\u51FB\u63A5\u7BA1\u6062\u590D"));
       return;
     }
     this.mode = saved.mode;
@@ -4994,7 +4993,7 @@ var PomodoroManager = class {
     this.mode = "focus";
     this.persist();
     this.emit();
-    new import_obsidian9.Notice(t("\u5DF2\u63A5\u7BA1\u756A\u8304\u949F\uFF0C\u672C\u5B9E\u4F8B\u53EF\u6B63\u5E38\u4F7F\u7528"));
+    new import_obsidian9.Notice(t("\u5DF2\u63A5\u7BA1\u4E13\u6CE8\u8BA1\u65F6\uFF0C\u672C\u5B9E\u4F8B\u53EF\u6B63\u5E38\u4F7F\u7528"));
   }
   toggle() {
     if (this.disabled) {
@@ -5032,7 +5031,7 @@ var PomodoroManager = class {
         minutes: 25,
         source: "measured"
       });
-      if (!silent) new import_obsidian9.Notice(t("\u756A\u8304\u5B8C\u6210\uFF0C\u5DF2\u8BB0\u5165 25 \u5206\u949F\u4E13\u6CE8\uFF08\u5B9E\u6D4B\uFF09"));
+      if (!silent) new import_obsidian9.Notice(t("\u4E13\u6CE8\u5B8C\u6210\uFF0C\u5DF2\u8BB0\u5165 25 \u5206\u949F\uFF08\u5B9E\u6D4B\uFF09"));
     } else if (!silent) {
       new import_obsidian9.Notice(t("\u4F11\u606F\u7ED3\u675F"));
     }
@@ -5049,13 +5048,13 @@ var PomodoroManager = class {
   updateStatus() {
     if (!this.statusEl) return;
     if (this.disabled) {
-      this.statusEl.setText(t("\u756A\u8304\u5DF2\u7981\u7528"));
+      this.statusEl.setText(t("\u4E13\u6CE8\u8BA1\u65F6\u5DF2\u7981\u7528"));
       return;
     }
     const remaining = Math.max(0, this.currentRemaining());
     const minutes = String(Math.floor(remaining / 60)).padStart(2, "0");
     const seconds = String(remaining % 60).padStart(2, "0");
-    const mode = this.mode === "focus" ? t("\u756A\u8304") : this.mode === "short" ? t("\u77ED\u4F11") : t("\u957F\u4F11");
+    const mode = this.mode === "focus" ? t("\u4E13\u6CE8") : this.mode === "short" ? t("\u77ED\u4F11") : t("\u957F\u4F11");
     this.statusEl.setText(`${this.running ? "\u25B6" : "\u23F8"} ${mode} ${minutes}:${seconds}`);
   }
 };
@@ -8361,7 +8360,7 @@ function renderOverview(view, root) {
   mini(t("\u6D3B\u8DC3\u5929\u6570"), `${active} / ${keys.length}`, t("\u6709\u8BB0\u5F55\u7684\u65E5\u5B50"), ring(active, keys.length));
   mini(t("\u5F53\u524D\u8FDE\u7EED"), tf("{n} \u5929", { n: view.currentStreak() }), tf("\u6700\u957F {n} \u5929 \xB7 \u6309\u5168\u90E8\u5386\u53F2", { n: view.longestStreak() }));
   const investedMinutes = keys.reduce((sum, key) => sum + (view.plugin.store.getDay(key).activeMinutes + view.plugin.store.getDay(key).focusMinutes), 0);
-  mini(t("\u6295\u5165\u65F6\u95F4"), tf("{n} \u5C0F\u65F6", { n: Math.round(investedMinutes / 60 * 10) / 10 }), t("\u6D3B\u8DC3\u4F30\u7B97\uFF085 \u5206\u949F\u6876\uFF09+ \u756A\u8304\u4E13\u6CE8"));
+  mini(t("\u6295\u5165\u65F6\u95F4"), tf("{n} \u5C0F\u65F6", { n: Math.round(investedMinutes / 60 * 10) / 10 }), t("\u6D3B\u8DC3\u4F30\u7B97\uFF085 \u5206\u949F\u6876\uFF09+ \u4E13\u6CE8\u8BA1\u65F6"));
   mini(t("\u6700\u9AD8\u7684\u4E00\u5929"), view.value(best) > 0 ? String(view.value(best)) : "\u2014", best);
 }
 function renderChartLegend(root, series) {
@@ -8424,7 +8423,7 @@ function renderStrata(view, root) {
     { human: 0, agent: 0, tasks: 0, focus: 0 }
   );
   if (totals.human + totals.agent + totals.tasks + totals.focus === 0) {
-    card.createDiv({ cls: "sd-empty", text: t("\u8FD8\u6CA1\u6709\u6C89\u79EF\u8BB0\u5F55\uFF1A\u5199\u70B9\u7B14\u8BB0\u3001\u52FE\u6389\u5F85\u529E\u6216\u8DD1\u4E00\u4E2A\u756A\u8304\u949F\uFF0C\u5730\u5C42\u4F1A\u968F\u6708\u4EFD\u751F\u957F\u3002") });
+    card.createDiv({ cls: "sd-empty", text: t("\u8FD8\u6CA1\u6709\u6C89\u79EF\u8BB0\u5F55\uFF1A\u5199\u70B9\u7B14\u8BB0\u3001\u52FE\u6389\u5F85\u529E\u6216\u5B8C\u6210\u4E00\u8F6E\u4E13\u6CE8\uFF0C\u5730\u5C42\u4F1A\u968F\u6708\u4EFD\u751F\u957F\u3002") });
     return;
   }
   const width = 900;
@@ -9547,7 +9546,7 @@ ${celestial}
     if (!button) return;
     const state = this.plugin.pomodoro.state();
     if (state.disabled) {
-      button.textContent = t("\u63A5\u7BA1\u756A\u8304\u949F");
+      button.textContent = t("\u63A5\u7BA1\u4E13\u6CE8\u8BA1\u65F6");
       return;
     }
     const minutes = String(Math.floor(state.remaining / 60)).padStart(2, "0");
@@ -10194,12 +10193,12 @@ ${tf("\u6062\u590D\u526F\u672C\uFF1A{path}", { path: this.store.recoveryCopyPath
     });
     this.addCommand({
       id: "pomodoro-toggle",
-      name: t("\u5F00\u59CB / \u6682\u505C\u756A\u8304\u949F"),
+      name: t("\u5F00\u59CB / \u6682\u505C\u4E13\u6CE8\u8BA1\u65F6"),
       callback: () => this.pomodoro.toggle()
     });
     this.addCommand({
       id: "pomodoro-skip",
-      name: t("\u8DF3\u8FC7\u5F53\u524D\u756A\u8304 / \u4F11\u606F"),
+      name: t("\u8DF3\u8FC7\u5F53\u524D\u4E13\u6CE8 / \u4F11\u606F"),
       callback: () => this.pomodoro.skip()
     });
     this.addCommand({

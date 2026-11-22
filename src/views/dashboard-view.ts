@@ -544,7 +544,7 @@ ${celestial}
     if (!button) return;
     const state = this.plugin.pomodoro.state();
     if (state.disabled) {
-      button.textContent = t("接管番茄钟");
+      button.textContent = t("接管专注计时");
       return;
     }
     const minutes = String(Math.floor(state.remaining / 60)).padStart(2, "0");

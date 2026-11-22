@@ -117,7 +117,7 @@ export class PomodoroManager {
     ) {
       // 另一实例仍存活：不恢复、不写入，避免干扰对方计时与心跳。
       this.disabled = true;
-      new Notice(t("检测到另一个实例正在使用番茄钟，本实例已禁用，可在知识地层页点击接管恢复"));
+      new Notice(t("检测到另一个实例正在使用专注计时，本实例已禁用，可在知识地层页点击接管恢复"));
       return;
     }
     this.mode = saved.mode;
@@ -273,7 +273,7 @@ export class PomodoroManager {
     this.mode = "focus";
     this.persist();
     this.emit();
-    new Notice(t("已接管番茄钟，本实例可正常使用"));
+    new Notice(t("已接管专注计时，本实例可正常使用"));
   }
 
   toggle(): void {
@@ -315,7 +315,7 @@ export class PomodoroManager {
         minutes: 25,
         source: "measured",
       });
-      if (!silent) new Notice(t("番茄完成，已记入 25 分钟专注（实测）"));
+      if (!silent) new Notice(t("专注完成，已记入 25 分钟（实测）"));
     } else if (!silent) {
       new Notice(t("休息结束"));
     }
@@ -334,13 +334,13 @@ export class PomodoroManager {
   private updateStatus(): void {
     if (!this.statusEl) return;
     if (this.disabled) {
-      this.statusEl.setText(t("番茄已禁用"));
+      this.statusEl.setText(t("专注计时已禁用"));
       return;
     }
     const remaining = Math.max(0, this.currentRemaining());
     const minutes = String(Math.floor(remaining / 60)).padStart(2, "0");
     const seconds = String(remaining % 60).padStart(2, "0");
-    const mode = this.mode === "focus" ? t("番茄") : this.mode === "short" ? t("短休") : t("长休");
+    const mode = this.mode === "focus" ? t("专注") : this.mode === "short" ? t("短休") : t("长休");
     this.statusEl.setText(`${this.running ? "▶" : "⏸"} ${mode} ${minutes}:${seconds}`);
   }
 }

@@ -166,12 +166,12 @@ export class SedimentPlugin extends Plugin {
     });
     this.addCommand({
       id: "pomodoro-toggle",
-      name: t("开始 / 暂停番茄钟"),
+      name: t("开始 / 暂停专注计时"),
       callback: () => this.pomodoro.toggle(),
     });
     this.addCommand({
       id: "pomodoro-skip",
-      name: t("跳过当前番茄 / 休息"),
+      name: t("跳过当前专注 / 休息"),
       callback: () => this.pomodoro.skip(),
     });
     this.addCommand({

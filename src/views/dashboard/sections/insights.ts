@@ -190,7 +190,7 @@ export function renderOverview(view: DashboardView, root: HTMLElement): void {
   mini(t("活跃天数"), `${active} / ${keys.length}`, t("有记录的日子"), ringSvg(active, keys.length));
   mini(t("当前连续"), tf("{n} 天", { n: view.currentStreak() }), tf("最长 {n} 天 · 按全部历史", { n: view.longestStreak() }));
   const investedMinutes = keys.reduce((sum, key) => sum + (view.plugin.store.getDay(key).activeMinutes + view.plugin.store.getDay(key).focusMinutes), 0);
-  mini(t("投入时间"), tf("{n} 小时", { n: Math.round(investedMinutes / 60 * 10) / 10 }), t("活跃估算（5 分钟桶）+ 番茄专注"));
+  mini(t("投入时间"), tf("{n} 小时", { n: Math.round(investedMinutes / 60 * 10) / 10 }), t("活跃估算（5 分钟桶）+ 专注计时"));
   mini(t("最高的一天"), view.value(best) > 0 ? String(view.value(best)) : "—", best);
 }
 
@@ -268,7 +268,7 @@ export function renderStrata(view: DashboardView, root: HTMLElement): void {
     { human: 0, agent: 0, tasks: 0, focus: 0 }
   );
   if (totals.human + totals.agent + totals.tasks + totals.focus === 0) {
-    card.createDiv({ cls: "sd-empty", text: t("还没有沉积记录：写点笔记、勾掉待办或跑一个番茄钟，地层会随月份生长。") });
+    card.createDiv({ cls: "sd-empty", text: t("还没有沉积记录：写点笔记、勾掉待办或完成一轮专注，地层会随月份生长。") });
     return;
   }
 

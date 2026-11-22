@@ -316,7 +316,7 @@ export const METRICS: MetricDef[] = [
   { key: "edits", label: "编辑会话", hint: "有效编辑次数" },
   { key: "notesCreated", label: "新建笔记", hint: "当天有内容的新笔记" },
   { key: "tasksCompleted", label: "完成任务", hint: "新增勾选的待办" },
-  { key: "focusMinutes", label: "专注分钟", hint: "内置番茄钟实际完成的专注时长（休息不计）" },
+  { key: "focusMinutes", label: "专注分钟", hint: "内置专注计时实际完成的时长（休息不计）" },
 ];
 
 export const DEFAULT_SETTINGS: PulseSettings = {
