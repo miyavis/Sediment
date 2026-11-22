@@ -9,6 +9,12 @@
 > **Local, controllable AI write auditing for your knowledge vault.**
 > Every write an agent makes into your notes can be approved, rolled back, and traced.
 
+**Why Sediment**
+
+- You let an agent write into your vault — but a chat diff vanishes on restart, doesn't record shell changes, and never tells the agent you revoked something.
+- Sediment turns each write into a durable local record: frozen preview, hash-bound approval, snapshot, timestamped decision, and a searchable timeline.
+- It is the audit layer underneath the agent you already use — not another chat client or search engine. No telemetry, no cloud, no shell.
+
 ![Agent workshop with pending writes and the change timeline](assets/agent-workshop-timeline.png)
 
 ## The problem
