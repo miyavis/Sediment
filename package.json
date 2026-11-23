@@ -21,7 +21,7 @@
     "test:release": "node scripts/verify-release.mjs",
     "test": "npm run test:lint-i18n && npm run test:unit && npm run test:mcp",
     "version": "node scripts/version-bump.mjs && git add package.json package-lock.json manifest.json versions.json mcp-server/index.mjs README.md",
-    "check": "npm run lint:eslint && npm run lint:stylelint && npm run test:typecheck && npm test && npm run test:release",
+    "check": "npm run build && npm run lint:eslint && npm run lint:stylelint && npm run test:typecheck && npm test && npm run test:release",
     "audit:prod": "npm audit --omit=dev --audit-level=moderate"
   },
   "keywords": [
