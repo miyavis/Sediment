@@ -6,7 +6,9 @@ import {
   fileExists,
   homeDirectory,
   readTextFile,
+  restrictFilePermissions,
   writeTextFile,
+  writeTextFileAtomic,
 } from "../utils/node";
 import { vaultGetFullPath } from "../utils/vault";
 import { BRIDGE_SOURCE } from "./bridge-source";
@@ -237,7 +239,13 @@ export function configureAgent(plugin: SedimentPlugin, target: AgentTarget): voi
       ? upsertTomlServer(raw, "sediment", mcpEntry)
       : upsertYamlServer(raw, "sediment", mcpEntry);
     writeTextFile(`${target.configPath}.bak`, raw, "utf8");
-    writeTextFile(target.configPath, updated, "utf8");
+    restrictFilePermissions(`${target.configPath}.bak`);
+    writeTextFileAtomic(target.configPath, updated, "utf8");
+    restrictFilePermissions(target.configPath);
+    // 回读校验：确认 sediment 条目确实写入（3.5）。
+    if (!readTextFile(target.configPath, "utf8").includes("sediment")) {
+      throw new Error("配置写入校验失败：未找到 sediment 条目");
+    }
     return;
   }
 
@@ -266,5 +274,13 @@ export function configureAgent(plugin: SedimentPlugin, target: AgentTarget): voi
     data[target.rootKey] = root;
   }
   writeTextFile(`${target.configPath}.bak`, raw, "utf8");
-  writeTextFile(target.configPath, JSON.stringify(data, null, 2), "utf8");
+  restrictFilePermissions(`${target.configPath}.bak`);
+  writeTextFileAtomic(target.configPath, JSON.stringify(data, null, 2), "utf8");
+  restrictFilePermissions(target.configPath);
+  // 回读校验：JSON 可解析且 sediment 条目存在（3.5）。
+  const written = JSON.parse(readTextFile(target.configPath, "utf8")) as Record<string, unknown>;
+  const root = (written[target.rootKey] ?? {}) as Record<string, unknown>;
+  if (!root.sediment && !(root.servers && (root.servers as Record<string, unknown>).sediment)) {
+    throw new Error("配置写入校验失败：未找到 sediment 条目");
+  }
 }

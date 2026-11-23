@@ -351,7 +351,14 @@ export class Store {
   async flush(): Promise<void> {
     this.cancelSaveTimer();
     await this.save();
-    await this.backupChain;
+    // 备份链可能在等待期间增长：循环直到稳定，避免卸载时漏掉最后一次备份（3.8）。
+    let previous = this.backupChain;
+    for (let i = 0; i < 5; i += 1) {
+      await previous;
+      if (this.backupChain === previous) break;
+      previous = this.backupChain;
+    }
+    await previous;
   }
 
   async save(): Promise<void> {
@@ -370,7 +377,9 @@ export class Store {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
         await this.plugin.saveData(this.data);
-        void this.backupData().catch((error) => {
+        // 绑定保存点快照：备份对应刚保存的数据，不受后续写入影响（3.8）。
+        const snapshotAtSave = this.data;
+        void this.backupData(false, snapshotAtSave).catch((error) => {
           logError(this, "自动备份失败", error);
         });
         return;
@@ -388,13 +397,14 @@ export class Store {
   }
 
   /** 把 data.json 快照写入库内普通文件夹，按设置保留最近若干份。失败向调用方抛错。 */
-  async backupData(force = false): Promise<number> {
-    const next = this.backupChain.then(() => this.performBackup(force));
+  async backupData(force = false, snapshot?: SedimentData): Promise<number> {
+    const data = snapshot ?? this.data;
+    const next = this.backupChain.then(() => this.performBackup(force, data));
     this.backupChain = next.catch(() => 0);
     return next;
   }
 
-  private async performBackup(force: boolean): Promise<number> {
+  private async performBackup(force: boolean, data: SedimentData): Promise<number> {
     if (!this.data.settings.backupEnabled && !force) return 0;
     const now = Date.now();
     if (!force && now - this.lastBackupAt < 3_600_000) return 0;
@@ -405,7 +415,7 @@ export class Store {
     // 毫秒 + 随机后缀：并发/同分钟内多次备份不写同名文件，避免互相覆盖。
     const stamp = `${dateKey(date)}-${String(date.getHours()).padStart(2, "0")}${String(date.getMinutes()).padStart(2, "0")}${String(date.getSeconds()).padStart(2, "0")}-${String(date.getMilliseconds()).padStart(3, "0")}-${Math.random().toString(36).slice(2, 6)}`;
     const path = folder ? `${folder}/data-${stamp}.json` : `data-${stamp}.json`;
-    await this.plugin.app.vault.adapter.write(path, JSON.stringify(this.data, null, 2));
+    await this.plugin.app.vault.adapter.write(path, JSON.stringify(data, null, 2));
     this.lastBackupAt = now;
 
     // 备份目录为库根目录（或空串）时只备份不清理，避免误删用户自有的 data-*.json 文件。

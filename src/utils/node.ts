@@ -8,10 +8,13 @@
 import { createServer as nodeCreateServer } from "http";
 import { createHash as nodeCreateHash, timingSafeEqual as nodeTimingSafeEqual } from "crypto";
 import {
+  chmodSync as nodeChmodSync,
   existsSync as nodeExistsSync,
   mkdirSync as nodeMkdirSync,
   readFileSync as nodeReadFileSync,
   readdirSync as nodeReaddirSync,
+  realpathSync as nodeRealpathSync,
+  renameSync as nodeRenameSync,
   rmSync as nodeRmSync,
   statSync as nodeStatSync,
   unlinkSync as nodeUnlinkSync,
@@ -39,6 +42,33 @@ export const writeTextFile = typed<(
   content: string,
   encoding: "utf8"
 ) => void>(nodeWriteFileSync);
+
+export const renameFileSync = typed<(from: string, to: string) => void>(nodeRenameSync);
+
+export const realPath = typed<(path: string) => string>(nodeRealpathSync);
+
+/** 收紧文件权限（POSIX 0600）；Windows 上无实际效果，失败静默忽略。 */
+export function restrictFilePermissions(path: string): void {
+  try {
+    nodeChmodSync(path, 0o600);
+  } catch {
+    // 平台不支持或文件不可用：忽略。
+  }
+}
+
+
+/** 原子写入：先写临时文件再 rename，避免崩溃时留下半写入的目标（3.5）。 */
+export function writeTextFileAtomic(path: string, content: string, encoding: "utf8"): void {
+  const tmp = `${path}.tmp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  writeTextFile(tmp, content, encoding);
+  try {
+    renameFileSync(tmp, path);
+  } catch (error) {
+    // 清理临时文件，避免残留。
+    try { removeFile(tmp); } catch { /* 忽略 */ }
+    throw error;
+  }
+}
 
 export const listDirectory = typed<(path: string) => string[]>(nodeReaddirSync);
 
@@ -106,6 +136,8 @@ export interface NodeHttpRequest {
   url?: string;
   headers: Record<string, string | string[] | undefined>;
   socket: { remoteAddress?: string };
+  /** 排空未读请求体（鉴权失败时避免 keep-alive 缓冲堆积） */
+  resume?(): void;
   [Symbol.asyncIterator](): AsyncIterator<Uint8Array>;
 }
 

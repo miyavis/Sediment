@@ -111,6 +111,7 @@ import {
 } from "../../src/agent/bridge-schema";
 import { TFileWithPath, day, settings, accessSettings, fakeStore, LayoutFn, layoutFn, fakeSetupPlugin, openCodeTarget, fakeVault, fakePluginWith, fakeAgentPlugin, TFileStub, asApiError, HoldResult, memoryVault, fakeConfirmPlugin, pendingIdOf, newTFile, noticeMessages, fakeClock, trackerHarness, pomodoroHarness, memoryStorage, memoHarness, rawHttp, seedAgentMemo, pendingRecord, fakeHealthPlugin, fakeSemanticPlugin, fakeEmbed, migrationHarness, fakeBridgeHarness, proposalPath, decisionPath } from "../helpers";
 import { readBackup, restoreBackup } from "../../src/features/audit";
+import { assertNoExternalSymlink } from "../../src/agent/api";
 import { findSection, applyFrontmatterUpdate } from "../../src/agent/api-helpers";
 import { removeTomlServer, removeYamlServer } from "../../src/agent/config-formats";
 import { installAgentsGuide, AGENTS_GUIDE } from "../../src/features/agents-guide";
@@ -712,6 +713,22 @@ test("Store.load：缺失字段补默认值并规范化历史数据", async () =
   assert.equal(normalized.aiWordsAdded, 0);
 });
 
+test("safeAgentPath：符号链接指向库外被拒绝（3.6）", () => {
+  const adapter = { getFullPath: (p: string) => (p ? `V:/vault/${p}` : "V:/vault") };
+  // 注入 resolveReal：link.md 解析到库外路径，normal.md 留在库内。
+  const resolveReal = (p: string): string => {
+    if (p.endsWith("link.md")) return "V:/outside/secret.md";
+    return p;
+  };
+  assert.doesNotThrow(() => assertNoExternalSymlink(adapter, "normal.md", resolveReal));
+  assert.throws(
+    () => assertNoExternalSymlink(adapter, "link.md", resolveReal),
+    (e: unknown) => e instanceof Error && e.message.includes("库外")
+  );
+  // 无 getFullPath 的 adapter：跳过（交给 Obsidian 边界）。
+  assert.doesNotThrow(() => assertNoExternalSymlink({}, "link.md", resolveReal));
+});
+
 test("config-formats：removeTomlServer/removeYamlServer 精确移除目标段（F2）", () => {
   const toml = `[mcp_servers.other]\ncommand = "x"\n\n[mcp_servers.sediment]\ncommand = "node"\nargs = ["a"]\n\n[other]\nx = 1`;
   const tomlOut = removeTomlServer(toml, "sediment");
@@ -1027,6 +1044,22 @@ test("Store.load：版本号写回失败时阻塞写入并保留恢复副本", a
   assert.equal(store.isPersistenceBlocked, true);
   assert.match(store.migrationWarning ?? "", /迁移失败/);
   assert.ok(written.some(([p]) => p.startsWith(".obsidian/plugins/sediment/recovery/")));
+});
+
+test("Store.backupData：显式快照与实时数据解耦（3.8）", async () => {
+  const { vault, written } = fakeVault([]);
+  const { plugin } = fakePluginWith(vault, null);
+  const store = new Store(plugin);
+  await store.load();
+  store.data.settings.backupFolder = "backups";
+  store.data.settings.backupKeep = 3;
+  // 传入一个与 store.data 不同的快照（标记字段）。
+  const snapshot = { ...store.data, version: 999 as number } as typeof store.data;
+  const count = await store.backupData(true, snapshot);
+  assert.equal(count, 1);
+  const content = JSON.parse(written[0][1]);
+  assert.equal(content.version, 999, "备份应写入传入的快照而非实时 this.data");
+  assert.equal(store.data.version, 1, "实时数据不被快照污染");
 });
 
 test("Store.backupData：库根目录只备份不清理", async () => {

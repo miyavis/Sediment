@@ -22,6 +22,11 @@ export interface KnowledgeMethods {
   }>;
 }
 
+/** frontmatter 标量去换行，防止注入额外 YAML 行（3.3）。 */
+function fmScalar(value: string): string {
+  return value.replace(/[\r\n]+/g, " ").trim();
+}
+
 export const knowledgeMethods: KnowledgeMethods = {
   async recordWorkLog(this: AgentApi, input: WorkLogInput, bypassConfirm = false, meta?: WriteMeta) {
     const now = new Date();
@@ -86,7 +91,7 @@ export const knowledgeMethods: KnowledgeMethods = {
     const categories = this.categories();
     const tags = Array.isArray(input.tags) ? input.tags.map((tag) => String(tag).replace(/^#/, "")) : [];
     const links = Array.isArray(input.links) ? input.links.map(String) : [];
-    const agent = String(input.agent || "agent").replace(/[:#]/g, "-");
+    const agent = fmScalar(String(input.agent || "agent").replace(/[:#]/g, "-"));
     const requestedCategory = String(input.category ?? "").trim();
     const invalidCategory = requestedCategory.length > 0 && !isSafePathSegmentName(requestedCategory);
     if (invalidCategory) {
@@ -118,10 +123,10 @@ export const knowledgeMethods: KnowledgeMethods = {
 
     const frontmatter = [
       "---", `date: ${today}`, "type: knowledge", "source: agent", "sediment_status: draft",
-      `category: ${category}`, `agent: ${agent}`,
-      ...(input.source ? [`origin: ${String(input.source).replace(/[:#]/g, "-")}`] : []),
-      tags.length ? "tags:" : "tags: []", ...tags.map((tag) => `  - ${tag}`),
-      links.length ? "links:" : "links: []", ...links.map((link) => `  - "${link.replace(/"/g, '\\"')}"`),
+      `category: ${fmScalar(category)}`, `agent: ${fmScalar(agent)}`,
+      ...(input.source ? [`origin: ${fmScalar(String(input.source).replace(/[:#]/g, "-"))}`] : []),
+      tags.length ? "tags:" : "tags: []", ...tags.map((tag) => `  - ${fmScalar(tag)}`),
+      links.length ? "links:" : "links: []", ...links.map((link) => `  - "${fmScalar(link).replace(/"/g, '\\"')}"`),
       "---",
     ].join("\n");
 

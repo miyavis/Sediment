@@ -13,6 +13,7 @@ import type {
   AgentApi,
   DailyContext,
   TodaySnapshot,
+  WriteMeta,
 } from "./api";
 
 export interface QueryMethods {
@@ -32,7 +33,7 @@ export interface QueryMethods {
   getDailyContext(days?: number): DailyContext;
   generateWeeklyReview(date?: string): { date: string; markdown: string };
   getAgentChanges(limit?: number): Array<{ id: string; path: string; time: string; tool: string; agent: string }>;
-  revertAgentChange(snapshotId: string): Promise<{ path: string; reverted: true }>;
+  revertAgentChange(snapshotId: string, meta?: WriteMeta): Promise<{ path: string; reverted: true }>;
 }
 
 export const queryMethods: QueryMethods = {
@@ -189,13 +190,17 @@ export const queryMethods: QueryMethods = {
     return this.plugin.store.data.snapshots.slice(0, Math.max(1, Math.min(limit, 100)));
   },
 
-  async revertAgentChange(this: AgentApi, snapshotId: string) {
+  async revertAgentChange(this: AgentApi, snapshotId: string, _meta?: WriteMeta) {
     const snapshot = this.plugin.store.data.snapshots.find((item) => item.id === snapshotId);
     if (!snapshot) throw new ApiError("NOT_FOUND", `快照不存在：${snapshotId}`, 404);
     const safe = safeAgentPath(snapshot.path, this.vault.configDir);
+    // assertPathAllowed 内含禁止标签 + 黑白名单 + 操作门禁（A3），撤销同样受约束。
     this.assertPathAllowed(safe, "overwrite");
     const file = this.vault.getAbstractFileByPath(safe);
     if (!(file instanceof TFile)) throw new ApiError("NOT_FOUND", `笔记不存在：${safe}`, 404);
+    if (this.hasDeniedTag(file)) {
+      throw new ApiError("FORBIDDEN", `撤销被拒绝：${safe} 带有禁止访问的标签`, 403);
+    }
     await restoreBackup(this.plugin, file, snapshotId);
     return { path: safe, reverted: true as const };
   },

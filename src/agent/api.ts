@@ -4,7 +4,7 @@ import type { PomodoroState } from "../features/pomodoro";
 import type { DayRecord, MemoRecord, PendingWriteRecord, ToolCallRecord, WorkLogRecord } from "../types";
 import { vaultGetFullPath } from "../utils/vault";
 import { logError } from "../utils/log-error";
-import { ensureDirectory, listDirectory, removeFile, writeTextFile } from "../utils/node";
+import { ensureDirectory, listDirectory, removeFile, realPath, writeTextFile } from "../utils/node";
 import { tf } from "../i18n";
 import {
   inferCategory,
@@ -162,6 +162,37 @@ export function safeAgentPath(input: string, configDir: string): string {
 }
 
 /**
+ * 符号链接边界检查（3.6）：若 vault 内路径是软链且指向库外，拒绝访问。
+ * 需要 adapter 的 getFullPath；拿不到或目标不存在时跳过（交给 Obsidian 自身边界）。
+ */
+export function assertNoExternalSymlink(
+  adapter: { getFullPath?: (path: string) => string } | undefined,
+  relativePath: string,
+  resolveReal: (path: string) => string = realPath
+): void {
+  if (!adapter?.getFullPath) return;
+  let absolute: string;
+  let vaultRoot: string;
+  try {
+    absolute = adapter.getFullPath(relativePath);
+    vaultRoot = resolveReal(adapter.getFullPath(""));
+  } catch {
+    return;
+  }
+  let resolved: string;
+  try {
+    resolved = resolveReal(absolute);
+  } catch {
+    return; // 目标不存在：由后续 create 流程处理。
+  }
+  const root = vaultRoot.replace(/[\\/]+$/, "").toLowerCase();
+  const target = resolved.toLowerCase();
+  if (target !== root && !target.startsWith(`${root}/`) && !target.startsWith(`${root}\\`)) {
+    throw new ApiError("FORBIDDEN", "路径通过符号链接指向库外，禁止访问", 403);
+  }
+}
+
+/**
  * 文件桥决策回写口：由插件在启用文件桥时注入（Task 3 的 FileBridge）。
  * 这里只声明最小结构，避免 AgentApi 反向依赖文件桥实现。
  */
@@ -279,6 +310,8 @@ export class AgentApi {
         throw new ApiError("FORBIDDEN", message, 403);
       }
     }
+    // 符号链接边界：库内软链指向库外时拒绝（3.6）。
+    assertNoExternalSymlink(this.vault.adapter as { getFullPath?: (path: string) => string }, path);
   }
 
   isAllowedByMode(path: string): boolean {
@@ -490,8 +523,8 @@ export class AgentApi {
     return queryMethods.getAgentChanges.call(this, limit);
   }
 
-  async revertAgentChange(snapshotId: string): Promise<{ path: string; reverted: true }> {
-    return queryMethods.revertAgentChange.call(this, snapshotId);
+  async revertAgentChange(snapshotId: string, meta?: WriteMeta): Promise<{ path: string; reverted: true }> {
+    return queryMethods.revertAgentChange.call(this, snapshotId, meta);
   }
 
   getPomodoro(): PomodoroState {

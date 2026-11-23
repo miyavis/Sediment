@@ -93,10 +93,28 @@ export class AgentServer {
 
   private json(response: NodeHttpResponse, status: number, payload: unknown): void {
     // 仅本机回环使用，不开放跨域，避免网页脚本借令牌读写知识库。
+    // no-store：含笔记正文的响应不被本地代理/磁盘缓存（3.1）。
     response.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store",
     });
     response.end(JSON.stringify(payload));
+  }
+
+  /** Host 必须是 127.0.0.1:<port>（或 localhost），Origin 缺失或回环来源（3.1）。 */
+  private isLoopbackRequest(request: NodeHttpRequest): boolean {
+    const host = String(request.headers.host ?? "");
+    const port = this.running?.port;
+    const hostOk =
+      host === `127.0.0.1:${port}` ||
+      host === `localhost:${port}` ||
+      host === "127.0.0.1" ||
+      host === "localhost";
+    if (!hostOk) return false;
+    const origin = request.headers.origin;
+    if (origin === undefined) return true;
+    const o = String(origin);
+    return /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(o);
   }
 
   private async readBody(request: NodeHttpRequest): Promise<Record<string, unknown>> {
@@ -150,6 +168,11 @@ export class AgentServer {
       this.json(response, 400, { error: t("非法的请求 URL"), code: "INVALID_URL" });
       return;
     }
+    // Host/Origin 校验：仅接受回环来源，挡住 DNS rebinding 与跨站脚本的探测（3.1）。
+    if (!this.isLoopbackRequest(request)) {
+      this.json(response, 403, { error: "forbidden host" });
+      return;
+    }
     // 令牌只走 Authorization 头：?token= 查询串会落入日志/代理缓存，已移除支持。
     const supplied = String(request.headers.authorization ?? "").replace(/^Bearer\s+/i, "");
     const expected = this.plugin.store.settings.agentServerToken;
@@ -159,6 +182,8 @@ export class AgentServer {
         "本地 API 鉴权失败",
         `source=${request.socket.remoteAddress ?? "unknown"} path=${redactAuditPath(url.pathname)}`
       );
+      // 排空 POST 请求体，避免 keep-alive 下未读数据堆积（3.2）。
+      if (request.method === "POST") request.resume?.();
       this.json(response, 401, { error: "unauthorized" });
       return;
     }
@@ -173,8 +198,11 @@ export class AgentServer {
         return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
       };
       const agent = str(query.get("agent"), "") || String(request.headers["x-agent"] ?? "");
+      // revert 请求体只有 snapshotId，用它作审计路径占位，避免审计行 path 为空（3.4）。
       const loggedPath =
-        (typeof body.path === "string" ? body.path : "") || str(query.get("path"), "");
+        (typeof body.path === "string" ? body.path : "") ||
+        str(query.get("path"), "") ||
+        (typeof body.snapshotId === "string" ? `snapshot:${body.snapshotId}` : "");
       const tool = `${request.method} ${url.pathname}`;
       const isWrite = request.method !== "GET" && request.method !== "HEAD";
       const call = isWrite ? api.logToolCall(tool, agent, redactAuditPath(loggedPath)) : null;
@@ -378,7 +406,7 @@ export class AgentServer {
           this.json(response, 200, api.getAgentChanges(num(query.get("limit"), 20)));
           return;
         case "POST /agent/revert":
-          this.json(response, 200, await api.revertAgentChange(str(body.snapshotId as string)));
+          this.json(response, 200, await api.revertAgentChange(str(body.snapshotId as string), writeMeta));
           return;
         default:
           this.json(response, 404, { error: `未知接口：${request.method} ${url.pathname}` });

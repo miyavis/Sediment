@@ -97,6 +97,27 @@ var ensureDirectory = typed(
 );
 var readTextFile = typed(import_fs.readFileSync);
 var writeTextFile = typed(import_fs.writeFileSync);
+var renameFileSync = typed(import_fs.renameSync);
+var realPath = typed(import_fs.realpathSync);
+function restrictFilePermissions(path) {
+  try {
+    (0, import_fs.chmodSync)(path, 384);
+  } catch (e) {
+  }
+}
+function writeTextFileAtomic(path, content, encoding) {
+  const tmp = `${path}.tmp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  writeTextFile(tmp, content, encoding);
+  try {
+    renameFileSync(tmp, path);
+  } catch (error) {
+    try {
+      removeFile(tmp);
+    } catch (e) {
+    }
+    throw error;
+  }
+}
 var listDirectory = typed(import_fs.readdirSync);
 var fileMtimeMs = typed(import_fs.statSync);
 var removeFile = typed(import_fs.unlinkSync);
@@ -1934,13 +1955,16 @@ var queryMethods = {
   getAgentChanges(limit = 20) {
     return this.plugin.store.data.snapshots.slice(0, Math.max(1, Math.min(limit, 100)));
   },
-  async revertAgentChange(snapshotId) {
+  async revertAgentChange(snapshotId, _meta) {
     const snapshot = this.plugin.store.data.snapshots.find((item) => item.id === snapshotId);
     if (!snapshot) throw new ApiError("NOT_FOUND", `\u5FEB\u7167\u4E0D\u5B58\u5728\uFF1A${snapshotId}`, 404);
     const safe = safeAgentPath(snapshot.path, this.vault.configDir);
     this.assertPathAllowed(safe, "overwrite");
     const file = this.vault.getAbstractFileByPath(safe);
     if (!(file instanceof import_obsidian2.TFile)) throw new ApiError("NOT_FOUND", `\u7B14\u8BB0\u4E0D\u5B58\u5728\uFF1A${safe}`, 404);
+    if (this.hasDeniedTag(file)) {
+      throw new ApiError("FORBIDDEN", `\u64A4\u9500\u88AB\u62D2\u7EDD\uFF1A${safe} \u5E26\u6709\u7981\u6B62\u8BBF\u95EE\u7684\u6807\u7B7E`, 403);
+    }
     await restoreBackup(this.plugin, file, snapshotId);
     return { path: safe, reverted: true };
   }
@@ -2625,6 +2649,9 @@ var Tracker = class {
 };
 
 // src/agent/api-knowledge.ts
+function fmScalar(value) {
+  return value.replace(/[\r\n]+/g, " ").trim();
+}
 var knowledgeMethods = {
   async recordWorkLog(input, bypassConfirm = false, meta) {
     const now = /* @__PURE__ */ new Date();
@@ -2696,7 +2723,7 @@ ${block}`);
     const categories = this.categories();
     const tags = Array.isArray(input.tags) ? input.tags.map((tag) => String(tag).replace(/^#/, "")) : [];
     const links = Array.isArray(input.links) ? input.links.map(String) : [];
-    const agent = String(input.agent || "agent").replace(/[:#]/g, "-");
+    const agent = fmScalar(String(input.agent || "agent").replace(/[:#]/g, "-"));
     const requestedCategory = String((_a2 = input.category) != null ? _a2 : "").trim();
     const invalidCategory = requestedCategory.length > 0 && !isSafePathSegmentName(requestedCategory);
     if (invalidCategory) {
@@ -2725,13 +2752,13 @@ ${block}`);
       "type: knowledge",
       "source: agent",
       "sediment_status: draft",
-      `category: ${category}`,
-      `agent: ${agent}`,
-      ...input.source ? [`origin: ${String(input.source).replace(/[:#]/g, "-")}`] : [],
+      `category: ${fmScalar(category)}`,
+      `agent: ${fmScalar(agent)}`,
+      ...input.source ? [`origin: ${fmScalar(String(input.source).replace(/[:#]/g, "-"))}`] : [],
       tags.length ? "tags:" : "tags: []",
-      ...tags.map((tag) => `  - ${tag}`),
+      ...tags.map((tag) => `  - ${fmScalar(tag)}`),
       links.length ? "links:" : "links: []",
-      ...links.map((link) => `  - "${link.replace(/"/g, '\\"')}"`),
+      ...links.map((link) => `  - "${fmScalar(link).replace(/"/g, '\\"')}"`),
       "---"
     ].join("\n");
     const body = String(input.content || "").trim();
@@ -3070,6 +3097,28 @@ function safeAgentPath(input, configDir) {
   if (!lower.endsWith(".md")) throw new ApiError("INVALID_EXTENSION", "\u53EA\u652F\u6301 .md \u7B14\u8BB0");
   return path;
 }
+function assertNoExternalSymlink(adapter, relativePath, resolveReal = realPath) {
+  if (!(adapter == null ? void 0 : adapter.getFullPath)) return;
+  let absolute;
+  let vaultRoot;
+  try {
+    absolute = adapter.getFullPath(relativePath);
+    vaultRoot = resolveReal(adapter.getFullPath(""));
+  } catch (e) {
+    return;
+  }
+  let resolved;
+  try {
+    resolved = resolveReal(absolute);
+  } catch (e) {
+    return;
+  }
+  const root = vaultRoot.replace(/[\\/]+$/, "").toLowerCase();
+  const target = resolved.toLowerCase();
+  if (target !== root && !target.startsWith(`${root}/`) && !target.startsWith(`${root}\\`)) {
+    throw new ApiError("FORBIDDEN", "\u8DEF\u5F84\u901A\u8FC7\u7B26\u53F7\u94FE\u63A5\u6307\u5411\u5E93\u5916\uFF0C\u7981\u6B62\u8BBF\u95EE", 403);
+  }
+}
 var AgentApi = class {
   constructor(plugin) {
     this.plugin = plugin;
@@ -3159,6 +3208,7 @@ var AgentApi = class {
         throw new ApiError("FORBIDDEN", message, 403);
       }
     }
+    assertNoExternalSymlink(this.vault.adapter, path);
   }
   isAllowedByMode(path) {
     return isPathAllowedByMode(path, this.plugin.store.settings);
@@ -3275,8 +3325,8 @@ var AgentApi = class {
   getAgentChanges(limit = 20) {
     return queryMethods.getAgentChanges.call(this, limit);
   }
-  async revertAgentChange(snapshotId) {
-    return queryMethods.revertAgentChange.call(this, snapshotId);
+  async revertAgentChange(snapshotId, meta) {
+    return queryMethods.revertAgentChange.call(this, snapshotId, meta);
   }
   getPomodoro() {
     return queryMethods.getPomodoro.call(this);
@@ -3432,9 +3482,22 @@ var AgentServer = class {
   }
   json(response, status, payload) {
     response.writeHead(status, {
-      "Content-Type": "application/json; charset=utf-8"
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store"
     });
     response.end(JSON.stringify(payload));
+  }
+  /** Host 必须是 127.0.0.1:<port>（或 localhost），Origin 缺失或回环来源（3.1）。 */
+  isLoopbackRequest(request) {
+    var _a2, _b;
+    const host = String((_a2 = request.headers.host) != null ? _a2 : "");
+    const port = (_b = this.running) == null ? void 0 : _b.port;
+    const hostOk = host === `127.0.0.1:${port}` || host === `localhost:${port}` || host === "127.0.0.1" || host === "localhost";
+    if (!hostOk) return false;
+    const origin = request.headers.origin;
+    if (origin === void 0) return true;
+    const o = String(origin);
+    return /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(o);
   }
   async readBody(request) {
     const chunks = [];
@@ -3463,7 +3526,7 @@ var AgentServer = class {
     return parsed;
   }
   async handle(request, response) {
-    var _a2, _b, _c, _d, _e;
+    var _a2, _b, _c, _d, _e, _f;
     let failedCall = null;
     let statusCode = 200;
     const rawResponse = response;
@@ -3484,6 +3547,10 @@ var AgentServer = class {
       this.json(response, 400, { error: t("\u975E\u6CD5\u7684\u8BF7\u6C42 URL"), code: "INVALID_URL" });
       return;
     }
+    if (!this.isLoopbackRequest(request)) {
+      this.json(response, 403, { error: "forbidden host" });
+      return;
+    }
     const supplied = String((_b = request.headers.authorization) != null ? _b : "").replace(/^Bearer\s+/i, "");
     const expected = this.plugin.store.settings.agentServerToken;
     if (!expected || !tokensMatch(supplied, expected)) {
@@ -3492,6 +3559,7 @@ var AgentServer = class {
         "\u672C\u5730 API \u9274\u6743\u5931\u8D25",
         `source=${(_c = request.socket.remoteAddress) != null ? _c : "unknown"} path=${redactAuditPath(url.pathname)}`
       );
+      if (request.method === "POST") (_d = request.resume) == null ? void 0 : _d.call(request);
       this.json(response, 401, { error: "unauthorized" });
       return;
     }
@@ -3504,8 +3572,8 @@ var AgentServer = class {
         const parsed = Number(value);
         return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
       };
-      const agent = str(query.get("agent"), "") || String((_d = request.headers["x-agent"]) != null ? _d : "");
-      const loggedPath = (typeof body.path === "string" ? body.path : "") || str(query.get("path"), "");
+      const agent = str(query.get("agent"), "") || String((_e = request.headers["x-agent"]) != null ? _e : "");
+      const loggedPath = (typeof body.path === "string" ? body.path : "") || str(query.get("path"), "") || (typeof body.snapshotId === "string" ? `snapshot:${body.snapshotId}` : "");
       const tool = `${request.method} ${url.pathname}`;
       const isWrite = request.method !== "GET" && request.method !== "HEAD";
       const call = isWrite ? api.logToolCall(tool, agent, redactAuditPath(loggedPath)) : null;
@@ -3672,7 +3740,7 @@ var AgentServer = class {
             200,
             await api.updateFrontmatter(
               str(body.path),
-              (_e = body.updates) != null ? _e : {},
+              (_f = body.updates) != null ? _f : {},
               str(body.ifMatch) || void 0,
               false,
               writeMeta
@@ -3699,7 +3767,7 @@ var AgentServer = class {
           this.json(response, 200, api.getAgentChanges(num(query.get("limit"), 20)));
           return;
         case "POST /agent/revert":
-          this.json(response, 200, await api.revertAgentChange(str(body.snapshotId)));
+          this.json(response, 200, await api.revertAgentChange(str(body.snapshotId), writeMeta));
           return;
         default:
           this.json(response, 404, { error: `\u672A\u77E5\u63A5\u53E3\uFF1A${request.method} ${url.pathname}` });
@@ -4621,7 +4689,13 @@ var Store = class {
   async flush() {
     this.cancelSaveTimer();
     await this.save();
-    await this.backupChain;
+    let previous = this.backupChain;
+    for (let i = 0; i < 5; i += 1) {
+      await previous;
+      if (this.backupChain === previous) break;
+      previous = this.backupChain;
+    }
+    await previous;
   }
   async save() {
     if (this.persistenceBlocked) return;
@@ -4638,7 +4712,8 @@ var Store = class {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
         await this.plugin.saveData(this.data);
-        void this.backupData().catch((error) => {
+        const snapshotAtSave = this.data;
+        void this.backupData(false, snapshotAtSave).catch((error) => {
           logError(this, "\u81EA\u52A8\u5907\u4EFD\u5931\u8D25", error);
         });
         return;
@@ -4655,12 +4730,13 @@ var Store = class {
     }
   }
   /** 把 data.json 快照写入库内普通文件夹，按设置保留最近若干份。失败向调用方抛错。 */
-  async backupData(force = false) {
-    const next = this.backupChain.then(() => this.performBackup(force));
+  async backupData(force = false, snapshot) {
+    const data = snapshot != null ? snapshot : this.data;
+    const next = this.backupChain.then(() => this.performBackup(force, data));
     this.backupChain = next.catch(() => 0);
     return next;
   }
-  async performBackup(force) {
+  async performBackup(force, data) {
     if (!this.data.settings.backupEnabled && !force) return 0;
     const now = Date.now();
     if (!force && now - this.lastBackupAt < 36e5) return 0;
@@ -4669,7 +4745,7 @@ var Store = class {
     const date = /* @__PURE__ */ new Date();
     const stamp = `${dateKey(date)}-${String(date.getHours()).padStart(2, "0")}${String(date.getMinutes()).padStart(2, "0")}${String(date.getSeconds()).padStart(2, "0")}-${String(date.getMilliseconds()).padStart(3, "0")}-${Math.random().toString(36).slice(2, 6)}`;
     const path = folder ? `${folder}/data-${stamp}.json` : `data-${stamp}.json`;
-    await this.plugin.app.vault.adapter.write(path, JSON.stringify(this.data, null, 2));
+    await this.plugin.app.vault.adapter.write(path, JSON.stringify(data, null, 2));
     this.lastBackupAt = now;
     if (!folder) return 1;
     const keep = Math.max(1, this.data.settings.backupKeep);
@@ -6592,7 +6668,7 @@ function configSnippet(plugin, id = "opencode") {
   return JSON.stringify({ [target.rootKey]: { sediment: buildEntry(plugin, target, bridge) } }, null, 2);
 }
 function configureAgent(plugin, target) {
-  var _a2, _b, _c, _d;
+  var _a2, _b, _c, _d, _e;
   const bridge = resolveBridgePath(plugin, target);
   if (!bridge) throw new Error("\u627E\u4E0D\u5230 mcp-server/index.mjs\uFF0C\u65E0\u6CD5\u914D\u7F6E");
   const raw = readTextFile(target.configPath, "utf8");
@@ -6602,7 +6678,12 @@ function configureAgent(plugin, target) {
     const mcpEntry = { command: String(entry.command), args: entry.args, env };
     const updated = target.format === "toml" ? upsertTomlServer(raw, "sediment", mcpEntry) : upsertYamlServer(raw, "sediment", mcpEntry);
     writeTextFile(`${target.configPath}.bak`, raw, "utf8");
-    writeTextFile(target.configPath, updated, "utf8");
+    restrictFilePermissions(`${target.configPath}.bak`);
+    writeTextFileAtomic(target.configPath, updated, "utf8");
+    restrictFilePermissions(target.configPath);
+    if (!readTextFile(target.configPath, "utf8").includes("sediment")) {
+      throw new Error("\u914D\u7F6E\u5199\u5165\u6821\u9A8C\u5931\u8D25\uFF1A\u672A\u627E\u5230 sediment \u6761\u76EE");
+    }
     return;
   }
   const data = readJson(raw);
@@ -6624,12 +6705,19 @@ function configureAgent(plugin, target) {
     }
     data.mcp = mcp;
   } else {
-    const root = (_d = data[target.rootKey]) != null ? _d : {};
-    root.sediment = buildEntry(plugin, target, bridge);
-    data[target.rootKey] = root;
+    const root2 = (_d = data[target.rootKey]) != null ? _d : {};
+    root2.sediment = buildEntry(plugin, target, bridge);
+    data[target.rootKey] = root2;
   }
   writeTextFile(`${target.configPath}.bak`, raw, "utf8");
-  writeTextFile(target.configPath, JSON.stringify(data, null, 2), "utf8");
+  restrictFilePermissions(`${target.configPath}.bak`);
+  writeTextFileAtomic(target.configPath, JSON.stringify(data, null, 2), "utf8");
+  restrictFilePermissions(target.configPath);
+  const written = JSON.parse(readTextFile(target.configPath, "utf8"));
+  const root = (_e = written[target.rootKey]) != null ? _e : {};
+  if (!root.sediment && !(root.servers && root.servers.sediment)) {
+    throw new Error("\u914D\u7F6E\u5199\u5165\u6821\u9A8C\u5931\u8D25\uFF1A\u672A\u627E\u5230 sediment \u6761\u76EE");
+  }
 }
 
 // src/features/uninstall.ts

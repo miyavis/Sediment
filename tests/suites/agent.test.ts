@@ -277,6 +277,41 @@ test("H7：语义检索遵守白名单模式，越权文档不出现在结果与
   assert.ok(!paths.includes("私有/乙.md"), "白名单外文档必须被过滤");
 });
 
+test("addKnowledge：frontmatter 值中的换行被单行化，防注入（3.3）", async () => {
+  const created: Array<{ path: string; content: string }> = [];
+  const plugin = {
+    store: {
+      settings: settings({ agentWorkMode: "auto" }),
+      data: { snapshots: [] },
+      logDiagnostic: () => {},
+      updateDay: () => {},
+    },
+    app: {
+      vault: {
+        getAbstractFileByPath: () => null,
+        createFolder: async () => {},
+        create: async (p: string, c: string) => { created.push({ path: p, content: c }); return new TFileStub(p); },
+      },
+      metadataCache: { getFileCache: () => undefined },
+    },
+    tracker: { markAgentWrite: () => {} },
+  };
+  const api = new AgentApi(plugin as never);
+  await api.addKnowledge({
+    title: "测试",
+    content: "正文",
+    category: "技术\n恶意字段: injected",
+    agent: "evil\nSediment_status: accepted",
+  });
+  const content = created[0].content;
+  // 不得出现被注入的独立 frontmatter 行。
+  assert.doesNotMatch(content, /^恶意字段: injected$/m);
+  assert.doesNotMatch(content, /^Sediment_status: accepted$/m);
+  const fm = content.split("---")[1];
+  // 换行被替换为空格，仍在单行内。
+  assert.match(fm, /category: 技术/);
+});
+
 test("M1：addKnowledge 非法 category 回退默认分类并说明", async () => {
   const created: Array<{ path: string; content: string }> = [];
   const plugin = {
