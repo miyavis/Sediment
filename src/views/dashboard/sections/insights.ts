@@ -20,6 +20,12 @@ import { appendSvg } from "../../../utils/dom";
 import { RANGE_OPTIONS, WEEKDAYS, startOfWeekFor } from "../constants";
 import type { DashboardView } from "../../dashboard-view";
 
+function renderStatusItem(grid: HTMLElement, label: string, value: string): void {
+  const box = grid.createDiv({ cls: "sd-status-item" });
+  box.createDiv({ cls: "sd-mini-label", text: label });
+  box.createDiv({ cls: "sd-mini-value", text: value });
+}
+
 export function renderInsights(view: DashboardView, root: HTMLElement): void {
   const body = root.createDiv({ cls: "sd-body" });
   const subnav = body.createDiv({ cls: "sd-subnav" });
@@ -89,11 +95,7 @@ export function renderInsightsSummary(view: DashboardView, root: HTMLElement): v
   const pending = store.data.memos.filter((memo) => !memo.converted && !memo.archived).length;
   const tasks = store.data.memos.filter((memo) => memo.tags.includes("to-agent") && !memo.converted).length;
   const grid = card.createDiv({ cls: "sd-status-grid" });
-  const item = (label: string, value: string): void => {
-    const box = grid.createDiv({ cls: "sd-status-item" });
-    box.createDiv({ cls: "sd-mini-label", text: label });
-    box.createDiv({ cls: "sd-mini-value", text: value });
-  };
+  const item = (label: string, value: string) => renderStatusItem(grid, label, value);
   item(t("近 7 天贡献"), String(contribution));
   item(t("近 7 天新增词"), String(words));
   item(t("未处理速记"), String(pending));
@@ -125,11 +127,7 @@ export function renderKnowledgeState(view: DashboardView, root: HTMLElement): vo
     text: t("实时扫描，与历史活动统计口径不同：删除/移动会立即反映在这里。"),
   });
   const grid = card.createDiv({ cls: "sd-status-grid" });
-  const item = (label: string, value: string): void => {
-    const box = grid.createDiv({ cls: "sd-status-item" });
-    box.createDiv({ cls: "sd-mini-label", text: label });
-    box.createDiv({ cls: "sd-mini-value", text: value });
-  };
+  const item = (label: string, value: string) => renderStatusItem(grid, label, value);
   item(t("知识笔记"), String(state.total));
   item(t("待审草稿"), String(state.drafts));
   item(t("已采纳"), String(state.accepted));
@@ -503,6 +501,9 @@ export function renderHeatmap(view: DashboardView, root: HTMLElement): void {
   }
 }
 
+// 用 store.getDay 的返回结构作为 days 元素类型，避免与具体 Record 形状耦合。
+type AnalyticsDay = ReturnType<DashboardView["plugin"]["store"]["getDay"]>;
+
 export function renderAnalytics(
   view: DashboardView,
   root: HTMLElement,
@@ -513,6 +514,17 @@ export function renderAnalytics(
   const label = t(RANGE_OPTIONS.find((range) => range[0] === view.range)?.[1] ?? "");
 
   if (section === "all" || section === "trend") {
+    renderTrendSection(view, root, days, label);
+  }
+  if (section === "all" || section === "folders") {
+    renderFoldersSection(view, root, days);
+  }
+  if (section === "all" || section === "rhythm") {
+    renderRhythmSection(view, root, days, keys);
+  }
+}
+
+function renderTrendSection(view: DashboardView, root: HTMLElement, days: AnalyticsDay[], label: string): void {
     const trend = view.analyticsCard(root, t("写作与时间趋势"), label);
     trend.setAttribute("id", "sd-trend");
     const trendTabs = trend.querySelector(".sd-card-head")?.createDiv({ cls: "sd-trend-tabs" });
@@ -585,9 +597,9 @@ export function renderAnalytics(
       });
       trendContent.createDiv({ cls: "sd-card-sub", text: tf("逐步写入 {typed} 字 · 大段捕获 {captured} 字", { typed, captured }) });
     }
-  }
+}
 
-  if (section === "all" || section === "folders") {
+function renderFoldersSection(view: DashboardView, root: HTMLElement, days: AnalyticsDay[]): void {
     const folders = view.analyticsCard(root, t("投入去向"), t("按目录统计（笔记 × 天）"));
     folders.setAttribute("id", "sd-folders");
     const folderTotals = new Map<string, number>();
@@ -615,9 +627,9 @@ export function renderAnalytics(
         view.render();
       };
     }
-  }
+}
 
-  if (section === "all" || section === "rhythm") {
+function renderRhythmSection(view: DashboardView, root: HTMLElement, days: AnalyticsDay[], keys: string[]): void {
     const rhythm = view.analyticsCard(root, t("投入节律矩阵"), t("六项指标按天对齐"));
     const rhythmHead = rhythm.querySelector(".sd-card-head");
     const rhythmTabs = rhythmHead?.createDiv({ cls: "sd-trend-tabs" });
@@ -691,7 +703,6 @@ export function renderAnalytics(
         cell.setAttribute("style", `background:var(--interactive-accent);opacity:${value > 0 ? 0.1 + 0.9 * (value / maxima[index]) : 0.04}`);
       });
     }
-  }
 }
 
 export function renderYearly(view: DashboardView, root: HTMLElement): void {

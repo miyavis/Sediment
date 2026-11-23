@@ -93,5 +93,5 @@ export function aggregateStrata(source: StrataSource, range: StrataRange): Strat
     bucket.tasks += positive(day.tasksCompleted);
     bucket.focus += positive(day.focusMinutes);
   }
-  return months.map((month) => buckets.get(month)!);
+  return months.map((month) => buckets.get(month)).filter((bucket): bucket is NonNullable<typeof bucket> => bucket !== undefined);
 }

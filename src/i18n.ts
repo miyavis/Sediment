@@ -281,6 +281,7 @@ const EN: Record<string, string> = {
   "逗号分隔；这些目录对 Agent 的读写和搜索全部隐藏。": "Comma separated; hidden from agent read/write/search.",
   "Agent 禁止访问的标签": "Tags denied to Agent",
   "逗号分隔；带这些标签的笔记对 Agent 不可读。": "Comma separated; notes with these tags are unreadable to agents.",
+  "逗号分隔；带这些标签的笔记对 Agent 不可读写。": "Comma separated; notes with these tags are unreadable and unwritable to agents.",
   "Agent 权限（可选）": "Agent permissions (optional)",
   "基础": "Basics",
   "数据备份": "Data backup",

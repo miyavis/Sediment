@@ -392,6 +392,7 @@ var EN = {
   "\u9017\u53F7\u5206\u9694\uFF1B\u8FD9\u4E9B\u76EE\u5F55\u5BF9 Agent \u7684\u8BFB\u5199\u548C\u641C\u7D22\u5168\u90E8\u9690\u85CF\u3002": "Comma separated; hidden from agent read/write/search.",
   "Agent \u7981\u6B62\u8BBF\u95EE\u7684\u6807\u7B7E": "Tags denied to Agent",
   "\u9017\u53F7\u5206\u9694\uFF1B\u5E26\u8FD9\u4E9B\u6807\u7B7E\u7684\u7B14\u8BB0\u5BF9 Agent \u4E0D\u53EF\u8BFB\u3002": "Comma separated; notes with these tags are unreadable to agents.",
+  "\u9017\u53F7\u5206\u9694\uFF1B\u5E26\u8FD9\u4E9B\u6807\u7B7E\u7684\u7B14\u8BB0\u5BF9 Agent \u4E0D\u53EF\u8BFB\u5199\u3002": "Comma separated; notes with these tags are unreadable and unwritable to agents.",
   "Agent \u6743\u9650\uFF08\u53EF\u9009\uFF09": "Agent permissions (optional)",
   "\u57FA\u7840": "Basics",
   "\u6570\u636E\u5907\u4EFD": "Data backup",
@@ -1966,6 +1967,16 @@ function parseBridgeProposal(id, raw) {
   };
 }
 
+// src/agent/errors.ts
+var AGENT_API_VERSION = 1;
+var ApiError = class extends Error {
+  constructor(code, message, status = 400) {
+    super(message);
+    this.code = code;
+    this.status = status;
+  }
+};
+
 // src/agent/api-review.ts
 var reviewMethods = {
   isConfirmMode() {
@@ -2316,14 +2327,6 @@ function stampAgentProvenance(content, agent, today) {
 function generateToken() {
   return Array.from(crypto.getRandomValues(new Uint8Array(16))).map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
-var AGENT_API_VERSION = 1;
-var ApiError = class extends Error {
-  constructor(code, message, status = 400) {
-    super(message);
-    this.code = code;
-    this.status = status;
-  }
-};
 function safeAgentPath(input, configDir) {
   const path = (0, import_obsidian4.normalizePath)(String(input != null ? input : "")).replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+/g, "/");
   if (!path) throw new ApiError("EMPTY_PATH", "\u8DEF\u5F84\u4E0D\u80FD\u4E3A\u7A7A");
@@ -6268,6 +6271,7 @@ function yamlEntry(id, indent, entry) {
   return lines;
 }
 function upsertYamlServer(raw, id, entry) {
+  var _a2, _b, _c, _d;
   const lines = raw.split("\n");
   const out = [];
   const idRe = new RegExp(`^(\\s*)${id}\\s*:`);
@@ -6284,11 +6288,11 @@ function upsertYamlServer(raw, id, entry) {
       const childIndent = `${serversIndent}  `;
       while (i < lines.length) {
         const cur = lines[i];
-        if (cur.trim() && !/^\s/.test(cur) && cur.match(/^(\s*)/)[1].length <= serversIndent.length) break;
+        if (cur.trim() && !/^\s/.test(cur) && ((_b = (_a2 = cur.match(/^(\s*)/)) == null ? void 0 : _a2[1].length) != null ? _b : 0) <= serversIndent.length) break;
         const idMatch = cur.match(idRe);
         if (idMatch && idMatch[1].length === childIndent.length) {
           i += 1;
-          while (i < lines.length && (lines[i].trim() === "" || /^(\s*)/.exec(lines[i])[1].length > idMatch[1].length)) i += 1;
+          while (i < lines.length && (lines[i].trim() === "" || ((_d = (_c = /^(\s*)/.exec(lines[i])) == null ? void 0 : _c[1].length) != null ? _d : 0) > idMatch[1].length)) i += 1;
           out.push(...yamlEntry(id, childIndent, entry));
           done = true;
           continue;
@@ -6315,6 +6319,7 @@ function removeTomlServer(raw, id) {
   return stripTomlSection(raw, id);
 }
 function removeYamlServer(raw, id) {
+  var _a2, _b;
   const lines = raw.split("\n");
   const out = [];
   const idRe = new RegExp(`^(\\s*)${id}\\s*:`);
@@ -6325,7 +6330,7 @@ function removeYamlServer(raw, id) {
     if (idMatch) {
       const indent = idMatch[1].length;
       i += 1;
-      while (i < lines.length && (lines[i].trim() === "" || /^(\s*)/.exec(lines[i])[1].length > indent)) i += 1;
+      while (i < lines.length && (lines[i].trim() === "" || ((_b = (_a2 = /^(\s*)/.exec(lines[i])) == null ? void 0 : _a2[1].length) != null ? _b : 0) > indent)) i += 1;
       continue;
     }
     out.push(line);
@@ -6950,6 +6955,15 @@ function installAgentsGuide(vault) {
   return true;
 }
 
+// src/agent/work-mode.ts
+var WORK_MODES = ["readonly", "draft", "confirm", "auto"];
+var WORK_MODE_LABELS = {
+  readonly: "\u53EA\u8BFB",
+  draft: "\u8349\u7A3F",
+  confirm: "\u786E\u8BA4\u540E\u5199\u5165",
+  auto: "\u81EA\u52A8\u6267\u884C"
+};
+
 // src/ui/confirm-modal.ts
 var import_obsidian15 = require("obsidian");
 function confirmAction(app, message, cta = t("\u7EE7\u7EED")) {
@@ -7057,12 +7071,6 @@ var SETTINGS_SECTIONS = [
 ];
 
 // src/ui/settings-tab.ts
-var WORK_MODE_LABELS = {
-  readonly: "\u53EA\u8BFB",
-  draft: "\u8349\u7A3F",
-  confirm: "\u786E\u8BA4\u540E\u5199\u5165",
-  auto: "\u81EA\u52A8\u6267\u884C"
-};
 var PulseSettingTab = class extends import_obsidian16.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
@@ -7115,8 +7123,10 @@ var PulseSettingTab = class extends import_obsidian16.PluginSettingTab {
     for (const section of SETTINGS_SECTIONS) {
       if (simple && !SIMPLE_SECTIONS.has(section.id)) continue;
       new import_obsidian16.Setting(containerEl).setName(t(section.title)).setHeading();
-      if (section.id === "basics") this.renderBasics(containerEl, settings, save);
-      else if (section.id === "agent") this.renderAgent(containerEl, settings, save);
+      if (section.id === "basics") {
+        this.renderBasics(containerEl, settings, save);
+        this.renderDisplaySettings(containerEl, settings, save);
+      } else if (section.id === "agent") this.renderAgent(containerEl, settings, save);
       else if (section.id === "backup") this.renderBackup(containerEl, settings, save);
       else if (section.id === "stats") this.renderStats(containerEl, settings, save);
       else if (section.id === "search") this.renderSearch(containerEl, settings, save);
@@ -7186,6 +7196,9 @@ var PulseSettingTab = class extends import_obsidian16.PluginSettingTab {
         save();
       })
     );
+  }
+  /** 迁移、实验性开关与显示相关的基础设置。 */
+  renderDisplaySettings(containerEl, settings, save) {
     const migrationSetting = new import_obsidian16.Setting(containerEl).setName(t("\u65E7\u7248\u76EE\u5F55\u8FC1\u79FB")).setDesc(
       t("\u628A\u65E7\u9ED8\u8BA4\u76EE\u5F55\uFF08daily\u3001reviews\u3001agent-logs\u3001knowledge\u3001sediment-backup\uFF09\u6574\u4F53\u79FB\u5165 Sediment/\uFF0C\u907F\u514D\u4E0E\u5E93\u5185\u5DF2\u6709\u76EE\u5F55\u649E\u540D\u3002\u4EC5\u8FC1\u79FB\u4ECD\u662F\u65E7\u9ED8\u8BA4\u503C\u7684\u76EE\u5F55\uFF0C\u81EA\u5B9A\u4E49\u8DEF\u5F84\u4E0D\u53D7\u5F71\u54CD\u3002")
     ).addButton(
@@ -7250,14 +7263,19 @@ var PulseSettingTab = class extends import_obsidian16.PluginSettingTab {
     );
   }
   renderAgent(containerEl, settings, save) {
-    new import_obsidian16.Setting(containerEl).setName(t("Agent \u5DE5\u4F5C\u6A21\u5F0F")).setDesc(t("\u9009\u62E9\u53EA\u8BFB\u3001\u8349\u7A3F\u3001\u786E\u8BA4\u540E\u5199\u5165\u6216\u81EA\u52A8\u6267\u884C\uFF1B\u300C\u786E\u8BA4\u540E\u5199\u5165\u300D\u6863\u4E0B Agent \u7684\u5199\u64CD\u4F5C\u4F1A\u6302\u8D77\u4E3A\u5F85\u5BA1\u9879\uFF0C\u5728\u770B\u677F\u300C\u5F85\u5BA1\u5199\u5165\u300D\u4E2D\u91C7\u7EB3\u540E\u624D\u843D\u76D8\u3002\u5B9E\u9645\u6743\u9650\u4ECD\u53D7\u4E0B\u65B9\u5F00\u5173\u7EA6\u675F\u3002")).addDropdown(
-      (dropdown) => dropdown.addOption("readonly", t("\u53EA\u8BFB")).addOption("draft", t("\u8349\u7A3F")).addOption("confirm", t("\u786E\u8BA4\u540E\u5199\u5165")).addOption("auto", t("\u81EA\u52A8\u6267\u884C")).setValue(settings.agentWorkMode).onChange((value) => {
-        var _a2;
+    this.renderWorkModeSection(containerEl, settings, save);
+    this.renderPermissionSection(containerEl, settings, save);
+    this.renderAgentFoldersSection(containerEl, settings, save);
+  }
+  renderWorkModeSection(containerEl, settings, save) {
+    new import_obsidian16.Setting(containerEl).setName(t("Agent \u5DE5\u4F5C\u6A21\u5F0F")).setDesc(t("\u9009\u62E9\u53EA\u8BFB\u3001\u8349\u7A3F\u3001\u786E\u8BA4\u540E\u5199\u5165\u6216\u81EA\u52A8\u6267\u884C\uFF1B\u300C\u786E\u8BA4\u540E\u5199\u5165\u300D\u6863\u4E0B Agent \u7684\u5199\u64CD\u4F5C\u4F1A\u6302\u8D77\u4E3A\u5F85\u5BA1\u9879\uFF0C\u5728\u770B\u677F\u300C\u5F85\u5BA1\u5199\u5165\u300D\u4E2D\u91C7\u7EB3\u540E\u624D\u843D\u76D8\u3002\u5B9E\u9645\u6743\u9650\u4ECD\u53D7\u4E0B\u65B9\u5F00\u5173\u7EA6\u675F\u3002")).addDropdown((dropdown) => {
+      for (const mode of WORK_MODES) dropdown.addOption(mode, t(WORK_MODE_LABELS[mode]));
+      dropdown.setValue(settings.agentWorkMode).onChange((value) => {
         const next = value;
         if (next === settings.agentWorkMode) return;
         void confirmAction(this.app, tf(
           "\u5207\u6362\u4E3A\u300C{mode}\u300D\u5C06\u91CD\u7F6E 5 \u4E2A\u6743\u9650\u5F00\u5173\uFF1A\u5141\u8BB8\u8BFB\u53D6\u3001\u5141\u8BB8\u65B0\u5EFA\u3001\u5141\u8BB8\u5C40\u90E8\u4FEE\u6539\u3001\u5141\u8BB8\u5168\u91CF\u8986\u76D6\u3001\u5141\u8BB8\u5220\u9664\uFF08\u5220\u9664\u59CB\u7EC8\u5173\u95ED\uFF09\u3002\u662F\u5426\u7EE7\u7EED\uFF1F",
-          { mode: t((_a2 = WORK_MODE_LABELS[next]) != null ? _a2 : next) }
+          { mode: t(WORK_MODE_LABELS[next]) }
         )).then((ok) => {
           if (!ok) {
             dropdown.setValue(settings.agentWorkMode);
@@ -7286,8 +7304,10 @@ var PulseSettingTab = class extends import_obsidian16.PluginSettingTab {
           save();
           this.renderSettings();
         });
-      })
-    );
+      });
+    });
+  }
+  renderPermissionSection(containerEl, settings, save) {
     new import_obsidian16.Setting(containerEl).setName(t("\u8BBF\u95EE\u6A21\u5F0F")).setDesc(t("allowlist \u6A21\u5F0F\u4E0B Agent \u53EA\u80FD\u8BBF\u95EE\u4E0B\u65B9\u767D\u540D\u5355\u76EE\u5F55\u3002\u9ED8\u8BA4\u5168\u5E93\uFF0C\u4F46\u7CFB\u7EDF\u76EE\u5F55\u59CB\u7EC8\u7981\u6B62\u3002")).addDropdown(
       (dropdown) => dropdown.addOption("allow-all", t("\u5168\u5E93\u53EF\u8BBF\u95EE\uFF08\u9ED8\u8BA4\uFF09")).addOption("allowlist", t("\u4EC5\u767D\u540D\u5355\u76EE\u5F55")).setValue(settings.agentAccessMode).onChange((value) => {
         settings.agentAccessMode = value;
@@ -7330,6 +7350,8 @@ var PulseSettingTab = class extends import_obsidian16.PluginSettingTab {
         save();
       })
     );
+  }
+  renderAgentFoldersSection(containerEl, settings, save) {
     new import_obsidian16.Setting(containerEl).setName(t("Agent \u5DE5\u4F5C\u65E5\u5FD7\u76EE\u5F55")).setDesc(t("\u667A\u80FD\u4F53\u6BCF\u6B21\u5DE5\u4F5C\u7684\u6C89\u6DC0\u65E5\u5FD7\uFF0C\u9ED8\u8BA4\u6309\u5929\u5199\u5165\u4E00\u4E2A\u6587\u4EF6\u3002")).addText(
       (text) => text.setPlaceholder("Sediment/agent-logs").setValue(settings.workLogFolder).onChange((value) => {
         settings.workLogFolder = value;
@@ -7355,7 +7377,7 @@ var PulseSettingTab = class extends import_obsidian16.PluginSettingTab {
         save();
       })
     );
-    new import_obsidian16.Setting(containerEl).setName(t("Agent \u7981\u6B62\u8BBF\u95EE\u7684\u6807\u7B7E")).setDesc(t("\u9017\u53F7\u5206\u9694\uFF1B\u5E26\u8FD9\u4E9B\u6807\u7B7E\u7684\u7B14\u8BB0\u5BF9 Agent \u4E0D\u53EF\u8BFB\u3002")).addText(
+    new import_obsidian16.Setting(containerEl).setName(t("Agent \u7981\u6B62\u8BBF\u95EE\u7684\u6807\u7B7E")).setDesc(t("\u9017\u53F7\u5206\u9694\uFF1B\u5E26\u8FD9\u4E9B\u6807\u7B7E\u7684\u7B14\u8BB0\u5BF9 Agent \u4E0D\u53EF\u8BFB\u5199\u3002")).addText(
       (text) => text.setPlaceholder("\u4F8B\u5982\uFF1A\u79C1\u5BC6,\u5BC6\u7801").setValue(settings.deniedTags).onChange((value) => {
         settings.deniedTags = value;
         save();
@@ -8397,7 +8419,7 @@ function renderAgentStatus(view, root) {
   paintAgentStatus(view, card);
 }
 function renderDrafts(view, root) {
-  var _a2, _b, _c;
+  var _a2, _b;
   const drafts = view.agentScan().drafts;
   if (drafts.length === 0) {
     auditEmptyCard(root, t("AI \u6C89\u6DC0\u5BA1\u6838"), t("\u6682\u65E0\u8349\u7A3F\uFF1BAgent \u4EA7\u51FA\u7684\u6C89\u6DC0\u4F1A\u8FDB\u5165\u8FD9\u91CC\u7B49\u5F85\u5BA1\u6838\u3002"));
@@ -8406,15 +8428,10 @@ function renderDrafts(view, root) {
   const card = root.createDiv({ cls: "sd-card" });
   const head = card.createDiv({ cls: "sd-card-head" });
   head.createDiv({ cls: "sd-card-title", text: t("AI \u6C89\u6DC0\u5BA1\u6838") });
-  const modeLabels = {
-    readonly: t("\u53EA\u8BFB"),
-    draft: t("\u8349\u7A3F"),
-    confirm: t("\u786E\u8BA4\u540E\u5199\u5165"),
-    auto: t("\u81EA\u52A8\u6267\u884C")
-  };
+  const mode = view.plugin.store.settings.agentWorkMode;
   card.createDiv({
     cls: "sd-card-sub",
-    text: t("\u5F53\u524D\u5DE5\u4F5C\u6A21\u5F0F\uFF1A") + ((_a2 = modeLabels[view.plugin.store.settings.agentWorkMode]) != null ? _a2 : "confirm") + t("\u3002\u8349\u7A3F\u9700\u624B\u52A8\u5BA1\u6838\uFF1B\u300C\u786E\u8BA4\u540E\u5199\u5165\u300D\u6863\u4E0B Agent \u7684\u5199\u64CD\u4F5C\u4F1A\u6302\u8D77\u5728\u300C\u5F85\u5BA1\u5199\u5165\u300D\u5217\u8868\uFF0C\u91C7\u7EB3\u540E\u624D\u843D\u76D8\uFF1B\u300C\u81EA\u52A8\u6267\u884C\u300D\u6863\u4E0D\u6302\u8D77\u3002")
+    text: t("\u5F53\u524D\u5DE5\u4F5C\u6A21\u5F0F\uFF1A") + (WORK_MODE_LABELS[mode] ? t(WORK_MODE_LABELS[mode]) : mode) + t("\u3002\u8349\u7A3F\u9700\u624B\u52A8\u5BA1\u6838\uFF1B\u300C\u786E\u8BA4\u540E\u5199\u5165\u300D\u6863\u4E0B Agent \u7684\u5199\u64CD\u4F5C\u4F1A\u6302\u8D77\u5728\u300C\u5F85\u5BA1\u5199\u5165\u300D\u5217\u8868\uFF0C\u91C7\u7EB3\u540E\u624D\u843D\u76D8\uFF1B\u300C\u81EA\u52A8\u6267\u884C\u300D\u6863\u4E0D\u6302\u8D77\u3002")
   });
   if (drafts.length > 20) head.createDiv({ cls: "sd-card-sub", text: tf("\u5171 {n} \u4EFD\u8349\u7A3F", { n: drafts.length }) });
   const list = card.createDiv({ cls: "sd-draft-list" });
@@ -8423,7 +8440,7 @@ function renderDrafts(view, root) {
     const title = item.createEl("button", { cls: "sd-draft-title", text: file.basename });
     title.onclick = () => void view.plugin.app.workspace.openLinkText(file.path, "", false);
     const cache = view.plugin.app.metadataCache.getFileCache(file);
-    const category = String((_c = (_b = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _b.category) != null ? _c : t("\u672A\u5206\u7C7B"));
+    const category = String((_b = (_a2 = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a2.category) != null ? _b : t("\u672A\u5206\u7C7B"));
     item.createDiv({ cls: "sd-card-sub", text: `${category} \xB7 ${file.path}` });
     const actions = item.createDiv({ cls: "sd-draft-actions" });
     actions.createEl("button", { text: t("\u67E5\u770B\u539F\u6587") }).onclick = () => {
@@ -8779,10 +8796,15 @@ function aggregateStrata(source, range) {
     bucket.tasks += positive(day.tasksCompleted);
     bucket.focus += positive(day.focusMinutes);
   }
-  return months.map((month) => buckets.get(month));
+  return months.map((month) => buckets.get(month)).filter((bucket) => bucket !== void 0);
 }
 
 // src/views/dashboard/sections/insights.ts
+function renderStatusItem(grid, label, value) {
+  const box = grid.createDiv({ cls: "sd-status-item" });
+  box.createDiv({ cls: "sd-mini-label", text: label });
+  box.createDiv({ cls: "sd-mini-value", text: value });
+}
 function renderInsights(view, root) {
   const body = root.createDiv({ cls: "sd-body" });
   const subnav = body.createDiv({ cls: "sd-subnav" });
@@ -8848,11 +8870,7 @@ function renderInsightsSummary(view, root) {
   const pending = store.data.memos.filter((memo) => !memo.converted && !memo.archived).length;
   const tasks = store.data.memos.filter((memo) => memo.tags.includes("to-agent") && !memo.converted).length;
   const grid = card.createDiv({ cls: "sd-status-grid" });
-  const item = (label, value) => {
-    const box = grid.createDiv({ cls: "sd-status-item" });
-    box.createDiv({ cls: "sd-mini-label", text: label });
-    box.createDiv({ cls: "sd-mini-value", text: value });
-  };
+  const item = (label, value) => renderStatusItem(grid, label, value);
   item(t("\u8FD1 7 \u5929\u8D21\u732E"), String(contribution));
   item(t("\u8FD1 7 \u5929\u65B0\u589E\u8BCD"), String(words));
   item(t("\u672A\u5904\u7406\u901F\u8BB0"), String(pending));
@@ -8880,11 +8898,7 @@ function renderKnowledgeState(view, root) {
     text: t("\u5B9E\u65F6\u626B\u63CF\uFF0C\u4E0E\u5386\u53F2\u6D3B\u52A8\u7EDF\u8BA1\u53E3\u5F84\u4E0D\u540C\uFF1A\u5220\u9664/\u79FB\u52A8\u4F1A\u7ACB\u5373\u53CD\u6620\u5728\u8FD9\u91CC\u3002")
   });
   const grid = card.createDiv({ cls: "sd-status-grid" });
-  const item = (label, value) => {
-    const box = grid.createDiv({ cls: "sd-status-item" });
-    box.createDiv({ cls: "sd-mini-label", text: label });
-    box.createDiv({ cls: "sd-mini-value", text: value });
-  };
+  const item = (label, value) => renderStatusItem(grid, label, value);
   item(t("\u77E5\u8BC6\u7B14\u8BB0"), String(state.total));
   item(t("\u5F85\u5BA1\u8349\u7A3F"), String(state.drafts));
   item(t("\u5DF2\u91C7\u7EB3"), String(state.accepted));
@@ -9210,185 +9224,197 @@ function renderHeatmap(view, root) {
   }
 }
 function renderAnalytics(view, root, section = "all") {
-  var _a2, _b, _c, _d, _e;
+  var _a2, _b;
   const keys = view.chartKeys();
   const days = keys.map((key) => view.plugin.store.getDay(key));
   const label = t((_b = (_a2 = RANGE_OPTIONS.find((range) => range[0] === view.range)) == null ? void 0 : _a2[1]) != null ? _b : "");
   if (section === "all" || section === "trend") {
-    const trend = view.analyticsCard(root, t("\u5199\u4F5C\u4E0E\u65F6\u95F4\u8D8B\u52BF"), label);
-    trend.setAttribute("id", "sd-trend");
-    const trendTabs = (_c = trend.querySelector(".sd-card-head")) == null ? void 0 : _c.createDiv({ cls: "sd-trend-tabs" });
-    const trendOptions = [
-      ["writing", t("\u6BCF\u65E5\u5199\u4F5C")],
-      ["changes", t("\u5199\u4F5C\u53D8\u5316")],
-      ["time", t("\u65F6\u95F4\u6295\u5165")],
-      ["source", t("\u5199\u4F5C\u6765\u6E90")]
-    ];
-    for (const [key, title] of trendOptions) {
-      const button = trendTabs == null ? void 0 : trendTabs.createEl("button", {
-        cls: key === view.trendTab ? "is-active" : "",
-        text: title
-      });
-      if (button) button.onclick = () => {
-        view.trendTab = key;
-        view.render();
-      };
-    }
-    const trendContent = trend.createDiv({ cls: "sd-trend-content" });
-    if (view.trendTab === "writing") {
-      const writingValues = days.map((day) => day.wordsAdded);
-      const goal = view.plugin.store.settings.dailyWordGoal || 0;
-      const writingMean = mean(writingValues);
-      const writingRefs = [];
-      if (goal > 0) writingRefs.push({ value: goal, label: tf("\u76EE\u6807 {n}", { n: goal }), color: "var(--text-accent)" });
-      if (writingMean > 0) writingRefs.push({ value: writingMean, label: tf("\u5747\u503C {n}", { n: Math.round(writingMean) }) });
-      appendSvg(trendContent, barChart(writingValues, "var(--interactive-accent)", writingRefs));
-    } else if (view.trendTab === "changes") {
-      const addedValues = days.map((day) => day.wordsAdded);
-      const addedMean = mean(addedValues);
-      const changeSeries = [
-        { values: addedValues, color: "var(--interactive-accent)", label: t("\u65B0\u589E") },
-        { values: days.map((day) => day.wordsRemoved), color: "var(--text-faint)", label: t("\u79FB\u9664") },
-        { values: days.map((day) => day.capturedWords), color: "var(--text-muted)", label: t("\u6355\u83B7") }
-      ];
-      appendSvg(
-        trendContent,
-        multiLine(
-          changeSeries,
-          addedMean > 0 ? [{ value: addedMean, label: tf("\u65B0\u589E\u5747\u503C {n}", { n: Math.round(addedMean) }) }] : []
-        )
-      );
-      renderChartLegend(trendContent, changeSeries);
-    } else if (view.trendTab === "time") {
-      const activeValues = days.map((day) => day.activeMinutes);
-      const activeMean = mean(activeValues);
-      const timeSeries = [
-        { values: activeValues, color: "var(--interactive-accent)", label: t("\u6D3B\u8DC3") },
-        { values: days.map((day) => day.focusMinutes), color: "var(--text-faint)", label: t("\u4E13\u6CE8") }
-      ];
-      appendSvg(
-        trendContent,
-        multiLine(
-          timeSeries,
-          activeMean > 0 ? [{ value: activeMean, label: tf("\u6D3B\u8DC3\u5747\u503C {n}", { n: Math.round(activeMean) }) }] : []
-        )
-      );
-      renderChartLegend(trendContent, timeSeries);
-    } else {
-      const totalWords = days.reduce((sum, day) => sum + day.wordsAdded, 0);
-      const captured = days.reduce((sum, day) => sum + day.capturedWords, 0);
-      const typed2 = Math.max(0, totalWords - captured);
-      const bar = trendContent.createDiv({ cls: "sd-source-bar" });
-      bar.createDiv({ cls: "sd-source-typed" }).setCssStyles({
-        width: `${totalWords ? typed2 / totalWords * 100 : 0}%`
-      });
-      bar.createDiv({ cls: "sd-source-capture" }).setCssStyles({
-        width: `${totalWords ? captured / totalWords * 100 : 0}%`
-      });
-      trendContent.createDiv({ cls: "sd-card-sub", text: tf("\u9010\u6B65\u5199\u5165 {typed} \u5B57 \xB7 \u5927\u6BB5\u6355\u83B7 {captured} \u5B57", { typed: typed2, captured }) });
-    }
+    renderTrendSection(view, root, days, label);
   }
   if (section === "all" || section === "folders") {
-    const folders = view.analyticsCard(root, t("\u6295\u5165\u53BB\u5411"), t("\u6309\u76EE\u5F55\u7EDF\u8BA1\uFF08\u7B14\u8BB0 \xD7 \u5929\uFF09"));
-    folders.setAttribute("id", "sd-folders");
-    const folderTotals = /* @__PURE__ */ new Map();
-    for (const day of days) {
-      for (const [folder, words] of Object.entries(day.folderWords)) {
-        folderTotals.set(folder, ((_d = folderTotals.get(folder)) != null ? _d : 0) + words);
-      }
-    }
-    const sortedFolders = [...folderTotals.entries()].sort((a, b) => b[1] - a[1]);
-    const folderWordsTotal = sortedFolders.reduce((sum, [, words]) => sum + words, 0);
-    const folderList = folders.createDiv({ cls: "sd-folder-list" });
-    for (const [index, [folder, words]] of (view.foldersExpanded ? sortedFolders.slice(0, 20) : sortedFolders.slice(0, 6)).entries()) {
-      const row = folderList.createDiv({ cls: "sd-folder-row" });
-      row.createSpan({ cls: "sd-folder-rank", text: String(index + 1) });
-      row.createSpan({ cls: "sd-folder-name", text: folder || "/", attr: { title: folder || "/" } });
-      const track = row.createDiv({ cls: "sd-folder-track" });
-      const percent = folderWordsTotal > 0 ? words / folderWordsTotal * 100 : 0;
-      track.createDiv({ cls: "sd-folder-fill" }).setCssStyles({ width: `${percent}%` });
-      row.createEl("strong", { text: tf("{words} \u5B57 \xB7 {percent}%", { words, percent: percent.toFixed(0) }) });
-    }
-    if (sortedFolders.length > 6) {
-      folders.createEl("button", { text: view.foldersExpanded ? t("\u6536\u8D77") : tf("\u5C55\u5F00\u5176\u4F59 {n} \u9879", { n: sortedFolders.length - 6 }) }).onclick = () => {
-        view.foldersExpanded = !view.foldersExpanded;
-        view.render();
-      };
-    }
+    renderFoldersSection(view, root, days);
   }
   if (section === "all" || section === "rhythm") {
-    const rhythm = view.analyticsCard(root, t("\u6295\u5165\u8282\u5F8B\u77E9\u9635"), t("\u516D\u9879\u6307\u6807\u6309\u5929\u5BF9\u9F50"));
-    const rhythmHead = rhythm.querySelector(".sd-card-head");
-    const rhythmTabs = rhythmHead == null ? void 0 : rhythmHead.createDiv({ cls: "sd-trend-tabs" });
-    const rhythmOptions = [
-      ["matrix", t("\u8282\u5F8B\u77E9\u9635")],
-      ["hours", t("\u6D3B\u8DC3\u65F6\u6BB5")]
+    renderRhythmSection(view, root, days, keys);
+  }
+}
+function renderTrendSection(view, root, days, label) {
+  var _a2;
+  const trend = view.analyticsCard(root, t("\u5199\u4F5C\u4E0E\u65F6\u95F4\u8D8B\u52BF"), label);
+  trend.setAttribute("id", "sd-trend");
+  const trendTabs = (_a2 = trend.querySelector(".sd-card-head")) == null ? void 0 : _a2.createDiv({ cls: "sd-trend-tabs" });
+  const trendOptions = [
+    ["writing", t("\u6BCF\u65E5\u5199\u4F5C")],
+    ["changes", t("\u5199\u4F5C\u53D8\u5316")],
+    ["time", t("\u65F6\u95F4\u6295\u5165")],
+    ["source", t("\u5199\u4F5C\u6765\u6E90")]
+  ];
+  for (const [key, title] of trendOptions) {
+    const button = trendTabs == null ? void 0 : trendTabs.createEl("button", {
+      cls: key === view.trendTab ? "is-active" : "",
+      text: title
+    });
+    if (button) button.onclick = () => {
+      view.trendTab = key;
+      view.render();
+    };
+  }
+  const trendContent = trend.createDiv({ cls: "sd-trend-content" });
+  if (view.trendTab === "writing") {
+    const writingValues = days.map((day) => day.wordsAdded);
+    const goal = view.plugin.store.settings.dailyWordGoal || 0;
+    const writingMean = mean(writingValues);
+    const writingRefs = [];
+    if (goal > 0) writingRefs.push({ value: goal, label: tf("\u76EE\u6807 {n}", { n: goal }), color: "var(--text-accent)" });
+    if (writingMean > 0) writingRefs.push({ value: writingMean, label: tf("\u5747\u503C {n}", { n: Math.round(writingMean) }) });
+    appendSvg(trendContent, barChart(writingValues, "var(--interactive-accent)", writingRefs));
+  } else if (view.trendTab === "changes") {
+    const addedValues = days.map((day) => day.wordsAdded);
+    const addedMean = mean(addedValues);
+    const changeSeries = [
+      { values: addedValues, color: "var(--interactive-accent)", label: t("\u65B0\u589E") },
+      { values: days.map((day) => day.wordsRemoved), color: "var(--text-faint)", label: t("\u79FB\u9664") },
+      { values: days.map((day) => day.capturedWords), color: "var(--text-muted)", label: t("\u6355\u83B7") }
     ];
-    for (const [key, title] of rhythmOptions) {
-      const button = rhythmTabs == null ? void 0 : rhythmTabs.createEl("button", {
-        cls: key === view.rhythmTab ? "is-active" : "",
-        text: title
-      });
-      if (button) button.onclick = () => {
-        view.rhythmTab = key;
-        view.render();
-      };
+    appendSvg(
+      trendContent,
+      multiLine(
+        changeSeries,
+        addedMean > 0 ? [{ value: addedMean, label: tf("\u65B0\u589E\u5747\u503C {n}", { n: Math.round(addedMean) }) }] : []
+      )
+    );
+    renderChartLegend(trendContent, changeSeries);
+  } else if (view.trendTab === "time") {
+    const activeValues = days.map((day) => day.activeMinutes);
+    const activeMean = mean(activeValues);
+    const timeSeries = [
+      { values: activeValues, color: "var(--interactive-accent)", label: t("\u6D3B\u8DC3") },
+      { values: days.map((day) => day.focusMinutes), color: "var(--text-faint)", label: t("\u4E13\u6CE8") }
+    ];
+    appendSvg(
+      trendContent,
+      multiLine(
+        timeSeries,
+        activeMean > 0 ? [{ value: activeMean, label: tf("\u6D3B\u8DC3\u5747\u503C {n}", { n: Math.round(activeMean) }) }] : []
+      )
+    );
+    renderChartLegend(trendContent, timeSeries);
+  } else {
+    const totalWords = days.reduce((sum, day) => sum + day.wordsAdded, 0);
+    const captured = days.reduce((sum, day) => sum + day.capturedWords, 0);
+    const typed2 = Math.max(0, totalWords - captured);
+    const bar = trendContent.createDiv({ cls: "sd-source-bar" });
+    bar.createDiv({ cls: "sd-source-typed" }).setCssStyles({
+      width: `${totalWords ? typed2 / totalWords * 100 : 0}%`
+    });
+    bar.createDiv({ cls: "sd-source-capture" }).setCssStyles({
+      width: `${totalWords ? captured / totalWords * 100 : 0}%`
+    });
+    trendContent.createDiv({ cls: "sd-card-sub", text: tf("\u9010\u6B65\u5199\u5165 {typed} \u5B57 \xB7 \u5927\u6BB5\u6355\u83B7 {captured} \u5B57", { typed: typed2, captured }) });
+  }
+}
+function renderFoldersSection(view, root, days) {
+  var _a2;
+  const folders = view.analyticsCard(root, t("\u6295\u5165\u53BB\u5411"), t("\u6309\u76EE\u5F55\u7EDF\u8BA1\uFF08\u7B14\u8BB0 \xD7 \u5929\uFF09"));
+  folders.setAttribute("id", "sd-folders");
+  const folderTotals = /* @__PURE__ */ new Map();
+  for (const day of days) {
+    for (const [folder, words] of Object.entries(day.folderWords)) {
+      folderTotals.set(folder, ((_a2 = folderTotals.get(folder)) != null ? _a2 : 0) + words);
     }
-    if (view.rhythmTab === "hours") {
-      const hourly = Array.from(
-        { length: 24 },
-        (_, hour) => days.reduce((sum, day) => {
-          var _a3;
-          return sum + ((_a3 = day.hourlyWords[hour]) != null ? _a3 : 0);
-        }, 0)
-      );
-      const hourlyMean = mean(hourly);
-      appendSvg(rhythm.createDiv({ cls: "sd-chart-slot" }), barChart(
-        hourly,
-        "var(--interactive-accent)",
-        hourlyMean > 0 ? [{ value: hourlyMean, label: tf("\u5747\u503C {n}", { n: Math.round(hourlyMean) }) }] : []
-      ));
-      const weekdayHour = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0));
-      for (const key of keys) {
-        const day = view.plugin.store.getDay(key);
-        const weekday = parseKey(key).getDay();
-        for (let hour = 0; hour < 24; hour += 1) weekdayHour[weekday][hour] += (_e = day.hourlyWords[hour]) != null ? _e : 0;
-      }
-      const hourMax = Math.max(1, ...weekdayHour.flat());
-      const pattern = rhythm.createDiv({ cls: "sd-hour-grid" });
-      for (let weekday = 0; weekday < 7; weekday += 1) {
-        for (let hour = 0; hour < 24; hour += 1) {
-          const cell = pattern.createDiv({ cls: "sd-hour-cell" });
-          const ratio = weekdayHour[weekday][hour] / hourMax;
-          cell.setAttribute("style", `background:var(--interactive-accent);opacity:${ratio > 0 ? 0.1 + ratio * 0.9 : 0.05}`);
-        }
-      }
-      return;
-    }
-    if (rhythmHead) {
-      const toggle = rhythmHead.createEl("button", {
-        text: view.rhythmActiveOnly ? t("\u4EC5\u6D3B\u8DC3\u65E5\u671F") : t("\u5168\u90E8\u65E5\u671F")
-      });
-      toggle.onclick = () => {
-        view.rhythmActiveOnly = !view.rhythmActiveOnly;
-        view.render();
-      };
-    }
-    const grid = rhythm.createDiv({ cls: "sd-rhythm" });
-    const metricKeys = ["contribution", "wordsAdded", "activeMinutes", "focusMinutes", "notesCreated", "tasksCompleted"];
-    grid.createDiv({ cls: "sd-rhythm-label", text: t("\u65E5\u671F") });
-    for (const key of metricKeys) grid.createDiv({ cls: "sd-rhythm-label", text: view.shortMetric(key) });
-    const maxima = metricKeys.map((key) => Math.max(1, ...days.map((day) => Number(day[key]) || 0)));
-    const rhythmKeys = (view.rhythmActiveOnly ? keys.filter((key) => view.plugin.store.getDay(key).contribution > 0) : keys).slice(-30);
-    for (const key of rhythmKeys) {
+  }
+  const sortedFolders = [...folderTotals.entries()].sort((a, b) => b[1] - a[1]);
+  const folderWordsTotal = sortedFolders.reduce((sum, [, words]) => sum + words, 0);
+  const folderList = folders.createDiv({ cls: "sd-folder-list" });
+  for (const [index, [folder, words]] of (view.foldersExpanded ? sortedFolders.slice(0, 20) : sortedFolders.slice(0, 6)).entries()) {
+    const row = folderList.createDiv({ cls: "sd-folder-row" });
+    row.createSpan({ cls: "sd-folder-rank", text: String(index + 1) });
+    row.createSpan({ cls: "sd-folder-name", text: folder || "/", attr: { title: folder || "/" } });
+    const track = row.createDiv({ cls: "sd-folder-track" });
+    const percent = folderWordsTotal > 0 ? words / folderWordsTotal * 100 : 0;
+    track.createDiv({ cls: "sd-folder-fill" }).setCssStyles({ width: `${percent}%` });
+    row.createEl("strong", { text: tf("{words} \u5B57 \xB7 {percent}%", { words, percent: percent.toFixed(0) }) });
+  }
+  if (sortedFolders.length > 6) {
+    folders.createEl("button", { text: view.foldersExpanded ? t("\u6536\u8D77") : tf("\u5C55\u5F00\u5176\u4F59 {n} \u9879", { n: sortedFolders.length - 6 }) }).onclick = () => {
+      view.foldersExpanded = !view.foldersExpanded;
+      view.render();
+    };
+  }
+}
+function renderRhythmSection(view, root, days, keys) {
+  var _a2;
+  const rhythm = view.analyticsCard(root, t("\u6295\u5165\u8282\u5F8B\u77E9\u9635"), t("\u516D\u9879\u6307\u6807\u6309\u5929\u5BF9\u9F50"));
+  const rhythmHead = rhythm.querySelector(".sd-card-head");
+  const rhythmTabs = rhythmHead == null ? void 0 : rhythmHead.createDiv({ cls: "sd-trend-tabs" });
+  const rhythmOptions = [
+    ["matrix", t("\u8282\u5F8B\u77E9\u9635")],
+    ["hours", t("\u6D3B\u8DC3\u65F6\u6BB5")]
+  ];
+  for (const [key, title] of rhythmOptions) {
+    const button = rhythmTabs == null ? void 0 : rhythmTabs.createEl("button", {
+      cls: key === view.rhythmTab ? "is-active" : "",
+      text: title
+    });
+    if (button) button.onclick = () => {
+      view.rhythmTab = key;
+      view.render();
+    };
+  }
+  if (view.rhythmTab === "hours") {
+    const hourly = Array.from(
+      { length: 24 },
+      (_, hour) => days.reduce((sum, day) => {
+        var _a3;
+        return sum + ((_a3 = day.hourlyWords[hour]) != null ? _a3 : 0);
+      }, 0)
+    );
+    const hourlyMean = mean(hourly);
+    appendSvg(rhythm.createDiv({ cls: "sd-chart-slot" }), barChart(
+      hourly,
+      "var(--interactive-accent)",
+      hourlyMean > 0 ? [{ value: hourlyMean, label: tf("\u5747\u503C {n}", { n: Math.round(hourlyMean) }) }] : []
+    ));
+    const weekdayHour = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0));
+    for (const key of keys) {
       const day = view.plugin.store.getDay(key);
-      grid.createDiv({ cls: "sd-rhythm-label", text: key.slice(5) });
-      metricKeys.forEach((metric, index) => {
-        const value = Number(day[metric]) || 0;
-        const cell = grid.createDiv({ cls: `sd-rhythm-cell${value > 0 ? "" : " is-empty"}` });
-        cell.setAttribute("style", `background:var(--interactive-accent);opacity:${value > 0 ? 0.1 + 0.9 * (value / maxima[index]) : 0.04}`);
-      });
+      const weekday = parseKey(key).getDay();
+      for (let hour = 0; hour < 24; hour += 1) weekdayHour[weekday][hour] += (_a2 = day.hourlyWords[hour]) != null ? _a2 : 0;
     }
+    const hourMax = Math.max(1, ...weekdayHour.flat());
+    const pattern = rhythm.createDiv({ cls: "sd-hour-grid" });
+    for (let weekday = 0; weekday < 7; weekday += 1) {
+      for (let hour = 0; hour < 24; hour += 1) {
+        const cell = pattern.createDiv({ cls: "sd-hour-cell" });
+        const ratio = weekdayHour[weekday][hour] / hourMax;
+        cell.setAttribute("style", `background:var(--interactive-accent);opacity:${ratio > 0 ? 0.1 + ratio * 0.9 : 0.05}`);
+      }
+    }
+    return;
+  }
+  if (rhythmHead) {
+    const toggle = rhythmHead.createEl("button", {
+      text: view.rhythmActiveOnly ? t("\u4EC5\u6D3B\u8DC3\u65E5\u671F") : t("\u5168\u90E8\u65E5\u671F")
+    });
+    toggle.onclick = () => {
+      view.rhythmActiveOnly = !view.rhythmActiveOnly;
+      view.render();
+    };
+  }
+  const grid = rhythm.createDiv({ cls: "sd-rhythm" });
+  const metricKeys = ["contribution", "wordsAdded", "activeMinutes", "focusMinutes", "notesCreated", "tasksCompleted"];
+  grid.createDiv({ cls: "sd-rhythm-label", text: t("\u65E5\u671F") });
+  for (const key of metricKeys) grid.createDiv({ cls: "sd-rhythm-label", text: view.shortMetric(key) });
+  const maxima = metricKeys.map((key) => Math.max(1, ...days.map((day) => Number(day[key]) || 0)));
+  const rhythmKeys = (view.rhythmActiveOnly ? keys.filter((key) => view.plugin.store.getDay(key).contribution > 0) : keys).slice(-30);
+  for (const key of rhythmKeys) {
+    const day = view.plugin.store.getDay(key);
+    grid.createDiv({ cls: "sd-rhythm-label", text: key.slice(5) });
+    metricKeys.forEach((metric, index) => {
+      const value = Number(day[metric]) || 0;
+      const cell = grid.createDiv({ cls: `sd-rhythm-cell${value > 0 ? "" : " is-empty"}` });
+      cell.setAttribute("style", `background:var(--interactive-accent);opacity:${value > 0 ? 0.1 + 0.9 * (value / maxima[index]) : 0.04}`);
+    });
   }
 }
 function renderYearly(view, root) {
@@ -10035,8 +10061,9 @@ var DashboardView = class extends import_obsidian23.ItemView {
             });
           };
         } else if (task.memoId) {
+          const memoId = task.memoId;
           actions.createEl("button", { text: t("\u8BA4\u9886") }).onclick = () => {
-            void this.plugin.agentApi.claimAgentTask(task.memoId, true).then(() => {
+            void this.plugin.agentApi.claimAgentTask(memoId, true).then(() => {
               new import_obsidian23.Notice(t("\u4EFB\u52A1\u5DF2\u8BA4\u9886"));
               this.render();
             }).catch((error) => new import_obsidian23.Notice(error instanceof Error ? error.message : t("\u64CD\u4F5C\u5931\u8D25")));
@@ -10049,7 +10076,7 @@ var DashboardView = class extends import_obsidian23.ItemView {
                 complete.disabled = false;
                 return;
               }
-              void this.plugin.agentApi.completeAgentTask(task.memoId, void 0, true).then(() => {
+              void this.plugin.agentApi.completeAgentTask(memoId, void 0, true).then(() => {
                 new import_obsidian23.Notice(t("Agent \u5F85\u529E\u5DF2\u5B8C\u6210"));
                 this.render();
               }).catch((error) => {

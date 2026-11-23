@@ -110,19 +110,10 @@ export function generateToken(): string {
     .join("");
 }
 
-/** 带机器可读错误码的 API 异常，HTTP 层据此返回 4xx。 */
-/** 对外 Agent API 版本；兼容策略见 README「Agent 接入」。 */
-export const AGENT_API_VERSION = 1;
-
-export class ApiError extends Error {
-  constructor(
-    public code: string,
-    message: string,
-    public status = 400
-  ) {
-    super(message);
-  }
-}
+// ApiError / AGENT_API_VERSION 定义在 errors.ts 并在此再导出，保持既有导入路径不变；
+// api-review.ts 直接依赖 errors.ts，避免 api.ts ↔ api-review.ts 运行时循环依赖。
+export { ApiError, AGENT_API_VERSION } from "./errors";
+import { ApiError } from "./errors";
 
 /**
  * confirm 工作模式下写路径被挂起时的返回值：不带原字段的结果，

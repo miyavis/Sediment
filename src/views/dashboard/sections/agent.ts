@@ -12,6 +12,7 @@ import { frontmatterOf, normalizeFolder } from "../../../utils/vault";
 import { t, tf } from "../../../i18n";
 import { pendingChangeRows } from "../review-queue";
 import type { DashboardView } from "../../dashboard-view";
+import { WORK_MODE_LABELS } from "../../../agent/work-mode";
 
 export function renderAgentHub(view: DashboardView, root: HTMLElement): void {
   const body = root.createDiv({ cls: "sd-body" });
@@ -361,15 +362,10 @@ export function renderDrafts(view: DashboardView, root: HTMLElement): void {
   const card = root.createDiv({ cls: "sd-card" });
   const head = card.createDiv({ cls: "sd-card-head" });
   head.createDiv({ cls: "sd-card-title", text: t("AI 沉淀审核") });
-  const modeLabels: Record<string, string> = {
-    readonly: t("只读"),
-    draft: t("草稿"),
-    confirm: t("确认后写入"),
-    auto: t("自动执行"),
-  };
+  const mode = view.plugin.store.settings.agentWorkMode;
   card.createDiv({
     cls: "sd-card-sub",
-    text: t("当前工作模式：") + (modeLabels[view.plugin.store.settings.agentWorkMode] ?? "confirm") +
+    text: t("当前工作模式：") + (WORK_MODE_LABELS[mode] ? t(WORK_MODE_LABELS[mode]) : mode) +
       t("。草稿需手动审核；「确认后写入」档下 Agent 的写操作会挂起在「待审写入」列表，采纳后才落盘；「自动执行」档不挂起。"),
   });
   // 截断展示时卡头给出总数，避免用户误以为只有 20 份。

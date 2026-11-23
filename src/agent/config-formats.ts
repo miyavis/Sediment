@@ -94,13 +94,13 @@ export function upsertYamlServer(raw: string, id: string, entry: {
         const cur = lines[i];
         // 段结束：遇到缩进 <= serversIndent 的非空行
         if (cur.trim() && !/^\s/.test(cur) &&
-            cur.match(/^(\s*)/)![1].length <= serversIndent.length) break;
+            (cur.match(/^(\s*)/)?.[1].length ?? 0) <= serversIndent.length) break;
         const idMatch = cur.match(idRe);
         if (idMatch && idMatch[1].length === childIndent.length) {
           // 跳过旧 id 条目及其子行（缩进更深）
           i += 1;
           while (i < lines.length && (lines[i].trim() === "" ||
-                 /^(\s*)/.exec(lines[i])![1].length > idMatch[1].length)) i += 1;
+                 (/^(\s*)/.exec(lines[i])?.[1].length ?? 0) > idMatch[1].length)) i += 1;
           out.push(...yamlEntry(id, childIndent, entry));
           done = true;
           continue;
@@ -144,7 +144,7 @@ export function removeYamlServer(raw: string, id: string): string {
       const indent = idMatch[1].length;
       i += 1;
       while (i < lines.length && (lines[i].trim() === "" ||
-             (/^(\s*)/.exec(lines[i])![1].length > indent))) i += 1;
+             ((/^(\s*)/.exec(lines[i])?.[1].length ?? 0) > indent))) i += 1;
       continue;
     }
     out.push(line);

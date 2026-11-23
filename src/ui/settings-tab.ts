@@ -12,6 +12,7 @@ import {
   syncDailyNotesFolder,
 } from "../features/daily-notes-sync";
 import { installAgentsGuide } from "../features/agents-guide";
+import { WORK_MODE_LABELS, WORK_MODES, type WorkMode } from "../agent/work-mode";
 import { McpUninstallModal } from "./mcp-uninstall-modal";
 import { confirmAction } from "./confirm-modal";
 import type { SedimentPlugin } from "../main";
@@ -20,13 +21,6 @@ import { METRICS, type MetricKey, type PulseSettings } from "../types";
 import { resolveLocale, setLocale, t, tf } from "../i18n";
 import { SETTINGS_SECTIONS } from "./settings-sections";
 import { localStamp } from "../utils/dates";
-
-const WORK_MODE_LABELS: Record<string, string> = {
-  readonly: "只读",
-  draft: "草稿",
-  confirm: "确认后写入",
-  auto: "自动执行",
-};
 
 export class PulseSettingTab extends PluginSettingTab {
   /** 统计权重/封顶输入的防抖定时器：设置页隐藏时统一清理，避免离开后仍触发重算与落盘。 */
@@ -95,7 +89,10 @@ export class PulseSettingTab extends PluginSettingTab {
     for (const section of SETTINGS_SECTIONS) {
       if (simple && !SIMPLE_SECTIONS.has(section.id)) continue;
       new Setting(containerEl).setName(t(section.title)).setHeading();
-      if (section.id === "basics") this.renderBasics(containerEl, settings, save);
+      if (section.id === "basics") {
+        this.renderBasics(containerEl, settings, save);
+        this.renderDisplaySettings(containerEl, settings, save);
+      }
       else if (section.id === "agent") this.renderAgent(containerEl, settings, save);
       else if (section.id === "backup") this.renderBackup(containerEl, settings, save);
       else if (section.id === "stats") this.renderStats(containerEl, settings, save);
@@ -217,7 +214,10 @@ export class PulseSettingTab extends PluginSettingTab {
             save();
           })
       );
+  }
 
+  /** 迁移、实验性开关与显示相关的基础设置。 */
+  private renderDisplaySettings(containerEl: HTMLElement, settings: PulseSettings, save: () => void): void {
     const migrationSetting = new Setting(containerEl)
       .setName(t("旧版目录迁移"))
       .setDesc(
@@ -326,23 +326,26 @@ export class PulseSettingTab extends PluginSettingTab {
   }
 
   private renderAgent(containerEl: HTMLElement, settings: PulseSettings, save: () => void): void {
+    this.renderWorkModeSection(containerEl, settings, save);
+    this.renderPermissionSection(containerEl, settings, save);
+    this.renderAgentFoldersSection(containerEl, settings, save);
+  }
+
+  private renderWorkModeSection(containerEl: HTMLElement, settings: PulseSettings, save: () => void): void {
     new Setting(containerEl)
       .setName(t("Agent 工作模式"))
       .setDesc(t("选择只读、草稿、确认后写入或自动执行；「确认后写入」档下 Agent 的写操作会挂起为待审项，在看板「待审写入」中采纳后才落盘。实际权限仍受下方开关约束。"))
-      .addDropdown((dropdown) =>
+      .addDropdown((dropdown) => {
+        for (const mode of WORK_MODES) dropdown.addOption(mode, t(WORK_MODE_LABELS[mode]));
         dropdown
-          .addOption("readonly", t("只读"))
-          .addOption("draft", t("草稿"))
-          .addOption("confirm", t("确认后写入"))
-          .addOption("auto", t("自动执行"))
           .setValue(settings.agentWorkMode)
           .onChange((value) => {
-            const next = value as "readonly" | "draft" | "confirm" | "auto";
+            const next = value as WorkMode;
             if (next === settings.agentWorkMode) return;
             // 切换档位会静默覆写 5 个权限开关，先说清楚再动手；取消则还原下拉。
             void confirmAction(this.app, tf(
               "切换为「{mode}」将重置 5 个权限开关：允许读取、允许新建、允许局部修改、允许全量覆盖、允许删除（删除始终关闭）。是否继续？",
-              { mode: t(WORK_MODE_LABELS[next] ?? next) }
+              { mode: t(WORK_MODE_LABELS[next]) }
             )).then((ok) => {
               if (!ok) {
                 dropdown.setValue(settings.agentWorkMode);
@@ -371,9 +374,11 @@ export class PulseSettingTab extends PluginSettingTab {
               save();
               this.renderSettings();
             });
-          })
-      );
+          });
+      });
+  }
 
+  private renderPermissionSection(containerEl: HTMLElement, settings: PulseSettings, save: () => void): void {
     new Setting(containerEl)
       .setName(t("访问模式"))
       .setDesc(t("allowlist 模式下 Agent 只能访问下方白名单目录。默认全库，但系统目录始终禁止。"))
@@ -447,7 +452,9 @@ export class PulseSettingTab extends PluginSettingTab {
           save();
         })
       );
+  }
 
+  private renderAgentFoldersSection(containerEl: HTMLElement, settings: PulseSettings, save: () => void): void {
     new Setting(containerEl)
       .setName(t("Agent 工作日志目录"))
       .setDesc(t("智能体每次工作的沉淀日志，默认按天写入一个文件。"))
@@ -503,7 +510,7 @@ export class PulseSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName(t("Agent 禁止访问的标签"))
-      .setDesc(t("逗号分隔；带这些标签的笔记对 Agent 不可读。"))
+      .setDesc(t("逗号分隔；带这些标签的笔记对 Agent 不可读写。"))
       .addText((text) =>
         text
           .setPlaceholder("例如：私密,密码")

@@ -5,7 +5,8 @@ import { t, tf } from "../i18n";
 import { contentHash } from "../utils/hash";
 import type { PendingWriteRecord } from "../types";
 import { bridgePendingId, type BridgeProposal } from "./bridge-schema";
-import { ApiError, type AgentApi, type AgentPendingResult, type KnowledgeInput, type WriteMeta } from "./api";
+import { ApiError } from "./errors";
+import type { AgentApi, AgentPendingResult, KnowledgeInput, WriteMeta } from "./api";
 
 export interface ReviewMethods {
   isConfirmMode(): boolean;
