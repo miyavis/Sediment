@@ -22,7 +22,7 @@ import {
   type MemoRecord,
   type PendingWriteRecord,
   type PersistedPomodoro,
-  type PulseSettings,
+  type SedimentSettings,
 } from "../src/types";
 import {
   dateKey,
@@ -112,7 +112,7 @@ import {
 } from "../src/agent/bridge-schema";
 
 export const day = (partial: Partial<DayRecord> = {}): DayRecord => ({ ...createEmptyDay(), ...partial });
-export const settings = (partial: Partial<PulseSettings> = {}): PulseSettings => ({
+export const settings = (partial: Partial<SedimentSettings> = {}): SedimentSettings => ({
   ...DEFAULT_SETTINGS,
   ...partial,
 });
@@ -318,7 +318,7 @@ export function fakePluginWith(vault: ReturnType<typeof fakeVault>["vault"], raw
 
 /** 构造只够跑门禁路径的假 SedimentPlugin（拒绝分支不触碰 vault）。
  * 这些用例验证权限层，默认钉在 auto 档（无 confirm 挂起，通过即直接落盘）。 */
-export function fakeAgentPlugin(partial: Partial<PulseSettings> = {}, extra: Record<string, unknown> = {}) {
+export function fakeAgentPlugin(partial: Partial<SedimentSettings> = {}, extra: Record<string, unknown> = {}) {
   const s = settings({ agentWorkMode: "auto", ...partial });
   const calls: Record<string, unknown[]> = { complete: [], delegate: [], snapshot: [] };
   const plugin = {
@@ -413,7 +413,7 @@ export function memoryVault(files: Record<string, string> = {}) {
 }
 
 /** 带完整 pendingWrites 挂起面与真实 TaskManager 的假插件。 */
-export function fakeConfirmPlugin(partial: Partial<PulseSettings> = {}, files: Record<string, string> = {}) {
+export function fakeConfirmPlugin(partial: Partial<SedimentSettings> = {}, files: Record<string, string> = {}) {
   const s = settings(partial);
   const pendingWrites: Array<Record<string, any>> = [];
   const diagnostics: Array<{ category: string; message: string; detail?: string }> = [];
@@ -879,7 +879,7 @@ export const pendingRecord = (partial: Partial<PendingWriteRecord> = {}): Pendin
 export function fakeHealthPlugin(
   files: Array<{ path: string; mtime?: number; size?: number; frontmatter?: Record<string, unknown> }>,
   links: { resolved?: Record<string, Record<string, number>>; unresolved?: Record<string, Record<string, number>> } = {},
-  partial: Partial<PulseSettings> = {}
+  partial: Partial<SedimentSettings> = {}
 ) {
   const entries = files.map((entry) => {
     const file = new TFileWithPath(entry.path);
@@ -920,7 +920,7 @@ export function fakeHealthPlugin(
 
 // ── 阶段三 Task 15：SemanticIndex embedding 集成 ──
 
-export function fakeSemanticPlugin(files: Record<string, string>, partial: Partial<PulseSettings> = {}) {
+export function fakeSemanticPlugin(files: Record<string, string>, partial: Partial<SedimentSettings> = {}) {
   const { store: fileStore, vault } = memoryVault(files);
   const diagnostics: Array<{ category: string; message: string }> = [];
   const plugin = {

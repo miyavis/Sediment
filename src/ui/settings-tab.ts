@@ -17,12 +17,12 @@ import { McpUninstallModal } from "./mcp-uninstall-modal";
 import { confirmAction } from "./confirm-modal";
 import type { SedimentPlugin } from "../main";
 import { generateToken } from "../agent/api";
-import { METRICS, type MetricKey, type PulseSettings } from "../types";
+import { METRICS, type MetricKey, type SedimentSettings } from "../types";
 import { resolveLocale, setLocale, t, tf } from "../i18n";
 import { SETTINGS_SECTIONS } from "./settings-sections";
 import { localStamp } from "../utils/dates";
 
-export class PulseSettingTab extends PluginSettingTab {
+export class SedimentSettingTab extends PluginSettingTab {
   /** 统计权重/封顶输入的防抖定时器：设置页隐藏时统一清理，避免离开后仍触发重算与落盘。 */
   private weightTimers = new Set<number>();
 
@@ -111,7 +111,7 @@ export class PulseSettingTab extends PluginSettingTab {
     }
   }
 
-  private renderBasics(containerEl: HTMLElement, settings: PulseSettings, save: () => void): void {
+  private renderBasics(containerEl: HTMLElement, settings: SedimentSettings, save: () => void): void {
     new Setting(containerEl)
       .setName(t("界面语言"))
       .setDesc(t("跟随 Obsidian（auto），或强制中文 / 英文。"))
@@ -217,7 +217,7 @@ export class PulseSettingTab extends PluginSettingTab {
   }
 
   /** 迁移、实验性开关与显示相关的基础设置。 */
-  private renderDisplaySettings(containerEl: HTMLElement, settings: PulseSettings, save: () => void): void {
+  private renderDisplaySettings(containerEl: HTMLElement, settings: SedimentSettings, save: () => void): void {
     const migrationSetting = new Setting(containerEl)
       .setName(t("旧版目录迁移"))
       .setDesc(
@@ -236,7 +236,7 @@ export class PulseSettingTab extends PluginSettingTab {
     }
 
     new Setting(containerEl).setName(t("实验性功能")).setHeading();
-    const experimental: Array<[keyof PulseSettings, string, string]> = [
+    const experimental: Array<[keyof SedimentSettings, string, string]> = [
       ["showMoonPhase", t("月相日历"), t("年度画像中显示月相页签（装饰性，默认关闭）。")],
       ["showMemoWander", t("速记漫步"), t("按共同词推荐一条旧速记（默认关闭）。")],
       ["showPoster", t("月报海报导出"), t("洞察页脚显示月报 PNG 导出（默认关闭）。")],
@@ -325,13 +325,13 @@ export class PulseSettingTab extends PluginSettingTab {
       );
   }
 
-  private renderAgent(containerEl: HTMLElement, settings: PulseSettings, save: () => void): void {
+  private renderAgent(containerEl: HTMLElement, settings: SedimentSettings, save: () => void): void {
     this.renderWorkModeSection(containerEl, settings, save);
     this.renderPermissionSection(containerEl, settings, save);
     this.renderAgentFoldersSection(containerEl, settings, save);
   }
 
-  private renderWorkModeSection(containerEl: HTMLElement, settings: PulseSettings, save: () => void): void {
+  private renderWorkModeSection(containerEl: HTMLElement, settings: SedimentSettings, save: () => void): void {
     new Setting(containerEl)
       .setName(t("Agent 工作模式"))
       .setDesc(t("选择只读、草稿、确认后写入或自动执行；「确认后写入」档下 Agent 的写操作会挂起为待审项，在看板「待审写入」中采纳后才落盘。实际权限仍受下方开关约束。"))
@@ -378,7 +378,7 @@ export class PulseSettingTab extends PluginSettingTab {
       });
   }
 
-  private renderPermissionSection(containerEl: HTMLElement, settings: PulseSettings, save: () => void): void {
+  private renderPermissionSection(containerEl: HTMLElement, settings: SedimentSettings, save: () => void): void {
     new Setting(containerEl)
       .setName(t("访问模式"))
       .setDesc(t("allowlist 模式下 Agent 只能访问下方白名单目录。默认全库，但系统目录始终禁止。"))
@@ -454,7 +454,7 @@ export class PulseSettingTab extends PluginSettingTab {
       );
   }
 
-  private renderAgentFoldersSection(containerEl: HTMLElement, settings: PulseSettings, save: () => void): void {
+  private renderAgentFoldersSection(containerEl: HTMLElement, settings: SedimentSettings, save: () => void): void {
     new Setting(containerEl)
       .setName(t("Agent 工作日志目录"))
       .setDesc(t("智能体每次工作的沉淀日志，默认按天写入一个文件。"))
@@ -661,7 +661,7 @@ export class PulseSettingTab extends PluginSettingTab {
     this.renderSettings();
   }
 
-  private renderBackup(containerEl: HTMLElement, settings: PulseSettings, save: () => void): void {
+  private renderBackup(containerEl: HTMLElement, settings: SedimentSettings, save: () => void): void {
     new Setting(containerEl)
       .setName(t("自动备份统计数据"))
       .setDesc(t("把 data.json 快照写入库内普通文件夹，避免配置文件夹被同步工具忽略。"))
@@ -761,7 +761,7 @@ export class PulseSettingTab extends PluginSettingTab {
     }
   }
 
-  private renderStats(containerEl: HTMLElement, settings: PulseSettings, save: () => void): void {
+  private renderStats(containerEl: HTMLElement, settings: SedimentSettings, save: () => void): void {
     const recompute = () => {
       this.plugin.store.recomputeContributions();
       this.plugin.refreshViews();
@@ -823,7 +823,7 @@ export class PulseSettingTab extends PluginSettingTab {
     });
   }
 
-  private renderSearch(containerEl: HTMLElement, settings: PulseSettings, save: () => void): void {
+  private renderSearch(containerEl: HTMLElement, settings: SedimentSettings, save: () => void): void {
     const invalidate = () => this.plugin.semantic.invalidate();
     new Setting(containerEl)
       .setName(t("语义检索引擎"))
@@ -865,7 +865,7 @@ export class PulseSettingTab extends PluginSettingTab {
     });
   }
 
-  private renderConnection(containerEl: HTMLElement, settings: PulseSettings, save: () => void): void {
+  private renderConnection(containerEl: HTMLElement, settings: SedimentSettings, save: () => void): void {
     new Setting(containerEl)
       .setName(t("启用本地 Agent API"))
       .setDesc(t("只监听 127.0.0.1，供 MCP 桥接和本地脚本调用个人知识库。"))

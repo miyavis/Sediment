@@ -15,7 +15,7 @@ import { HealthModal } from "./ui/health-modal";
 import { ExportModal } from "./ui/export-modal";
 import { DiagnosticsModal } from "./ui/diagnostics-modal";
 import { McpUninstallModal } from "./ui/mcp-uninstall-modal";
-import { PulseSettingTab } from "./ui/settings-tab";
+import { SedimentSettingTab } from "./ui/settings-tab";
 import { ChangelogModal } from "./ui/changelog-modal";
 import { SEDIMENT_ICON_ID, SEDIMENT_ICON_SVG, SEDIMENT_MEMO_ICON_ID, SEDIMENT_MEMO_ICON_SVG } from "./ui/logo";
 import { normalizeFolder, ensureFolder } from "./utils/vault";
@@ -138,14 +138,14 @@ export class SedimentPlugin extends Plugin {
     });
 
     this.registerCommands();
-    this.addSettingTab(new PulseSettingTab(this.app, this));
+    this.addSettingTab(new SedimentSettingTab(this.app, this));
   }
 
   /** 集中注册全部命令，避免 onload 过长。 */
   private registerCommands(): void {
     this.addCommand({
       id: "open-dashboard",
-      name: t("打开知识脉冲看板"),
+      name: t("打开看板"),
       callback: () => void this.activateView(DASHBOARD_VIEW_TYPE),
     });
     this.addCommand({
@@ -216,7 +216,7 @@ export class SedimentPlugin extends Plugin {
       callback: () =>
         void rebuildHistory(this.store, this.app.vault).then((result) => {
           this.refreshViews();
-          new Notice(
+          const base =
             result.filledDays > 0
               ? tf("已扫描 {scanned} 篇笔记，补齐 {days} 天（{notes} 篇 / {words} 词）", {
                   scanned: result.scanned,
@@ -224,7 +224,11 @@ export class SedimentPlugin extends Plugin {
                   notes: result.notes,
                   words: result.words,
                 })
-              : tf("扫描了 {scanned} 篇笔记，没有需要补齐的空日期", { scanned: result.scanned })
+              : tf("扫描了 {scanned} 篇笔记，没有需要补齐的空日期", { scanned: result.scanned });
+          new Notice(
+            result.skipped > 0
+              ? `${base} · ${tf("跳过 {n} 篇读取失败的笔记", { n: result.skipped })}`
+              : base
           );
         }),
     });

@@ -165,7 +165,7 @@ var EN = {
   // 通用 / 命令 / ribbon
   "Sediment\uFF1A\u770B\u677F": "Sediment: Dashboard",
   "Sediment\uFF1A\u901F\u8BB0": "Sediment: Memos",
-  "\u6253\u5F00\u77E5\u8BC6\u8109\u51B2\u770B\u677F": "Open Knowledge Pulse dashboard",
+  "\u6253\u5F00\u770B\u677F": "Open Sediment dashboard",
   "\u6253\u5F00\u901F\u8BB0\u9762\u677F": "Open memo panel",
   "\u8BB0\u4E00\u6761\u901F\u8BB0": "Add a memo",
   "\u751F\u6210\u672C\u5468\u5DE5\u4F5C\u590D\u76D8": "Generate this week's review",
@@ -185,6 +185,7 @@ var EN = {
   "\u5DF2\u8BB0\u5F55 {n} \u6761\u9057\u7559\u5F85\u529E": "Recorded {n} pending tasks",
   "\u5DF2\u626B\u63CF {scanned} \u7BC7\u7B14\u8BB0\uFF0C\u8865\u9F50 {days} \u5929\uFF08{notes} \u7BC7 / {words} \u8BCD\uFF09": "Scanned {scanned} notes; filled {days} days ({notes} notes / {words} words)",
   "\u626B\u63CF\u4E86 {scanned} \u7BC7\u7B14\u8BB0\uFF0C\u6CA1\u6709\u9700\u8981\u8865\u9F50\u7684\u7A7A\u65E5\u671F": "Scanned {scanned} notes; no empty days to fill",
+  "\u8DF3\u8FC7 {n} \u7BC7\u8BFB\u53D6\u5931\u8D25\u7684\u7B14\u8BB0": "Skipped {n} notes that failed to read",
   "\u6570\u636E\u5DF2\u5907\u4EFD\u5230\u5E93\u5185": "Data backed up into the vault",
   "\u5907\u4EFD\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u8BBE\u7F6E\u4E2D\u7684\u5907\u4EFD\u76EE\u5F55": "Backup failed; check the backup folder in settings",
   // 存储层可靠性 / 数据恢复
@@ -239,7 +240,7 @@ var EN = {
   "\u8F6C Agent": "To Agent",
   "\u5DF2\u52A0\u5165 Agent \u5F85\u529E": "Added to Agent backlog",
   // 页签 / 范围 / 指标
-  "\u4ECA\u65E5\u8109\u51B2": "Today",
+  "\u4ECA\u65E5": "Today",
   "\u77E5\u8BC6\u5730\u5C42": "Insights",
   "\u667A\u80FD\u4F53\u5DE5\u574A": "Agent Hub",
   "\u8FD1 7 \u5929": "Last 7 days",
@@ -303,7 +304,7 @@ var EN = {
   "{n} \u4E2A": "{n}",
   // 看板 · 今日
   "\u4ECA\u5929": "Today",
-  "Sediment \u77E5\u8BC6\u8109\u51B2": "Sediment Knowledge Pulse",
+  "Sediment \u770B\u677F": "Sediment dashboard",
   "{n} \u5206": "{n} pts",
   "\u5199\u4F5C {words} / {goal} \u5B57": "Writing {words} / {goal} words",
   "\u8FDE\u7EED {streak} \u5929 \xB7 \u6700\u957F {longest} \u5929": "Streak {streak} days \xB7 best {longest}",
@@ -324,12 +325,11 @@ var EN = {
   "\u8DF3\u8FC7": "Skip",
   // 看板 · 洞察
   "\u5730\u5C42\u5256\u9762": "Strata",
-  "\u8109\u51B2\u6982\u89C8": "Overview",
   "\u5199\u4F5C\u8D8B\u52BF": "Writing trend",
   "\u6295\u5165\u5206\u5E03": "Distribution",
   "\u5E74\u5EA6\u753B\u50CF": "Yearly",
   "\u672C\u5468\u590D\u76D8": "Weekly review",
-  "\u77E5\u8BC6\u8109\u51B2\u6982\u89C8": "Knowledge Pulse overview",
+  "\u770B\u677F\u6982\u89C8": "Dashboard overview",
   "\u53EF\u9760\u8BB0\u5F55": "reliable records",
   "\u7D2F\u8BA1\u8D21\u732E\u5206": "Total contribution",
   "\u6D3B\u8DC3\u5929\u6570": "Active days",
@@ -339,7 +339,7 @@ var EN = {
   "\u6700\u9AD8\u7684\u4E00\u5929": "Best day",
   "\u6709\u8BB0\u5F55\u7684\u65E5\u5B50": "Days with records",
   "\u4EA4\u4E92 / \u4E13\u6CE8": "Interaction / focus",
-  "\u5E74\u5EA6\u77E5\u8BC6\u6D3B\u8DC3\u8109\u51B2": "Yearly knowledge pulse",
+  "\u5E74\u5EA6\u6D3B\u8DC3": "Yearly activity",
   "\u5C11": "Less",
   "\u591A": "More",
   "\u5199\u4F5C\u4E0E\u65F6\u95F4\u8D8B\u52BF": "Writing & time trend",
@@ -1243,6 +1243,9 @@ var reviewMethods = {
     }
     const message = tf("confirm \u6A21\u5F0F\u4E0B\u5199\u5165\u5DF2\u6302\u8D77\u5F85\u5BA1\uFF1A{path}", { path });
     this.plugin.store.logDiagnostic("storage", message, `${id} \xB7 ${tool}`);
+    if (meta.source !== "bridge") {
+      new import_obsidian.Notice(`${t("\u5F85\u5BA1\u5199\u5165")}\uFF1A${path}`);
+    }
     return { pending: true, pendingId: id, path, message };
   },
   /** 待审列表（不含大段预览内容，供 Agent / UI 展示）。 */
@@ -5772,12 +5775,14 @@ async function rebuildHistory(store, vault) {
   const excluded = pluginOwnedFolders(settings);
   const byDate = /* @__PURE__ */ new Map();
   let scanned = 0;
+  let skipped = 0;
   for (const file of vault.getMarkdownFiles()) {
     if (isPathInFolders(file.path, excluded)) continue;
     let text = "";
     try {
       text = await vault.cachedRead(file);
     } catch (e) {
+      skipped += 1;
       continue;
     }
     if (/^source\s*:\s*agent\b/m.test(text.slice(0, 800))) continue;
@@ -5806,7 +5811,7 @@ async function rebuildHistory(store, vault) {
     words += bucket.words;
   }
   store.recomputeContributions();
-  return { scanned, filledDays, notes, words };
+  return { scanned, filledDays, notes, words, skipped };
 }
 
 // src/ui/quick-memo-modal.ts
@@ -7159,7 +7164,7 @@ var SETTINGS_SECTIONS = [
 ];
 
 // src/ui/settings-tab.ts
-var PulseSettingTab = class extends import_obsidian22.PluginSettingTab {
+var SedimentSettingTab = class extends import_obsidian22.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -8015,7 +8020,7 @@ function setSvg(parent, svg) {
 
 // src/views/dashboard/constants.ts
 var TABS = [
-  ["today", "\u4ECA\u65E5\u8109\u51B2"],
+  ["today", "\u4ECA\u65E5"],
   ["insights", "\u77E5\u8BC6\u5730\u5C42"],
   ["agent", "\u667A\u80FD\u4F53\u5DE5\u574A"]
 ];
@@ -9003,7 +9008,7 @@ function renderOverview(view, root) {
   var _a2, _b, _c;
   const card = root.createDiv({ cls: "sd-card sd-overview", attr: { id: "sd-overview" } });
   const head = card.createDiv({ cls: "sd-card-head" });
-  head.createDiv({ cls: "sd-card-title", text: t("\u77E5\u8BC6\u8109\u51B2\u6982\u89C8") });
+  head.createDiv({ cls: "sd-card-title", text: t("\u770B\u677F\u6982\u89C8") });
   head.createDiv({ cls: "sd-card-sub", text: `${t("\u8FD1")} ${t((_b = (_a2 = RANGE_OPTIONS.find((r) => r[0] === view.range)) == null ? void 0 : _a2[1]) != null ? _b : "")} \xB7 ${t("\u53EF\u9760\u8BB0\u5F55")}` });
   const ranges = card.createDiv({ cls: "sd-ranges" });
   for (const [key, label] of RANGE_OPTIONS) {
@@ -9190,7 +9195,7 @@ function renderHeatmap(view, root) {
   var _a2;
   const card = root.createDiv({ cls: "sd-card sd-heatmap", attr: { id: "sd-heatmap" } });
   const head = card.createDiv({ cls: "sd-card-head" });
-  head.createDiv({ cls: "sd-card-title", text: t("\u5E74\u5EA6\u77E5\u8BC6\u6D3B\u8DC3\u8109\u51B2") });
+  head.createDiv({ cls: "sd-card-title", text: t("\u5E74\u5EA6\u6D3B\u8DC3") });
   head.createDiv({ cls: "sd-card-sub", text: `${t("\u8FD1 53 \u5468")} \xB7 ${view.metricLabel()}` });
   const metrics = card.createDiv({ cls: "sd-metrics" });
   for (const metric of METRICS) {
@@ -9849,7 +9854,7 @@ var DashboardView = class extends import_obsidian29.ItemView {
     return DASHBOARD_VIEW_TYPE;
   }
   getDisplayText() {
-    return t("Sediment \u77E5\u8BC6\u8109\u51B2");
+    return t("Sediment \u770B\u677F");
   }
   getIcon() {
     return SEDIMENT_ICON_ID;
@@ -10905,13 +10910,13 @@ ${tf("\u6062\u590D\u526F\u672C\uFF1A{path}", { path: this.store.recoveryCopyPath
       void this.activateView(MEMO_VIEW_TYPE);
     });
     this.registerCommands();
-    this.addSettingTab(new PulseSettingTab(this.app, this));
+    this.addSettingTab(new SedimentSettingTab(this.app, this));
   }
   /** 集中注册全部命令，避免 onload 过长。 */
   registerCommands() {
     this.addCommand({
       id: "open-dashboard",
-      name: t("\u6253\u5F00\u77E5\u8BC6\u8109\u51B2\u770B\u677F"),
+      name: t("\u6253\u5F00\u770B\u677F"),
       callback: () => void this.activateView(DASHBOARD_VIEW_TYPE)
     });
     this.addCommand({
@@ -10978,13 +10983,14 @@ ${tf("\u6062\u590D\u526F\u672C\uFF1A{path}", { path: this.store.recoveryCopyPath
       name: t("\u91CD\u5EFA\u5386\u53F2\u7EDF\u8BA1\uFF08\u6309\u7B14\u8BB0\u65E5\u671F\u8865\u9F50\u7A7A\u65E5\u671F\uFF09"),
       callback: () => void rebuildHistory(this.store, this.app.vault).then((result) => {
         this.refreshViews();
+        const base = result.filledDays > 0 ? tf("\u5DF2\u626B\u63CF {scanned} \u7BC7\u7B14\u8BB0\uFF0C\u8865\u9F50 {days} \u5929\uFF08{notes} \u7BC7 / {words} \u8BCD\uFF09", {
+          scanned: result.scanned,
+          days: result.filledDays,
+          notes: result.notes,
+          words: result.words
+        }) : tf("\u626B\u63CF\u4E86 {scanned} \u7BC7\u7B14\u8BB0\uFF0C\u6CA1\u6709\u9700\u8981\u8865\u9F50\u7684\u7A7A\u65E5\u671F", { scanned: result.scanned });
         new import_obsidian31.Notice(
-          result.filledDays > 0 ? tf("\u5DF2\u626B\u63CF {scanned} \u7BC7\u7B14\u8BB0\uFF0C\u8865\u9F50 {days} \u5929\uFF08{notes} \u7BC7 / {words} \u8BCD\uFF09", {
-            scanned: result.scanned,
-            days: result.filledDays,
-            notes: result.notes,
-            words: result.words
-          }) : tf("\u626B\u63CF\u4E86 {scanned} \u7BC7\u7B14\u8BB0\uFF0C\u6CA1\u6709\u9700\u8981\u8865\u9F50\u7684\u7A7A\u65E5\u671F", { scanned: result.scanned })
+          result.skipped > 0 ? `${base} \xB7 ${tf("\u8DF3\u8FC7 {n} \u7BC7\u8BFB\u53D6\u5931\u8D25\u7684\u7B14\u8BB0", { n: result.skipped })}` : base
         );
       })
     });

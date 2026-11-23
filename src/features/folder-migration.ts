@@ -4,7 +4,7 @@
  *  同时支持按迁移记录撤销（from/to 对调复用同一套执行逻辑）。 */
 
 import { tf } from "../i18n";
-import type { FolderMigrationRecord, PulseSettings } from "../types";
+import type { FolderMigrationRecord, SedimentSettings } from "../types";
 import { normalizeFolder } from "../utils/vault";
 
 export type FolderMigrationKey =
@@ -32,7 +32,7 @@ export const LEGACY_FOLDER_MIGRATIONS: readonly FolderMigrationPlanItem[] = [
 ];
 
 /** 仅选出设置为旧默认值的目录；自定义路径不打扰。 */
-export function planFolderMigrations(settings: PulseSettings): FolderMigrationPlanItem[] {
+export function planFolderMigrations(settings: SedimentSettings): FolderMigrationPlanItem[] {
   return LEGACY_FOLDER_MIGRATIONS.filter(
     (item) => normalizeFolder(String(settings[item.key] ?? "")) === item.from
   );
@@ -70,7 +70,7 @@ export interface MigrationFileManager {
 }
 
 export interface MigrateFoldersOptions {
-  settings: PulseSettings;
+  settings: SedimentSettings;
   vault: MigrationVault;
   fileManager: MigrationFileManager;
 }

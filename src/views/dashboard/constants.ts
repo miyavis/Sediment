@@ -4,7 +4,7 @@ export type TabKey = "today" | "insights" | "agent";
 export type RangeKey = "7d" | "30d" | "90d" | "ytd" | "1y";
 
 export const TABS: Array<[TabKey, string]> = [
-  ["today", "今日脉冲"],
+  ["today", "今日"],
   ["insights", "知识地层"],
   ["agent", "智能体工坊"],
 ];

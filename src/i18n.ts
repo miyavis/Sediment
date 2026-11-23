@@ -51,7 +51,7 @@ const EN: Record<string, string> = {
   // 通用 / 命令 / ribbon
   "Sediment：看板": "Sediment: Dashboard",
   "Sediment：速记": "Sediment: Memos",
-  "打开知识脉冲看板": "Open Knowledge Pulse dashboard",
+  "打开看板": "Open Sediment dashboard",
   "打开速记面板": "Open memo panel",
   "记一条速记": "Add a memo",
   "生成本周工作复盘": "Generate this week's review",
@@ -71,6 +71,7 @@ const EN: Record<string, string> = {
   "已记录 {n} 条遗留待办": "Recorded {n} pending tasks",
   "已扫描 {scanned} 篇笔记，补齐 {days} 天（{notes} 篇 / {words} 词）": "Scanned {scanned} notes; filled {days} days ({notes} notes / {words} words)",
   "扫描了 {scanned} 篇笔记，没有需要补齐的空日期": "Scanned {scanned} notes; no empty days to fill",
+  "跳过 {n} 篇读取失败的笔记": "Skipped {n} notes that failed to read",
   "数据已备份到库内": "Data backed up into the vault",
   "备份失败，请检查设置中的备份目录": "Backup failed; check the backup folder in settings",
   // 存储层可靠性 / 数据恢复
@@ -126,7 +127,7 @@ const EN: Record<string, string> = {
   "已加入 Agent 待办": "Added to Agent backlog",
 
   // 页签 / 范围 / 指标
-  "今日脉冲": "Today",
+  "今日": "Today",
   "知识地层": "Insights",
   "智能体工坊": "Agent Hub",
   "近 7 天": "Last 7 days",
@@ -192,7 +193,7 @@ const EN: Record<string, string> = {
 
   // 看板 · 今日
   "今天": "Today",
-  "Sediment 知识脉冲": "Sediment Knowledge Pulse",
+  "Sediment 看板": "Sediment dashboard",
   "{n} 分": "{n} pts",
   "写作 {words} / {goal} 字": "Writing {words} / {goal} words",
   "连续 {streak} 天 · 最长 {longest} 天": "Streak {streak} days · best {longest}",
@@ -214,12 +215,11 @@ const EN: Record<string, string> = {
 
   // 看板 · 洞察
   "地层剖面": "Strata",
-  "脉冲概览": "Overview",
   "写作趋势": "Writing trend",
   "投入分布": "Distribution",
   "年度画像": "Yearly",
   "本周复盘": "Weekly review",
-  "知识脉冲概览": "Knowledge Pulse overview",
+  "看板概览": "Dashboard overview",
   "可靠记录": "reliable records",
   "累计贡献分": "Total contribution",
   "活跃天数": "Active days",
@@ -229,7 +229,7 @@ const EN: Record<string, string> = {
   "最高的一天": "Best day",
   "有记录的日子": "Days with records",
   "交互 / 专注": "Interaction / focus",
-  "年度知识活跃脉冲": "Yearly knowledge pulse",
+  "年度活跃": "Yearly activity",
   "少": "Less",
   "多": "More",
   "写作与时间趋势": "Writing & time trend",

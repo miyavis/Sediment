@@ -10,8 +10,8 @@ import {
   type FolderMigrationRecord,
   type MemoRecord,
   type PendingWriteRecord,
-  type PulseData,
-  type PulseSettings,
+  type SedimentData,
+  type SedimentSettings,
   type SnapshotRecord,
   type ToolCallRecord,
   type WorkLogRecord,
@@ -112,7 +112,7 @@ function normalizeFolderMigration(value: unknown): FolderMigrationRecord | null 
 }
 
 /** 字段存在但类型/形状异常视为结构损坏；缺失或 null 走默认值补齐，不算损坏。 */
-function corruptFields(loaded: Partial<PulseData>): string[] {
+function corruptFields(loaded: Partial<SedimentData>): string[] {
   const recordKeys = ["days", "reviewedChanges", "editSessions", "settings", "pomodoro"] as const;
   const arrayKeys = ["memos", "workLogs", "toolCalls", "snapshots", "diagnostics", "focusSessions", "pendingWrites"] as const;
   const corrupt: string[] = [];
@@ -147,7 +147,7 @@ export interface RestoreBackupResult {
 
 /** 包装 Obsidian 的 loadData/saveData，提供按天读写与防抖保存。 */
 export class Store {
-  data: PulseData = DEFAULT_DATA;
+  data: SedimentData = DEFAULT_DATA;
   migrationWarning: string | null = null;
   /** 最近一次 load/restore 保留的恢复副本路径（阻塞写入时供 Notice 展示）。 */
   recoveryCopyPath: string | null = null;
@@ -205,7 +205,7 @@ export class Store {
 
   async load(): Promise<void> {
     const raw = (await this.plugin.loadData()) as unknown;
-    const loaded = isRecord(raw) ? (raw as Partial<PulseData>) : {};
+    const loaded = isRecord(raw) ? (raw as Partial<SedimentData>) : {};
     let recoveryPath = "";
     let migratedVersion = false;
     if (isRecord(raw)) {
@@ -460,7 +460,7 @@ export class Store {
     } catch {
       throw new Error(tf("备份内容损坏，无法恢复：{name}", { name }));
     }
-    const candidate = parsed as Partial<PulseData>;
+    const candidate = parsed as Partial<SedimentData>;
     if (!isRecord(parsed) || corruptFields(candidate).length > 0 ||
       (candidate.version != null && candidate.version !== 1)) {
       throw new Error(tf("备份内容损坏，无法恢复：{name}", { name }));
@@ -494,7 +494,7 @@ export class Store {
     }, delay);
   }
 
-  get settings(): PulseSettings {
+  get settings(): SedimentSettings {
     return this.data.settings;
   }
 

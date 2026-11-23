@@ -1,4 +1,4 @@
-/** 今日脉冲页签的渲染逻辑。所有共享状态/方法通过 view 访问。
+/** 今日页签的渲染逻辑。所有共享状态/方法通过 view 访问。
  *  工作日志与连接状态卡自智能体工坊迁入（D2=B）；番茄唯一入口是今日卡内 toggle。 */
 import { exportTodayReport } from "../../../features/embed";
 import { dateKey, isSameLocalDay, localHHmm } from "../../../utils/dates";

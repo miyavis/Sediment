@@ -1,6 +1,6 @@
 import { requestUrl } from "obsidian";
 import type { SedimentPlugin } from "../main";
-import type { PulseSettings } from "../types";
+import type { SedimentSettings } from "../types";
 import { tf } from "../i18n";
 import { isPathAllowedByMode, splitList } from "./access";
 import { OllamaEmbeddingClient, cosineSimilarity, hashText, type RequestFn } from "./embedding";
@@ -276,7 +276,7 @@ export class SemanticIndex {
     return ranked;
   }
 
-  private async searchByEmbedding(query: string, cap: number, settings: PulseSettings): Promise<SemanticHit[]> {
+  private async searchByEmbedding(query: string, cap: number, settings: SedimentSettings): Promise<SemanticHit[]> {
     try {
       const client = new OllamaEmbeddingClient(settings.embeddingEndpoint, settings.embeddingModel, this.request);
       const [queryVector] = await client.embed([query.slice(0, 2000)]);

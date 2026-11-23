@@ -5,7 +5,7 @@ export interface SettingsSection {
   id: string;
   /** 中文源串，渲染时走 t()。 */
   title: string;
-  /** 归属本区的设置键（PulseSettings 字段名）；clients 区为按钮组，无设置键。 */
+  /** 归属本区的设置键（SedimentSettings 字段名）；clients 区为按钮组，无设置键。 */
   keys: string[];
 }
 

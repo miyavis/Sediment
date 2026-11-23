@@ -21,7 +21,7 @@ import {
   type MemoRecord,
   type PendingWriteRecord,
   type PersistedPomodoro,
-  type PulseSettings,
+  type SedimentSettings,
 } from "../../src/types";
 import {
   dateKey,

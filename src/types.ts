@@ -164,7 +164,11 @@ export interface WorkLogRecord {
   tags: string[];
 }
 
-export interface PulseSettings {
+/** 兼容别名：旧代码/外部脚本可能仍引用 PulseSettings / PulseData。 */
+export type PulseSettings = SedimentSettings;
+export type PulseData = SedimentData;
+
+export interface SedimentSettings {
   /** 界面语言：auto 跟随 Obsidian，zh / en 强制 */
   language: "auto" | "zh" | "en";
   /** 速记写入的目录，留空表示库根目录 */
@@ -304,7 +308,7 @@ export interface FolderMigrationRecord {
   dailyNotesFolderBefore?: string;
 }
 
-export interface PulseData {
+export interface SedimentData {
   version: number;
   days: Record<string, DayRecord>;
   memos: MemoRecord[];
@@ -328,7 +332,7 @@ export interface PulseData {
   focusSessions: FocusSessionRecord[];
   /** 番茄钟状态，退出/重启不丢 */
   pomodoro: PersistedPomodoro | null;
-  settings: PulseSettings;
+  settings: SedimentSettings;
 }
 
 export interface MetricDef {
@@ -346,7 +350,7 @@ export const METRICS: MetricDef[] = [
   { key: "focusMinutes", label: "专注分钟", hint: "内置专注计时实际完成的时长（休息不计）" },
 ];
 
-export const DEFAULT_SETTINGS: PulseSettings = {
+export const DEFAULT_SETTINGS: SedimentSettings = {
   language: "auto",
   dailyNoteFolder: "Sediment/daily",
   dailyNoteFormat: "YYYY-MM-DD",
@@ -423,7 +427,7 @@ export function createEmptyDay(): DayRecord {
  * 新建笔记×wN + 编辑会话×wE + 完成任务×wT + floor(新增词数/每分词数) + floor(专注分钟/每分时长)，
  * 再按单日封顶截断。默认权重下分项之和严格等于总分。
  */
-export function computeContribution(d: DayRecord, settings: PulseSettings = DEFAULT_SETTINGS): number {
+export function computeContribution(d: DayRecord, settings: SedimentSettings = DEFAULT_SETTINGS): number {
   const wordsPer = Math.max(1, settings.wordsPerPoint || 100);
   const focusPer = Math.max(1, settings.focusMinutesPerPoint || 25);
   const raw =
@@ -436,7 +440,7 @@ export function computeContribution(d: DayRecord, settings: PulseSettings = DEFA
   return cap > 0 ? Math.min(raw, cap) : raw;
 }
 
-export const DEFAULT_DATA: PulseData = {
+export const DEFAULT_DATA: SedimentData = {
   version: 1,
   days: {},
   memos: [],

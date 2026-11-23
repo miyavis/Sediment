@@ -8,6 +8,8 @@ export interface RebuildResult {
   filledDays: number;
   notes: number;
   words: number;
+  /** 读取失败跳过的笔记数（不静默丢失，调用方需提示用户） */
+  skipped: number;
 }
 
 /**
@@ -21,12 +23,14 @@ export async function rebuildHistory(store: Store, vault: Vault): Promise<Rebuil
 
   const byDate = new Map<string, { notes: number; words: number }>();
   let scanned = 0;
+  let skipped = 0;
   for (const file of vault.getMarkdownFiles()) {
     if (isPathInFolders(file.path, excluded)) continue;
     let text = "";
     try {
       text = await vault.cachedRead(file);
     } catch {
+      skipped += 1;
       continue;
     }
     if (/^source\s*:\s*agent\b/m.test(text.slice(0, 800))) continue;
@@ -62,5 +66,5 @@ export async function rebuildHistory(store: Store, vault: Vault): Promise<Rebuil
     words += bucket.words;
   }
   store.recomputeContributions();
-  return { scanned, filledDays, notes, words };
+  return { scanned, filledDays, notes, words, skipped };
 }

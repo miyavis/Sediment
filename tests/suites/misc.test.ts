@@ -21,7 +21,7 @@ import {
   type MemoRecord,
   type PendingWriteRecord,
   type PersistedPomodoro,
-  type PulseSettings,
+  type SedimentSettings,
 } from "../../src/types";
 import {
   dateKey,
@@ -796,10 +796,14 @@ test("rebuildHistory：排除插件目录/Agent 笔记，只填空日期（F3）
     { path: "notes/agent.md", stat: { ctime: new Date("2026-11-03T10:00:00Z").getTime() }, body: "source: agent\n你好世界" },
     { path: "notes/empty.md", stat: { ctime: new Date("2026-11-04T10:00:00Z").getTime() }, body: "" },
     { path: "notes/existing.md", stat: { ctime: new Date("2026-11-05T10:00:00Z").getTime() }, body: "created: 2026-11-05\n你好世界" },
+    { path: "notes/broken.md", stat: { ctime: new Date("2026-11-06T10:00:00Z").getTime() }, body: "正文内容" },
   ];
   const vault = {
     getMarkdownFiles: () => files.map((f) => ({ ...f })),
-    cachedRead: async (f: { path: string }) => files.find((x) => x.path === f.path)?.body ?? "",
+    cachedRead: async (f: { path: string }) => {
+      if (f.path === "notes/broken.md") throw new Error("read failed");
+      return files.find((x) => x.path === f.path)?.body ?? "";
+    },
   };
   const days: Record<string, any> = {
     // 11-05 已有数据，不得被覆盖。
@@ -821,6 +825,7 @@ test("rebuildHistory：排除插件目录/Agent 笔记，只填空日期（F3）
   assert.equal(days["2026-11-05"].wordsAdded, 999, "已有统计不被覆盖");
   assert.ok(days["2026-11-01"].notesCreated >= 1);
   assert.ok(!days["2026-11-02"] && !days["2026-11-03"] && !days["2026-11-04"]);
+  assert.equal(result.skipped, 1, "读取失败的笔记计入 skipped（1.3）");
 });
 
 test("parseEmbedOptions：非法 metric/weeks 回退默认（F12）", () => {

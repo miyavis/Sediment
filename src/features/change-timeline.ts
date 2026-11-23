@@ -1,6 +1,6 @@
 /** 变更时间线：把调用流水、待审写入、审批决定、快照合并成一条可检索的审计事件流。
  *  纯函数，不依赖 Obsidian / DOM；UI 与 MCP 工具共用同一口径。 */
-import type { PendingWriteRecord, PulseData, ReviewChangeValue, ReviewDecision, ToolCallRecord, WriteDecisionRecord } from "../types";
+import type { PendingWriteRecord, SedimentData, ReviewChangeValue, ReviewDecision, ToolCallRecord, WriteDecisionRecord } from "../types";
 
 export type TimelineKind = "call" | "pending" | "decision" | "snapshot";
 
@@ -50,7 +50,7 @@ export function findCallByPendingId(calls: ToolCallRecord[], pendingId: string):
 }
 
 /** 构造时间线，按时间倒序。 */
-export function buildChangeTimeline(data: PulseData, options: TimelineOptions = {}): ChangeTimelineEvent[] {
+export function buildChangeTimeline(data: SedimentData, options: TimelineOptions = {}): ChangeTimelineEvent[] {
   const events: ChangeTimelineEvent[] = [];
   const calls = data.toolCalls ?? [];
   const pending = data.pendingWrites ?? [];

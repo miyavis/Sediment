@@ -1,5 +1,5 @@
 import type { Vault } from "obsidian";
-import type { PulseSettings } from "../types";
+import type { SedimentSettings } from "../types";
 
 /** 去掉路径首尾多余的斜杠，并合并重复斜杠。 */
 export function normalizeFolder(path: string): string {
@@ -10,7 +10,7 @@ export function normalizeFolder(path: string): string {
 }
 
 /** 插件自身产出的四个目录（日记/复盘/工作日志/备份），归一化后去空。 */
-export function pluginOwnedFolders(settings: PulseSettings): string[] {
+export function pluginOwnedFolders(settings: SedimentSettings): string[] {
   return [
     settings.dailyNoteFolder,
     settings.reviewFolder,

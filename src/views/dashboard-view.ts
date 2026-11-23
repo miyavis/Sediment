@@ -17,7 +17,7 @@ import { scanAgentState, type AgentScan } from "./dashboard/scan-cache";
 
 export const DASHBOARD_VIEW_TYPE = "sediment-dashboard";
 
-/** 三段式主看板：今日脉冲 / 知识地层 / 智能体工坊。
+/** 三段式主看板：今日 / 知识地层 / 智能体工坊。
  *  页签渲染逻辑位于 dashboard/sections/，本类保留生命周期与跨页签共享的辅助方法。 */
 export class DashboardView extends ItemView {
   tab: TabKey = "today";
@@ -67,7 +67,7 @@ export class DashboardView extends ItemView {
   }
 
   getDisplayText(): string {
-    return t("Sediment 知识脉冲");
+    return t("Sediment 看板");
   }
 
   getIcon(): string {

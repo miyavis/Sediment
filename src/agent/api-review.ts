@@ -1,6 +1,6 @@
 /** confirm 审核队列：挂起 / 采纳 / 驳回 / 文件桥提案 / 重放分发。
  *  以原型混入方式挂在 AgentApi 上，对外 API 不变；逻辑独立成文件便于审查。 */
-import { TFile } from "obsidian";
+import { Notice, TFile } from "obsidian";
 import { t, tf } from "../i18n";
 import { contentHash } from "../utils/hash";
 import type { PendingWriteRecord } from "../types";
@@ -65,6 +65,10 @@ export const reviewMethods: ReviewMethods = {
     }
     const message = tf("confirm 模式下写入已挂起待审：{path}", { path });
     this.plugin.store.logDiagnostic("storage", message, `${id} · ${tool}`);
+    // 主动提醒用户有待审写入到达；文件桥批量导入不逐条弹窗，避免刷屏。
+    if (meta.source !== "bridge") {
+      new Notice(`${t("待审写入")}：${path}`);
+    }
     return { pending: true, pendingId: id, path, message };
   },
 

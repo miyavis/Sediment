@@ -147,7 +147,7 @@ export function renderKnowledgeState(view: DashboardView, root: HTMLElement): vo
 export function renderOverview(view: DashboardView, root: HTMLElement): void {
   const card = root.createDiv({ cls: "sd-card sd-overview", attr: { id: "sd-overview" } });
   const head = card.createDiv({ cls: "sd-card-head" });
-  head.createDiv({ cls: "sd-card-title", text: t("知识脉冲概览") });
+  head.createDiv({ cls: "sd-card-title", text: t("看板概览") });
   head.createDiv({ cls: "sd-card-sub", text: `${t("近")} ${t(RANGE_OPTIONS.find((r) => r[0] === view.range)?.[1] ?? "")} · ${t("可靠记录")}` });
 
   const ranges = card.createDiv({ cls: "sd-ranges" });
@@ -370,7 +370,7 @@ export function renderStrata(view: DashboardView, root: HTMLElement): void {
 export function renderHeatmap(view: DashboardView, root: HTMLElement): void {
   const card = root.createDiv({ cls: "sd-card sd-heatmap", attr: { id: "sd-heatmap" } });
   const head = card.createDiv({ cls: "sd-card-head" });
-  head.createDiv({ cls: "sd-card-title", text: t("年度知识活跃脉冲") });
+  head.createDiv({ cls: "sd-card-title", text: t("年度活跃") });
   head.createDiv({ cls: "sd-card-sub", text: `${t("近 53 周")} · ${view.metricLabel()}` });
 
   const metrics = card.createDiv({ cls: "sd-metrics" });

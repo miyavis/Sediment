@@ -21,7 +21,7 @@ import {
   type MemoRecord,
   type PendingWriteRecord,
   type PersistedPomodoro,
-  type PulseSettings,
+  type SedimentSettings,
 } from "../../src/types";
 import {
   dateKey,
@@ -122,7 +122,7 @@ test("access：allow-all 分支放行非黑名单路径（白名单为空也放�
 });
 
 test("access：create/overwrite/delete 操作矩阵", () => {
-  const matrix: Array<["create" | "overwrite" | "delete", keyof PulseSettings]> = [
+  const matrix: Array<["create" | "overwrite" | "delete", keyof SedimentSettings]> = [
     ["create", "agentAllowCreate"],
     ["overwrite", "agentAllowOverwrite"],
     ["delete", "agentAllowDelete"],
