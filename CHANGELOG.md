@@ -14,6 +14,7 @@
 - 一键迁移补齐两个缺口：迁移后自动同步 Obsidian 核心「日记」插件目录（仅当它仍指向旧目录时改写，失败降级为手动提醒）；新增「撤销迁移」按钮，可把目录搬回旧位置并还原插件路径与设置，记录持久化在 data.json，部分失败时保留以便重试
 - 待审写入的采纳/驳回永久记入变更时间线，可追溯、可查询；新增「一键安装 AGENTS.md」把护城河从手动约定变成产品入口
 - 代码结构：拆出 `errors.ts` 打破 api↔api-review 循环依赖；抽出工作模式标签/插件目录判断/getFullPath 等重复逻辑；拆分看板与设置页的大渲染函数
+- AgentApi 按职责拆成 6 个 mixin 模块（queries / note-queries / note-writes / patch / tasks / knowledge），`api.ts` 从 ~1250 行降到 ~540 行，对外 API 与行为完全不变
 
 ### 文档
 - 更新 manifest/package 描述为「本地优先、可审计的 AI 写入层」，与产品定位一致；清理 CHANGELOG 中失效的文档引用
