@@ -4,7 +4,7 @@
 import { TFile } from "obsidian";
 import { t, tf } from "../i18n";
 import { normalizeFolder } from "../utils/vault";
-import { ApiError, safeAgentPath } from "./api";
+import { safeAgentPath } from "./api";
 import type { AgentApi, NoteSummary, SearchResult } from "./api";
 
 export interface NoteQueryMethods {

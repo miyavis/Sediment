@@ -1,23 +1,16 @@
 import { normalizePath, TFile } from "obsidian";
 import type { SedimentPlugin } from "../main";
-import { buildWeeklyReview } from "../features/review";
-import { buildChangeTimeline } from "../features/change-timeline";
 import type { PomodoroState } from "../features/pomodoro";
-import { toggleCheckboxLine } from "../features/tasks";
-import { countWords } from "../tracker";
-import { restoreBackup } from "../features/audit";
 import type { DayRecord, MemoRecord, PendingWriteRecord, ToolCallRecord, WorkLogRecord } from "../types";
-import { addDays, dailyNotePath, dateKey, hhmm, lastNDays, parseKey } from "../utils/dates";
-import { ensureFolder, normalizeFolder, vaultGetFullPath } from "../utils/vault";
+import { vaultGetFullPath } from "../utils/vault";
 import { logError } from "../utils/log-error";
 import { ensureDirectory, listDirectory, removeFile, writeTextFile } from "../utils/node";
-import { t, tf } from "../i18n";
+import { tf } from "../i18n";
 import {
   inferCategory,
   isOperationAllowed,
   isPathAllowedByMode,
   isPathDenied,
-  isSafePathSegmentName,
   listCategories,
   splitList,
   type AgentOperation,
@@ -30,14 +23,7 @@ import { taskMethods } from "./api-tasks";
 import { knowledgeMethods } from "./api-knowledge";
 import { noteWriteMethods } from "./api-note-writes";
 import { patchMethods } from "./api-patch";
-import {
-  applyFrontmatterUpdate,
-  findSection,
-  lineChanges,
-  simpleDiff,
-  stampAgentProvenance,
-  versionOf,
-} from "./api-helpers";
+import { applyFrontmatterUpdate, stampAgentProvenance } from "./api-helpers";
 
 // 既有公开 API：测试与外部调用继续从 api.ts 导入这些纯函数。
 export { applyFrontmatterUpdate, stampAgentProvenance };
