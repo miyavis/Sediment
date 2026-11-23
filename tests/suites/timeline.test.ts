@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { buildChangeTimeline, findCallByPendingId, reviewDecisionOf } from "../../src/features/change-timeline";
 import { buildAuditExport, DEFAULT_EXPORT_OPTIONS } from "../../src/features/export";
 import { fakeConfirmPlugin } from "../helpers";
+import { AgentApi } from "../../src/agent/api";
 
 test("reviewDecisionOf：兼容旧字符串与带时间戳的新格式", () => {
   assert.equal(reviewDecisionOf("kept"), "kept");
@@ -59,6 +60,23 @@ test("buildChangeTimeline：驳回的待审写入永久留痕（C1）", () => {
   assert.equal(rejected?.path, "notes/x.md");
   assert.equal(rejected?.pendingId, "pw-2");
   assert.match(rejected?.title ?? "", /驳回/);
+  assert.equal(rejected?.reason, "user_rejected", "Agent 可查到驳回原因（4.1）");
+});
+
+test("getChangeTimeline：Agent 可通过 MCP 入口查到驳回结果（4.1）", async () => {
+  const ctx = fakeConfirmPlugin();
+  ctx.store.data.writeDecisions = [
+    {
+      id: "decision:pw-9:rejected", time: "2026-11-23T09:00:00.000Z", pendingId: "pw-9",
+      decision: "rejected", tool: "patch_note", agent: "opencode", path: "notes/y.md", reason: "stale",
+    },
+  ];
+  const api = new AgentApi(ctx.plugin as never);
+  const events = api.getChangeTimeline(50, "opencode");
+  const decision = events.find((e) => e.pendingId === "pw-9");
+  assert.ok(decision, "MCP 入口返回驳回事件");
+  assert.equal(decision?.status, "rejected");
+  assert.equal(decision?.reason, "stale");
 });
 
 test("buildChangeTimeline：limit/offset/agent/path/includeReads 口径（F15）", () => {

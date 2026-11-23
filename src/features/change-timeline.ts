@@ -20,6 +20,8 @@ export interface ChangeTimelineEvent {
   snapshotId?: string;
   pendingId?: string;
   status?: "held" | "stale" | "approved" | "rejected";
+  /** 审批原因（user_rejected / stale 等），供 Agent 查询驳回结果（4.1） */
+  reason?: string;
 }
 
 export interface TimelineOptions {
@@ -141,6 +143,7 @@ function writeDecisionEvent(decision: WriteDecisionRecord): ChangeTimelineEvent 
     decision: decision.decision === "rejected" ? "reverted" : decision.decision === "approved" ? "kept" : undefined,
     pendingId: decision.pendingId,
     status: decision.decision,
+    ...(decision.reason ? { reason: decision.reason } : {}),
   };
 }
 

@@ -1754,7 +1754,8 @@ function writeDecisionEvent(decision) {
     title: titles[decision.decision],
     decision: decision.decision === "rejected" ? "reverted" : decision.decision === "approved" ? "kept" : void 0,
     pendingId: decision.pendingId,
-    status: decision.decision
+    status: decision.decision,
+    ...decision.reason ? { reason: decision.reason } : {}
   };
 }
 function pendingEvent(item) {
