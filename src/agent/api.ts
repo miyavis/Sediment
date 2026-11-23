@@ -8,7 +8,7 @@ import { countWords } from "../tracker";
 import { restoreBackup } from "../features/audit";
 import type { DayRecord, MemoRecord, PendingWriteRecord, ToolCallRecord, WorkLogRecord } from "../types";
 import { addDays, dailyNotePath, dateKey, hhmm, lastNDays, parseKey } from "../utils/dates";
-import { ensureFolder, normalizeFolder } from "../utils/vault";
+import { ensureFolder, normalizeFolder, vaultGetFullPath } from "../utils/vault";
 import { logError } from "../utils/log-error";
 import { ensureDirectory, listDirectory, removeFile, writeTextFile } from "../utils/node";
 import { t, tf } from "../i18n";
@@ -218,13 +218,11 @@ export class AgentApi {
   private backupNote(path: string, content: string, meta?: WriteMeta): string {
     if (!this.plugin.store.settings.enableAuditSnapshot) return "";
     try {
-      const adapter = this.plugin.app.vault.adapter as unknown as {
-        getFullPath?: (normalizedPath: string) => string;
-      };
-      if (!adapter.getFullPath) return "";
-      const directory = adapter.getFullPath(
+      const directory = vaultGetFullPath(
+        this.plugin.app.vault,
         `${this.plugin.app.vault.configDir}/plugins/sediment/backups`
       );
+      if (!directory) return "";
       ensureDirectory(directory, { recursive: true });
       const id = `${Date.now()}-${path.replace(/[\\/]/g, "_")}`;
       writeTextFile(`${directory}/${id}`, content, "utf8");

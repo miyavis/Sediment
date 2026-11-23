@@ -1,7 +1,7 @@
 import type { Vault } from "obsidian";
 import type { Store } from "../data/store";
 import { countWords, noteDateKey } from "../tracker";
-import { normalizeFolder } from "../utils/vault";
+import { isPathInFolders, pluginOwnedFolders } from "../utils/vault";
 
 export interface RebuildResult {
   scanned: number;
@@ -17,19 +17,12 @@ export interface RebuildResult {
  */
 export async function rebuildHistory(store: Store, vault: Vault): Promise<RebuildResult> {
   const settings = store.settings;
-  const excluded = [
-    settings.dailyNoteFolder,
-    settings.reviewFolder,
-    settings.workLogFolder,
-    settings.backupFolder,
-  ]
-    .map(normalizeFolder)
-    .filter((folder) => folder.length > 0);
+  const excluded = pluginOwnedFolders(settings);
 
   const byDate = new Map<string, { notes: number; words: number }>();
   let scanned = 0;
   for (const file of vault.getMarkdownFiles()) {
-    if (excluded.some((folder) => file.path.startsWith(`${folder}/`))) continue;
+    if (isPathInFolders(file.path, excluded)) continue;
     let text = "";
     try {
       text = await vault.cachedRead(file);

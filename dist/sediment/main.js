@@ -38,6 +38,22 @@ var import_obsidian4 = require("obsidian");
 function normalizeFolder(path) {
   return path.trim().replace(/^\/+|\/+$/g, "").replace(/\/+/g, "/");
 }
+function pluginOwnedFolders(settings) {
+  return [
+    settings.dailyNoteFolder,
+    settings.reviewFolder,
+    settings.workLogFolder,
+    settings.backupFolder
+  ].map((folder) => normalizeFolder(String(folder != null ? folder : ""))).filter((folder) => folder.length > 0);
+}
+function isPathInFolders(path, folders) {
+  return folders.some((folder) => path.startsWith(`${folder}/`));
+}
+function vaultGetFullPath(vault, relative) {
+  var _a2, _b;
+  const adapter = vault.adapter;
+  return (_b = (_a2 = adapter.getFullPath) == null ? void 0 : _a2.call(adapter, relative)) != null ? _b : null;
+}
 async function ensureFolder(vault, path) {
   const folder = normalizeFolder(path);
   if (!folder) return;
@@ -1475,14 +1491,7 @@ var Tracker = class {
   }
   /** 插件自身产出的目录（日记/复盘/工作日志/备份）不计入人类写作统计。 */
   isExcluded(path) {
-    const settings = this.store.settings;
-    const folders = [
-      settings.dailyNoteFolder,
-      settings.reviewFolder,
-      settings.workLogFolder,
-      settings.backupFolder
-    ].map(normalizeFolder).filter((folder) => folder.length > 0);
-    return folders.some((folder) => path.startsWith(`${folder}/`));
+    return isPathInFolders(path, pluginOwnedFolders(this.store.settings));
   }
   /** 单次写入计入的词数上限，防大段粘贴刷分；0 表示不封顶。 */
   capWords(words) {
@@ -1655,9 +1664,7 @@ var createHttpServer = typed(import_http.createServer);
 
 // src/features/audit.ts
 function backupDirectory(vault) {
-  var _a2, _b;
-  const adapter = vault.adapter;
-  return (_b = (_a2 = adapter.getFullPath) == null ? void 0 : _a2.call(adapter, `${vault.configDir}/plugins/sediment/backups`)) != null ? _b : null;
+  return vaultGetFullPath(vault, `${vault.configDir}/plugins/sediment/backups`);
 }
 function listBackupsMap(plugin, paths) {
   const map = new Map(paths.map((path) => [path, []]));
@@ -2354,11 +2361,11 @@ var AgentApi = class {
     var _a2, _b;
     if (!this.plugin.store.settings.enableAuditSnapshot) return "";
     try {
-      const adapter = this.plugin.app.vault.adapter;
-      if (!adapter.getFullPath) return "";
-      const directory = adapter.getFullPath(
+      const directory = vaultGetFullPath(
+        this.plugin.app.vault,
         `${this.plugin.app.vault.configDir}/plugins/sediment/backups`
       );
+      if (!directory) return "";
       ensureDirectory(directory, { recursive: true });
       const id = `${Date.now()}-${path.replace(/[\\/]/g, "_")}`;
       writeTextFile(`${directory}/${id}`, content, "utf8");
@@ -5671,16 +5678,11 @@ function exportTodayReport(data) {
 async function rebuildHistory(store, vault) {
   var _a2;
   const settings = store.settings;
-  const excluded = [
-    settings.dailyNoteFolder,
-    settings.reviewFolder,
-    settings.workLogFolder,
-    settings.backupFolder
-  ].map(normalizeFolder).filter((folder) => folder.length > 0);
+  const excluded = pluginOwnedFolders(settings);
   const byDate = /* @__PURE__ */ new Map();
   let scanned = 0;
   for (const file of vault.getMarkdownFiles()) {
-    if (excluded.some((folder) => file.path.startsWith(`${folder}/`))) continue;
+    if (isPathInFolders(file.path, excluded)) continue;
     let text = "";
     try {
       text = await vault.cachedRead(file);
@@ -5780,12 +5782,7 @@ var MAX_ISSUES = 300;
 function scanNoteHealth(plugin) {
   var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j;
   const settings = plugin.store.settings;
-  const excluded = [
-    settings.dailyNoteFolder,
-    settings.reviewFolder,
-    settings.workLogFolder,
-    settings.backupFolder
-  ].map(normalizeFolder).filter((folder) => folder.length > 0);
+  const excluded = pluginOwnedFolders(settings);
   const resolved = (_a2 = plugin.app.metadataCache.resolvedLinks) != null ? _a2 : {};
   const unresolved = (_b = plugin.app.metadataCache.unresolvedLinks) != null ? _b : {};
   const backlinkCount = /* @__PURE__ */ new Map();
@@ -5796,7 +5793,7 @@ function scanNoteHealth(plugin) {
   }
   const titleCount = /* @__PURE__ */ new Map();
   for (const file of plugin.app.vault.getMarkdownFiles()) {
-    if (excluded.some((folder) => file.path.startsWith(`${folder}/`))) continue;
+    if (isPathInFolders(file.path, excluded)) continue;
     const key = file.basename.toLowerCase();
     const list = (_d = titleCount.get(key)) != null ? _d : [];
     list.push(file.path);
@@ -5806,7 +5803,7 @@ function scanNoteHealth(plugin) {
   const issues = [];
   const staleBefore = Date.now() - STALE_DAYS * 864e5;
   for (const file of plugin.app.vault.getMarkdownFiles()) {
-    if (excluded.some((folder) => file.path.startsWith(`${folder}/`))) continue;
+    if (isPathInFolders(file.path, excluded)) continue;
     const outgoing = Object.keys((_e = resolved[file.path]) != null ? _e : {}).length;
     const incoming = (_f = backlinkCount.get(file.path)) != null ? _f : 0;
     if (outgoing === 0 && incoming === 0) {
@@ -6407,9 +6404,8 @@ function isAgentConfigured(target) {
   }
 }
 function resolveBridgePath(plugin, target) {
-  var _a2, _b, _c;
-  const adapter = plugin.app.vault.adapter;
-  const vaultBridge = adapter.getFullPath ? adapter.getFullPath(`${plugin.app.vault.configDir}/plugins/sediment/mcp-server/index.mjs`) : "";
+  var _a2, _b, _c, _d;
+  const vaultBridge = (_a2 = vaultGetFullPath(plugin.app.vault, `${plugin.app.vault.configDir}/plugins/sediment/mcp-server/index.mjs`)) != null ? _a2 : "";
   const samePath = (a, b) => a.replace(/\\/g, "/").toLowerCase() === b.replace(/\\/g, "/").toLowerCase();
   const syncVaultBridge = () => {
     if (!vaultBridge) return "";
@@ -6426,12 +6422,12 @@ function resolveBridgePath(plugin, target) {
   if (target) {
     try {
       const data = readJson(readTextFile(target.configPath, "utf8"));
-      const root = (_a2 = data[target.rootKey]) != null ? _a2 : {};
-      const servers = (_b = root.servers) != null ? _b : {};
+      const root = (_b = data[target.rootKey]) != null ? _b : {};
+      const servers = (_c = root.servers) != null ? _c : {};
       const entries = [root.sediment, servers.sediment].filter(Boolean);
       for (const entry of entries) {
         const command = Array.isArray(entry.command) ? entry.command.filter((x) => typeof x === "string") : [];
-        const candidates = [...(_c = entry.args) != null ? _c : [], ...command];
+        const candidates = [...(_d = entry.args) != null ? _d : [], ...command];
         const existing = candidates.find((arg) => arg.endsWith("index.mjs") && fileExists(arg));
         if (existing) {
           if (vaultBridge && samePath(existing, vaultBridge)) return syncVaultBridge();
@@ -6544,12 +6540,8 @@ function readJson2(raw) {
   }
 }
 function listMcpInstallations(plugin) {
-  var _a2, _b;
-  const adapter = plugin.app.vault.adapter;
-  const bridgePath = (_b = (_a2 = adapter == null ? void 0 : adapter.getFullPath) == null ? void 0 : _a2.call(
-    adapter,
-    `${plugin.app.vault.configDir}/plugins/sediment/mcp-server/index.mjs`
-  )) != null ? _b : "";
+  var _a2;
+  const bridgePath = (_a2 = vaultGetFullPath(plugin.app.vault, `${plugin.app.vault.configDir}/plugins/sediment/mcp-server/index.mjs`)) != null ? _a2 : "";
   const clients = [];
   for (const target of detectAgents()) {
     const configured = isAgentConfigured(target);

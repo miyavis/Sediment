@@ -1,4 +1,5 @@
 import type { Vault } from "obsidian";
+import type { PulseSettings } from "../types";
 
 /** 去掉路径首尾多余的斜杠，并合并重复斜杠。 */
 export function normalizeFolder(path: string): string {
@@ -6,6 +7,29 @@ export function normalizeFolder(path: string): string {
     .trim()
     .replace(/^\/+|\/+$/g, "")
     .replace(/\/+/g, "/");
+}
+
+/** 插件自身产出的四个目录（日记/复盘/工作日志/备份），归一化后去空。 */
+export function pluginOwnedFolders(settings: PulseSettings): string[] {
+  return [
+    settings.dailyNoteFolder,
+    settings.reviewFolder,
+    settings.workLogFolder,
+    settings.backupFolder,
+  ]
+    .map((folder) => normalizeFolder(String(folder ?? "")))
+    .filter((folder) => folder.length > 0);
+}
+
+/** 路径是否位于给定目录集合内（相等子路径）。 */
+export function isPathInFolders(path: string, folders: string[]): boolean {
+  return folders.some((folder) => path.startsWith(`${folder}/`));
+}
+
+/** 取 vault 内相对路径的绝对磁盘路径；adapter 不支持时返回 null。 */
+export function vaultGetFullPath(vault: Vault, relative: string): string | null {
+  const adapter = vault.adapter as unknown as { getFullPath?: (path: string) => string };
+  return adapter.getFullPath?.(relative) ?? null;
 }
 
 /** 逐级创建目录（已存在则跳过）。 */

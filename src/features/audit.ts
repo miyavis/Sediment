@@ -1,10 +1,10 @@
 import { TFile, type Vault } from "obsidian";
 import { fileExists, fileMtimeMs, listDirectory, readTextFile } from "../utils/node";
+import { vaultGetFullPath } from "../utils/vault";
 import type { SedimentPlugin } from "../main";
 
 function backupDirectory(vault: Vault): string | null {
-  const adapter = vault.adapter as unknown as { getFullPath?: (path: string) => string };
-  return adapter.getFullPath?.(`${vault.configDir}/plugins/sediment/backups`) ?? null;
+  return vaultGetFullPath(vault, `${vault.configDir}/plugins/sediment/backups`);
 }
 
 export interface BackupInfo {

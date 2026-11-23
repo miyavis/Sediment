@@ -1,7 +1,7 @@
 import { TFile, type Plugin } from "obsidian";
 import type { Store } from "./data/store";
 import { dateKey } from "./utils/dates";
-import { normalizeFolder } from "./utils/vault";
+import { isPathInFolders, pluginOwnedFolders } from "./utils/vault";
 
 interface FileBaseline {
   words: number;
@@ -251,16 +251,7 @@ export class Tracker {
 
   /** 插件自身产出的目录（日记/复盘/工作日志/备份）不计入人类写作统计。 */
   private isExcluded(path: string): boolean {
-    const settings = this.store.settings;
-    const folders = [
-      settings.dailyNoteFolder,
-      settings.reviewFolder,
-      settings.workLogFolder,
-      settings.backupFolder,
-    ]
-      .map(normalizeFolder)
-      .filter((folder) => folder.length > 0);
-    return folders.some((folder) => path.startsWith(`${folder}/`));
+    return isPathInFolders(path, pluginOwnedFolders(this.store.settings));
   }
 
   /** 单次写入计入的词数上限，防大段粘贴刷分；0 表示不封顶。 */

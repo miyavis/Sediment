@@ -8,6 +8,7 @@ import {
   readTextFile,
   writeTextFile,
 } from "../utils/node";
+import { vaultGetFullPath } from "../utils/vault";
 import { BRIDGE_SOURCE } from "./bridge-source";
 import {
   hasTomlServer,
@@ -119,10 +120,8 @@ export function isAgentConfigured(target: AgentTarget): boolean {
 
 /** 优先复用配置里已有的桥接路径，否则找插件目录；库内副本始终与嵌入源码保持同步。 */
 export function resolveBridgePath(plugin: SedimentPlugin, target?: AgentTarget): string {
-  const adapter = plugin.app.vault.adapter as unknown as { getFullPath?: (path: string) => string };
-  const vaultBridge = adapter.getFullPath
-    ? adapter.getFullPath(`${plugin.app.vault.configDir}/plugins/sediment/mcp-server/index.mjs`)
-    : "";
+  const vaultBridge =
+    vaultGetFullPath(plugin.app.vault, `${plugin.app.vault.configDir}/plugins/sediment/mcp-server/index.mjs`) ?? "";
   const samePath = (a: string, b: string): boolean =>
     a.replace(/\\/g, "/").toLowerCase() === b.replace(/\\/g, "/").toLowerCase();
   // 库内桥接是插件自有文件：缺失或与嵌入源码不一致（如旧版仍走 ?token= 查询串）时重写。

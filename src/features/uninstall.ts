@@ -1,5 +1,6 @@
 import type { SedimentPlugin } from "../main";
 import { fileExists, readTextFile, removePath, writeTextFile } from "../utils/node";
+import { vaultGetFullPath } from "../utils/vault";
 import { detectAgents, isAgentConfigured, type AgentTarget } from "../agent/setup";
 import { removeTomlServer, removeYamlServer } from "../agent/config-formats";
 import { tf } from "../i18n";
@@ -26,10 +27,8 @@ export function listMcpInstallations(plugin: SedimentPlugin): {
   bridgePath: string;
   bridgeExists: boolean;
 } {
-  const adapter = plugin.app.vault.adapter as unknown as { getFullPath?: (path: string) => string };
-  const bridgePath = adapter?.getFullPath?.(
-    `${plugin.app.vault.configDir}/plugins/sediment/mcp-server/index.mjs`
-  ) ?? "";
+  const bridgePath =
+    vaultGetFullPath(plugin.app.vault, `${plugin.app.vault.configDir}/plugins/sediment/mcp-server/index.mjs`) ?? "";
   const clients: McpInstallation[] = [];
   for (const target of detectAgents()) {
     const configured = isAgentConfigured(target);

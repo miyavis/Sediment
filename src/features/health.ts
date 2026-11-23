@@ -1,6 +1,6 @@
 import type { SedimentPlugin } from "../main";
 import { t, tf } from "../i18n";
-import { normalizeFolder } from "../utils/vault";
+import { isPathInFolders, normalizeFolder, pluginOwnedFolders } from "../utils/vault";
 
 export type HealthKind =
   | "orphan"
@@ -29,14 +29,7 @@ const MAX_ISSUES = 300;
  */
 export function scanNoteHealth(plugin: SedimentPlugin): HealthIssue[] {
   const settings = plugin.store.settings;
-  const excluded = [
-    settings.dailyNoteFolder,
-    settings.reviewFolder,
-    settings.workLogFolder,
-    settings.backupFolder,
-  ]
-    .map(normalizeFolder)
-    .filter((folder) => folder.length > 0);
+  const excluded = pluginOwnedFolders(settings);
 
   const resolved = plugin.app.metadataCache.resolvedLinks ?? {};
   const unresolved = plugin.app.metadataCache.unresolvedLinks ?? {};
@@ -49,7 +42,7 @@ export function scanNoteHealth(plugin: SedimentPlugin): HealthIssue[] {
 
   const titleCount = new Map<string, string[]>();
   for (const file of plugin.app.vault.getMarkdownFiles()) {
-    if (excluded.some((folder) => file.path.startsWith(`${folder}/`))) continue;
+    if (isPathInFolders(file.path, excluded)) continue;
     const key = file.basename.toLowerCase();
     const list = titleCount.get(key) ?? [];
     list.push(file.path);
@@ -60,7 +53,7 @@ export function scanNoteHealth(plugin: SedimentPlugin): HealthIssue[] {
   const issues: HealthIssue[] = [];
   const staleBefore = Date.now() - STALE_DAYS * 86400000;
   for (const file of plugin.app.vault.getMarkdownFiles()) {
-    if (excluded.some((folder) => file.path.startsWith(`${folder}/`))) continue;
+    if (isPathInFolders(file.path, excluded)) continue;
     const outgoing = Object.keys(resolved[file.path] ?? {}).length;
     const incoming = backlinkCount.get(file.path) ?? 0;
     if (outgoing === 0 && incoming === 0) {
