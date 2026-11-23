@@ -2,10 +2,11 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
-## [Unreleased]
+## [1.3.2] - 2026-11-23
 
 ### 变更
 - 今日页「智能体工作日志」空卡改用紧凑空状态样式（`sd-card-empty`），与智能体工坊的审核卡保持一致。
+- 修复发布标签带 `v` 前缀导致社区目录无法匹配版本的问题：发布工作流只对纯数字 tag 生成 Release，`release-prepare` 与 `verify-release` 强制拒绝 `v` 前缀。
 
 ## [1.3.1] - 2026-11-23
 

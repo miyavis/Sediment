@@ -2,9 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
-const tag = (process.argv[2] ?? "").replace(/^v/, "");
+// 社区目录要求 Release 标签与 manifest 版本完全一致：必须纯 x.y.z，禁止 v 前缀。
+const tag = (process.argv[2] ?? "").trim();
 if (tag && !/^\d+\.\d+\.\d+$/.test(tag)) {
-  console.error(`非法发布标签：${tag}（只允许 x.y.z 或 vx.y.z）`);
+  console.error(`非法发布标签：${tag}（只允许 x.y.z，不能带 v 前缀——社区目录无法匹配带 v 的版本）`);
   process.exit(1);
 }
 const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
