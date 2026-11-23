@@ -103,15 +103,11 @@ export interface DailyContext {
   pendingWrites: number;
 }
 
-/** 生成随机访问令牌，优先用 Web Crypto。 */
+/** 生成随机访问令牌：必须使用 CSPRNG，拿不到就抛错，绝不静默降级到可预测的 Math.random。 */
 export function generateToken(): string {
-  try {
-    return Array.from(crypto.getRandomValues(new Uint8Array(16)))
-      .map((byte) => byte.toString(16).padStart(2, "0"))
-      .join("");
-  } catch {
-    return Math.random().toString(36).slice(2) + Date.now().toString(36);
-  }
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 /** 带机器可读错误码的 API 异常，HTTP 层据此返回 4xx。 */
@@ -292,6 +288,15 @@ export class AgentApi {
       const message = tf("访问被拒绝：{path} 不在白名单目录内", { path });
       this.plugin.store.logDiagnostic("security", message);
       throw new ApiError("FORBIDDEN", message, 403);
+    }
+    // 写操作也必须遵守禁止标签：目标文件存在时检查其标签。
+    if (operation !== "read" && this.deniedTags().length > 0) {
+      const file = this.vault.getAbstractFileByPath(path);
+      if (file instanceof TFile && this.hasDeniedTag(file)) {
+        const message = tf("写入被拒绝：{path} 带有禁止访问的标签", { path });
+        this.plugin.store.logDiagnostic("security", message);
+        throw new ApiError("FORBIDDEN", message, 403);
+      }
     }
   }
 
@@ -572,7 +577,12 @@ export class AgentApi {
       file = (leaf?.view as { file?: TFile | null } | undefined)?.file ?? null;
     }
     const editor = workspace.activeEditor?.editor;
-    if (!file || this.isDeniedPath(file.path)) {
+    if (
+      !file ||
+      this.isDeniedPath(file.path) ||
+      !this.isAllowedByMode(file.path) ||
+      this.hasDeniedTag(file)
+    ) {
       return { file: null, selection: "", cursorLine: 0, cursorParagraph: "" };
     }
     const selection = editor?.getSelection() ?? "";

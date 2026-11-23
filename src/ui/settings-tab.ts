@@ -884,18 +884,29 @@ export class PulseSettingTab extends PluginSettingTab {
           })
       );
 
-    new Setting(containerEl)
+    let tokenRevealed = false;
+    const tokenSetting = new Setting(containerEl)
       .setName(t("访问令牌"))
-      .setDesc(t("HTTP 请求与 MCP 桥接都必须携带此令牌。"))
-      .addText((text) =>
-        text
-          .setPlaceholder(t("点击右侧按钮生成"))
-          .setValue(settings.agentServerToken)
-          .onChange((value) => {
-            settings.agentServerToken = value.trim();
-            save();
+      .setDesc(t("HTTP 请求与 MCP 桥接都必须携带此令牌。"));
+    tokenSetting.addText((text) => {
+      text.inputEl.type = "password";
+      text
+        .setPlaceholder(t("点击右侧按钮生成"))
+        .setValue(settings.agentServerToken)
+        .onChange((value) => {
+          settings.agentServerToken = value.trim();
+          save();
+        });
+      tokenSetting.addButton((button) =>
+        button
+          .setButtonText(t("显示"))
+          .onClick(() => {
+            tokenRevealed = !tokenRevealed;
+            text.inputEl.type = tokenRevealed ? "text" : "password";
+            button.setButtonText(tokenRevealed ? t("隐藏") : t("显示"));
           })
       );
+    });
 
     new Setting(containerEl)
       .setName(t("重新生成令牌"))

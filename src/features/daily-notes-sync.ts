@@ -98,7 +98,8 @@ function writeFolder(plugin: InternalDailyNotes, path: string): boolean {
   if (plugin.instance?.saveData) {
     try {
       const data = plugin.instance.config ?? plugin.instance.options;
-      if (data) void plugin.instance.saveData(data);
+      // saveData 可能返回 Promise：必须捕获拒绝，避免未处理 Promise rejection。
+      if (data) void Promise.resolve(plugin.instance.saveData(data)).catch(() => {});
     } catch { /* 尽力持久化 */ }
   }
   return true;

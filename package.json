@@ -1,7 +1,7 @@
 {
   "name": "sediment",
   "version": "1.2.9",
-  "description": "Local-first Obsidian plugin: knowledge stats, heatmap, quick memos, weekly reviews and agent knowledge deposition.",
+  "description": "Local-first, auditable AI writing layer for Obsidian: approve Agent writes via MCP with diffs, snapshots and a change timeline.",
   "main": "main.js",
   "scripts": {
     "dev": "node scripts/version-bump.mjs && node scripts/sync-changelog.mjs && node scripts/sync-bridge.mjs && node esbuild.config.mjs",

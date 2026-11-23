@@ -36,7 +36,13 @@ export function listBackups(plugin: SedimentPlugin, path: string): BackupInfo[] 
   return listBackupsMap(plugin, [path]).get(path) ?? [];
 }
 
+/** 快照文件名白名单：只允许字母数字、点、下划线、连字符，禁止 .. 与路径分隔符。 */
+function isValidBackupName(name: string): boolean {
+  return /^[A-Za-z0-9._-]+$/.test(name) && !name.includes("..");
+}
+
 export function readBackup(plugin: SedimentPlugin, name: string): string {
+  if (!isValidBackupName(name)) return "";
   const directory = backupDirectory(plugin.app.vault);
   if (!directory) return "";
   return readTextFile(`${directory}/${name}`, "utf8");
@@ -47,6 +53,9 @@ export async function restoreBackup(
   file: TFile,
   name: string
 ): Promise<void> {
+  if (!isValidBackupName(name)) {
+    throw new Error(`非法快照文件名：${name}`);
+  }
   const directory = backupDirectory(plugin.app.vault);
   // 快照文件可能已被保留策略清理；此时绝不能把笔记覆盖成空内容。
   if (!directory || !fileExists(`${directory}/${name}`)) {

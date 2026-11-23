@@ -58,7 +58,7 @@ import {
   summarizeAgentUsage,
   totalAgentCalls,
 } from "../../src/data/agent-usage";
-import { AgentApi, ApiError, safeAgentPath, stampAgentProvenance } from "../../src/agent/api";
+import { AgentApi, ApiError, safeAgentPath, stampAgentProvenance, generateToken } from "../../src/agent/api";
 import { FileBridge } from "../../src/features/file-bridge";
 import { reconcilePendingWrites, markStaleByPaths } from "../../src/agent/reconcile";
 import { SemanticIndex, tokenizeSemanticText } from "../../src/agent/semantic";
@@ -318,6 +318,101 @@ test("令牌比较：SHA-256 定长 + timingSafeEqual，长度不等不抛异常
   assert.equal(tokensMatch("secret-token", "secret-tokeX"), false);
   assert.equal(tokensMatch("short", "much-longer-token"), false);
   assert.equal(tokensMatch("", ""), true);
+});
+
+test("generateToken：CSPRNG 不可用时抛错而非弱化随机（A7）", () => {
+  const cryptoObj = (globalThis as { crypto?: Crypto }).crypto;
+  const original = cryptoObj?.getRandomValues?.bind(cryptoObj);
+  try {
+    if (cryptoObj) {
+      (cryptoObj as { getRandomValues: unknown }).getRandomValues = () => {
+        throw new Error("no cspng");
+      };
+    } else {
+      (globalThis as { crypto?: unknown }).crypto = {
+        getRandomValues: () => { throw new Error("no cspng"); },
+      };
+    }
+    assert.throws(() => generateToken());
+  } finally {
+    if (cryptoObj && original) {
+      (cryptoObj as { getRandomValues: unknown }).getRandomValues = original;
+    } else {
+      delete (globalThis as { crypto?: unknown }).crypto;
+    }
+  }
+  // 正常路径生成 32 位十六进制令牌。
+  const token = generateToken();
+  assert.match(token, /^[0-9a-f]{32}$/);
+});
+
+test("getActiveContext：白名单外与禁访标签笔记不得泄露正文", () => {
+  function pluginFor(settingsOverride: Record<string, unknown>) {
+    const activeFile = new TFileStub("其他/私密.md");
+    return {
+      store: { settings: { ...DEFAULT_SETTINGS, ...settingsOverride } },
+      app: {
+        workspace: {
+          getActiveFile: () => activeFile,
+          getLeavesOfType: () => [],
+          activeEditor: {
+            editor: {
+              getSelection: () => "选中文本",
+              getCursor: () => ({ line: 0, ch: 0 }),
+              getLine: () => "正文",
+              lineCount: () => 1,
+              getRange: () => "正文段落",
+            },
+          },
+        },
+        metadataCache: {
+          getFileCache: (f: { path: string }) =>
+            f.path === "其他/私密.md" && (settingsOverride as { denyTag?: boolean }).denyTag
+              ? { tags: [{ tag: "#secret" }], frontmatter: {} }
+              : undefined,
+        },
+      },
+    } as never;
+  }
+
+  // allowlist 模式、文件不在白名单 → 拒绝
+  const outside = new AgentApi(
+    pluginFor({ agentAccessMode: "allowlist", agentAllowedFolders: "知识" })
+  );
+  assert.equal(outside.getActiveContext().file, null);
+
+  // 命中黑/白名单 → 放行
+  const allowed = new AgentApi(
+    pluginFor({ agentAccessMode: "allowlist", agentAllowedFolders: "其他" })
+  );
+  assert.equal(allowed.getActiveContext().file, "其他/私密.md");
+
+  // 带禁访标签 → 拒绝（即使路径在白名单内）
+  const tagged = new AgentApi(
+    pluginFor({ agentAccessMode: "allowlist", agentAllowedFolders: "其他", denyTag: true, deniedTags: "secret" })
+  );
+  assert.equal(tagged.getActiveContext().file, null);
+});
+
+test("写路径：目标文件带禁止标签时 assertPathAllowed 拒绝（A3）", () => {
+  const file = new TFile("笔记/secret.md");
+  const plugin = {
+    store: {
+      settings: { ...DEFAULT_SETTINGS, deniedTags: "secret", agentAccessMode: "allow-all" },
+      logDiagnostic: () => {},
+    },
+    app: {
+      vault: { getAbstractFileByPath: (p: string) => (p === "笔记/secret.md" ? file : null) },
+      metadataCache: { getFileCache: () => ({ tags: [{ tag: "#secret" }], frontmatter: {} }) },
+    },
+  } as never;
+  const api = new AgentApi(plugin);
+  assert.throws(
+    () => api.assertPathAllowed("笔记/secret.md", "overwrite"),
+    (e: unknown) => e instanceof ApiError && e.code === "FORBIDDEN"
+  );
+  // 读路径不应因本守卫抛错（标签门禁在读路径另有实现）。
+  assert.doesNotThrow(() => api.assertPathAllowed("笔记/secret.md", "read"));
 });
 
 test("confirm 档：writeNote 挂起不落盘；采纳落盘、驳回丢弃、门禁先于挂起", async () => {

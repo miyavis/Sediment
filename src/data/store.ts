@@ -19,6 +19,7 @@ import {
 import { t, tf } from "../i18n";
 import { reconcilePendingWrites, markStaleByPaths } from "../agent/reconcile";
 import { rebuildAgentUsage, recordAgentUsage, sanitizeAgentUsage } from "./agent-usage";
+import { redactSecrets } from "../agent/security";
 import { dateKey } from "../utils/dates";
 import { contentHash } from "../utils/hash";
 import { ensureFolder, normalizeFolder } from "../utils/vault";
@@ -39,6 +40,43 @@ function delay(ms: number): Promise<void> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function isStr(value: unknown): value is string {
+  return typeof value === "string";
+}
+
+function validMemo(value: unknown): value is import("../types").MemoRecord {
+  if (!isRecord(value)) return false;
+  return (
+    isStr(value.id) && isStr(value.date) && isStr(value.text) &&
+    Array.isArray(value.tags) && value.tags.every(isStr) && typeof value.converted === "boolean"
+  );
+}
+
+function validWorkLog(value: unknown): value is WorkLogRecord {
+  if (!isRecord(value)) return false;
+  return isStr(value.id) && isStr(value.date) && isStr(value.time) && isStr(value.agent) && isStr(value.task);
+}
+
+function validSnapshot(value: unknown): value is SnapshotRecord {
+  if (!isRecord(value)) return false;
+  return isStr(value.id) && isStr(value.path) && isStr(value.time);
+}
+
+function validToolCall(value: unknown): value is ToolCallRecord {
+  if (!isRecord(value)) return false;
+  return isStr(value.time) && isStr(value.tool) && isStr(value.agent) && isStr(value.path);
+}
+
+function validDiagnostic(value: unknown): value is DiagnosticRecord {
+  if (!isRecord(value)) return false;
+  return isStr(value.time) && isStr(value.message) && isStr(value.category);
+}
+
+/** 过滤数组中的畸形元素，避免损坏 data.json 让下游 .includes/.split 抛 TypeError。 */
+function onlyValid<T>(value: unknown, guard: (item: unknown) => item is T): T[] {
+  return Array.isArray(value) ? value.filter(guard) : [];
 }
 
 /** 旧版迁移记录形状校验：异常数据回退为 null，不阻断其它数据加载。 */
@@ -114,6 +152,12 @@ export class Store {
 
   constructor(private plugin: Plugin) {}
 
+  /** 用当前令牌脱敏：令牌可能出现在 Agent 可控的诊断消息/工具路径里，禁止明文落盘。 */
+  private redact(text: string): string {
+    const token = this.data.settings?.agentServerToken;
+    return token ? redactSecrets(text, [token]) : text;
+  }
+
   /** 记录可在真实环境查看的诊断事件；默认同时安排一次保存。 */
   logDiagnostic(
     category: DiagnosticRecord["category"],
@@ -123,7 +167,12 @@ export class Store {
   ): void {
     if (!this.data.settings?.diagnosticsEnabled) return;
     this.data.diagnostics ??= [];
-    this.data.diagnostics.unshift({ time: new Date().toISOString(), category, message, detail });
+    this.data.diagnostics.unshift({
+      time: new Date().toISOString(),
+      category,
+      message: this.redact(message),
+      detail: detail === undefined ? undefined : this.redact(detail),
+    });
     if (this.data.diagnostics.length > DIAGNOSTICS_CAP) this.data.diagnostics.length = DIAGNOSTICS_CAP;
     if (schedule) this.scheduleSave(2000);
   }
@@ -187,11 +236,11 @@ export class Store {
     this.data = {
       version: loaded.version ?? 1,
       days: loaded.days && typeof loaded.days === "object" && !Array.isArray(loaded.days) ? loaded.days : {},
-      memos: Array.isArray(loaded.memos) ? loaded.memos : [],
-      workLogs: Array.isArray(loaded.workLogs) ? loaded.workLogs : [],
-      toolCalls: Array.isArray(loaded.toolCalls) ? loaded.toolCalls : [],
+      memos: onlyValid(loaded.memos, validMemo),
+      workLogs: onlyValid(loaded.workLogs, validWorkLog),
+      toolCalls: onlyValid(loaded.toolCalls, validToolCall),
       agentUsage: {},
-      snapshots: Array.isArray(loaded.snapshots) ? loaded.snapshots : [],
+      snapshots: onlyValid(loaded.snapshots, validSnapshot),
       reviewedChanges:
         loaded.reviewedChanges && typeof loaded.reviewedChanges === "object" && !Array.isArray(loaded.reviewedChanges)
           ? loaded.reviewedChanges
@@ -212,7 +261,7 @@ export class Store {
               isRecord(item.request.args)
           )
         : [],
-      diagnostics: Array.isArray(loaded.diagnostics) ? loaded.diagnostics : [],
+      diagnostics: onlyValid(loaded.diagnostics, validDiagnostic),
       editSessions: loaded.editSessions && typeof loaded.editSessions === "object" && !Array.isArray(loaded.editSessions)
         ? loaded.editSessions
         : {},
@@ -484,6 +533,7 @@ export class Store {
   /** 记录一次调用；返回记录本身，供 confirm 档随后标记为挂起。
    *  countUsage=false 用于采纳补记，避免同一次请求在客户端调用统计里算两次。 */
   logToolCall(record: ToolCallRecord, countUsage = true): ToolCallRecord {
+    if (record.path) record.path = this.redact(record.path);
     this.data.toolCalls.unshift(record);
     if (this.data.toolCalls.length > 500) this.data.toolCalls.length = 500;
     if (countUsage) recordAgentUsage(this.data.agentUsage, record.agent, record.time, record.tool);

@@ -388,6 +388,8 @@ const EN: Record<string, string> = {
   "端口": "Port",
   "默认 27123，修改后服务会自动重启。": "Default 27123; the server restarts on change.",
   "访问令牌": "Access token",
+  "显示": "Show",
+  "隐藏": "Hide",
   "HTTP 请求与 MCP 桥接都必须携带此令牌。": "Required for both HTTP requests and the MCP bridge.",
   "点击右侧按钮生成": "Click the button to generate",
   "重新生成令牌": "Regenerate token",

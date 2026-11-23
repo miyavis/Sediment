@@ -110,6 +110,7 @@ import {
   parseBridgeProposal,
 } from "../../src/agent/bridge-schema";
 import { TFileWithPath, day, settings, accessSettings, fakeStore, LayoutFn, layoutFn, fakeSetupPlugin, openCodeTarget, fakeVault, fakePluginWith, fakeAgentPlugin, TFileStub, asApiError, HoldResult, memoryVault, fakeConfirmPlugin, pendingIdOf, newTFile, noticeMessages, fakeClock, trackerHarness, pomodoroHarness, memoryStorage, memoHarness, rawHttp, seedAgentMemo, pendingRecord, fakeHealthPlugin, fakeSemanticPlugin, fakeEmbed, migrationHarness, fakeBridgeHarness, proposalPath, decisionPath } from "../helpers";
+import { readBackup, restoreBackup } from "../../src/features/audit";
 test("computeContribution：默认权重下分项之和等于总分", () => {
   const d = day({ notesCreated: 1, edits: 1, tasksCompleted: 1, wordsAdded: 100, focusMinutes: 25 });
   // 2 + 1 + 1 + floor(100/100)=1 + floor(25/25)=1 = 6
@@ -237,6 +238,19 @@ test("access：isPathDenied 命中目录及子路径", () => {
   assert.equal(isPathDenied("私有", "私有,归档/secret"), true);
   assert.equal(isPathDenied("私有/日记.md", "私有,归档/secret"), true);
   assert.equal(isPathDenied("公开", "私有,归档/secret"), false);
+});
+
+test("access：大小写不敏感（Windows NTFS 与校验口径一致）", () => {
+  assert.equal(isPathDenied("private/x.md", "Private"), true);
+  assert.equal(isPathDenied("PRIVATE/deep/x.md", "private"), true);
+  const allowlist = {
+    ...accessSettings,
+    agentAccessMode: "allowlist" as const,
+    agentAllowedFolders: "Work",
+  };
+  assert.equal(isPathAllowedByMode("work/x.md", allowlist), true);
+  assert.equal(isPathAllowedByMode("WORK/deep/x.md", allowlist), true);
+  assert.equal(isPathAllowedByMode("其他/x.md", allowlist), false);
 });
 
 test("access：isOperationAllowed 按设置判定", () => {
@@ -673,6 +687,74 @@ test("Store.load：缺失字段补默认值并规范化历史数据", async () =
   assert.equal(normalized.activeMinutes, 0);
   assert.equal(normalized.capturedWords, 0);
   assert.equal(normalized.aiWordsAdded, 0);
+});
+
+test("audit：非法快照名拒绝路径穿越（A4）", async () => {
+  const vault = {
+    configDir: ".obsidian",
+    adapter: { getFullPath: (p: string) => `ROOT/${p}` },
+    process: async (_f: unknown, cb: (data: string) => string) => cb("不应被调用"),
+  };
+  const plugin = { app: { vault } } as never;
+  // readBackup 对非法名直接返回空串，不触盘。
+  assert.equal(readBackup(plugin, "../../etc/passwd"), "");
+  assert.equal(readBackup(plugin, "a/b.md"), "");
+  // restoreBackup 对非法名抛错，且不会调用 vault.process。
+  let processed = false;
+  (vault as { process: unknown }).process = async () => { processed = true; };
+  await assert.rejects(() => restoreBackup(plugin, new TFile("x.md"), "../evil"));
+  assert.equal(processed, false);
+});
+
+test("Store.load：数组中畸形元素被过滤，不污染下游（A6）", async () => {
+  const plugin = {
+    loadData: async () => ({
+      version: 1,
+      memos: [{ id: "m1", date: "2026-11-20", time: "10:00", text: "正常", tags: [], converted: false }, {}, null],
+      snapshots: [{ id: "s1", path: "a.md", time: "t" }, { id: "bad" }],
+      toolCalls: [{ time: "t", tool: "GET /x", agent: "a", path: "a.md" }, {}],
+      workLogs: [{ id: "w1", date: "2026-11-20", time: "10:00", agent: "a", task: "t" }, 42],
+      diagnostics: [{ time: "t", category: "security", message: "m" }, {}],
+    }),
+    saveData: async () => {},
+  } as unknown as ConstructorParameters<typeof Store>[0];
+  const store = new Store(plugin);
+  await store.load();
+
+  assert.equal(store.data.memos.length, 1);
+  assert.equal(store.data.memos[0].text, "正常");
+  assert.equal(store.data.snapshots.length, 1);
+  assert.equal(store.data.toolCalls.length, 1);
+  assert.equal(store.data.workLogs.length, 1);
+  assert.equal(store.data.diagnostics.length, 1);
+});
+
+test("Store.logDiagnostic：令牌不落明文诊断与工具路径（A5）", () => {
+  const token = "supersecret-token-123";
+  const plugin = {
+    loadData: async () => ({ version: 1, settings: { ...DEFAULT_SETTINGS, diagnosticsEnabled: true, agentServerToken: token } }),
+    saveData: async () => {},
+  } as unknown as ConstructorParameters<typeof Store>[0];
+  const store = new Store(plugin);
+  // 直接设置内存数据（跳过 load 的异步）以聚焦脱敏逻辑。
+  store.data = { ...store.data, settings: { ...DEFAULT_SETTINGS, diagnosticsEnabled: true, agentServerToken: token } };
+
+  store.logDiagnostic("security", `尝试令牌 ${token} 访问`, `detail ${token}`, false);
+  assert.ok(!JSON.stringify(store.data.diagnostics).includes(token));
+  assert.match(store.data.diagnostics[0].message, /\[REDACTED\]/);
+
+  // logToolCall 会触发 scheduleSave（依赖 window），本测试只关心路径脱敏，临时提供桩。
+  const savedWindow = (globalThis as { window?: unknown }).window;
+  (globalThis as { window?: unknown }).window = {
+    setTimeout: () => 0,
+    clearTimeout: () => {},
+  };
+  try {
+    store.logToolCall({ time: new Date().toISOString(), tool: "GET /x", agent: "a", path: `notes/${token}.md` }, false);
+  } finally {
+    (globalThis as { window?: unknown }).window = savedWindow;
+  }
+  assert.ok(!JSON.stringify(store.data.toolCalls).includes(token));
 });
 
 test("Store.load：未知版本暂停写入并保留警告", async () => {

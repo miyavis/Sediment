@@ -22,9 +22,21 @@ export function splitList(value: string): string[] {
     .filter(Boolean);
 }
 
-/** 路径是否命中黑名单目录（相等或其子路径）。 */
+/** 路径比较统一小写：Windows NTFS 大小写不敏感，校验口径必须与落盘一致。 */
+function pathForCompare(path: string): string {
+  return path.replace(/\\/g, "/").toLowerCase();
+}
+
+/** 目录前缀匹配（归一化 + 大小写不敏感）：相等或其子路径。 */
+function matchesFolder(path: string, folder: string): boolean {
+  const p = pathForCompare(path);
+  const f = pathForCompare(folder);
+  return p === f || p.startsWith(`${f}/`);
+}
+
+/** 路径是否命中黑名单目录（相等或其子路径，大小写不敏感）。 */
 export function isPathDenied(path: string, deniedFolders: string): boolean {
-  return splitList(deniedFolders).some((folder) => path === folder || path.startsWith(`${folder}/`));
+  return splitList(deniedFolders).some((folder) => matchesFolder(path, folder));
 }
 
 /** 操作是否被工作模式允许。 */
@@ -51,9 +63,7 @@ export function isOperationAllowed(operation: AgentOperation, settings: AccessSe
 export function isPathAllowedByMode(path: string, settings: AccessSettings): boolean {
   if (isPathDenied(path, settings.deniedFolders)) return false;
   if (settings.agentAccessMode === "allow-all") return true;
-  return splitList(settings.agentAllowedFolders).some(
-    (folder) => path === folder || path.startsWith(`${folder}/`)
-  );
+  return splitList(settings.agentAllowedFolders).some((folder) => matchesFolder(path, folder));
 }
 
 /** 分类/子目录名会被直接拼进 vault 路径，含路径分隔符或 .. 的一律视为非法。 */
