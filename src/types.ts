@@ -281,6 +281,16 @@ export interface PersistedPomodoro {
   heartbeatAt?: number;
 }
 
+/** 一次旧版目录迁移的持久记录，用于「撤销迁移」。 */
+export interface FolderMigrationRecord {
+  /** 迁移完成的 ISO 时间 */
+  at: string;
+  /** 实际完成迁移（含目标不存在、仅改设置）的目录：from → to */
+  items: Array<{ key: string; from: string; to: string }>;
+  /** 迁移时若自动改写了核心日记插件路径，记录其旧值（含空串）；未改动为 undefined */
+  dailyNotesFolderBefore?: string;
+}
+
 export interface PulseData {
   version: number;
   days: Record<string, DayRecord>;
@@ -297,6 +307,8 @@ export interface PulseData {
   diagnostics: DiagnosticRecord[];
   /** 已计过编辑会话的 日期→文件路径 列表，重启后不重复计分 */
   editSessions: Record<string, string[]>;
+  /** 旧版目录迁移记录，供「撤销迁移」使用；从未迁移或已撤销时为 null */
+  folderMigration: FolderMigrationRecord | null;
   /** 专注会话日志（实测），最多保留 500 条 */
   focusSessions: FocusSessionRecord[];
   /** 番茄钟状态，退出/重启不丢 */
@@ -421,6 +433,7 @@ export const DEFAULT_DATA: PulseData = {
   pendingWrites: [],
   diagnostics: [],
   editSessions: {},
+  folderMigration: null,
   focusSessions: [],
   pomodoro: null,
   settings: DEFAULT_SETTINGS,

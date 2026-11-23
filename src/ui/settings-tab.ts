@@ -1,7 +1,16 @@
 import { App, Notice, PluginSettingTab, Setting, type SettingDefinitionItem } from "obsidian";
 import { configureAgent, configSnippet, allAgentCandidates, detectAgents, isAgentConfigured } from "../agent/setup";
 import { uninstallMcp } from "../features/uninstall";
-import { migrateLegacyFolders, planFolderMigrations, type FolderMigrationOutcome } from "../features/folder-migration";
+import {
+  migrateLegacyFolders,
+  planFolderMigrations,
+  undoFolderMigration,
+  type FolderMigrationOutcome,
+} from "../features/folder-migration";
+import {
+  createDailyNotesAccess,
+  syncDailyNotesFolder,
+} from "../features/daily-notes-sync";
 import { McpUninstallModal } from "./mcp-uninstall-modal";
 import { confirmAction } from "./confirm-modal";
 import type { SedimentPlugin } from "../main";
@@ -208,7 +217,7 @@ export class PulseSettingTab extends PluginSettingTab {
           })
       );
 
-    new Setting(containerEl)
+    const migrationSetting = new Setting(containerEl)
       .setName(t("旧版目录迁移"))
       .setDesc(
         t("把旧默认目录（daily、reviews、agent-logs、knowledge、sediment-backup）整体移入 Sediment/，避免与库内已有目录撞名。仅迁移仍是旧默认值的目录，自定义路径不受影响。")
@@ -216,6 +225,14 @@ export class PulseSettingTab extends PluginSettingTab {
       .addButton((button) =>
         button.setButtonText(t("一键迁移")).onClick(() => void this.runLegacyFolderMigration())
       );
+    if (this.plugin.store.data.folderMigration) {
+      migrationSetting.addButton((button) =>
+        button
+          .setButtonText(t("撤销迁移"))
+          .setCta()
+          .onClick(() => void this.undoLegacyFolderMigration())
+      );
+    }
 
     new Setting(containerEl).setName(t("实验性功能")).setHeading();
     const experimental: Array<[keyof PulseSettings, string, string]> = [
@@ -497,7 +514,7 @@ export class PulseSettingTab extends PluginSettingTab {
       );
   }
 
-  /** 一键把旧默认目录收进 Sediment/：确认 → 逐文件移动（保留链接）→ 保存设置并刷新。 */
+  /** 一键把旧默认目录收进 Sediment/：确认 → 逐文件移动（保留链接）→ 同步日记插件 → 记录 → 保存。 */
   private async runLegacyFolderMigration(): Promise<void> {
     const settings = this.plugin.store.settings;
     const plan = planFolderMigrations(settings);
@@ -509,7 +526,7 @@ export class PulseSettingTab extends PluginSettingTab {
     const confirmed = await confirmAction(
       this.app,
       tf(
-        "将迁移以下旧默认目录到 Sediment/：\n{list}\n\n文件会逐个移动（Obsidian 内的链接自动更新）；目标已有同名文件的目录会整体跳过。若 Obsidian 核心「日记」插件指向 daily，迁移后请同步修改它的设置。确定继续？",
+        "将迁移以下旧默认目录到 Sediment/：\n{list}\n\n文件会逐个移动（Obsidian 内的链接自动更新）；目标已有同名文件的目录会整体跳过。若 Obsidian 核心「日记」插件指向旧目录，将自动同步到新目录；无法自动同步时会提示手动修改。确定继续？",
         { list }
       )
     );
@@ -530,18 +547,38 @@ export class PulseSettingTab extends PluginSettingTab {
       return;
     }
 
+    const parts: string[] = [];
     if (outcome.migrated.length > 0) {
       this.plugin.store.logDiagnostic(
         "storage",
         tf("目录迁移完成：{n} 个目录、{files} 个文件", { n: outcome.migrated.length, files: outcome.movedFiles })
       );
+      parts.push(tf("已迁移 {n} 个目录、{files} 个文件", { n: outcome.migrated.length, files: outcome.movedFiles }));
+
+      // 若 daily 目录确实迁移了，尝试自动同步核心日记插件路径。
+      let dailyNotesBefore: string | undefined;
+      const dailyItem = outcome.migrated.find((item) => item.key === "dailyNoteFolder");
+      if (dailyItem) {
+        const access = createDailyNotesAccess(this.app);
+        // 仅在插件当前仍指向旧目录时才会改写，记录改写前的旧值用于撤销。
+        const current = access?.get() ?? null;
+        const sync = syncDailyNotesFolder(access, dailyItem.from, dailyItem.to);
+        if (sync === "changed") {
+          dailyNotesBefore = current ?? dailyItem.from;
+          parts.push(t("已自动同步核心「日记」插件目录"));
+        } else if (sync === "unavailable") {
+          parts.push(t("无法自动同步核心「日记」插件目录，请手动修改其设置"));
+        }
+      }
+
+      this.plugin.store.data.folderMigration = {
+        at: new Date().toISOString(),
+        items: outcome.migrated.map((item) => ({ key: item.key, from: item.from, to: item.to })),
+        ...(dailyNotesBefore !== undefined ? { dailyNotesFolderBefore: dailyNotesBefore } : {}),
+      };
       await this.plugin.saveSettings();
       this.plugin.semantic.invalidate();
       this.plugin.refreshViews();
-    }
-    const parts: string[] = [];
-    if (outcome.migrated.length > 0) {
-      parts.push(tf("已迁移 {n} 个目录、{files} 个文件", { n: outcome.migrated.length, files: outcome.movedFiles }));
     }
     for (const item of outcome.skipped) {
       parts.push(tf("已跳过 {from}（{reason}）", { from: item.from, reason: item.reason }));
@@ -551,6 +588,69 @@ export class PulseSettingTab extends PluginSettingTab {
     }
     new Notice(parts.join("；"), outcome.failed.length > 0 ? 15_000 : 6_000);
     if (outcome.migrated.length > 0) this.renderSettings();
+  }
+
+  /** 撤销上一次目录迁移：确认 → 反向搬回 → 还原日记插件 → 清记录。 */
+  private async undoLegacyFolderMigration(): Promise<void> {
+    const record = this.plugin.store.data.folderMigration;
+    if (!record) {
+      new Notice(t("没有可撤销的目录迁移。"));
+      return;
+    }
+    const confirmed = await confirmAction(
+      this.app,
+      t("撤销迁移会把目录从 Sediment/ 搬回旧位置并还原设置，确定继续？")
+    );
+    if (!confirmed) return;
+
+    let outcome: FolderMigrationOutcome;
+    try {
+      outcome = await undoFolderMigration(
+        {
+          settings: this.plugin.store.settings,
+          vault: this.app.vault,
+          fileManager: this.app.fileManager,
+        },
+        record
+      );
+    } catch (error) {
+      new Notice(
+        tf("撤销迁移失败：{error}", { error: error instanceof Error ? error.message : String(error) }),
+        10_000
+      );
+      return;
+    }
+
+    const parts: string[] = [];
+    if (outcome.migrated.length > 0) {
+      parts.push(tf("已撤销 {n} 个目录、{files} 个文件", { n: outcome.migrated.length, files: outcome.movedFiles }));
+      // 还原日记插件：仅当它仍指向我们改写后的新目录时回退。
+      if (record.dailyNotesFolderBefore !== undefined) {
+        const dailyItem = record.items.find((item) => item.key === "dailyNoteFolder");
+        if (dailyItem) {
+          const access = createDailyNotesAccess(this.app);
+          const sync = syncDailyNotesFolder(access, dailyItem.to, record.dailyNotesFolderBefore);
+          if (sync === "changed") parts.push(t("已还原核心「日记」插件目录"));
+          else if (sync === "unavailable") parts.push(t("核心「日记」插件目录需手动还原"));
+        }
+      }
+    }
+    for (const item of outcome.skipped) {
+      parts.push(tf("已跳过 {from}（{reason}）", { from: item.from, reason: item.reason }));
+    }
+    for (const item of outcome.failed) {
+      parts.push(tf("失败 {from}（{reason}）", { from: item.from, reason: item.reason }));
+    }
+
+    // 全部撤销成功（无失败、无跳过）才清空记录；部分失败时保留以便重试。
+    if (outcome.failed.length === 0 && outcome.skipped.length === 0) {
+      this.plugin.store.data.folderMigration = null;
+    }
+    await this.plugin.saveSettings();
+    this.plugin.semantic.invalidate();
+    this.plugin.refreshViews();
+    new Notice(parts.join("；") || t("没有需要撤销的目录。"), outcome.failed.length > 0 ? 15_000 : 6_000);
+    this.renderSettings();
   }
 
   private renderBackup(containerEl: HTMLElement, settings: PulseSettings, save: () => void): void {

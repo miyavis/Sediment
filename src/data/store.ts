@@ -7,6 +7,7 @@ import {
   type DayRecord,
   type DiagnosticRecord,
   type FocusSessionRecord,
+  type FolderMigrationRecord,
   type MemoRecord,
   type PendingWriteRecord,
   type PulseData,
@@ -38,6 +39,28 @@ function delay(ms: number): Promise<void> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+/** 旧版迁移记录形状校验：异常数据回退为 null，不阻断其它数据加载。 */
+function normalizeFolderMigration(value: unknown): FolderMigrationRecord | null {
+  if (!isRecord(value)) return null;
+  const at = value.at;
+  const items = value.items;
+  if (typeof at !== "string" || !Array.isArray(items)) return null;
+  const validItems = items.filter(
+    (item): item is FolderMigrationRecord["items"][number] =>
+      isRecord(item) &&
+      typeof item.key === "string" &&
+      typeof item.from === "string" &&
+      typeof item.to === "string"
+  );
+  if (validItems.length !== items.length) return null;
+  const before = value.dailyNotesFolderBefore;
+  return {
+    at,
+    items: validItems,
+    ...(typeof before === "string" ? { dailyNotesFolderBefore: before } : {}),
+  };
 }
 
 /** 字段存在但类型/形状异常视为结构损坏；缺失或 null 走默认值补齐，不算损坏。 */
@@ -193,6 +216,7 @@ export class Store {
       editSessions: loaded.editSessions && typeof loaded.editSessions === "object" && !Array.isArray(loaded.editSessions)
         ? loaded.editSessions
         : {},
+      folderMigration: normalizeFolderMigration(loaded.folderMigration),
       focusSessions: Array.isArray(loaded.focusSessions) ? loaded.focusSessions : [],
       pomodoro: loaded.pomodoro ?? null,
       settings: { ...DEFAULT_SETTINGS, ...(loaded.settings && typeof loaded.settings === "object" ? loaded.settings : {}) },

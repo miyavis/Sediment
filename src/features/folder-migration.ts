@@ -1,9 +1,10 @@
 /** 旧版默认目录（daily / reviews / …）一次性收进 Sediment/ 的迁移执行器。
  *  只迁移「仍然是旧默认值」的目录，用户自定义过的路径一律不动；
- *  冲突目录整体跳过、移动失败逐文件回滚，设置仅在整目录成功后更新。 */
+ *  冲突目录整体跳过、移动失败逐文件回滚，设置仅在整目录成功后更新。
+ *  同时支持按迁移记录撤销（from/to 对调复用同一套执行逻辑）。 */
 
 import { tf } from "../i18n";
-import type { PulseSettings } from "../types";
+import type { FolderMigrationRecord, PulseSettings } from "../types";
 import { normalizeFolder } from "../utils/vault";
 
 export type FolderMigrationKey =
@@ -15,9 +16,9 @@ export type FolderMigrationKey =
 
 export interface FolderMigrationPlanItem {
   key: FolderMigrationKey;
-  /** 旧默认目录（库内相对路径，已归一化） */
+  /** 迁移源目录（库内相对路径，已归一化） */
   from: string;
-  /** 新默认目录 */
+  /** 迁移目标目录 */
   to: string;
 }
 
@@ -35,6 +36,17 @@ export function planFolderMigrations(settings: PulseSettings): FolderMigrationPl
   return LEGACY_FOLDER_MIGRATIONS.filter(
     (item) => normalizeFolder(String(settings[item.key] ?? "")) === item.from
   );
+}
+
+/** 由迁移记录生成撤销计划：把每项 from/to 对调，按记录的逆序执行。 */
+export function planFolderUndo(record: FolderMigrationRecord): FolderMigrationPlanItem[] {
+  return [...record.items]
+    .reverse()
+    .map((item) => ({
+      key: item.key as FolderMigrationKey,
+      from: item.to,
+      to: item.from,
+    }));
 }
 
 /** 迁移所需的最小 vault 面（真实 Vault 结构兼容，便于单测注入桩）。 */
@@ -128,18 +140,21 @@ async function cleanupEmptySource(vault: MigrationVault, folder: string): Promis
 }
 
 /**
- * 按 LEGACY_FOLDER_MIGRATIONS 迁移旧默认目录。
+ * 执行一组目录迁移计划（by/from/to 已归一）。
  * - 目录不存在或为空：只更新设置；
  * - 目标已有同名文件 / 目标路径被文件占用：整目录跳过并给出原因；
  * - 目标父目录不存在：移动前逐级创建（Obsidian rename 不代建目录），创建失败则整目录失败；
  * - 单个文件移动失败：把已移动文件按相反顺序移回，目录设置保持旧值。
  * 设置更新只在整目录成功后发生；调用方负责保存设置与刷新界面。
  */
-export async function migrateLegacyFolders(options: MigrateFoldersOptions): Promise<FolderMigrationOutcome> {
+async function applyPlan(
+  plan: FolderMigrationPlanItem[],
+  options: MigrateFoldersOptions
+): Promise<FolderMigrationOutcome> {
   const { settings, vault, fileManager } = options;
   const outcome: FolderMigrationOutcome = { migrated: [], skipped: [], failed: [], movedFiles: 0 };
 
-  for (const item of planFolderMigrations(settings)) {
+  for (const item of plan) {
     if (targetIsFile(vault, item.to)) {
       outcome.skipped.push({ ...item, reason: tf("目标路径已被同名文件占用：{path}", { path: item.to }) });
       continue;
@@ -149,7 +164,7 @@ export async function migrateLegacyFolders(options: MigrateFoldersOptions): Prom
       .filter((file) => file.path.startsWith(`${item.from}/`))
       .sort((a, b) => a.path.localeCompare(b.path));
     if (files.length === 0) {
-      settings[item.key] = item.to;
+      (settings as unknown as Record<string, string>)[item.key] = item.to;
       outcome.migrated.push(item);
       await cleanupEmptySource(vault, item.from);
       continue;
@@ -214,11 +229,21 @@ export async function migrateLegacyFolders(options: MigrateFoldersOptions): Prom
       continue;
     }
 
-    settings[item.key] = item.to;
+    (settings as unknown as Record<string, string>)[item.key] = item.to;
     outcome.migrated.push(item);
     outcome.movedFiles += done.length;
     await cleanupEmptySource(vault, item.from);
   }
 
   return outcome;
+}
+
+/** 按 LEGACY_FOLDER_MIGRATIONS 迁移旧默认目录。 */
+export async function migrateLegacyFolders(options: MigrateFoldersOptions): Promise<FolderMigrationOutcome> {
+  return applyPlan(planFolderMigrations(options.settings), options);
+}
+
+/** 按迁移记录撤销：from/to 对调，把目录搬回旧位置并还原设置。 */
+export async function undoFolderMigration(options: MigrateFoldersOptions, record: FolderMigrationRecord): Promise<FolderMigrationOutcome> {
+  return applyPlan(planFolderUndo(record), options);
 }

@@ -100,7 +100,15 @@ import {
   LEGACY_FOLDER_MIGRATIONS,
   migrateLegacyFolders,
   planFolderMigrations,
+  planFolderUndo,
+  undoFolderMigration,
 } from "../../src/features/folder-migration";
+import {
+  folderEquals,
+  syncDailyNotesFolder,
+  createDailyNotesAccess,
+  type DailyNotesFolderAccess,
+} from "../../src/features/daily-notes-sync";
 import {
   bridgePendingId,
   bridgeProposalIdFromPath,
@@ -848,6 +856,92 @@ test("migrateLegacyFolders：移动中途失败时回滚已移动文件，设置
   ]);
   assert.equal(h.paths.has("daily/a.md"), true);
   assert.equal(h.paths.has("daily/b.md"), true);
+});
+
+test("planFolderUndo：对调 from/to 并逆序执行", () => {
+  const record = {
+    at: "2026-11-23T00:00:00.000Z",
+    items: [
+      { key: "dailyNoteFolder", from: "daily", to: "Sediment/daily" },
+      { key: "knowledgeFolder", from: "knowledge", to: "Sediment/knowledge" },
+    ],
+  };
+  assert.deepEqual(planFolderUndo(record), [
+    { key: "knowledgeFolder", from: "Sediment/knowledge", to: "knowledge" },
+    { key: "dailyNoteFolder", from: "Sediment/daily", to: "daily" },
+  ]);
+});
+
+test("undoFolderMigration：把目录搬回旧位置并还原设置", async () => {
+  // 先正向迁移，再撤销，验证文件与设置都回到初始状态。
+  const h = migrationHarness(["daily/a.md", "knowledge/技术/b.md"]);
+  const s = settings({ dailyNoteFolder: "daily", knowledgeFolder: "knowledge" });
+  const record = {
+    at: "2026-11-23T00:00:00.000Z",
+    items: [
+      { key: "dailyNoteFolder", from: "daily", to: "Sediment/daily" },
+      { key: "knowledgeFolder", from: "knowledge", to: "Sediment/knowledge" },
+    ],
+  };
+
+  const forward = await migrateLegacyFolders({ settings: s, vault: h.vault, fileManager: h.fileManager });
+  assert.equal(forward.migrated.length, 2);
+  assert.equal(s.dailyNoteFolder, "Sediment/daily");
+
+  const back = await undoFolderMigration({ settings: s, vault: h.vault, fileManager: h.fileManager }, record);
+  assert.deepEqual(back.migrated.map((item) => item.key), ["knowledgeFolder", "dailyNoteFolder"]);
+  assert.equal(s.dailyNoteFolder, "daily");
+  assert.equal(s.knowledgeFolder, "knowledge");
+  assert.equal(h.paths.has("daily/a.md"), true);
+  assert.equal(h.paths.has("knowledge/技术/b.md"), true);
+});
+
+test("undoFolderMigration：目标已存在同名文件时该项跳过，设置不变", async () => {
+  // Sediment/daily/a.md 已迁走，但旧 daily/a.md 又被重建 —— 撤销时目标冲突应跳过。
+  const h = migrationHarness(["Sediment/daily/a.md", "daily/a.md"]);
+  const s = settings({ dailyNoteFolder: "Sediment/daily" });
+  const record = {
+    at: "2026-11-23T00:00:00.000Z",
+    items: [{ key: "dailyNoteFolder", from: "daily", to: "Sediment/daily" }],
+  };
+  const back = await undoFolderMigration({ settings: s, vault: h.vault, fileManager: h.fileManager }, record);
+  assert.equal(back.skipped.length, 1);
+  assert.equal(s.dailyNoteFolder, "Sediment/daily");
+  assert.equal(h.paths.has("Sediment/daily/a.md"), true);
+});
+
+test("daily-notes-sync：folderEquals 归一化比较", () => {
+  assert.equal(folderEquals("daily", "daily"), true);
+  assert.equal(folderEquals("/daily/", "daily"), true);
+  assert.equal(folderEquals("daily", "Sediment/daily"), false);
+  assert.equal(folderEquals(null, "daily"), false);
+});
+
+test("daily-notes-sync：当前指向旧目录时改写，自定义路径不动", () => {
+  function access(initial: string): DailyNotesFolderAccess & { value: string } {
+    return {
+      value: initial,
+      get() { return this.value; },
+      set(p: string) { this.value = p; return true; },
+    };
+  }
+  const matching = access("daily");
+  assert.equal(syncDailyNotesFolder(matching, "daily", "Sediment/daily"), "changed");
+  assert.equal(matching.value, "Sediment/daily");
+
+  const custom = access("my-journal");
+  assert.equal(syncDailyNotesFolder(custom, "daily", "Sediment/daily"), "skipped");
+  assert.equal(custom.value, "my-journal");
+
+  assert.equal(syncDailyNotesFolder(null, "daily", "Sediment/daily"), "unavailable");
+});
+
+test("daily-notes-sync：createDailyNotesAccess 在无内部 API 时返回 null", () => {
+  assert.equal(createDailyNotesAccess({}), null);
+  assert.equal(createDailyNotesAccess(null), null);
+  // 内部插件不存在时同样安全返回 null。
+  const app = { internalPlugins: { getPluginById: () => undefined, plugins: {} } };
+  assert.equal(createDailyNotesAccess(app), null);
 });
 
 test("文件桥 schema：三类提案规范化与默认值", () => {
