@@ -2,7 +2,7 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
-## [Unreleased]
+## [1.3.0] - 2026-11-23
 
 ### 改进
 - 品牌命名统一：移除遗留的 Pulse 命名，`PulseData`/`PulseSettings`/`PulseSettingTab` 改为 `Sediment*`，UI 文案去掉「脉冲」
