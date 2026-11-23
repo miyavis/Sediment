@@ -24,4 +24,4 @@ jobs:
       - run: npm audit --omit=dev --audit-level=moderate
       - run: node scripts/verify-release.mjs
       - name: Ensure build left the tree clean
-        run: git diff --exit-code -- package.json package-lock.json manifest.json versions.json src/changelog.ts src/agent/bridge-source.ts main.js dist/sediment
+        run: git diff --exit-code -- package.json package-lock.json manifest.json versions.json src/changelog.ts src/agent/bridge-source.ts main.js

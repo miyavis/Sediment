@@ -6,6 +6,7 @@ data.json
 .obsidian/
 tests/.unit.bundle.cjs
 tests/.bench.bundle.cjs
+dist/
 .impeccable/
 docs/
 vibe_images/
