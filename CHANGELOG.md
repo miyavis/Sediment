@@ -2,6 +2,12 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [Unreleased]
+
+### 改进
+- AGENTS.md 内嵌规则补全为与 `examples/AGENTS.md` 完整版一致（含 confirm 挂起语义/pendingId、路径白名单、提示词注入警告、非沙箱声明、工具速查表）；新增单测校验两者正文一致
+- 设置页「一键安装 AGENTS.md」在文件已存在时提供「更新规则」按钮，覆盖前自动备份为 `.bak`
+
 ## [1.3.0] - 2026-11-23
 
 ### 改进

@@ -11,7 +11,7 @@ import {
   createDailyNotesAccess,
   syncDailyNotesFolder,
 } from "../features/daily-notes-sync";
-import { installAgentsGuide } from "../features/agents-guide";
+import { installAgentsGuide, hasAgentsGuide } from "../features/agents-guide";
 import { WORK_MODE_LABELS, WORK_MODES, type WorkMode } from "../agent/work-mode";
 import { McpUninstallModal } from "./mcp-uninstall-modal";
 import { confirmAction } from "./confirm-modal";
@@ -927,15 +927,24 @@ export class SedimentSettingTab extends PluginSettingTab {
         })
       );
 
-    new Setting(containerEl)
+    const agentsGuideSetting = new Setting(containerEl)
       .setName(t("安装 AGENTS.md 规则"))
-      .setDesc(t("在库根写入 AGENTS.md，告诉编码智能体一律走 MCP 写入。已存在则不会覆盖。"))
-      .addButton((button) =>
-        button.setButtonText(t("一键安装")).onClick(() => {
-          const created = installAgentsGuide(this.app.vault);
-          new Notice(created ? t("已在库根创建 AGENTS.md") : t("库根已有 AGENTS.md，未覆盖"));
+      .setDesc(t("在库根写入 AGENTS.md，告诉编码智能体一律走 MCP 写入。"));
+    agentsGuideSetting.addButton((button) =>
+      button.setButtonText(t("一键安装")).setDisabled(hasAgentsGuide(this.app.vault)).onClick(async () => {
+        const result = await installAgentsGuide(this.app.vault);
+        new Notice(result === "created" ? t("已在库根创建 AGENTS.md") : t("库根已有 AGENTS.md，未覆盖"));
+        this.renderSettings();
+      })
+    );
+    if (hasAgentsGuide(this.app.vault)) {
+      agentsGuideSetting.addButton((button) =>
+        button.setButtonText(t("更新规则")).setCta().onClick(async () => {
+          const result = await installAgentsGuide(this.app.vault, true);
+          new Notice(result === "updated" ? t("AGENTS.md 已更新，原文件已备份为 .bak") : t("AGENTS.md 更新失败"));
         })
       );
+    }
 
     new Setting(containerEl)
       .setName(t("启用文件桥（实验）"))

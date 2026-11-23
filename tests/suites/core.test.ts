@@ -115,6 +115,15 @@ import { assertNoExternalSymlink } from "../../src/agent/api";
 import { findSection, applyFrontmatterUpdate } from "../../src/agent/api-helpers";
 import { removeTomlServer, removeYamlServer } from "../../src/agent/config-formats";
 import { installAgentsGuide, AGENTS_GUIDE } from "../../src/features/agents-guide";
+
+// 内嵌规则须与 examples/AGENTS.md 正文一致（去掉 HTML 注释块后）。
+function stripHtmlComment(md: string): string {
+  return md
+    .replace(/\r\n/g, "\n")
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
 test("computeContribution：默认权重下分项之和等于总分", () => {
   const d = day({ notesCreated: 1, edits: 1, tasksCompleted: 1, wordsAdded: 100, focusMinutes: 25 });
   // 2 + 1 + 1 + floor(100/100)=1 + floor(25/25)=1 = 6
@@ -852,18 +861,36 @@ test("Store.markPendingWritesChanged：外部改动使挂起项失效（F5）", 
   assert.equal(store.data.pendingWrites[1].stale, undefined, "非目标路径不受影响");
 });
 
-test("agents-guide：一键安装 AGENTS.md，存在则不覆盖（C4）", () => {
+test("agents-guide：内嵌规则与 examples/AGENTS.md 正文一致", () => {
+  const template = fs.readFileSync(path.join(process.cwd(), "examples", "AGENTS.md"), "utf8");
+  const a = stripHtmlComment(AGENTS_GUIDE);
+  const b = stripHtmlComment(template);
+  if (a !== b) {
+    let i = 0;
+    while (i < Math.min(a.length, b.length) && a[i] === b[i]) i += 1;
+    console.error(`AGENTS diff at ${i}: embedded[${i}]=${JSON.stringify(a.slice(i, i + 40))} template[${i}]=${JSON.stringify(b.slice(i, i + 40))}`);
+  }
+  assert.equal(a, b);
+});
+
+test("agents-guide：一键安装/更新 AGENTS.md（C4）", async () => {
   const files = new Map<string, string>();
   const vault = {
     getAbstractFileByPath: (p: string) => (files.has(p) ? { path: p } : null),
     create: async (p: string, content: string) => { files.set(p, content); },
+    read: async (f: { path: string }) => files.get(f.path) ?? "",
+    modify: async (f: { path: string }, content: string) => { files.set(f.path, content); },
   } as never;
-  assert.equal(installAgentsGuide(vault), true);
+  assert.equal(await installAgentsGuide(vault), "created");
   assert.equal(files.get("AGENTS.md"), AGENTS_GUIDE);
-  // 已存在时不覆盖。
+  // 已存在且未指定 overwrite → 跳过。
   files.set("AGENTS.md", "自定义规则");
-  assert.equal(installAgentsGuide(vault), false);
+  assert.equal(await installAgentsGuide(vault), "skipped");
   assert.equal(files.get("AGENTS.md"), "自定义规则");
+  // overwrite=true → 更新并备份原内容。
+  assert.equal(await installAgentsGuide(vault, true), "updated");
+  assert.equal(files.get("AGENTS.md"), AGENTS_GUIDE);
+  assert.equal(files.get("AGENTS.md.bak"), "自定义规则");
 });
 
 test("audit：非法快照名拒绝路径穿越（A4）", async () => {
