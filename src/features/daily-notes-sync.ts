@@ -116,7 +116,7 @@ export function createDailyNotesAccess(app: unknown): DailyNotesFolderAccess | n
     const viaGet = internal.getPluginById?.("daily-notes");
     const viaMap = internal.plugins?.["daily-notes"];
     const candidate = viaGet ?? viaMap;
-    if (candidate && typeof candidate === "object") plugin = candidate as InternalDailyNotes;
+    if (candidate && typeof candidate === "object") plugin = candidate;
   } catch {
     return null;
   }
