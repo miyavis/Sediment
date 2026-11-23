@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+### 改进
+- 品牌命名统一：移除遗留的 Pulse 命名，`PulseData`/`PulseSettings`/`PulseSettingTab` 改为 `Sediment*`（保留兼容别名），UI 文案去掉「脉冲」
+- confirm 档有待审写入时主动弹通知；重建历史统计会报告读取失败的笔记数
+- MCP 驳回回执：驳回原因（user_rejected/stale）写入变更时间线，Agent 可通过 `get_change_timeline` 查询结果
+
+### 安全加固
+- HTTP 响应加 `Cache-Control: no-store` 并校验 Host/Origin 仅回环来源；鉴权失败时排空 POST 请求体
+- frontmatter 值去换行防注入；撤销操作也校验禁止标签并记审计路径
+- 客户端配置原子写入 + 回读校验 + `.bak` 权限收紧；`safeAgentPath` 增加符号链接库外边界检查；备份绑定保存点快照
+
 ### 安全
 - 修复权限绕过：`get_active_context` 现在与其他读接口同口径校验白名单与禁止标签；黑/白名单目录比较改为大小写不敏感（兼容 Windows NTFS）；写路径也检查目标文件的禁止标签
 - 诊断与工具流水落盘前用令牌脱敏；访问令牌必须用 CSPRNG 生成（拿不到则报错，不再降级到可预测随机），设置页改为密码框 + 显示切换
