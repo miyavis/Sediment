@@ -5,7 +5,7 @@
 ## [Unreleased]
 
 ### 改进
-- 品牌命名统一：移除遗留的 Pulse 命名，`PulseData`/`PulseSettings`/`PulseSettingTab` 改为 `Sediment*`（保留兼容别名），UI 文案去掉「脉冲」
+- 品牌命名统一：移除遗留的 Pulse 命名，`PulseData`/`PulseSettings`/`PulseSettingTab` 改为 `Sediment*`，UI 文案去掉「脉冲」
 - confirm 档有待审写入时主动弹通知；重建历史统计会报告读取失败的笔记数
 - MCP 驳回回执：驳回原因（user_rejected/stale）写入变更时间线，Agent 可通过 `get_change_timeline` 查询结果
 

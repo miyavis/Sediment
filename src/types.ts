@@ -164,10 +164,6 @@ export interface WorkLogRecord {
   tags: string[];
 }
 
-/** 兼容别名：旧代码/外部脚本可能仍引用 PulseSettings / PulseData。 */
-export type PulseSettings = SedimentSettings;
-export type PulseData = SedimentData;
-
 export interface SedimentSettings {
   /** 界面语言：auto 跟随 Obsidian，zh / en 强制 */
   language: "auto" | "zh" | "en";
