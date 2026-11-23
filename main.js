@@ -5334,6 +5334,30 @@ var PomodoroManager = class {
 };
 
 // src/features/file-bridge.ts
+async function writeAtomic(adapter, path, text) {
+  if (!adapter.rename) {
+    await adapter.write(path, text);
+    return;
+  }
+  const tmp = `${path}.tmp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  try {
+    await adapter.write(tmp, text);
+    await adapter.rename(tmp, path);
+  } catch (error) {
+    if (await adapter.exists(path)) return;
+    try {
+      await adapter.write(path, text);
+    } catch (e) {
+      throw error;
+    }
+    if (adapter.remove) {
+      try {
+        await adapter.remove(tmp);
+      } catch (e) {
+      }
+    }
+  }
+}
 function proposalPathOf(proposal) {
   if (proposal.tool === "write_note") return proposal.args.path;
   if (proposal.tool === "patch_note") return proposal.args.input.path;
@@ -5584,28 +5608,7 @@ var FileBridge = class {
     this.plugin.store.logDiagnostic("storage", "\u6587\u4EF6\u6865\u51B3\u7B56\u5199\u5165\u5931\u8D25\uFF0C\u5C06\u5728\u4E0B\u6B21\u8F6E\u8BE2\u91CD\u8BD5");
   }
   async writeAtomic(adapter, path, text) {
-    if (!adapter.rename) {
-      await adapter.write(path, text);
-      return;
-    }
-    const tmp = `${path}.tmp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-    try {
-      await adapter.write(tmp, text);
-      await adapter.rename(tmp, path);
-    } catch (error) {
-      if (await adapter.exists(path)) return;
-      try {
-        await adapter.write(path, text);
-      } catch (e) {
-        throw error;
-      }
-      if (adapter.remove) {
-        try {
-          await adapter.remove(tmp);
-        } catch (e) {
-        }
-      }
-    }
+    return writeAtomic(adapter, path, text);
   }
   logQueueFull() {
     const now = Date.now();

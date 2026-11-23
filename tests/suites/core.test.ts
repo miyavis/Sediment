@@ -465,6 +465,26 @@ test("detectOpenCodeLayout：形状无线索时按探测版本判定（1→v1，
   assert.equal(detect({}, () => undefined), "v2");
 });
 
+test("configureAgent：桥接脚本无法落盘时抛错（F14）", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sediment-oc-nobridge-"));
+  try {
+    const cfgPath = path.join(tmp, "opencode.jsonc");
+    fs.writeFileSync(cfgPath, JSON.stringify({ mcp: {} }), "utf8");
+    // adapter 不提供 getFullPath → vaultBridge 为空，且无现有条目 → 桥接解析失败。
+    const plugin = {
+      app: { vault: { configDir: ".obsidian", adapter: {} } },
+      store: { settings: { agentServerPort: 27123, agentServerToken: "t".repeat(32) } },
+    } as unknown as Parameters<typeof configureAgent>[0];
+    assert.throws(() => configureAgent(plugin, openCodeTarget(cfgPath)), /找不到 mcp-server\/index\.mjs/);
+    // 失败不得写出半配置。
+    const data = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+    assert.equal(data.mcp.sediment, undefined);
+    assert.equal(data.mcp.servers?.sediment, undefined);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test("configureAgent：OpenCode v2 配置写入 mcp.servers.sediment（type:local + command 数组 + environment）", () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sediment-oc-v2-"));
   try {

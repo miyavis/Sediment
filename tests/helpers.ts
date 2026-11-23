@@ -9,6 +9,19 @@ import { spawnSync } from "node:child_process";
 import { contentHash } from "../src/utils/hash";
 /** obsidian 类型里的 TFile 构造函数无参；测试假实现接受路径，做显式类型桥接。 */
 export const TFileWithPath = TFile as unknown as new (path: string) => TFile;
+
+/** 取一个当前空闲的 TCP 端口，避免测试硬编码端口冲突。 */
+export async function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.on("error", reject);
+    srv.listen(0, "127.0.0.1", () => {
+      const addr = srv.address();
+      const port = typeof addr === "object" && addr ? addr.port : 0;
+      srv.close(() => resolve(port));
+    });
+  });
+}
 import { configureAgent, configSnippet, isAgentConfigured, resolveBridgePath } from "../src/agent/setup";
 import * as setupNs from "../src/agent/setup";
 import { BRIDGE_SOURCE } from "../src/agent/bridge-source";

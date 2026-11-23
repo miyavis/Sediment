@@ -60,7 +60,8 @@ import {
   totalAgentCalls,
 } from "../../src/data/agent-usage";
 import { AgentApi, ApiError, safeAgentPath, stampAgentProvenance } from "../../src/agent/api";
-import { FileBridge } from "../../src/features/file-bridge";
+import { FileBridge, writeAtomic } from "../../src/features/file-bridge";
+import type { BridgeAdapter } from "../../src/features/file-bridge";
 import { reconcilePendingWrites, markStaleByPaths } from "../../src/agent/reconcile";
 import { SemanticIndex, tokenizeSemanticText } from "../../src/agent/semantic";
 import { AgentServer, sanitizeServerError, tokensMatch } from "../../src/agent/server";
@@ -787,6 +788,35 @@ test("默认目录：日记 / 复盘 / 工作日志 / 知识 / 备份全部位�
   for (const item of LEGACY_FOLDER_MIGRATIONS) {
     assert.equal(DEFAULT_SETTINGS[item.key], item.to);
   }
+});
+
+test("writeAtomic：rename 失败时回退直写并清理临时文件（F8）", async () => {
+  const files = new Map<string, string>();
+  const removed: string[] = [];
+  let failRename = true;
+  const adapter: BridgeAdapter = {
+    exists: async (p: string) => files.has(p),
+    mkdir: async () => {},
+    list: async () => ({ files: [], folders: [] }),
+    read: async (p: string) => files.get(p) ?? "",
+    write: async (p: string, data: string) => { files.set(p, data); },
+    rename: async () => { if (failRename) throw new Error("rename failed"); },
+    remove: async (p: string) => { removed.push(p); files.delete(p); },
+  };
+  await writeAtomic(adapter, "decisions/a.json", "内容");
+  assert.equal(files.get("decisions/a.json"), "内容", "rename 失败后目标仍被写入");
+  assert.equal(removed.length, 1, "临时文件被清理");
+  assert.ok(removed[0].includes(".tmp-"));
+
+  // rename 失败但目标已存在（并发下另一路径已写）：直接返回，不覆盖。
+  files.set("decisions/b.json", "已有");
+  await writeAtomic(adapter, "decisions/b.json", "新内容");
+  assert.equal(files.get("decisions/b.json"), "已有");
+
+  // 无 rename 能力的 adapter：直接写。
+  const simple = { ...adapter, rename: undefined };
+  await writeAtomic(simple, "decisions/c.json", "直写");
+  assert.equal(files.get("decisions/c.json"), "直写");
 });
 
 test("rebuildHistory：排除插件目录/Agent 笔记，只填空日期（F3）", async () => {

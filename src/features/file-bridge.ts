@@ -19,7 +19,7 @@ import type { PendingWriteRecord } from "../types";
 import { tf } from "../i18n";
 import type SedimentPlugin from "../main";
 
-interface BridgeAdapter {
+export interface BridgeAdapter {
   exists(path: string): Promise<boolean>;
   mkdir(path: string): Promise<void>;
   list(path: string): Promise<{ files: string[]; folders: string[] }>;
@@ -28,6 +28,36 @@ interface BridgeAdapter {
   rename?(from: string, to: string): Promise<void>;
   remove?(path: string): Promise<void>;
   stat?(path: string): Promise<{ size: number } | null>;
+}
+
+/**
+ * 原子写入：优先写临时文件再 rename；rename 失败时若目标不存在则直接写入并清理临时文件。
+ * 独立成导出函数以便单测失败回滚路径（F8）。
+ */
+export async function writeAtomic(adapter: BridgeAdapter, path: string, text: string): Promise<void> {
+  if (!adapter.rename) {
+    await adapter.write(path, text);
+    return;
+  }
+  const tmp = `${path}.tmp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  try {
+    await adapter.write(tmp, text);
+    await adapter.rename(tmp, path);
+  } catch (error) {
+    if (await adapter.exists(path)) return;
+    try {
+      await adapter.write(path, text);
+    } catch {
+      throw error;
+    }
+    if (adapter.remove) {
+      try {
+        await adapter.remove(tmp);
+      } catch {
+        // 临时文件清理失败不影响决策。
+      }
+    }
+  }
 }
 
 function proposalPathOf(proposal: BridgeProposal): string {
@@ -327,29 +357,7 @@ export class FileBridge {
   }
 
   private async writeAtomic(adapter: BridgeAdapter, path: string, text: string): Promise<void> {
-    if (!adapter.rename) {
-      await adapter.write(path, text);
-      return;
-    }
-    const tmp = `${path}.tmp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-    try {
-      await adapter.write(tmp, text);
-      await adapter.rename(tmp, path);
-    } catch (error) {
-      if (await adapter.exists(path)) return;
-      try {
-        await adapter.write(path, text);
-      } catch {
-        throw error;
-      }
-      if (adapter.remove) {
-        try {
-          await adapter.remove(tmp);
-        } catch {
-          // 临时文件清理失败不影响决策。
-        }
-      }
-    }
+    return writeAtomic(adapter, path, text);
   }
 
   private logQueueFull(): void {

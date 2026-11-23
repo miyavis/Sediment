@@ -109,7 +109,7 @@ import {
   isBridgeProposalId,
   parseBridgeProposal,
 } from "../../src/agent/bridge-schema";
-import { TFileWithPath, day, settings, accessSettings, fakeStore, LayoutFn, layoutFn, fakeSetupPlugin, openCodeTarget, fakeVault, fakePluginWith, fakeAgentPlugin, TFileStub, asApiError, HoldResult, memoryVault, fakeConfirmPlugin, pendingIdOf, newTFile, noticeMessages, fakeClock, trackerHarness, pomodoroHarness, memoryStorage, memoHarness, rawHttp, seedAgentMemo, pendingRecord, fakeHealthPlugin, fakeSemanticPlugin, fakeEmbed, migrationHarness, fakeBridgeHarness, proposalPath, decisionPath } from "../helpers";
+import { TFileWithPath, day, settings, accessSettings, fakeStore, LayoutFn, layoutFn, fakeSetupPlugin, openCodeTarget, fakeVault, fakePluginWith, fakeAgentPlugin, TFileStub, asApiError, HoldResult, memoryVault, fakeConfirmPlugin, pendingIdOf, newTFile, noticeMessages, fakeClock, trackerHarness, pomodoroHarness, memoryStorage, memoHarness, rawHttp, seedAgentMemo, pendingRecord, fakeHealthPlugin, fakeSemanticPlugin, fakeEmbed, migrationHarness, fakeBridgeHarness, proposalPath, decisionPath, freePort } from "../helpers";
 test("tracker：Agent 抑制期内人的编辑不被吞，窗口结束按实际 diff 补计", async () => {
   const h = trackerHarness({ "notes/a.md": "hello world" }); // 基线 2 词
   await h.tracker.start();
@@ -927,7 +927,7 @@ test("第 5 项：sanitizeServerError——业务错误白名单透传，内部�
 });
 
 test("第 5 项：AgentServer HTTP 契约——仅 Authorization 头鉴权、?token= 失效、413、400 非法 URL", async () => {
-  const port = 28653;
+  const port = await freePort();
   const diagnostics: Array<{ category: string; message: string }> = [];
   const plugin = {
     store: {
