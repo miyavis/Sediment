@@ -46,7 +46,7 @@ import SedimentPlugin from "../../src/main";
 import { normalizeFolder } from "../../src/utils/vault";
 import { TaskManager } from "../../src/features/tasks";
 import { buildStatsCsv, buildExportJson, DEFAULT_EXPORT_OPTIONS } from "../../src/features/export";
-import { todayLine } from "../../src/features/embed";
+import { todayLine, parseEmbedOptions, heatmapSvg } from "../../src/features/embed";
 import { Store } from "../../src/data/store";
 import {
   isAgentActive,
@@ -735,6 +735,14 @@ test("默认目录：日记 / 复盘 / 工作日志 / 知识 / 备份全部位�
   }
 });
 
+test("parseEmbedOptions：非法 metric/weeks 回退默认（F12）", () => {
+  assert.deepEqual(parseEmbedOptions("metric: wordsAdded\nweeks: 12"), { metric: "wordsAdded", weeks: 12 });
+  assert.deepEqual(parseEmbedOptions("metric: bogus\nweeks: 2"), { metric: "contribution", weeks: 53 });
+  assert.deepEqual(parseEmbedOptions("weeks: 99"), { metric: "contribution", weeks: 53 });
+  assert.deepEqual(parseEmbedOptions("weeks: 12.9"), { metric: "contribution", weeks: 12 });
+  assert.deepEqual(parseEmbedOptions("weeks: abc"), { metric: "contribution", weeks: 53 });
+});
+
 test("planFolderMigrations：只迁移仍是旧默认值的目录，自定义路径不动", () => {
   assert.deepEqual(
     planFolderMigrations(
@@ -942,6 +950,40 @@ test("daily-notes-sync：createDailyNotesAccess 在无内部 API 时返回 null"
   // 内部插件不存在时同样安全返回 null。
   const app = { internalPlugins: { getPluginById: () => undefined, plugins: {} } };
   assert.equal(createDailyNotesAccess(app), null);
+});
+
+test("daily-notes-sync：多形状读取/禁用插件降级/写入保存（F9）", () => {
+  // config.folder 形状。
+  const pluginCfg = { enabled: true, config: { folder: "daily" }, save: () => {} };
+  const accessCfg = createDailyNotesAccess({ internalPlugins: { getPluginById: () => pluginCfg } });
+  assert.ok(accessCfg);
+  assert.equal(accessCfg!.get(), "daily");
+  assert.equal(syncDailyNotesFolder(accessCfg, "daily", "Sediment/daily"), "changed");
+  assert.equal(pluginCfg.config.folder, "Sediment/daily");
+
+  // instance.options.folder 形状，带 saveData。
+  let saved: unknown = null;
+  const pluginInst = {
+    enabled: true,
+    instance: { options: { folder: "daily" }, saveData: (data: unknown) => { saved = data; } },
+  };
+  const accessInst = createDailyNotesAccess({ internalPlugins: { plugins: { "daily-notes": pluginInst } } });
+  assert.ok(accessInst);
+  assert.equal(accessInst!.get(), "daily");
+  assert.equal(syncDailyNotesFolder(accessInst, "daily", "Sediment/daily"), "changed");
+  assert.equal((saved as { folder: string }).folder, "Sediment/daily");
+
+  // 禁用的插件 → null。
+  const disabled = createDailyNotesAccess({
+    internalPlugins: { getPluginById: () => ({ enabled: false, config: { folder: "daily" } }) },
+  });
+  assert.equal(disabled, null);
+
+  // getPluginById 抛错 → 降级 null。
+  const throwing = createDailyNotesAccess({
+    internalPlugins: { getPluginById: () => { throw new Error("boom"); } },
+  });
+  assert.equal(throwing, null);
 });
 
 test("文件桥 schema：三类提案规范化与默认值", () => {

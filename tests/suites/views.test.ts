@@ -980,10 +980,20 @@ test("第 5 项：AgentServer HTTP 契约——仅 Authorization 头鉴权、?to
     );
     assert.match(tooLarge, /^HTTP\/1\.1 413/);
     assert.match(tooLarge, /PAYLOAD_TOO_LARGE/);
+
+    // 写请求返回 400（非法 mode）时，已入队的审计行必须撤回（F4）。
+    const badModeBody = JSON.stringify({ path: "a.md", content: "x", mode: "nonsense" });
+    const badMode = await rawHttp(
+      port,
+      `POST /note HTTP/1.1\r\n${host}Authorization: Bearer unit-token\r\nContent-Type: application/json\r\nContent-Length: ${badModeBody.length}\r\n\r\n${badModeBody}`
+    );
+    assert.match(badMode, /^HTTP\/1\.1 400/);
+    assert.match(badMode, /INVALID_MODE/);
+
     assert.equal(
       (plugin.store as any).toolCalls.length,
       0,
-      "GET / 401 / 400 / 413 / 404 都不得留下审计行"
+      "GET / 401 / 400 / 413 / 404 / 写请求失败 都不得留下审计行"
     );
   } finally {
     await server.stop();

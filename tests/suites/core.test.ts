@@ -690,6 +690,34 @@ test("Store.load：缺失字段补默认值并规范化历史数据", async () =
   assert.equal(normalized.aiWordsAdded, 0);
 });
 
+test("audit：restoreBackup 成功恢复内容；快照缺失不得清空笔记（F1）", async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sediment-audit-"));
+  try {
+    const backupDir = path.join(tmp, "backups");
+    fs.mkdirSync(backupDir, { recursive: true });
+    fs.writeFileSync(path.join(backupDir, "1700000000000-notes_a.md"), "原始内容", "utf8");
+    const vault = {
+      configDir: ".obsidian",
+      adapter: { getFullPath: (p: string) => path.join(tmp, p.replace(/^ROOT\//, "")) },
+      process: async (f: { path: string }, cb: (data: string) => string) => { f._written = cb("当前内容"); },
+    } as any;
+    // 让 getFullPath 把插件 backups 目录映射到临时目录。
+    vault.adapter.getFullPath = () => backupDir;
+    const plugin = { app: { vault } } as never;
+
+    const file = new (TFile as unknown as new (path: string) => TFile)("notes/a.md") as any;
+    await restoreBackup(plugin, file, "1700000000000-notes_a.md");
+    assert.equal(file._written, "原始内容");
+
+    // 快照不存在（已被清理）→ 抛错，笔记内容不变。
+    const before = file._written;
+    await assert.rejects(() => restoreBackup(plugin, file, "nonexistent-snap"));
+    assert.equal(file._written, before);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test("agents-guide：一键安装 AGENTS.md，存在则不覆盖（C4）", () => {
   const files = new Map<string, string>();
   const vault = {
