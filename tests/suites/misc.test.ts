@@ -47,6 +47,7 @@ import { normalizeFolder } from "../../src/utils/vault";
 import { TaskManager } from "../../src/features/tasks";
 import { buildStatsCsv, buildExportJson, DEFAULT_EXPORT_OPTIONS } from "../../src/features/export";
 import { todayLine, parseEmbedOptions, heatmapSvg } from "../../src/features/embed";
+import { rebuildHistory } from "../../src/features/rebuild";
 import { Store } from "../../src/data/store";
 import {
   isAgentActive,
@@ -502,6 +503,30 @@ test("健康度六项：草稿滞留 / 疑似重复 / 空壳；排序与上限�
   assert.equal(issues.filter((issue) => issue.kind === "duplicate-title").length, 2);
 });
 
+test("健康度：孤儿 / 断链 / 久未更新三类被识别（F13）", () => {
+  const old = Date.now() - 120 * 86400000;
+  const plugin = fakeHealthPlugin(
+    [
+      { path: "orphan.md", size: 100 },
+      { path: "broken.md", size: 100 },
+      { path: "stale.md", mtime: old, size: 100 },
+    ],
+    {
+      resolved: { "stale.md": { "target.md": 1 } },
+      unresolved: { "broken.md": { a: 1, b: 1, c: 1, d: 1 } },
+    },
+    { knowledgeFolder: "knowledge" }
+  );
+  const issues = scanNoteHealth(plugin);
+  assert.ok(issues.some((i) => i.kind === "orphan" && i.path === "orphan.md"));
+  const broken = issues.find((i) => i.kind === "broken-link" && i.path === "broken.md");
+  assert.ok(broken);
+  assert.match(broken!.detail, /等 4 处/, "超过 3 条断链要截断显示");
+  const stale = issues.find((i) => i.kind === "stale" && i.path === "stale.md");
+  assert.ok(stale);
+  assert.match(stale!.detail, /120 天/);
+});
+
 test("健康度：知识目录外的 draft 不触发草稿滞留", () => {
   const old = Date.now() - 30 * 86400000;
   const plugin = fakeHealthPlugin(
@@ -712,6 +737,35 @@ test("SemanticIndex：默认 TF-IDF 不发 embedding 请求；embedding 结果�
   assert.equal(rebuilt.some((hit) => hit.path === "private/x.md"), false);
 });
 
+test("SemanticIndex：禁止标签的笔记不进语义索引（F7）", async () => {
+  const { store: fileStore, vault } = (() => {
+    const files: Record<string, string> = { "secret.md": "apple secret", "ok.md": "apple normal" };
+    return {
+      store: new Map(Object.entries(files)),
+      vault: {
+        getMarkdownFiles: () => Object.keys(files).map((p) => ({ path: p, basename: p })),
+        getAbstractFileByPath: (p: string) => (files[p] !== undefined ? { path: p } : null),
+        cachedRead: async (f: { path: string }) => files[f.path] ?? "",
+      },
+    };
+  })();
+  const plugin = {
+    store: { settings: settings({ deniedTags: "secret" }), logDiagnostic: () => {} },
+    app: {
+      vault,
+      metadataCache: {
+        getFileCache: (f: { path: string }) =>
+          f.path === "secret.md" ? { tags: [{ tag: "#secret" }], frontmatter: {} } : undefined,
+      },
+    },
+  } as never;
+  const index = new SemanticIndex(plugin, fakeEmbed);
+  const hits = await index.search("apple");
+  assert.equal(hits.some((h) => h.path === "secret.md"), false, "带禁访标签的笔记不得出现在语义结果");
+  assert.equal(hits.some((h) => h.path === "ok.md"), true);
+  void fileStore;
+});
+
 test("默认目录：日记 / 复盘 / 工作日志 / 知识 / 备份全部位于 Sediment/ 下", () => {
   assert.deepEqual(
     {
@@ -733,6 +787,40 @@ test("默认目录：日记 / 复盘 / 工作日志 / 知识 / 备份全部位�
   for (const item of LEGACY_FOLDER_MIGRATIONS) {
     assert.equal(DEFAULT_SETTINGS[item.key], item.to);
   }
+});
+
+test("rebuildHistory：排除插件目录/Agent 笔记，只填空日期（F3）", async () => {
+  const files = [
+    { path: "notes/a.md", stat: { ctime: new Date("2026-11-01T10:00:00Z").getTime() }, body: "—\ncreated: 2026-11-01\n---\n你好世界" },
+    { path: "Sediment/agent-logs/log.md", stat: { ctime: new Date("2026-11-02T10:00:00Z").getTime() }, body: "正文内容" },
+    { path: "notes/agent.md", stat: { ctime: new Date("2026-11-03T10:00:00Z").getTime() }, body: "source: agent\n你好世界" },
+    { path: "notes/empty.md", stat: { ctime: new Date("2026-11-04T10:00:00Z").getTime() }, body: "" },
+    { path: "notes/existing.md", stat: { ctime: new Date("2026-11-05T10:00:00Z").getTime() }, body: "created: 2026-11-05\n你好世界" },
+  ];
+  const vault = {
+    getMarkdownFiles: () => files.map((f) => ({ ...f })),
+    cachedRead: async (f: { path: string }) => files.find((x) => x.path === f.path)?.body ?? "",
+  };
+  const days: Record<string, any> = {
+    // 11-05 已有数据，不得被覆盖。
+    "2026-11-05": { wordsAdded: 999, notesCreated: 9, edits: 0, tasksCompleted: 0, focusMinutes: 0 },
+  };
+  const store = {
+    settings: { ...DEFAULT_SETTINGS },
+    data: { days },
+    updateDay: (key: string, cb: (d: any) => void) => {
+      const d = days[key] ?? { wordsAdded: 0, notesCreated: 0, edits: 0, tasksCompleted: 0, focusMinutes: 0, contribution: 0 };
+      cb(d);
+      days[key] = d;
+    },
+    recomputeContributions: () => {},
+  };
+  const result = await rebuildHistory(store as never, vault as never);
+  assert.equal(result.scanned, 2, "只统计 notes/a.md 与 notes/existing.md");
+  assert.equal(result.filledDays, 1, "只补 11-01（11-05 已有数据不覆盖）");
+  assert.equal(days["2026-11-05"].wordsAdded, 999, "已有统计不被覆盖");
+  assert.ok(days["2026-11-01"].notesCreated >= 1);
+  assert.ok(!days["2026-11-02"] && !days["2026-11-03"] && !days["2026-11-04"]);
 });
 
 test("parseEmbedOptions：非法 metric/weeks 回退默认（F12）", () => {

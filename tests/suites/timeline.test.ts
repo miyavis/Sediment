@@ -61,6 +61,27 @@ test("buildChangeTimeline：驳回的待审写入永久留痕（C1）", () => {
   assert.match(rejected?.title ?? "", /驳回/);
 });
 
+test("buildChangeTimeline：limit/offset/agent/path/includeReads 口径（F15）", () => {
+  const ctx = fakeConfirmPlugin();
+  ctx.store.data.toolCalls = [
+    { time: "2026-11-22T10:00:00.000Z", tool: "GET /stats", agent: "a", path: "x.md" },
+    { time: "2026-11-22T11:00:00.000Z", tool: "POST /note", agent: "a", path: "notes/a.md" },
+    { time: "2026-11-22T12:00:00.000Z", tool: "POST /note", agent: "b", path: "notes/b.md" },
+  ];
+  const all = buildChangeTimeline(ctx.store.data as never);
+  assert.equal(all.some((e) => e.tool === "GET /stats"), false, "默认排除只读调用");
+  const withReads = buildChangeTimeline(ctx.store.data as never, { includeReads: true });
+  assert.equal(withReads.some((e) => e.tool === "GET /stats"), true);
+  const byAgent = buildChangeTimeline(ctx.store.data as never, { agent: "b" });
+  assert.equal(byAgent.length, 1);
+  assert.equal(byAgent[0].path, "notes/b.md");
+  const byPath = buildChangeTimeline(ctx.store.data as never, { path: "notes/a" });
+  assert.equal(byPath.length, 1);
+  const paged = buildChangeTimeline(ctx.store.data as never, { limit: 1, offset: 1 });
+  assert.equal(paged.length, 1);
+  assert.equal(paged[0].path, "notes/a.md", "offset=1 取时间倒序第 2 条");
+});
+
 test("buildAuditExport：JSON 默认哈希路径，CSV 为事件流", () => {
   const ctx = fakeConfirmPlugin();
   ctx.store.data.toolCalls.push({

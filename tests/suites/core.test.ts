@@ -45,7 +45,7 @@ import { buildWeeklyReview } from "../../src/features/review";
 import SedimentPlugin from "../../src/main";
 import { normalizeFolder } from "../../src/utils/vault";
 import { TaskManager } from "../../src/features/tasks";
-import { buildStatsCsv, buildExportJson, DEFAULT_EXPORT_OPTIONS } from "../../src/features/export";
+import { buildStatsCsv, buildExportJson, DEFAULT_EXPORT_OPTIONS, exportData } from "../../src/features/export";
 import { todayLine } from "../../src/features/embed";
 import { Store } from "../../src/data/store";
 import {
@@ -111,6 +111,8 @@ import {
 } from "../../src/agent/bridge-schema";
 import { TFileWithPath, day, settings, accessSettings, fakeStore, LayoutFn, layoutFn, fakeSetupPlugin, openCodeTarget, fakeVault, fakePluginWith, fakeAgentPlugin, TFileStub, asApiError, HoldResult, memoryVault, fakeConfirmPlugin, pendingIdOf, newTFile, noticeMessages, fakeClock, trackerHarness, pomodoroHarness, memoryStorage, memoHarness, rawHttp, seedAgentMemo, pendingRecord, fakeHealthPlugin, fakeSemanticPlugin, fakeEmbed, migrationHarness, fakeBridgeHarness, proposalPath, decisionPath } from "../helpers";
 import { readBackup, restoreBackup } from "../../src/features/audit";
+import { findSection, applyFrontmatterUpdate } from "../../src/agent/api-helpers";
+import { removeTomlServer, removeYamlServer } from "../../src/agent/config-formats";
 import { installAgentsGuide, AGENTS_GUIDE } from "../../src/features/agents-guide";
 test("computeContribution：默认权重下分项之和等于总分", () => {
   const d = day({ notesCreated: 1, edits: 1, tasksCompleted: 1, wordsAdded: 100, focusMinutes: 25 });
@@ -690,32 +692,127 @@ test("Store.load：缺失字段补默认值并规范化历史数据", async () =
   assert.equal(normalized.aiWordsAdded, 0);
 });
 
+test("config-formats：removeTomlServer/removeYamlServer 精确移除目标段（F2）", () => {
+  const toml = `[mcp_servers.other]\ncommand = "x"\n\n[mcp_servers.sediment]\ncommand = "node"\nargs = ["a"]\n\n[other]\nx = 1`;
+  const tomlOut = removeTomlServer(toml, "sediment");
+  assert.doesNotMatch(tomlOut, /mcp_servers\.sediment/);
+  assert.match(tomlOut, /mcp_servers\.other/);
+  assert.match(tomlOut, /\[other\]/);
+
+  const yaml = `mcp_servers:\n  other:\n    command: x\n  sediment:\n    command: node\n    args:\n      - a\n  last:\n    command: y`;
+  const yamlOut = removeYamlServer(yaml, "sediment");
+  assert.doesNotMatch(yamlOut, /sediment/);
+  assert.match(yamlOut, /other:/);
+  assert.match(yamlOut, /last:/);
+
+  // 相似前缀 id 不误删。
+  const yaml2 = `mcp_servers:\n  sediment-pro:\n    command: x\n  sediment:\n    command: y`;
+  const yamlOut2 = removeYamlServer(yaml2, "sediment");
+  assert.match(yamlOut2, /sediment-pro/);
+  assert.doesNotMatch(yamlOut2, /^  sediment:$/m);
+});
+
+test("exportData：同名文件冲突时递增 -2/-3 不覆盖（F11）", async () => {
+  const existing = new Set<string>();
+  const created: string[] = [];
+  const vault = {
+    getAbstractFileByPath: (p: string) => (existing.has(p) ? { path: p } : null),
+    createFolder: async () => {},
+    create: async (p: string, _c: string) => { created.push(p); existing.add(p); },
+  } as never;
+  const store = fakeStore();
+  const p1 = await exportData(store, vault, { ...DEFAULT_EXPORT_OPTIONS, audit: false });
+  existing.add(p1);
+  const p2 = await exportData(store, vault, { ...DEFAULT_EXPORT_OPTIONS, audit: false });
+  assert.match(p2, /-2\.json$/);
+  existing.add(p2);
+  const p3 = await exportData(store, vault, { ...DEFAULT_EXPORT_OPTIONS, audit: false });
+  assert.match(p3, /-3\.json$/);
+});
+
+test("api-helpers：findSection 按标题层级与 index 定位段（F6）", () => {
+  const text = "# 标题\n\n## A\naaa\n\n## B\nbbb\n\n# 结尾\nend";
+  const a = findSection(text, "## A", 0);
+  assert.ok(a);
+  assert.equal(a!.lines.slice(a!.start, a!.end).join(" ").trim(), "aaa");
+  const b = findSection(text, "## B", 0);
+  assert.ok(b);
+  assert.match(b!.lines.slice(b!.start, b!.end).join(" "), /bbb/);
+  assert.equal(findSection(text, "## A", 1), null, "只有一个 A，index=1 越界");
+  assert.ok(findSection(text, "A", 0), "不带 # 的标题名也能匹配");
+});
+
+test("api-helpers：applyFrontmatterUpdate 数组/标量/新建（F6）", () => {
+  const withFm = "---\ntitle: old\ntags:\n  - a\n---\n正文";
+  const updated = applyFrontmatterUpdate(withFm, { title: "new", tags: ["x", "y"] });
+  assert.match(updated, /title: "new"/);
+  assert.match(updated, /tags:\n  - "x"\n  - "y"/);
+  assert.match(updated, /正文/);
+  const emptyArr = applyFrontmatterUpdate(withFm, { tags: [] });
+  assert.match(emptyArr, /tags: \[\]/);
+  const noFm = applyFrontmatterUpdate("正文内容", { status: "draft" });
+  assert.match(noFm, /^---\nstatus: "draft"\n---\n/);
+  assert.throws(() => applyFrontmatterUpdate("---\ntitle: x\n正文", { a: 1 }), /未闭合/);
+});
+
 test("audit：restoreBackup 成功恢复内容；快照缺失不得清空笔记（F1）", async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sediment-audit-"));
   try {
     const backupDir = path.join(tmp, "backups");
     fs.mkdirSync(backupDir, { recursive: true });
     fs.writeFileSync(path.join(backupDir, "1700000000000-notes_a.md"), "原始内容", "utf8");
+    let written = "初始";
     const vault = {
       configDir: ".obsidian",
-      adapter: { getFullPath: (p: string) => path.join(tmp, p.replace(/^ROOT\//, "")) },
-      process: async (f: { path: string }, cb: (data: string) => string) => { f._written = cb("当前内容"); },
-    } as any;
-    // 让 getFullPath 把插件 backups 目录映射到临时目录。
-    vault.adapter.getFullPath = () => backupDir;
+      adapter: { getFullPath: () => backupDir },
+      process: async (_f: { path: string }, cb: (data: string) => string) => { written = cb("当前内容"); },
+    } as never;
     const plugin = { app: { vault } } as never;
 
-    const file = new (TFile as unknown as new (path: string) => TFile)("notes/a.md") as any;
+    const file = new (TFile as unknown as new (path: string) => TFile)("notes/a.md");
     await restoreBackup(plugin, file, "1700000000000-notes_a.md");
-    assert.equal(file._written, "原始内容");
+    assert.equal(written, "原始内容");
 
     // 快照不存在（已被清理）→ 抛错，笔记内容不变。
-    const before = file._written;
+    const before = written;
     await assert.rejects(() => restoreBackup(plugin, file, "nonexistent-snap"));
-    assert.equal(file._written, before);
+    assert.equal(written, before);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+});
+
+test("Store.markPendingWritesChanged：外部改动使挂起项失效（F5）", async () => {
+  const file = new (TFile as unknown as new (path: string) => TFile)("notes/a.md");
+  const currentContent = "外部改过的内容";
+  const hashOf = (s: string) => contentHash(s);
+  const plugin = {
+    loadData: async () => ({ version: 1, settings: DEFAULT_SETTINGS }),
+    saveData: async () => {},
+    app: {
+      vault: {
+        getAbstractFileByPath: (p: string) => (p === "notes/a.md" ? file : null),
+        read: async () => currentContent,
+      },
+    },
+  } as unknown as ConstructorParameters<typeof Store>[0];
+  const store = new Store(plugin);
+  await store.load();
+  store.data.pendingWrites = [
+    { id: "p1", time: "t", tool: "write_note", agent: "a", path: "notes/a.md", request: { kind: "write_note", args: {} }, before: "旧内容", beforeHash: hashOf("旧内容"), after: "" },
+    { id: "p2", time: "t", tool: "write_note", agent: "a", path: "other.md", request: { kind: "write_note", args: {} }, before: "旧", after: "" },
+  ];
+  const savedWindow = (globalThis as { window?: unknown }).window;
+  (globalThis as { window?: unknown }).window = { setTimeout: () => 0, clearTimeout: () => {} };
+  let marked = 0;
+  try {
+    marked = await store.markPendingWritesChanged(["notes/a.md"]);
+  } finally {
+    (globalThis as { window?: unknown }).window = savedWindow;
+  }
+  assert.equal(marked, 1);
+  assert.equal(store.data.pendingWrites[0].stale, true, "内容被外部改动 → stale");
+  assert.equal(store.data.pendingWrites[1].stale, undefined, "非目标路径不受影响");
 });
 
 test("agents-guide：一键安装 AGENTS.md，存在则不覆盖（C4）", () => {
