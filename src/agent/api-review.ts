@@ -149,6 +149,7 @@ export const reviewMethods: ReviewMethods = {
       await this.replayPending(record.request, record.agent);
       this.plugin.store.removePendingWrite(id);
       this.settlePendingCall(record, true);
+      this.plugin.store.recordWriteDecision?.(record, "approved", record.source === "bridge" ? "user_approved" : undefined);
       if (record.source === "bridge") {
         this.bridgeSink?.notifyDecision(record, "approved", "user_approved");
       }
@@ -160,13 +161,15 @@ export const reviewMethods: ReviewMethods = {
     }
   },
 
-  /** 驳回：丢弃挂起请求（不落盘），并记安全诊断。 */
+  /** 驳回：丢弃挂起请求（不落盘），永久记一条 rejected 决定到审计时间线。 */
   rejectPendingWrite(this: AgentApi, id: string): { ok: true; path: string } {
     const removed = this.plugin.store.removePendingWrite(id);
     if (!removed) throw new ApiError("NOT_FOUND", tf("待审写入不存在：{id}", { id }), 404);
     this.settlePendingCall(removed, false);
+    const reason = removed.stale ? "stale" : "user_rejected";
+    this.plugin.store.recordWriteDecision?.(removed, removed.stale ? "stale" : "rejected", reason);
     if (removed.source === "bridge") {
-      this.bridgeSink?.notifyDecision(removed, "rejected", removed.stale ? "stale" : "user_rejected");
+      this.bridgeSink?.notifyDecision(removed, "rejected", reason);
     }
     const message = tf("待审写入已驳回并丢弃：{path}", { path: removed.path });
     this.plugin.store.logDiagnostic("security", message, `${removed.id} · ${removed.tool}`);

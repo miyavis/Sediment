@@ -395,7 +395,8 @@ test("getActiveContext：白名单外与禁访标签笔记不得泄露正文", (
 });
 
 test("写路径：目标文件带禁止标签时 assertPathAllowed 拒绝（A3）", () => {
-  const file = new TFile("笔记/secret.md");
+  // obsidian.d.ts 声明 TFile 无参构造；测试桩接受 path，运行时 instanceof 需要真实桩类。
+  const file = new (TFile as unknown as new (path: string) => TFile)("笔记/secret.md");
   const plugin = {
     store: {
       settings: { ...DEFAULT_SETTINGS, deniedTags: "secret", agentAccessMode: "allow-all" },
@@ -436,6 +437,9 @@ test("confirm 档：writeNote 挂起不落盘；采纳落盘、驳回丢弃、�
   assert.equal(ctx.files.has("notes/b.md"), false);
   assert.equal(ctx.pendingWrites.length, 0);
   assert.ok(ctx.diagnostics.some((d) => d.category === "security" && /驳回并丢弃/.test(d.message)));
+  // 驳回与采纳都要在审计时间线永久留痕（C1/C2）。
+  assert.ok((ctx.store as { data: { writeDecisions: unknown[] } }).data.writeDecisions.some((d) => (d as { decision: string }).decision === "rejected"));
+  assert.ok((ctx.store as { data: { writeDecisions: unknown[] } }).data.writeDecisions.some((d) => (d as { decision: string }).decision === "approved"));
 
   assert.throws(() => ctx.api.rejectPendingWrite("nope"), (error) => asApiError(error).code === "NOT_FOUND");
   await assert.rejects(ctx.api.approvePendingWrite("nope"), (error) => asApiError(error).code === "NOT_FOUND");

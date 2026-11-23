@@ -1,6 +1,6 @@
 /** 变更时间线：把调用流水、待审写入、审批决定、快照合并成一条可检索的审计事件流。
  *  纯函数，不依赖 Obsidian / DOM；UI 与 MCP 工具共用同一口径。 */
-import type { PendingWriteRecord, PulseData, ReviewChangeValue, ReviewDecision, ToolCallRecord } from "../types";
+import type { PendingWriteRecord, PulseData, ReviewChangeValue, ReviewDecision, ToolCallRecord, WriteDecisionRecord } from "../types";
 
 export type TimelineKind = "call" | "pending" | "decision" | "snapshot";
 
@@ -56,6 +56,7 @@ export function buildChangeTimeline(data: PulseData, options: TimelineOptions = 
   const pending = data.pendingWrites ?? [];
   const snapshots = data.snapshots ?? [];
   const reviewed = data.reviewedChanges ?? {};
+  const writeDecisions = data.writeDecisions ?? [];
 
   for (const call of calls) {
     if (!options.includeReads && call.tool.startsWith("GET ")) continue;
@@ -96,6 +97,10 @@ export function buildChangeTimeline(data: PulseData, options: TimelineOptions = 
     });
   }
 
+  for (const decision of writeDecisions) {
+    events.push(writeDecisionEvent(decision));
+  }
+
   for (const snap of snapshots) {
     events.push({
       id: `snapshot:${snap.id}`,
@@ -117,6 +122,26 @@ export function buildChangeTimeline(data: PulseData, options: TimelineOptions = 
   result = result.sort((a, b) => (a.time < b.time ? 1 : a.time > b.time ? -1 : 0));
   const start = Math.max(0, options.offset ?? 0);
   return options.limit && options.limit > 0 ? result.slice(start, start + options.limit) : result;
+}
+
+function writeDecisionEvent(decision: WriteDecisionRecord): ChangeTimelineEvent {
+  const titles: Record<WriteDecisionRecord["decision"], string> = {
+    approved: "已采纳待审写入",
+    rejected: "已驳回待审写入",
+    stale: "待审写入已失效",
+  };
+  return {
+    id: decision.id,
+    time: decision.time,
+    kind: "decision",
+    agent: decision.agent || "user",
+    tool: decision.tool,
+    path: decision.path,
+    title: titles[decision.decision],
+    decision: decision.decision === "rejected" ? "reverted" : decision.decision === "approved" ? "kept" : undefined,
+    pendingId: decision.pendingId,
+    status: decision.decision,
+  };
 }
 
 function pendingEvent(item: PendingWriteRecord): ChangeTimelineEvent {

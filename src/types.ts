@@ -79,6 +79,19 @@ export interface ReviewDecisionRecord {
 }
 export type ReviewChangeValue = ReviewDecision | ReviewDecisionRecord;
 
+/** 一次 confirm 待审写入的人工审批决定（采纳/驳回），永久留在审计时间线。 */
+export interface WriteDecisionRecord {
+  id: string;
+  time: string;
+  /** 对应 pendingWrite / toolCall 的关联 id */
+  pendingId: string;
+  decision: "approved" | "rejected" | "stale";
+  tool: string;
+  agent: string;
+  path: string;
+  reason?: string;
+}
+
 /** 修改前的全文快照记录 */
 export interface SnapshotRecord {
   id: string;
@@ -304,6 +317,8 @@ export interface PulseData {
   reviewedChanges: Record<string, ReviewChangeValue>;
   /** confirm 模式下挂起待审的 Agent 写入，采纳/驳回后移除；重启后保留 */
   pendingWrites: PendingWriteRecord[];
+  /** 待审写入的人工审批决定（采纳/驳回/失效），永久留痕供时间线审计 */
+  writeDecisions: WriteDecisionRecord[];
   diagnostics: DiagnosticRecord[];
   /** 已计过编辑会话的 日期→文件路径 列表，重启后不重复计分 */
   editSessions: Record<string, string[]>;
@@ -431,6 +446,7 @@ export const DEFAULT_DATA: PulseData = {
   snapshots: [],
   reviewedChanges: {},
   pendingWrites: [],
+  writeDecisions: [],
   diagnostics: [],
   editSessions: {},
   folderMigration: null,

@@ -111,6 +111,7 @@ import {
 } from "../../src/agent/bridge-schema";
 import { TFileWithPath, day, settings, accessSettings, fakeStore, LayoutFn, layoutFn, fakeSetupPlugin, openCodeTarget, fakeVault, fakePluginWith, fakeAgentPlugin, TFileStub, asApiError, HoldResult, memoryVault, fakeConfirmPlugin, pendingIdOf, newTFile, noticeMessages, fakeClock, trackerHarness, pomodoroHarness, memoryStorage, memoHarness, rawHttp, seedAgentMemo, pendingRecord, fakeHealthPlugin, fakeSemanticPlugin, fakeEmbed, migrationHarness, fakeBridgeHarness, proposalPath, decisionPath } from "../helpers";
 import { readBackup, restoreBackup } from "../../src/features/audit";
+import { installAgentsGuide, AGENTS_GUIDE } from "../../src/features/agents-guide";
 test("computeContribution：默认权重下分项之和等于总分", () => {
   const d = day({ notesCreated: 1, edits: 1, tasksCompleted: 1, wordsAdded: 100, focusMinutes: 25 });
   // 2 + 1 + 1 + floor(100/100)=1 + floor(25/25)=1 = 6
@@ -689,6 +690,20 @@ test("Store.load：缺失字段补默认值并规范化历史数据", async () =
   assert.equal(normalized.aiWordsAdded, 0);
 });
 
+test("agents-guide：一键安装 AGENTS.md，存在则不覆盖（C4）", () => {
+  const files = new Map<string, string>();
+  const vault = {
+    getAbstractFileByPath: (p: string) => (files.has(p) ? { path: p } : null),
+    create: async (p: string, content: string) => { files.set(p, content); },
+  } as never;
+  assert.equal(installAgentsGuide(vault), true);
+  assert.equal(files.get("AGENTS.md"), AGENTS_GUIDE);
+  // 已存在时不覆盖。
+  files.set("AGENTS.md", "自定义规则");
+  assert.equal(installAgentsGuide(vault), false);
+  assert.equal(files.get("AGENTS.md"), "自定义规则");
+});
+
 test("audit：非法快照名拒绝路径穿越（A4）", async () => {
   const vault = {
     configDir: ".obsidian",
@@ -702,7 +717,7 @@ test("audit：非法快照名拒绝路径穿越（A4）", async () => {
   // restoreBackup 对非法名抛错，且不会调用 vault.process。
   let processed = false;
   (vault as { process: unknown }).process = async () => { processed = true; };
-  await assert.rejects(() => restoreBackup(plugin, new TFile("x.md"), "../evil"));
+  await assert.rejects(() => restoreBackup(plugin, new (TFile as unknown as new (path: string) => TFile)("x.md"), "../evil"));
   assert.equal(processed, false);
 });
 

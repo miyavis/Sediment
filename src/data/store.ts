@@ -15,6 +15,7 @@ import {
   type SnapshotRecord,
   type ToolCallRecord,
   type WorkLogRecord,
+  type WriteDecisionRecord,
 } from "../types";
 import { t, tf } from "../i18n";
 import { reconcilePendingWrites, markStaleByPaths } from "../agent/reconcile";
@@ -72,6 +73,15 @@ function validToolCall(value: unknown): value is ToolCallRecord {
 function validDiagnostic(value: unknown): value is DiagnosticRecord {
   if (!isRecord(value)) return false;
   return isStr(value.time) && isStr(value.message) && isStr(value.category);
+}
+
+function validWriteDecision(value: unknown): value is WriteDecisionRecord {
+  if (!isRecord(value)) return false;
+  return (
+    isStr(value.id) && isStr(value.time) && isStr(value.pendingId) &&
+    (value.decision === "approved" || value.decision === "rejected" || value.decision === "stale") &&
+    isStr(value.tool) && isStr(value.agent) && isStr(value.path)
+  );
 }
 
 /** 过滤数组中的畸形元素，避免损坏 data.json 让下游 .includes/.split 抛 TypeError。 */
@@ -261,6 +271,7 @@ export class Store {
               isRecord(item.request.args)
           )
         : [],
+      writeDecisions: onlyValid(loaded.writeDecisions, validWriteDecision),
       diagnostics: onlyValid(loaded.diagnostics, validDiagnostic),
       editSessions: loaded.editSessions && typeof loaded.editSessions === "object" && !Array.isArray(loaded.editSessions)
         ? loaded.editSessions
@@ -578,6 +589,27 @@ export class Store {
   reviewChange(key: string, decision: "kept" | "reverted"): void {
     this.data.reviewedChanges[key] = { decision, time: new Date().toISOString() };
     this.logDiagnostic("storage", `Agent 变更已审查：${decision}`, key);
+    this.scheduleSave();
+  }
+
+  /** 永久记录一次待审写入的人工决定，供变更时间线审计（含驳回）。 */
+  recordWriteDecision(
+    record: { id: string; tool: string; agent: string; path: string },
+    decision: WriteDecisionRecord["decision"],
+    reason?: string
+  ): void {
+    this.data.writeDecisions ??= [];
+    this.data.writeDecisions.unshift({
+      id: `decision:${record.id}:${decision}`,
+      time: new Date().toISOString(),
+      pendingId: record.id,
+      decision,
+      tool: record.tool,
+      agent: record.agent,
+      path: record.path,
+      ...(reason ? { reason } : {}),
+    });
+    if (this.data.writeDecisions.length > 500) this.data.writeDecisions.length = 500;
     this.scheduleSave();
   }
 

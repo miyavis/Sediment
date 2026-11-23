@@ -39,6 +39,28 @@ test("buildChangeTimeline：合并调用/挂起/审批/快照，按时间倒序"
   assert.ok(findCallByPendingId(ctx.store.data.toolCalls, "pw-1"));
 });
 
+test("buildChangeTimeline：驳回的待审写入永久留痕（C1）", () => {
+  const ctx = fakeConfirmPlugin();
+  ctx.store.data.writeDecisions = [
+    {
+      id: "decision:pw-2:rejected",
+      time: "2026-11-23T09:00:00.000Z",
+      pendingId: "pw-2",
+      decision: "rejected",
+      tool: "write_note",
+      agent: "opencode",
+      path: "notes/x.md",
+      reason: "user_rejected",
+    },
+  ];
+  const events = buildChangeTimeline(ctx.store.data as never);
+  const rejected = events.find((e) => e.kind === "decision" && e.status === "rejected");
+  assert.ok(rejected, "驳回事件必须出现在时间线");
+  assert.equal(rejected?.path, "notes/x.md");
+  assert.equal(rejected?.pendingId, "pw-2");
+  assert.match(rejected?.title ?? "", /驳回/);
+});
+
 test("buildAuditExport：JSON 默认哈希路径，CSV 为事件流", () => {
   const ctx = fakeConfirmPlugin();
   ctx.store.data.toolCalls.push({

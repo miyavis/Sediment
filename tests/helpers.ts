@@ -418,11 +418,24 @@ export function fakeConfirmPlugin(partial: Partial<PulseSettings> = {}, files: R
   const pendingWrites: Array<Record<string, any>> = [];
   const diagnostics: Array<{ category: string; message: string; detail?: string }> = [];
   const { store: fileStore, vault } = memoryVault(files);
+  const writeDecisions: Array<Record<string, unknown>> = [];
   const store: Record<string, any> = {
     settings: s,
-    data: { snapshots: [], memos: [], workLogs: [], toolCalls: [], days: {}, pendingWrites },
+    data: { snapshots: [], memos: [], workLogs: [], toolCalls: [], days: {}, pendingWrites, writeDecisions },
     logDiagnostic: (category: string, message: string, detail?: string) => {
       diagnostics.push({ category, message, detail });
+    },
+    recordWriteDecision: (record: { id: string; tool: string; agent: string; path: string }, decision: string, reason?: string) => {
+      writeDecisions.unshift({
+        id: `decision:${record.id}:${decision}`,
+        time: new Date().toISOString(),
+        pendingId: record.id,
+        decision,
+        tool: record.tool,
+        agent: record.agent,
+        path: record.path,
+        ...(reason ? { reason } : {}),
+      });
     },
     updateDay: () => {},
     scheduleSave: () => {},

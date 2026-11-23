@@ -11,6 +11,7 @@ import {
   createDailyNotesAccess,
   syncDailyNotesFolder,
 } from "../features/daily-notes-sync";
+import { installAgentsGuide } from "../features/agents-guide";
 import { McpUninstallModal } from "./mcp-uninstall-modal";
 import { confirmAction } from "./confirm-modal";
 import type { SedimentPlugin } from "../main";
@@ -920,6 +921,16 @@ export class PulseSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName(t("安装 AGENTS.md 规则"))
+      .setDesc(t("在库根写入 AGENTS.md，告诉编码智能体一律走 MCP 写入。已存在则不会覆盖。"))
+      .addButton((button) =>
+        button.setButtonText(t("一键安装")).onClick(() => {
+          const created = installAgentsGuide(this.app.vault);
+          new Notice(created ? t("已在库根创建 AGENTS.md") : t("库根已有 AGENTS.md，未覆盖"));
+        })
+      );
+
+    new Setting(containerEl)
       .setName(t("启用文件桥（实验）"))
       .setDesc(
         t(
@@ -951,6 +962,12 @@ export class PulseSettingTab extends PluginSettingTab {
             try {
               configureAgent(this.plugin, agent);
               new Notice(tfAgentConfigured(agent.name));
+              // 一键配置后若本地 API 未启用，自动打开并保存——避免 MCP 客户端连不上（C3）。
+              if (!this.plugin.store.settings.agentServerEnabled) {
+                this.plugin.store.settings.agentServerEnabled = true;
+                void this.plugin.saveSettings();
+                new Notice(t("已自动启用本地 API，MCP 客户端现在可以连接"));
+              }
               this.renderSettings();
             } catch (error) {
               new Notice(`${t("配置失败")}: ${error instanceof Error ? error.message : String(error)}`);

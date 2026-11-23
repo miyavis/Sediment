@@ -3,7 +3,7 @@
 	"name": "Sediment",
 	"version": "1.2.9",
 	"minAppVersion": "1.8.7",
-	"description": "Local-first, auditable AI writing layer for Obsidian: approve Agent writes via MCP with diffs, snapshots and a change timeline.",
+	"description": "Local-first, auditable AI writing layer: approve Agent writes via MCP with diffs, snapshots and a change timeline.",
 	"author": "miyavis",
 	"authorUrl": "https://github.com/miyavis",
 	"isDesktopOnly": true

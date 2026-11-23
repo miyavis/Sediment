@@ -495,6 +495,12 @@ var EN = {
   "\u624B\u52A8\u7C98\u8D34\u5230\u5BA2\u6237\u7AEF\u7684 MCP \u914D\u7F6E\u6587\u4EF6\u4E2D\u3002": "Paste manually into the client's MCP config file.",
   "\u914D\u7F6E\u5DF2\u590D\u5236": "Config copied",
   "\u914D\u7F6E\u5931\u8D25": "Setup failed",
+  "\u5DF2\u81EA\u52A8\u542F\u7528\u672C\u5730 API\uFF0CMCP \u5BA2\u6237\u7AEF\u73B0\u5728\u53EF\u4EE5\u8FDE\u63A5": "Local API auto-enabled; MCP clients can now connect",
+  "\u5B89\u88C5 AGENTS.md \u89C4\u5219": "Install AGENTS.md rules",
+  "\u5728\u5E93\u6839\u5199\u5165 AGENTS.md\uFF0C\u544A\u8BC9\u7F16\u7801\u667A\u80FD\u4F53\u4E00\u5F8B\u8D70 MCP \u5199\u5165\u3002\u5DF2\u5B58\u5728\u5219\u4E0D\u4F1A\u8986\u76D6\u3002": "Write AGENTS.md at the vault root, telling coding agents to always write through MCP. Existing file is not overwritten.",
+  "\u4E00\u952E\u5B89\u88C5": "Install now",
+  "\u5DF2\u5728\u5E93\u6839\u521B\u5EFA AGENTS.md": "AGENTS.md created at vault root",
+  "\u5E93\u6839\u5DF2\u6709 AGENTS.md\uFF0C\u672A\u8986\u76D6": "AGENTS.md already exists at vault root; not overwritten",
   "\u914D\u7F6E\u5DF2\u5199\u5165\uFF0C\u91CD\u542F\u5BA2\u6237\u7AEF\u540E\u751F\u6548": "config written; restart the client to apply",
   "\u754C\u9762\u8BED\u8A00": "Interface language",
   "\u8DDF\u968F Obsidian\uFF08auto\uFF09\uFF0C\u6216\u5F3A\u5236\u4E2D\u6587 / \u82F1\u6587\u3002": "Follow Obsidian (auto), or force Chinese / English.",
@@ -1043,12 +1049,13 @@ function reviewTimeOf(key, value) {
   return (_a2 = key.split("|")[0]) != null ? _a2 : "";
 }
 function buildChangeTimeline(data, options = {}) {
-  var _a2, _b, _c, _d, _e;
+  var _a2, _b, _c, _d, _e, _f;
   const events = [];
   const calls = (_a2 = data.toolCalls) != null ? _a2 : [];
   const pending = (_b = data.pendingWrites) != null ? _b : [];
   const snapshots = (_c = data.snapshots) != null ? _c : [];
   const reviewed = (_d = data.reviewedChanges) != null ? _d : {};
+  const writeDecisions = (_e = data.writeDecisions) != null ? _e : [];
   for (const call of calls) {
     if (!options.includeReads && call.tool.startsWith("GET ")) continue;
     events.push({
@@ -1085,6 +1092,9 @@ function buildChangeTimeline(data, options = {}) {
       snapshotId: snapshot == null ? void 0 : snapshot.id
     });
   }
+  for (const decision of writeDecisions) {
+    events.push(writeDecisionEvent(decision));
+  }
   for (const snap of snapshots) {
     events.push({
       id: `snapshot:${snap.id}`,
@@ -1103,8 +1113,27 @@ function buildChangeTimeline(data, options = {}) {
     return true;
   });
   result = result.sort((a, b) => a.time < b.time ? 1 : a.time > b.time ? -1 : 0);
-  const start = Math.max(0, (_e = options.offset) != null ? _e : 0);
+  const start = Math.max(0, (_f = options.offset) != null ? _f : 0);
   return options.limit && options.limit > 0 ? result.slice(start, start + options.limit) : result;
+}
+function writeDecisionEvent(decision) {
+  const titles = {
+    approved: "\u5DF2\u91C7\u7EB3\u5F85\u5BA1\u5199\u5165",
+    rejected: "\u5DF2\u9A73\u56DE\u5F85\u5BA1\u5199\u5165",
+    stale: "\u5F85\u5BA1\u5199\u5165\u5DF2\u5931\u6548"
+  };
+  return {
+    id: decision.id,
+    time: decision.time,
+    kind: "decision",
+    agent: decision.agent || "user",
+    tool: decision.tool,
+    path: decision.path,
+    title: titles[decision.decision],
+    decision: decision.decision === "rejected" ? "reverted" : decision.decision === "approved" ? "kept" : void 0,
+    pendingId: decision.pendingId,
+    status: decision.decision
+  };
 }
 function pendingEvent(item) {
   return {
@@ -2031,7 +2060,7 @@ var reviewMethods = {
   },
   /** 采纳：按挂起时保存的原请求重放落盘函数；同 id 并发采纳原子占位。 */
   async approvePendingWrite(id) {
-    var _a2;
+    var _a2, _b, _c;
     if (this.approving.has(id)) {
       throw new ApiError("PENDING_IN_FLIGHT", t("\u8BE5\u5F85\u5BA1\u5199\u5165\u6B63\u5728\u91C7\u7EB3\u4E2D\uFF0C\u8BF7\u7A0D\u5019"), 409);
     }
@@ -2050,8 +2079,9 @@ var reviewMethods = {
       await this.replayPending(record.request, record.agent);
       this.plugin.store.removePendingWrite(id);
       this.settlePendingCall(record, true);
+      (_b = (_a2 = this.plugin.store).recordWriteDecision) == null ? void 0 : _b.call(_a2, record, "approved", record.source === "bridge" ? "user_approved" : void 0);
       if (record.source === "bridge") {
-        (_a2 = this.bridgeSink) == null ? void 0 : _a2.notifyDecision(record, "approved", "user_approved");
+        (_c = this.bridgeSink) == null ? void 0 : _c.notifyDecision(record, "approved", "user_approved");
       }
       const message = tf("\u5F85\u5BA1\u5199\u5165\u5DF2\u91C7\u7EB3\u5E76\u843D\u76D8\uFF1A{path}", { path: record.path });
       this.plugin.store.logDiagnostic("storage", message, id);
@@ -2060,14 +2090,16 @@ var reviewMethods = {
       this.approving.delete(id);
     }
   },
-  /** 驳回：丢弃挂起请求（不落盘），并记安全诊断。 */
+  /** 驳回：丢弃挂起请求（不落盘），永久记一条 rejected 决定到审计时间线。 */
   rejectPendingWrite(id) {
-    var _a2;
+    var _a2, _b, _c;
     const removed = this.plugin.store.removePendingWrite(id);
     if (!removed) throw new ApiError("NOT_FOUND", tf("\u5F85\u5BA1\u5199\u5165\u4E0D\u5B58\u5728\uFF1A{id}", { id }), 404);
     this.settlePendingCall(removed, false);
+    const reason = removed.stale ? "stale" : "user_rejected";
+    (_b = (_a2 = this.plugin.store).recordWriteDecision) == null ? void 0 : _b.call(_a2, removed, removed.stale ? "stale" : "rejected", reason);
     if (removed.source === "bridge") {
-      (_a2 = this.bridgeSink) == null ? void 0 : _a2.notifyDecision(removed, "rejected", removed.stale ? "stale" : "user_rejected");
+      (_c = this.bridgeSink) == null ? void 0 : _c.notifyDecision(removed, "rejected", reason);
     }
     const message = tf("\u5F85\u5BA1\u5199\u5165\u5DF2\u9A73\u56DE\u5E76\u4E22\u5F03\uFF1A{path}", { path: removed.path });
     this.plugin.store.logDiagnostic("security", message, `${removed.id} \xB7 ${removed.tool}`);
@@ -4110,6 +4142,7 @@ var DEFAULT_DATA = {
   snapshots: [],
   reviewedChanges: {},
   pendingWrites: [],
+  writeDecisions: [],
   diagnostics: [],
   editSessions: {},
   folderMigration: null,
@@ -4278,6 +4311,10 @@ function validDiagnostic(value) {
   if (!isRecord2(value)) return false;
   return isStr(value.time) && isStr(value.message) && isStr(value.category);
 }
+function validWriteDecision(value) {
+  if (!isRecord2(value)) return false;
+  return isStr(value.id) && isStr(value.time) && isStr(value.pendingId) && (value.decision === "approved" || value.decision === "rejected" || value.decision === "stale") && isStr(value.tool) && isStr(value.agent) && isStr(value.path);
+}
 function onlyValid(value, guard) {
   return Array.isArray(value) ? value.filter(guard) : [];
 }
@@ -4415,6 +4452,7 @@ var Store = class {
       pendingWrites: Array.isArray(loaded.pendingWrites) ? loaded.pendingWrites.filter(
         (item) => item && typeof item === "object" && typeof item.id === "string" && typeof item.path === "string" && item.request && typeof item.request === "object" && typeof item.request.kind === "string" && isRecord2(item.request.args)
       ) : [],
+      writeDecisions: onlyValid(loaded.writeDecisions, validWriteDecision),
       diagnostics: onlyValid(loaded.diagnostics, validDiagnostic),
       editSessions: loaded.editSessions && typeof loaded.editSessions === "object" && !Array.isArray(loaded.editSessions) ? loaded.editSessions : {},
       folderMigration: normalizeFolderMigration(loaded.folderMigration),
@@ -4679,6 +4717,23 @@ var Store = class {
   reviewChange(key, decision) {
     this.data.reviewedChanges[key] = { decision, time: (/* @__PURE__ */ new Date()).toISOString() };
     this.logDiagnostic("storage", `Agent \u53D8\u66F4\u5DF2\u5BA1\u67E5\uFF1A${decision}`, key);
+    this.scheduleSave();
+  }
+  /** 永久记录一次待审写入的人工决定，供变更时间线审计（含驳回）。 */
+  recordWriteDecision(record, decision, reason) {
+    var _a2, _b;
+    (_b = (_a2 = this.data).writeDecisions) != null ? _b : _a2.writeDecisions = [];
+    this.data.writeDecisions.unshift({
+      id: `decision:${record.id}:${decision}`,
+      time: (/* @__PURE__ */ new Date()).toISOString(),
+      pendingId: record.id,
+      decision,
+      tool: record.tool,
+      agent: record.agent,
+      path: record.path,
+      ...reason ? { reason } : {}
+    });
+    if (this.data.writeDecisions.length > 500) this.data.writeDecisions.length = 500;
     this.scheduleSave();
   }
   /** 挂起一条 confirm 模式的待审写入；超出上限时丢弃最旧的条目。 */
@@ -6879,6 +6934,30 @@ function createDailyNotesAccess(app) {
   };
 }
 
+// src/features/agents-guide.ts
+var AGENTS_GUIDE = `# \u5728\u8FD9\u4E2A\u77E5\u8BC6\u5E93\u91CC\u5DE5\u4F5C\u7684\u89C4\u5219
+
+\u672C\u5E93\u7531 Obsidian \u63D2\u4EF6 **Sediment** \u7BA1\u7406\u3002Agent \u5BF9\u5E93\u7684\u8BFB\u5199\u5E94\u901A\u8FC7 Sediment \u63D0\u4F9B\u7684 MCP \u5DE5\u5177\uFF08get_active_context / read_note / list_notes / search_notes / write_note / patch_note / add_memo / add_knowledge / record_work_log / manage_tasks\uFF09\uFF0C\u800C\u4E0D\u662F\u76F4\u63A5\u64CD\u4F5C\u6587\u4EF6\u7CFB\u7EDF\u3002
+
+## \u5FC5\u987B\u9075\u5B88
+- **\u4E00\u5F8B\u901A\u8FC7 MCP \u5199\u5165**\uFF1A\u76F4\u63A5\u5199\u6587\u4EF6\u4F1A\u7ED5\u8FC7\u7EDF\u8BA1\u3001\u5FEB\u7167\u4E0E\u5BA1\u8BA1\u94FE\u3002
+- **\u8349\u7A3F\u9700\u4EBA\u5DE5\u5BA1\u6279**\uFF1A\u9ED8\u8BA4\u5DE5\u4F5C\u6A21\u5F0F\u4E3A confirm\uFF0C\u5199\u5165\u4F1A\u6302\u8D77\u4E3A\u5F85\u5BA1\u8349\u7A3F\uFF0C\u7B49\u5F85\u4E3B\u4EBA\u91C7\u7EB3\u540E\u624D\u843D\u76D8\u3002\u4E0D\u8981\u8BD5\u56FE\u7ED5\u8FC7\u5BA1\u6279\u3002
+- **\u4E0D\u8981\u8BB0\u5F55\u4EE4\u724C**\uFF1A\u4E0D\u8981\u628A API \u4EE4\u724C\u3001\u5BC6\u94A5\u5199\u8FDB\u4EFB\u4F55\u7B14\u8BB0\u3002
+- **\u5148\u8BFB\u4E0A\u4E0B\u6587**\uFF1A\u5199\u5165\u524D\u5148\u7528 get_active_context / get_daily_context \u4E86\u89E3\u5F53\u524D\u72B6\u6001\uFF0C\u907F\u514D\u8986\u76D6\u4ED6\u4EBA\u5185\u5BB9\u3002
+
+## \u5EFA\u8BAE
+- \u7528 record_work_log \u8BB0\u5F55\u6BCF\u6B21\u4F1A\u8BDD\u7684\u7ED3\u8BBA\u3001\u51B3\u7B56\u4E0E\u5F00\u653E\u95EE\u9898\u3002
+- \u7528 add_knowledge \u6C89\u6DC0\u53EF\u590D\u7528\u77E5\u8BC6\uFF0C\u5E76\u6807\u6CE8\u6765\u6E90\u3002
+- \u6279\u91CF\u4EFB\u52A1\u7528 manage_tasks \u7EDF\u4E00\u7BA1\u7406\u3002
+
+\u8FD9\u5957\u7EA6\u5B9A\u8BA9\u6240\u6709\u5199\u5165\u53EF\u8FFD\u6EAF\u3001\u53EF\u56DE\u6EDA\u3002\u8BE6\u89C1 Sediment \u63D2\u4EF6\u8BF4\u660E\u3002
+`;
+function installAgentsGuide(vault) {
+  if (vault.getAbstractFileByPath("AGENTS.md")) return false;
+  void vault.create("AGENTS.md", AGENTS_GUIDE);
+  return true;
+}
+
 // src/ui/confirm-modal.ts
 var import_obsidian15 = require("obsidian");
 function confirmAction(app, message, cta = t("\u7EE7\u7EED")) {
@@ -7604,6 +7683,12 @@ var PulseSettingTab = class extends import_obsidian16.PluginSettingTab {
         this.renderSettings();
       })
     );
+    new import_obsidian16.Setting(containerEl).setName(t("\u5B89\u88C5 AGENTS.md \u89C4\u5219")).setDesc(t("\u5728\u5E93\u6839\u5199\u5165 AGENTS.md\uFF0C\u544A\u8BC9\u7F16\u7801\u667A\u80FD\u4F53\u4E00\u5F8B\u8D70 MCP \u5199\u5165\u3002\u5DF2\u5B58\u5728\u5219\u4E0D\u4F1A\u8986\u76D6\u3002")).addButton(
+      (button) => button.setButtonText(t("\u4E00\u952E\u5B89\u88C5")).onClick(() => {
+        const created = installAgentsGuide(this.app.vault);
+        new import_obsidian16.Notice(created ? t("\u5DF2\u5728\u5E93\u6839\u521B\u5EFA AGENTS.md") : t("\u5E93\u6839\u5DF2\u6709 AGENTS.md\uFF0C\u672A\u8986\u76D6"));
+      })
+    );
     new import_obsidian16.Setting(containerEl).setName(t("\u542F\u7528\u6587\u4EF6\u6865\uFF08\u5B9E\u9A8C\uFF09")).setDesc(
       t(
         "\u975E MCP \u667A\u80FD\u4F53\u53EF\u628A write_note / patch_note / add_knowledge \u63D0\u6848\u653E\u8FDB\u63D2\u4EF6\u76EE\u5F55 bridge/proposals/\uFF0C\u5728\u5DE5\u574A\u9884\u89C8\u540E\u91C7\u7EB3\u6216\u9A73\u56DE\uFF1B\u7ED3\u679C\u5199\u5230 bridge/decisions/\u3002\u9ED8\u8BA4\u5173\u95ED\uFF0C\u63D0\u6848\u4E0D\u4F1A\u81EA\u52A8\u843D\u76D8\u3002"
@@ -7629,6 +7714,11 @@ var PulseSettingTab = class extends import_obsidian16.PluginSettingTab {
           try {
             configureAgent(this.plugin, agent);
             new import_obsidian16.Notice(tfAgentConfigured(agent.name));
+            if (!this.plugin.store.settings.agentServerEnabled) {
+              this.plugin.store.settings.agentServerEnabled = true;
+              void this.plugin.saveSettings();
+              new import_obsidian16.Notice(t("\u5DF2\u81EA\u52A8\u542F\u7528\u672C\u5730 API\uFF0CMCP \u5BA2\u6237\u7AEF\u73B0\u5728\u53EF\u4EE5\u8FDE\u63A5"));
+            }
             this.renderSettings();
           } catch (error) {
             new import_obsidian16.Notice(`${t("\u914D\u7F6E\u5931\u8D25")}: ${error instanceof Error ? error.message : String(error)}`);
