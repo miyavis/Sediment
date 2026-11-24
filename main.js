@@ -1799,7 +1799,12 @@ function listBackupsMap(plugin, paths) {
   return map;
 }
 function isValidBackupName(name) {
-  return /^[A-Za-z0-9._-]+$/.test(name) && !name.includes("..");
+  if (!name || name === "." || name.includes("..")) return false;
+  for (let i = 0; i < name.length; i += 1) {
+    const code = name.charCodeAt(i);
+    if (code === 47 || code === 92 || code < 32 || code === 127) return false;
+  }
+  return true;
 }
 function readBackup(plugin, name) {
   if (!isValidBackupName(name)) return "";

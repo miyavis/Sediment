@@ -910,6 +910,36 @@ test("audit：非法快照名拒绝路径穿越（A4）", async () => {
   assert.equal(processed, false);
 });
 
+test("audit：中文/空格路径的快照可正常读取与恢复（差异对比不空白）", async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sediment-audit-unicode-"));
+  try {
+    const backupDir = path.join(tmp, "backups");
+    fs.mkdirSync(backupDir, { recursive: true });
+    const name = "1795507478831-Sediment_knowledge_项目_fundopermng_2026-11-24-管理费月报暂停报送功能系分.md";
+    const original = "第 1 行\n第 2 行\n";
+    fs.writeFileSync(path.join(backupDir, name), original, "utf8");
+    let written = "未写入";
+    const vault = {
+      configDir: ".obsidian",
+      adapter: { getFullPath: () => backupDir },
+      process: async (_f: unknown, cb: (data: string) => string) => { written = cb("当前内容"); },
+    } as never;
+    const plugin = { app: { vault } } as never;
+
+    // 差异对比：必须读到原文，而不是被白名单挡掉返回空串。
+    assert.equal(readBackup(plugin, name), original);
+    // 恢复：同样不能因文件名含中文而抛「非法快照文件名」，也不能把笔记清空。
+    await restoreBackup(plugin, new (TFile as unknown as new (path: string) => TFile)("x.md"), name);
+    assert.equal(written, original);
+    // 带空格的合法名同样放行。
+    const spaced = "1795507478832-notes_CR Agent 产品调研.md";
+    fs.writeFileSync(path.join(backupDir, spaced), "空格快照", "utf8");
+    assert.equal(readBackup(plugin, spaced), "空格快照");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test("Store.load：数组中畸形元素被过滤，不污染下游（A6）", async () => {
   const plugin = {
     loadData: async () => ({
