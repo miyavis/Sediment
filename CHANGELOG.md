@@ -2,7 +2,7 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
-## [Unreleased]
+## [1.3.4] - 2026-11-24
 
 ### 改进
 - `release:prepare` 在 CHANGELOG 缺少 `[Unreleased]` 标题时自动插入空段再定稿，避免上次发版后新增 commit 却未写 CHANGELOG 时发版失败
