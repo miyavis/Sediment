@@ -14,13 +14,27 @@ if (changelog.includes(`## [${version}]`)) {
   console.log(`CHANGELOG already contains ${version}, skip heading update`);
 } else {
   const today = new Date().toISOString().slice(0, 10);
-  const updated = changelog.replace(
+  let updated = changelog.replace(
     /^## \[Unreleased\]$/m,
     `## [${version}] - ${today}`
   );
   if (updated === changelog) {
-    console.error("CHANGELOG.md 中没有 [Unreleased] 标题，无法自动定稿");
-    process.exit(1);
+    // 没有 [Unreleased]：在第一个版本标题前自动补一个空段再定稿。
+    // 这样即便上次发版后新增了 commit 但没写 [Unreleased]，也能正常发版。
+    const firstHeading = updated.search(/^## \[/m);
+    if (firstHeading < 0) {
+      console.error("CHANGELOG.md 中找不到任何版本标题，无法自动插入 [Unreleased]");
+      process.exit(1);
+    }
+    updated =
+      updated.slice(0, firstHeading) +
+      "## [Unreleased]\n\n" +
+      updated.slice(firstHeading);
+    updated = updated.replace(
+      /^## \[Unreleased\]$/m,
+      `## [${version}] - ${today}`
+    );
+    console.log("CHANGELOG 缺少 [Unreleased]，已自动插入空段");
   }
   changelog = updated;
   writeFileSync(changelogPath, changelog, "utf8");
