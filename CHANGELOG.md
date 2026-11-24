@@ -2,6 +2,11 @@
 
 本文件记录每个版本的增量变化，格式遵循 [Keep a Changelog](https://keepachangelog.com/)。构建时由 `scripts/sync-changelog.mjs` 同步到插件内，可在看板页脚的「更新记录」里查看。
 
+## [1.3.3] - 2026-11-24
+
+### 改进
+- 加入 `.gitattributes` 统一 LF 行尾，避免 Windows 与 Linux CI 之间的行尾差异导致构建后 tree 变脏、CI 校验失败
+
 ## [1.3.2] - 2026-11-23
 
 ### 变更
