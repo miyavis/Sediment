@@ -7,6 +7,9 @@ data.json
 tests/.unit.bundle.cjs
 tests/.bench.bundle.cjs
 dist/
+# 本地分发包（手动发给别人用，不入库）
+sediment-安装分发/
+sediment-*-安装.zip
 .impeccable/
 docs/
 vibe_images/
