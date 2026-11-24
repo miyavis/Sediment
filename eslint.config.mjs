@@ -6,6 +6,7 @@ export default defineConfig([
     "node_modules/**",
     "dist/**",
     "main.js",
+    "sediment-安装分发/**",
     "esbuild.config.mjs",
     "scripts/**",
     "src/changelog.ts",

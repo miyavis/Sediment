@@ -386,7 +386,9 @@ export class SedimentPlugin extends Plugin {
           : workspace.getLeaf(true);
     }
     await leaf.setViewState({ type, active: true });
-    workspace.setActiveLeaf(leaf, { focus: true });
+    // revealLeaf 是 Obsidian 官方推荐的激活方式：会正确展开侧栏并聚焦。
+    // 旧版用 setActiveLeaf 在右侧栏场景下可能不生效或抛错（表现为点击图标没反应）。
+    await workspace.revealLeaf(leaf);
   }
 
   private isSideLeaf(leaf: WorkspaceLeaf): boolean {

@@ -11274,7 +11274,7 @@ ${tf("\u6062\u590D\u526F\u672C\uFF1A{path}", { path: this.store.recoveryCopyPath
       leaf = type === MEMO_VIEW_TYPE ? (_a2 = workspace.getRightLeaf(false)) != null ? _a2 : workspace.getLeaf(true) : workspace.getLeaf(true);
     }
     await leaf.setViewState({ type, active: true });
-    workspace.setActiveLeaf(leaf, { focus: true });
+    await workspace.revealLeaf(leaf);
   }
   isSideLeaf(leaf) {
     var _a2;
