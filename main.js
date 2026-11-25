@@ -865,6 +865,9 @@ var EN = {
   // 阶段一 Task 3：失效待审
   "\u76EE\u6807\u5DF2\u5220\u9664/\u79FB\u52A8": "Target deleted/moved",
   "\u5931\u6548\u9879\uFF08\u76EE\u6807\u88AB\u5220\u9664/\u79FB\u52A8\uFF09\u53EA\u80FD\u9A73\u56DE\uFF0C\u8BA9 Agent \u91CD\u53D1\u3002": "Stale items (target deleted/moved) can only be rejected; ask the agent to resend.",
+  "\u91CD\u65B0\u68C0\u67E5": "Re-check",
+  "\u76EE\u6807\u4ECD\u5728\u4E14\u5185\u5BB9\u672A\u53D8\uFF0C\u5DF2\u6062\u590D\u5F85\u5BA1": "Target is intact and unchanged; pending write restored",
+  "\u76EE\u6807\u4ECD\u4E0D\u53EF\u7528\uFF0C\u65E0\u6CD5\u6062\u590D": "Target is still unavailable; cannot restore",
   "\u6807\u8BB0\u5DF2\u5BA1\u67E5": "Mark as reviewed",
   "\u5DF2\u6807\u8BB0\u4E3A\u5DF2\u5BA1\u67E5": "Marked as reviewed",
   // 阶段一 Task 5：知识库现状
@@ -4982,6 +4985,24 @@ var Store = class {
     if (marked > 0) this.scheduleSave(2e3);
     return marked;
   }
+  /** 重新校验失效待审项：目标仍在且内容哈希与 beforeHash 一致时撤销 stale。
+   *  用于修复启动索引未就绪导致的误标；真正被删除/移动/改过内容的仍保持失效。 */
+  async revalidatePendingStale(id) {
+    const record = this.data.pendingWrites.find((item) => item.id === id);
+    if (!(record == null ? void 0 : record.stale)) return false;
+    const file = this.plugin.app.vault.getAbstractFileByPath(record.path);
+    if (record.expectAbsent) {
+      if (file instanceof import_obsidian13.TFile) return false;
+    } else {
+      if (!(file instanceof import_obsidian13.TFile)) return false;
+      if (record.beforeHash && contentHash(await this.plugin.app.vault.read(file)) !== record.beforeHash) {
+        return false;
+      }
+    }
+    record.stale = false;
+    this.scheduleSave(2e3);
+    return true;
+  }
   addSnapshot(record) {
     this.data.snapshots.unshift(record);
     if (this.data.snapshots.length > 200) this.data.snapshots.length = 200;
@@ -8425,6 +8446,12 @@ function renderPendingWrites(view, root) {
     });
     if (item.stale) {
       actions.createSpan({ cls: "sd-audit-badge is-stale", text: t("\u76EE\u6807\u5DF2\u5220\u9664/\u79FB\u52A8") });
+      actions.createEl("button", { text: t("\u91CD\u65B0\u68C0\u67E5") }).onclick = () => {
+        void view.plugin.store.revalidatePendingStale(item.id).then((ok) => {
+          new import_obsidian27.Notice(t(ok ? "\u76EE\u6807\u4ECD\u5728\u4E14\u5185\u5BB9\u672A\u53D8\uFF0C\u5DF2\u6062\u590D\u5F85\u5BA1" : "\u76EE\u6807\u4ECD\u4E0D\u53EF\u7528\uFF0C\u65E0\u6CD5\u6062\u590D"));
+          view.render();
+        });
+      };
       actions.createEl("button", { cls: "mod-cta", text: t("\u9A73\u56DE") }).onclick = () => void rejectPendingWrite(view, item.id);
       continue;
     }
@@ -11015,7 +11042,9 @@ ${tf("\u6062\u590D\u526F\u672C\uFF1A{path}", { path: this.store.recoveryCopyPath
       element.createDiv({ cls: "sd-embed-today", text: todayLine(this.store) });
     });
     await this.tracker.start();
-    this.store.reconcilePending((path) => this.app.vault.getAbstractFileByPath(path) !== null);
+    this.app.workspace.onLayoutReady(() => {
+      this.store.reconcilePending((path) => this.app.vault.getAbstractFileByPath(path) !== null);
+    });
     const vault = this.app.vault;
     const onVaultChange = (path) => {
       this.semantic.invalidate();

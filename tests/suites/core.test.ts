@@ -861,6 +861,46 @@ test("Store.markPendingWritesChanged：外部改动使挂起项失效（F5）", 
   assert.equal(store.data.pendingWrites[1].stale, undefined, "非目标路径不受影响");
 });
 
+test("Store.revalidatePendingStale：误标 stale 的待审项可就地恢复（重启索引未就绪）", async () => {
+  const file = new (TFile as unknown as new (path: string) => TFile)("notes/a.md");
+  const content = "未变更的原文";
+  const vault = {
+    getAbstractFileByPath: (p: string) => (p === "notes/a.md" ? file : null),
+    read: async () => content,
+  };
+  const plugin = {
+    loadData: async () => ({ version: 1, settings: DEFAULT_SETTINGS }),
+    saveData: async () => {},
+    app: { vault },
+  } as unknown as ConstructorParameters<typeof Store>[0];
+  const store = new Store(plugin);
+  await store.load();
+  const record = {
+    id: "p1", time: "t", tool: "patch_note", agent: "a", path: "notes/a.md",
+    request: { kind: "patch_note", args: {} }, before: content,
+    beforeHash: contentHash(content), after: "采纳后的内容", stale: true,
+  };
+  store.data.pendingWrites = [record];
+  const savedWindow = (globalThis as { window?: unknown }).window;
+  (globalThis as { window?: unknown }).window = { setTimeout: () => 0, clearTimeout: () => {} };
+  try {
+    assert.equal(await store.revalidatePendingStale("p1"), true, "目标仍在且内容未变 → 恢复待审");
+    assert.equal(record.stale, false);
+
+    record.stale = true;
+    (vault as { read: unknown }).read = async () => "被改过的内容";
+    assert.equal(await store.revalidatePendingStale("p1"), false, "内容已变 → 保持失效");
+    assert.equal(record.stale, true);
+
+    (vault as { read: unknown }).read = async () => content;
+    (vault as { getAbstractFileByPath: unknown }).getAbstractFileByPath = () => null;
+    assert.equal(await store.revalidatePendingStale("p1"), false, "目标不存在 → 保持失效");
+    assert.equal(record.stale, true);
+  } finally {
+    (globalThis as { window?: unknown }).window = savedWindow;
+  }
+});
+
 test("agents-guide：内嵌规则与 examples/AGENTS.md 正文一致", () => {
   const template = fs.readFileSync(path.join(process.cwd(), "examples", "AGENTS.md"), "utf8");
   const a = stripHtmlComment(AGENTS_GUIDE);

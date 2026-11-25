@@ -687,6 +687,25 @@ export class Store {
     return marked;
   }
 
+  /** 重新校验失效待审项：目标仍在且内容哈希与 beforeHash 一致时撤销 stale。
+   *  用于修复启动索引未就绪导致的误标；真正被删除/移动/改过内容的仍保持失效。 */
+  async revalidatePendingStale(id: string): Promise<boolean> {
+    const record = this.data.pendingWrites.find((item) => item.id === id);
+    if (!record?.stale) return false;
+    const file = this.plugin.app.vault.getAbstractFileByPath(record.path);
+    if (record.expectAbsent) {
+      if (file instanceof TFile) return false;
+    } else {
+      if (!(file instanceof TFile)) return false;
+      if (record.beforeHash && contentHash(await this.plugin.app.vault.read(file)) !== record.beforeHash) {
+        return false;
+      }
+    }
+    record.stale = false;
+    this.scheduleSave(2000);
+    return true;
+  }
+
   addSnapshot(record: SnapshotRecord): void {
     this.data.snapshots.unshift(record);
     if (this.data.snapshots.length > 200) this.data.snapshots.length = 200;

@@ -85,6 +85,13 @@ export function renderPendingWrites(view: DashboardView, root: HTMLElement): voi
     });
     if (item.stale) {
       actions.createSpan({ cls: "sd-audit-badge is-stale", text: t("目标已删除/移动") });
+      // 启动索引未就绪可能误标 stale，给用户一个就地复核入口。
+      actions.createEl("button", { text: t("重新检查") }).onclick = () => {
+        void view.plugin.store.revalidatePendingStale(item.id).then((ok) => {
+          new Notice(t(ok ? "目标仍在且内容未变，已恢复待审" : "目标仍不可用，无法恢复"));
+          view.render();
+        });
+      };
       actions.createEl("button", { cls: "mod-cta", text: t("驳回") }).onclick = () =>
         void rejectPendingWrite(view, item.id);
       continue;

@@ -85,8 +85,12 @@ export class SedimentPlugin extends Plugin {
 
     await this.tracker.start();
 
-    // 启动对账：挂起期间目标被删除/移动的待审写入标记失效（A 路线轻量对账）。
-    this.store.reconcilePending((path) => this.app.vault.getAbstractFileByPath(path) !== null);
+    // 启动对账必须等 Obsidian 文件索引就绪：onload 阶段 getAbstractFileByPath
+    // 可能返回 null，把目标仍在的待审写入误标为 stale（界面显示「目标已删除/移动」）。
+    // 实测：重启后 4 秒才落盘 data.json，正是这里误标后触发的延迟保存。
+    this.app.workspace.onLayoutReady(() => {
+      this.store.reconcilePending((path) => this.app.vault.getAbstractFileByPath(path) !== null);
+    });
 
     // Agent 通过 MCP 写入笔记后，自动刷新看板与速记面板。
     const vault = this.app.vault;
