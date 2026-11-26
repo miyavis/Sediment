@@ -2292,6 +2292,11 @@ button.sd-task-open:not(.clickable-icon):hover {
   border-color: var(--text-error);
 }
 
+.sd-audit-badge.is-done {
+  color: var(--text-muted);
+  background: var(--background-modifier-hover);
+}
+
 .sd-rhythm-cell.is-empty {
   height: 4px;
   min-height: 4px;

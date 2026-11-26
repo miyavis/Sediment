@@ -83,6 +83,7 @@ import {
   filterAgentTasks,
   pendingChangeRows,
   pendingReviewChanges,
+  recentChangeRows,
   reviewBadgeCount,
 } from "../../src/views/dashboard/review-queue";
 import { SETTINGS_SECTIONS, settingsSection } from "../../src/ui/settings-sections";
@@ -446,6 +447,20 @@ test("pendingChangeRows：目标缺失仍保留一行并标记 missing，徽章�
   assert.deepEqual(rows.map((row) => row.call.path), ["old/template.md", "keep.md"]);
   assert.deepEqual(rows.map((row) => row.missing), [true, false]);
   assert.equal(rows.length, reviewBadgeCount({ drafts: 0, changes: rows.length, pendingWrites: 0 }));
+});
+
+test("recentChangeRows：已审查变更仍可见并保留差异入口，但不计入待审徽章", () => {
+  const calls = [
+    { time: "2026-11-26T10:00:00.000Z", tool: "POST note", agent: "opencode", path: "done.md" },
+    { time: "2026-11-26T09:00:00.000Z", tool: "POST patch_note", agent: "opencode", path: "pending.md" },
+    { time: "2026-11-26T08:00:00.000Z", tool: "POST note", agent: "opencode", path: "done.md" }, // 同路径去重
+    { time: "2026-11-26T07:00:00.000Z", tool: "GET read_note", agent: "opencode", path: "r.md" },
+  ];
+  const reviewed = { "2026-11-26T10:00:00.000Z|done.md": "kept" as const };
+  const rows = recentChangeRows(calls, reviewed, () => true);
+  assert.deepEqual(rows.map((row) => row.call.path), ["done.md", "pending.md"]);
+  assert.deepEqual(rows.map((row) => row.reviewed), [true, false]);
+  assert.equal(pendingReviewChanges(calls, reviewed).length, 1, "徽章仍只数未审查项");
 });
 
 test("SETTINGS_SECTIONS：基础区置顶，Agent 目录/黑名单归 Agent 区，键跨区不重复", () => {

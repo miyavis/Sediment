@@ -10,7 +10,7 @@ import { summarizeAgentUsage } from "../../../data/agent-usage";
 import { localStamp } from "../../../utils/dates";
 import { frontmatterOf, normalizeFolder } from "../../../utils/vault";
 import { t, tf } from "../../../i18n";
-import { pendingChangeRows } from "../review-queue";
+import { pendingChangeRows, recentChangeRows } from "../review-queue";
 import type { DashboardView } from "../../dashboard-view";
 import { WORK_MODE_LABELS } from "../../../agent/work-mode";
 
@@ -198,7 +198,7 @@ async function markHumanSource(view: DashboardView, path: string): Promise<void>
 }
 
 export function renderAgentChanges(view: DashboardView, root: HTMLElement): void {
-  const rows = pendingChangeRows(
+  const rows = recentChangeRows(
     view.plugin.store.data.toolCalls,
     view.plugin.store.data.reviewedChanges,
     (path) => view.plugin.app.vault.getAbstractFileByPath(path) instanceof TFile
@@ -210,24 +210,30 @@ export function renderAgentChanges(view: DashboardView, root: HTMLElement): void
 
   const card = root.createDiv({ cls: "sd-card" });
   card.createDiv({ cls: "sd-card-title", text: t("Agent 变更审查") });
+  card.createDiv({ cls: "sd-card-sub", text: t("含已审查项；仍可对比差异或恢复，已审查项不计入待审。") });
   const list = card.createDiv({ cls: "sd-feed-list" });
   const backupsByPath = listBackupsMap(
     view.plugin,
     rows.filter((row) => !row.missing).map((row) => row.call.path)
   );
-  for (const { call, missing } of rows) {
+  for (const { call, missing, reviewed } of rows) {
     const row = list.createDiv({ cls: "sd-feed-row sd-feed-row-audit" });
     row.createSpan({ text: `${localStamp(call.time).slice(5)} · ${call.tool.replace(/^(GET|POST) /, "")}`, attr: { title: call.path } });
     const actions = row.createDiv({ cls: "sd-audit-actions" });
+    if (reviewed) {
+      actions.createSpan({ cls: "sd-audit-badge is-done", text: t("已审查") });
+    }
     if (missing) {
       // 目标已删除/移动：保留一行让用户能手动了结，避免徽章计数与列表可见行漂移。
-      actions.createSpan({ cls: "sd-audit-badge is-stale", text: t("目标已删除/移动") });
+      if (!reviewed) actions.createSpan({ cls: "sd-audit-badge is-stale", text: t("目标已删除/移动") });
       actions.createSpan({ text: call.path.split("/").pop() ?? call.path, attr: { title: call.path } });
-      actions.createEl("button", { text: t("标记已审查") }).onclick = () => {
-        view.plugin.store.reviewChange(`${call.time}|${call.path}`, "kept");
-        new Notice(t("已标记为已审查"));
-        view.render();
-      };
+      if (!reviewed) {
+        actions.createEl("button", { text: t("标记已审查") }).onclick = () => {
+          view.plugin.store.reviewChange(`${call.time}|${call.path}`, "kept");
+          new Notice(t("已标记为已审查"));
+          view.render();
+        };
+      }
       continue;
     }
     const file = view.plugin.app.vault.getAbstractFileByPath(call.path);
@@ -281,7 +287,7 @@ export function renderAgentChanges(view: DashboardView, root: HTMLElement): void
           });
         });
       };
-    } else {
+    } else if (!reviewed) {
       // 新建类写入没有旧快照可对比，但仍需结案入口，否则徽章只增不减。
       actions.createEl("button", { text: t("标记已审查") }).onclick = () => {
         view.plugin.store.reviewChange(`${call.time}|${call.path}`, "kept");

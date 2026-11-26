@@ -778,6 +778,8 @@ const EN: Record<string, string> = {
   "标记为人工": "Mark as human",
   "已标记为人工来源": "Marked as human source",
   "该笔记已有来源信息，未覆盖": "This note already has source information; not overwritten",
+  "已审查": "Reviewed",
+  "含已审查项；仍可对比差异或恢复，已审查项不计入待审。": "Includes reviewed items; diffs and restores remain available, and reviewed items are not counted as pending.",
 
   // 阶段二 Task 8：健康度六项
   "草稿滞留": "Draft stalled",

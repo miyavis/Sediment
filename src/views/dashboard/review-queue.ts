@@ -22,6 +22,29 @@ export interface PendingChangeRow {
   missing: boolean;
 }
 
+export interface RecentChangeRow extends PendingChangeRow {
+  /** 已审查的变更仍保留可见，以便回看差异与恢复；只是不计入待审徽章。 */
+  reviewed: boolean;
+}
+
+/** 最近变更：按路径去重后列出全部写入调用（含已审查），供「Agent 变更审查」展示差异/恢复入口。
+ *  待审徽章仍用 pendingReviewChanges 只数未审查项。 */
+export function recentChangeRows(
+  calls: ToolCallRecord[],
+  reviewed: Record<string, unknown>,
+  exists: (path: string) => boolean
+): RecentChangeRow[] {
+  const seen = new Set<string>();
+  return calls
+    .filter((call) => call.tool.startsWith("POST ") && call.path && !seen.has(call.path) && seen.add(call.path))
+    .filter((call) => /\.(md|json)$/.test(call.path))
+    .map((call) => ({
+      call,
+      missing: !exists(call.path),
+      reviewed: Boolean(reviewed[`${call.time}|${call.path}`]),
+    }));
+}
+
 /** 变更审查行：在待审集合上附加目标存在性。exists 由调用方注入，保持纯函数可测。
  *  目标缺失的旧记录不能静默丢弃，否则徽章计数会大于列表可见行（孤儿记录）。 */
 export function pendingChangeRows(
