@@ -434,7 +434,7 @@ export function fakeConfirmPlugin(partial: Partial<SedimentSettings> = {}, files
   const writeDecisions: Array<Record<string, unknown>> = [];
   const store: Record<string, any> = {
     settings: s,
-    data: { snapshots: [], memos: [], workLogs: [], toolCalls: [], days: {}, pendingWrites, writeDecisions },
+    data: { snapshots: [], memos: [], workLogs: [], toolCalls: [], days: {}, pendingWrites, writeDecisions, reviewedChanges: {} },
     logDiagnostic: (category: string, message: string, detail?: string) => {
       diagnostics.push({ category, message, detail });
     },
@@ -484,6 +484,9 @@ export function fakeConfirmPlugin(partial: Partial<SedimentSettings> = {}, files
       if (index < 0) return false;
       store.data.toolCalls.splice(index, 1);
       return true;
+    },
+    reviewChange: (key: string, decision: string) => {
+      store.data.reviewedChanges[key] = { decision, time: new Date().toISOString() };
     },
     addWorkLog: (record: Record<string, any>) => {
       store.data.workLogs.unshift(record);

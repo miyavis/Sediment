@@ -3,6 +3,7 @@
 import { Notice, TFile } from "obsidian";
 import { t, tf } from "../i18n";
 import { contentHash } from "../utils/hash";
+import { findCallByPendingId } from "../features/change-timeline";
 import type { PendingWriteRecord } from "../types";
 import { bridgePendingId, type BridgeProposal } from "./bridge-schema";
 import { ApiError } from "./errors";
@@ -44,6 +45,11 @@ export const reviewMethods: ReviewMethods = {
       "claim_agent_task", "complete_agent_task", "agent_task_claim", "agent_task_complete",
     ]);
     const expectAbsent = before === "" && !ENTRY_KINDS.has(kind);
+    // 先把调用标记为挂起，再加待审项：addPendingWrite 会触发界面软刷新，
+    // 顺序反了会让尚未 held 的调用短暂出现在「变更审查」。
+    if (meta.source !== "bridge") {
+      this.plugin.store.markToolCallHeld(meta.call ?? null, id);
+    }
     this.plugin.store.addPendingWrite({
       id,
       time: new Date().toISOString(),
@@ -59,10 +65,6 @@ export const reviewMethods: ReviewMethods = {
         ? { source: "bridge" as const, proposalId: meta.proposalId }
         : {}),
     });
-    // 文件桥导入不经过 HTTP 调用记录；仅把当前请求的调用标记为挂起，防止重复计数。
-    if (meta.source !== "bridge") {
-      this.plugin.store.markToolCallHeld(meta.call ?? null, id);
-    }
     const message = tf("confirm 模式下写入已挂起待审：{path}", { path });
     this.plugin.store.logDiagnostic("storage", message, `${id} · ${tool}`);
     // 主动提醒用户有待审写入到达；文件桥批量导入不逐条弹窗，避免刷屏。
@@ -83,14 +85,19 @@ export const reviewMethods: ReviewMethods = {
     return (this.plugin.store.data.pendingWrites ?? []).find((item) => item.id === id) ?? null;
   },
 
-  /** 结算待审写入对应的调用流水：采纳后转入变更审查；驳回则整条移除。 */
+  /** 结算待审写入对应的调用流水：采纳后自动标记已审查（内容已在预览中审过，
+   *  不必在「变更审查」再点一次）；驳回则整条移除。时间线仍保留调用与决定记录。 */
   settlePendingCall(this: AgentApi, record: PendingWriteRecord, landed: boolean): void {
     if (!landed) {
       this.plugin.store.dropPendingToolCall(record.id);
       return;
     }
-    if (this.plugin.store.releaseToolCall(record.id)) return;
-    this.plugin.store.logToolCall(
+    const call = findCallByPendingId(this.plugin.store.data.toolCalls ?? [], record.id);
+    if (this.plugin.store.releaseToolCall(record.id)) {
+      if (call) this.plugin.store.reviewChange?.(`${call.time}|${call.path}`, "kept");
+      return;
+    }
+    const logged = this.plugin.store.logToolCall(
       {
         time: new Date().toISOString(),
         tool: `POST ${record.tool}`,
@@ -99,6 +106,7 @@ export const reviewMethods: ReviewMethods = {
       },
       false
     );
+    this.plugin.store.reviewChange?.(`${logged.time}|${logged.path}`, "kept");
   },
 
   /** 采纳前复验：删除/移动 → STALE_PENDING；内容被改 → CONTENT_CHANGED。 */

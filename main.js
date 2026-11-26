@@ -1035,6 +1035,122 @@ function contentHash(text) {
   return hex;
 }
 
+// src/features/change-timeline.ts
+function reviewDecisionOf(value) {
+  if (!value) return void 0;
+  return typeof value === "string" ? value : value.decision;
+}
+function reviewTimeOf(key, value) {
+  var _a2;
+  if (typeof value !== "string" && value.time) return value.time;
+  return (_a2 = key.split("|")[0]) != null ? _a2 : "";
+}
+function findCallByPendingId(calls, pendingId) {
+  return calls.find((call) => call.pendingId === pendingId);
+}
+function buildChangeTimeline(data, options = {}) {
+  var _a2, _b, _c, _d, _e, _f;
+  const events = [];
+  const calls = (_a2 = data.toolCalls) != null ? _a2 : [];
+  const pending = (_b = data.pendingWrites) != null ? _b : [];
+  const snapshots = (_c = data.snapshots) != null ? _c : [];
+  const reviewed = (_d = data.reviewedChanges) != null ? _d : {};
+  const writeDecisions = (_e = data.writeDecisions) != null ? _e : [];
+  for (const call of calls) {
+    if (!options.includeReads && call.tool.startsWith("GET ")) continue;
+    events.push({
+      id: `call:${call.time}|${call.path}|${call.tool}`,
+      time: call.time,
+      kind: "call",
+      agent: call.agent || "agent",
+      tool: call.tool,
+      path: call.path,
+      title: call.tool,
+      pendingId: call.pendingId,
+      status: call.held ? "held" : void 0
+    });
+  }
+  for (const item of pending) {
+    events.push(pendingEvent(item));
+  }
+  for (const [key, value] of Object.entries(reviewed)) {
+    const sep = key.indexOf("|");
+    const callTime = sep >= 0 ? key.slice(0, sep) : key;
+    const path = sep >= 0 ? key.slice(sep + 1) : "";
+    const decision = reviewDecisionOf(value);
+    if (!decision) continue;
+    const snapshot = snapshots.find((snap) => snap.path === path && snap.time >= callTime);
+    events.push({
+      id: `decision:${key}`,
+      time: reviewTimeOf(key, value),
+      kind: "decision",
+      agent: (snapshot == null ? void 0 : snapshot.agent) || "user",
+      tool: (snapshot == null ? void 0 : snapshot.tool) || "review",
+      path,
+      title: decision === "kept" ? "\u4FDD\u7559\u5F53\u524D\u7248\u672C" : "\u91C7\u7528\u5907\u4EFD\u5E76\u64A4\u9500",
+      decision,
+      snapshotId: snapshot == null ? void 0 : snapshot.id
+    });
+  }
+  for (const decision of writeDecisions) {
+    events.push(writeDecisionEvent(decision));
+  }
+  for (const snap of snapshots) {
+    events.push({
+      id: `snapshot:${snap.id}`,
+      time: snap.time,
+      kind: "snapshot",
+      agent: snap.agent,
+      tool: snap.tool,
+      path: snap.path,
+      title: "\u5199\u5165\u524D\u5FEB\u7167",
+      snapshotId: snap.id
+    });
+  }
+  let result = events.filter((event) => {
+    if (options.agent && event.agent !== options.agent) return false;
+    if (options.path && !event.path.includes(options.path)) return false;
+    return true;
+  });
+  result = result.sort((a, b) => a.time < b.time ? 1 : a.time > b.time ? -1 : 0);
+  const start = Math.max(0, (_f = options.offset) != null ? _f : 0);
+  return options.limit && options.limit > 0 ? result.slice(start, start + options.limit) : result;
+}
+function writeDecisionEvent(decision) {
+  const titles = {
+    approved: "\u5DF2\u91C7\u7EB3\u5F85\u5BA1\u5199\u5165",
+    rejected: "\u5DF2\u9A73\u56DE\u5F85\u5BA1\u5199\u5165",
+    stale: "\u5F85\u5BA1\u5199\u5165\u5DF2\u5931\u6548"
+  };
+  return {
+    id: decision.id,
+    time: decision.time,
+    kind: "decision",
+    agent: decision.agent || "user",
+    tool: decision.tool,
+    path: decision.path,
+    title: titles[decision.decision],
+    decision: decision.decision === "rejected" ? "reverted" : decision.decision === "approved" ? "kept" : void 0,
+    pendingId: decision.pendingId,
+    status: decision.decision,
+    ...decision.reason ? { reason: decision.reason } : {}
+  };
+}
+function pendingEvent(item) {
+  return {
+    id: `pending:${item.id}`,
+    time: item.time,
+    kind: "pending",
+    agent: item.agent,
+    tool: item.tool,
+    path: item.path,
+    title: item.stale ? "\u5F85\u5BA1\u5199\u5165\uFF08\u5DF2\u5931\u6548\uFF09" : "\u5F85\u5BA1\u5199\u5165",
+    hash: item.beforeHash,
+    pendingId: item.id,
+    status: item.stale ? "stale" : "held"
+  };
+}
+
 // src/agent/bridge-schema.ts
 var BRIDGE_VERSION = 1;
 var BRIDGE_PROPOSAL_MAX_BYTES = 256 * 1024;
@@ -1254,6 +1370,9 @@ var reviewMethods = {
       "agent_task_complete"
     ]);
     const expectAbsent = before === "" && !ENTRY_KINDS.has(kind);
+    if (meta.source !== "bridge") {
+      this.plugin.store.markToolCallHeld((_b = meta.call) != null ? _b : null, id);
+    }
     this.plugin.store.addPendingWrite({
       id,
       time: (/* @__PURE__ */ new Date()).toISOString(),
@@ -1267,9 +1386,6 @@ var reviewMethods = {
       after,
       ...meta.source === "bridge" && meta.proposalId ? { source: "bridge", proposalId: meta.proposalId } : {}
     });
-    if (meta.source !== "bridge") {
-      this.plugin.store.markToolCallHeld((_b = meta.call) != null ? _b : null, id);
-    }
     const message = tf("confirm \u6A21\u5F0F\u4E0B\u5199\u5165\u5DF2\u6302\u8D77\u5F85\u5BA1\uFF1A{path}", { path });
     this.plugin.store.logDiagnostic("storage", message, `${id} \xB7 ${tool}`);
     if (meta.source !== "bridge") {
@@ -1286,14 +1402,20 @@ var reviewMethods = {
     var _a2, _b;
     return (_b = ((_a2 = this.plugin.store.data.pendingWrites) != null ? _a2 : []).find((item) => item.id === id)) != null ? _b : null;
   },
-  /** 结算待审写入对应的调用流水：采纳后转入变更审查；驳回则整条移除。 */
+  /** 结算待审写入对应的调用流水：采纳后自动标记已审查（内容已在预览中审过，
+   *  不必在「变更审查」再点一次）；驳回则整条移除。时间线仍保留调用与决定记录。 */
   settlePendingCall(record, landed) {
+    var _a2, _b, _c, _d, _e;
     if (!landed) {
       this.plugin.store.dropPendingToolCall(record.id);
       return;
     }
-    if (this.plugin.store.releaseToolCall(record.id)) return;
-    this.plugin.store.logToolCall(
+    const call = findCallByPendingId((_a2 = this.plugin.store.data.toolCalls) != null ? _a2 : [], record.id);
+    if (this.plugin.store.releaseToolCall(record.id)) {
+      if (call) (_c = (_b = this.plugin.store).reviewChange) == null ? void 0 : _c.call(_b, `${call.time}|${call.path}`, "kept");
+      return;
+    }
+    const logged = this.plugin.store.logToolCall(
       {
         time: (/* @__PURE__ */ new Date()).toISOString(),
         tool: `POST ${record.tool}`,
@@ -1302,6 +1424,7 @@ var reviewMethods = {
       },
       false
     );
+    (_e = (_d = this.plugin.store).reviewChange) == null ? void 0 : _e.call(_d, `${logged.time}|${logged.path}`, "kept");
   },
   /** 采纳前复验：删除/移动 → STALE_PENDING；内容被改 → CONTENT_CHANGED。 */
   async assertPendingUnchanged(record) {
@@ -1666,119 +1789,6 @@ function buildWeeklyReview(store, anchor) {
     })}`
   );
   return lines.join("\n");
-}
-
-// src/features/change-timeline.ts
-function reviewDecisionOf(value) {
-  if (!value) return void 0;
-  return typeof value === "string" ? value : value.decision;
-}
-function reviewTimeOf(key, value) {
-  var _a2;
-  if (typeof value !== "string" && value.time) return value.time;
-  return (_a2 = key.split("|")[0]) != null ? _a2 : "";
-}
-function buildChangeTimeline(data, options = {}) {
-  var _a2, _b, _c, _d, _e, _f;
-  const events = [];
-  const calls = (_a2 = data.toolCalls) != null ? _a2 : [];
-  const pending = (_b = data.pendingWrites) != null ? _b : [];
-  const snapshots = (_c = data.snapshots) != null ? _c : [];
-  const reviewed = (_d = data.reviewedChanges) != null ? _d : {};
-  const writeDecisions = (_e = data.writeDecisions) != null ? _e : [];
-  for (const call of calls) {
-    if (!options.includeReads && call.tool.startsWith("GET ")) continue;
-    events.push({
-      id: `call:${call.time}|${call.path}|${call.tool}`,
-      time: call.time,
-      kind: "call",
-      agent: call.agent || "agent",
-      tool: call.tool,
-      path: call.path,
-      title: call.tool,
-      pendingId: call.pendingId,
-      status: call.held ? "held" : void 0
-    });
-  }
-  for (const item of pending) {
-    events.push(pendingEvent(item));
-  }
-  for (const [key, value] of Object.entries(reviewed)) {
-    const sep = key.indexOf("|");
-    const callTime = sep >= 0 ? key.slice(0, sep) : key;
-    const path = sep >= 0 ? key.slice(sep + 1) : "";
-    const decision = reviewDecisionOf(value);
-    if (!decision) continue;
-    const snapshot = snapshots.find((snap) => snap.path === path && snap.time >= callTime);
-    events.push({
-      id: `decision:${key}`,
-      time: reviewTimeOf(key, value),
-      kind: "decision",
-      agent: (snapshot == null ? void 0 : snapshot.agent) || "user",
-      tool: (snapshot == null ? void 0 : snapshot.tool) || "review",
-      path,
-      title: decision === "kept" ? "\u4FDD\u7559\u5F53\u524D\u7248\u672C" : "\u91C7\u7528\u5907\u4EFD\u5E76\u64A4\u9500",
-      decision,
-      snapshotId: snapshot == null ? void 0 : snapshot.id
-    });
-  }
-  for (const decision of writeDecisions) {
-    events.push(writeDecisionEvent(decision));
-  }
-  for (const snap of snapshots) {
-    events.push({
-      id: `snapshot:${snap.id}`,
-      time: snap.time,
-      kind: "snapshot",
-      agent: snap.agent,
-      tool: snap.tool,
-      path: snap.path,
-      title: "\u5199\u5165\u524D\u5FEB\u7167",
-      snapshotId: snap.id
-    });
-  }
-  let result = events.filter((event) => {
-    if (options.agent && event.agent !== options.agent) return false;
-    if (options.path && !event.path.includes(options.path)) return false;
-    return true;
-  });
-  result = result.sort((a, b) => a.time < b.time ? 1 : a.time > b.time ? -1 : 0);
-  const start = Math.max(0, (_f = options.offset) != null ? _f : 0);
-  return options.limit && options.limit > 0 ? result.slice(start, start + options.limit) : result;
-}
-function writeDecisionEvent(decision) {
-  const titles = {
-    approved: "\u5DF2\u91C7\u7EB3\u5F85\u5BA1\u5199\u5165",
-    rejected: "\u5DF2\u9A73\u56DE\u5F85\u5BA1\u5199\u5165",
-    stale: "\u5F85\u5BA1\u5199\u5165\u5DF2\u5931\u6548"
-  };
-  return {
-    id: decision.id,
-    time: decision.time,
-    kind: "decision",
-    agent: decision.agent || "user",
-    tool: decision.tool,
-    path: decision.path,
-    title: titles[decision.decision],
-    decision: decision.decision === "rejected" ? "reverted" : decision.decision === "approved" ? "kept" : void 0,
-    pendingId: decision.pendingId,
-    status: decision.decision,
-    ...decision.reason ? { reason: decision.reason } : {}
-  };
-}
-function pendingEvent(item) {
-  return {
-    id: `pending:${item.id}`,
-    time: item.time,
-    kind: "pending",
-    agent: item.agent,
-    tool: item.tool,
-    path: item.path,
-    title: item.stale ? "\u5F85\u5BA1\u5199\u5165\uFF08\u5DF2\u5931\u6548\uFF09" : "\u5F85\u5BA1\u5199\u5165",
-    hash: item.beforeHash,
-    pendingId: item.id,
-    status: item.stale ? "stale" : "held"
-  };
 }
 
 // src/features/audit.ts

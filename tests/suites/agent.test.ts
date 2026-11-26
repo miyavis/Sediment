@@ -466,11 +466,16 @@ test("confirm 档：writeNote 挂起不落盘；采纳落盘、驳回丢弃、�
   assert.equal(ctx.files.get("notes/a.md"), "agent 内容", "采纳后按原请求真正落盘");
   assert.equal(ctx.pendingWrites.length, 0);
   assert.ok(ctx.diagnostics.some((d) => /采纳并落盘/.test(d.message)));
+  const auditData = (ctx.store as unknown as {
+    data: { toolCalls: Array<{ path: string }>; reviewedChanges: Record<string, unknown> };
+  }).data;
+  assert.ok(Object.keys(auditData.reviewedChanges).length > 0, "采纳后自动标记调用已审查，不再需要二次点击");
 
   const second = (await ctx.api.writeNote("notes/b.md", "x", "create")) as HoldResult;
   ctx.api.rejectPendingWrite(pendingIdOf(second));
   assert.equal(ctx.files.has("notes/b.md"), false);
   assert.equal(ctx.pendingWrites.length, 0);
+  assert.equal(auditData.toolCalls.filter((c) => c.path === "notes/b.md").length, 0, "驳回后不留幽灵调用行");
   assert.ok(ctx.diagnostics.some((d) => d.category === "security" && /驳回并丢弃/.test(d.message)));
   // 驳回与采纳都要在审计时间线永久留痕（C1/C2）。
   assert.ok((ctx.store as { data: { writeDecisions: unknown[] } }).data.writeDecisions.some((d) => (d as { decision: string }).decision === "rejected"));
