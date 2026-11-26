@@ -210,7 +210,7 @@ export function renderAgentChanges(view: DashboardView, root: HTMLElement): void
 
   const card = root.createDiv({ cls: "sd-card" });
   card.createDiv({ cls: "sd-card-title", text: t("Agent 变更审查") });
-  card.createDiv({ cls: "sd-card-sub", text: t("含已审查项；仍可对比差异或恢复，已审查项不计入待审。") });
+  card.createDiv({ cls: "sd-card-sub", text: t("已审查项仅为变更记录，无需处理；差异与恢复仅供事后追溯，不计入待审。") });
   const list = card.createDiv({ cls: "sd-feed-list" });
   const backupsByPath = listBackupsMap(
     view.plugin,
@@ -221,7 +221,11 @@ export function renderAgentChanges(view: DashboardView, root: HTMLElement): void
     row.createSpan({ text: `${localStamp(call.time).slice(5)} · ${call.tool.replace(/^(GET|POST) /, "")}`, attr: { title: call.path } });
     const actions = row.createDiv({ cls: "sd-audit-actions" });
     if (reviewed) {
-      actions.createSpan({ cls: "sd-audit-badge is-done", text: t("已审查") });
+      actions.createSpan({
+        cls: "sd-audit-badge is-done",
+        text: t("已审查"),
+        attr: { title: t("审批已完成，无需操作；这里只作变更记录，差异/恢复可事后回溯") },
+      });
     }
     if (missing) {
       // 目标已删除/移动：保留一行让用户能手动了结，避免徽章计数与列表可见行漂移。

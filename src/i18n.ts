@@ -779,7 +779,8 @@ const EN: Record<string, string> = {
   "已标记为人工来源": "Marked as human source",
   "该笔记已有来源信息，未覆盖": "This note already has source information; not overwritten",
   "已审查": "Reviewed",
-  "含已审查项；仍可对比差异或恢复，已审查项不计入待审。": "Includes reviewed items; diffs and restores remain available, and reviewed items are not counted as pending.",
+  "已审查项仅为变更记录，无需处理；差异与恢复仅供事后追溯，不计入待审。": "Reviewed items are change records only — no action needed. Diff and restore are for later reference and are not counted as pending.",
+  "审批已完成，无需操作；这里只作变更记录，差异/恢复可事后回溯": "Approval is complete — no action needed. This is just a change record; diff/restore remain available for later reference.",
 
   // 阶段二 Task 8：健康度六项
   "草稿滞留": "Draft stalled",

@@ -884,7 +884,8 @@ var EN = {
   "\u5DF2\u6807\u8BB0\u4E3A\u4EBA\u5DE5\u6765\u6E90": "Marked as human source",
   "\u8BE5\u7B14\u8BB0\u5DF2\u6709\u6765\u6E90\u4FE1\u606F\uFF0C\u672A\u8986\u76D6": "This note already has source information; not overwritten",
   "\u5DF2\u5BA1\u67E5": "Reviewed",
-  "\u542B\u5DF2\u5BA1\u67E5\u9879\uFF1B\u4ECD\u53EF\u5BF9\u6BD4\u5DEE\u5F02\u6216\u6062\u590D\uFF0C\u5DF2\u5BA1\u67E5\u9879\u4E0D\u8BA1\u5165\u5F85\u5BA1\u3002": "Includes reviewed items; diffs and restores remain available, and reviewed items are not counted as pending.",
+  "\u5DF2\u5BA1\u67E5\u9879\u4EC5\u4E3A\u53D8\u66F4\u8BB0\u5F55\uFF0C\u65E0\u9700\u5904\u7406\uFF1B\u5DEE\u5F02\u4E0E\u6062\u590D\u4EC5\u4F9B\u4E8B\u540E\u8FFD\u6EAF\uFF0C\u4E0D\u8BA1\u5165\u5F85\u5BA1\u3002": "Reviewed items are change records only \u2014 no action needed. Diff and restore are for later reference and are not counted as pending.",
+  "\u5BA1\u6279\u5DF2\u5B8C\u6210\uFF0C\u65E0\u9700\u64CD\u4F5C\uFF1B\u8FD9\u91CC\u53EA\u4F5C\u53D8\u66F4\u8BB0\u5F55\uFF0C\u5DEE\u5F02/\u6062\u590D\u53EF\u4E8B\u540E\u56DE\u6EAF": "Approval is complete \u2014 no action needed. This is just a change record; diff/restore remain available for later reference.",
   // 阶段二 Task 8：健康度六项
   "\u8349\u7A3F\u6EDE\u7559": "Draft stalled",
   "\u7591\u4F3C\u91CD\u590D": "Near-duplicate",
@@ -8589,7 +8590,7 @@ function renderAgentChanges(view, root) {
   }
   const card = root.createDiv({ cls: "sd-card" });
   card.createDiv({ cls: "sd-card-title", text: t("Agent \u53D8\u66F4\u5BA1\u67E5") });
-  card.createDiv({ cls: "sd-card-sub", text: t("\u542B\u5DF2\u5BA1\u67E5\u9879\uFF1B\u4ECD\u53EF\u5BF9\u6BD4\u5DEE\u5F02\u6216\u6062\u590D\uFF0C\u5DF2\u5BA1\u67E5\u9879\u4E0D\u8BA1\u5165\u5F85\u5BA1\u3002") });
+  card.createDiv({ cls: "sd-card-sub", text: t("\u5DF2\u5BA1\u67E5\u9879\u4EC5\u4E3A\u53D8\u66F4\u8BB0\u5F55\uFF0C\u65E0\u9700\u5904\u7406\uFF1B\u5DEE\u5F02\u4E0E\u6062\u590D\u4EC5\u4F9B\u4E8B\u540E\u8FFD\u6EAF\uFF0C\u4E0D\u8BA1\u5165\u5F85\u5BA1\u3002") });
   const list = card.createDiv({ cls: "sd-feed-list" });
   const backupsByPath = listBackupsMap(
     view.plugin,
@@ -8600,7 +8601,11 @@ function renderAgentChanges(view, root) {
     row.createSpan({ text: `${localStamp(call.time).slice(5)} \xB7 ${call.tool.replace(/^(GET|POST) /, "")}`, attr: { title: call.path } });
     const actions = row.createDiv({ cls: "sd-audit-actions" });
     if (reviewed) {
-      actions.createSpan({ cls: "sd-audit-badge is-done", text: t("\u5DF2\u5BA1\u67E5") });
+      actions.createSpan({
+        cls: "sd-audit-badge is-done",
+        text: t("\u5DF2\u5BA1\u67E5"),
+        attr: { title: t("\u5BA1\u6279\u5DF2\u5B8C\u6210\uFF0C\u65E0\u9700\u64CD\u4F5C\uFF1B\u8FD9\u91CC\u53EA\u4F5C\u53D8\u66F4\u8BB0\u5F55\uFF0C\u5DEE\u5F02/\u6062\u590D\u53EF\u4E8B\u540E\u56DE\u6EAF") }
+      });
     }
     if (missing) {
       if (!reviewed) actions.createSpan({ cls: "sd-audit-badge is-stale", text: t("\u76EE\u6807\u5DF2\u5220\u9664/\u79FB\u52A8") });
