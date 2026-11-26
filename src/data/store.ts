@@ -623,11 +623,19 @@ export class Store {
     this.scheduleSave();
   }
 
+  /** 待审队列变化请求一次软刷新：confirm 阶段没有文件写入事件，界面不会自己更新。
+   *  可选调用以兼容测试里的简易 plugin mock。 */
+  private requestPendingRefresh(): void {
+    const plugin = this.plugin as unknown as { refreshViews?: (soft?: boolean) => void };
+    plugin.refreshViews?.(true);
+  }
+
   /** 挂起一条 confirm 模式的待审写入；超出上限时丢弃最旧的条目。 */
   addPendingWrite(record: PendingWriteRecord): void {
     this.data.pendingWrites.unshift(record);
     if (this.data.pendingWrites.length > 100) this.data.pendingWrites.length = 100;
     this.scheduleSave(2000);
+    this.requestPendingRefresh();
   }
 
   /** 按 id 移除挂起项并返回被移除的记录（找不到返回 undefined）。 */
@@ -636,6 +644,7 @@ export class Store {
     if (index < 0) return undefined;
     const [removed] = this.data.pendingWrites.splice(index, 1);
     this.scheduleSave(2000);
+    this.requestPendingRefresh();
     return removed;
   }
 

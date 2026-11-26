@@ -901,6 +901,34 @@ test("Store.revalidatePendingStale：误标 stale 的待审项可就地恢复（
   }
 });
 
+test("Store.addPendingWrite/removePendingWrite：待审队列变化触发软刷新（confirm 无文件事件）", async () => {
+  const refreshes: boolean[] = [];
+  const plugin = {
+    loadData: async () => ({ version: 1, settings: DEFAULT_SETTINGS }),
+    saveData: async () => {},
+    refreshViews: (soft?: boolean) => { refreshes.push(soft === true); },
+  } as unknown as ConstructorParameters<typeof Store>[0];
+  const store = new Store(plugin);
+  await store.load();
+  const savedWindow = (globalThis as { window?: unknown }).window;
+  (globalThis as { window?: unknown }).window = { setTimeout: () => 0, clearTimeout: () => {} };
+  try {
+    const record = {
+      id: "p1", time: "t", tool: "add_knowledge", agent: "opencode", path: "knowledge/a.md",
+      request: { kind: "add_knowledge", args: {} }, before: "", expectAbsent: true, after: "新内容",
+    };
+    store.addPendingWrite(record);
+    assert.equal(refreshes.length, 1, "新增待审 → 刷新");
+    assert.equal(refreshes[0], true, "必须走软刷新，不打断输入");
+    assert.equal(store.removePendingWrite("p1"), record, "移除返回原记录");
+    assert.equal(refreshes.length, 2, "移除待审 → 刷新");
+    assert.equal(store.removePendingWrite("not-exist"), undefined);
+    assert.equal(refreshes.length, 2, "无变化不刷新");
+  } finally {
+    (globalThis as { window?: unknown }).window = savedWindow;
+  }
+});
+
 test("agents-guide：内嵌规则与 examples/AGENTS.md 正文一致", () => {
   const template = fs.readFileSync(path.join(process.cwd(), "examples", "AGENTS.md"), "utf8");
   const a = stripHtmlComment(AGENTS_GUIDE);

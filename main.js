@@ -4927,11 +4927,19 @@ var Store = class {
     if (this.data.writeDecisions.length > 500) this.data.writeDecisions.length = 500;
     this.scheduleSave();
   }
+  /** 待审队列变化请求一次软刷新：confirm 阶段没有文件写入事件，界面不会自己更新。
+   *  可选调用以兼容测试里的简易 plugin mock。 */
+  requestPendingRefresh() {
+    var _a2;
+    const plugin = this.plugin;
+    (_a2 = plugin.refreshViews) == null ? void 0 : _a2.call(plugin, true);
+  }
   /** 挂起一条 confirm 模式的待审写入；超出上限时丢弃最旧的条目。 */
   addPendingWrite(record) {
     this.data.pendingWrites.unshift(record);
     if (this.data.pendingWrites.length > 100) this.data.pendingWrites.length = 100;
     this.scheduleSave(2e3);
+    this.requestPendingRefresh();
   }
   /** 按 id 移除挂起项并返回被移除的记录（找不到返回 undefined）。 */
   removePendingWrite(id) {
@@ -4939,6 +4947,7 @@ var Store = class {
     if (index < 0) return void 0;
     const [removed] = this.data.pendingWrites.splice(index, 1);
     this.scheduleSave(2e3);
+    this.requestPendingRefresh();
     return removed;
   }
   /** 启动对账：目标已不存在的待审写入标记 stale，返回新标记数。 */
