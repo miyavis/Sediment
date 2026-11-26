@@ -179,6 +179,15 @@ export function renderUnregisteredSources(view: DashboardView, root: HTMLElement
 
 /** 用户亲自触发的登记动作：与草稿采纳同款 bypass 先例，仍过访问门禁。 */
 async function markHumanSource(view: DashboardView, path: string): Promise<void> {
+  // 防御：界面只在未登记时给出按钮，但若元数据已变化，绝不覆盖已有来源值。
+  const file = view.plugin.app.vault.getAbstractFileByPath(path);
+  const cache = file instanceof TFile ? view.plugin.app.metadataCache.getFileCache(file) : null;
+  const existing = frontmatterOf(cache)?.source;
+  const existingSource = typeof existing === "string" ? existing.trim() : "";
+  if (existingSource && existingSource !== "human") {
+    new Notice(t("该笔记已有来源信息，未覆盖"));
+    return;
+  }
   try {
     await view.plugin.agentApi.updateFrontmatter(path, { source: "human" }, undefined, true);
     new Notice(t("已标记为人工来源"));

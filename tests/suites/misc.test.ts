@@ -445,6 +445,19 @@ test("scanKnowledgeState：只统计知识目录，来源缺失记未登记（�
   assert.equal(state.lastUpdated, dateKey(new Date(Date.UTC(2026, 10, 21))));
 });
 
+test("scanKnowledgeState：自定义 source 值视为已登记，不诱导覆盖", () => {
+  const files: KnowledgeFile[] = [
+    { path: "knowledge/工程实践/a.md", mtime: 0, frontmatter: { source: "ta/周报.md; ta/TA_Harness_说明.md" } },
+    { path: "knowledge/工程实践/b.md", mtime: 0, frontmatter: { source: "   " } },
+    { path: "knowledge/工程实践/c.md", mtime: 0, frontmatter: { source: "human" } },
+  ];
+  const state = scanKnowledgeState(files, "knowledge");
+  assert.equal(state.unregistered, 1, "只有 source 缺失/空白才算未登记");
+  assert.deepEqual(state.unregisteredPaths, ["knowledge/工程实践/b.md"]);
+  assert.equal(state.humanSourced, 1);
+  assert.equal(state.agentSourced, 0);
+});
+
 test("scanKnowledgeState：空库返回零值；未登记列表封顶 20", () => {
   const empty = scanKnowledgeState([], "knowledge");
   assert.equal(empty.total, 0);

@@ -882,6 +882,7 @@ var EN = {
   "\u8FD9\u4E9B\u77E5\u8BC6\u7B14\u8BB0\u6CA1\u6709 source \u5C5E\u6027\uFF08\u53EF\u80FD\u6765\u81EA\u7ED5\u8FC7 MCP \u7684\u76F4\u5199\u6216\u624B\u52A8\u65B0\u5EFA\uFF09\u3002\u6807\u8BB0\u4E3A\u4EBA\u5DE5\u540E\u8BA1\u5165\u4EBA\u5DE5\u6765\u6E90\uFF1B\u4E0D\u6539\u52A8\u6B63\u6587\u3002": "These knowledge notes have no source property (possibly written directly, bypassing MCP, or created manually). Marking as human records them as human-sourced; the note body is untouched.",
   "\u6807\u8BB0\u4E3A\u4EBA\u5DE5": "Mark as human",
   "\u5DF2\u6807\u8BB0\u4E3A\u4EBA\u5DE5\u6765\u6E90": "Marked as human source",
+  "\u8BE5\u7B14\u8BB0\u5DF2\u6709\u6765\u6E90\u4FE1\u606F\uFF0C\u672A\u8986\u76D6": "This note already has source information; not overwritten",
   // 阶段二 Task 8：健康度六项
   "\u8349\u7A3F\u6EDE\u7559": "Draft stalled",
   "\u7591\u4F3C\u91CD\u590D": "Near-duplicate",
@@ -8529,6 +8530,15 @@ function renderUnregisteredSources(view, root) {
   }
 }
 async function markHumanSource(view, path) {
+  var _a2;
+  const file = view.plugin.app.vault.getAbstractFileByPath(path);
+  const cache = file instanceof import_obsidian27.TFile ? view.plugin.app.metadataCache.getFileCache(file) : null;
+  const existing = (_a2 = frontmatterOf(cache)) == null ? void 0 : _a2.source;
+  const existingSource = typeof existing === "string" ? existing.trim() : "";
+  if (existingSource && existingSource !== "human") {
+    new import_obsidian27.Notice(t("\u8BE5\u7B14\u8BB0\u5DF2\u6709\u6765\u6E90\u4FE1\u606F\uFF0C\u672A\u8986\u76D6"));
+    return;
+  }
   try {
     await view.plugin.agentApi.updateFrontmatter(path, { source: "human" }, void 0, true);
     new import_obsidian27.Notice(t("\u5DF2\u6807\u8BB0\u4E3A\u4EBA\u5DE5\u6765\u6E90"));
@@ -8890,10 +8900,10 @@ function scanKnowledgeState(files, knowledgeFolder) {
     const fm = (_a2 = file.frontmatter) != null ? _a2 : {};
     if (fm.sediment_status === "draft") state.drafts += 1;
     if (fm.sediment_status === "accepted") state.accepted += 1;
-    const source = typeof fm.source === "string" ? fm.source : "";
+    const source = typeof fm.source === "string" ? fm.source.trim() : "";
     if (source === "agent") state.agentSourced += 1;
     else if (source === "human") state.humanSourced += 1;
-    else {
+    else if (!source) {
       state.unregistered += 1;
       if (state.unregisteredPaths.length < 20) state.unregisteredPaths.push(file.path);
     }

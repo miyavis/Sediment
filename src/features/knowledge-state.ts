@@ -46,10 +46,12 @@ export function scanKnowledgeState(files: KnowledgeFile[], knowledgeFolder: stri
     const fm = file.frontmatter ?? {};
     if (fm.sediment_status === "draft") state.drafts += 1;
     if (fm.sediment_status === "accepted") state.accepted += 1;
-    const source = typeof fm.source === "string" ? fm.source : "";
+    const source = typeof fm.source === "string" ? fm.source.trim() : "";
     if (source === "agent") state.agentSourced += 1;
     else if (source === "human") state.humanSourced += 1;
-    else {
+    else if (!source) {
+      // 只有 source 缺失/为空才算「未登记」；自定义来源值（如来源文档列表）
+      // 也是已登记，只是不归入 agent/human 两栏，避免诱导用户点「标记为人工」覆盖原值。
       state.unregistered += 1;
       if (state.unregisteredPaths.length < 20) state.unregisteredPaths.push(file.path);
     }
