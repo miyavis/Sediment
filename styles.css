@@ -2059,9 +2059,15 @@ button.sd-knowledge-open:not(.clickable-icon):hover,
   font-weight: 600;
 }
 
-/* Obsidian 默认弹窗约 560px，两栏 diff 会被挤窄；这里显式放宽。 */
-.sd-diff-modal {
+/* Obsidian 的宽度由外层 .modal-container 决定，只改 contentEl 会把内容撑出容器被裁切。
+   用 :has() 命中承载本弹窗的那个容器，再让内部 100% 铺满。 */
+.modal-container:has(.sd-diff-modal) {
   width: min(94vw, 1400px);
+  max-width: none;
+}
+
+.sd-diff-modal {
+  width: 100%;
   max-width: none;
 }
 
