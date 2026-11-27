@@ -8384,13 +8384,24 @@ var DiffModal = class extends import_obsidian25.Modal {
     left.createDiv({ cls: "sd-diff-head", text: (_f = (_e = this.labels) == null ? void 0 : _e.leftTitle) != null ? _f : t("\u5907\u4EFD\u7248\u672C\uFF08\u4FEE\u6539\u524D\uFF09") });
     const right = this.grid.createDiv({ cls: "sd-diff-column" });
     right.createDiv({ cls: "sd-diff-head", text: (_h = (_g = this.labels) == null ? void 0 : _g.rightTitle) != null ? _h : t("\u5F53\u524D\u7248\u672C\uFF08\u78C1\u76D8\u4E0A\uFF09") });
+    const bodies = [];
     for (const [source, target] of [[this.before, left], [this.after, right]]) {
       const body = target.createDiv({ cls: "sd-diff-preview" });
+      bodies.push(body);
       if (source.trim()) {
         void import_obsidian25.MarkdownRenderer.render(this.app, source, body, "", this.component);
       } else {
         body.createDiv({ cls: "sd-diff-preview-empty", text: t("\uFF08\u7A7A\uFF0C\u65B0\u5EFA\u6587\u4EF6\uFF09") });
       }
+    }
+    for (const [from, to] of [[bodies[0], bodies[1]], [bodies[1], bodies[0]]]) {
+      if (!from || !to) continue;
+      from.addEventListener("scroll", () => {
+        if (this.syncing) return;
+        this.syncing = true;
+        to.scrollTop = from.scrollTop;
+        this.syncing = false;
+      });
     }
   }
   column(grid, title, side) {

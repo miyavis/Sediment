@@ -131,13 +131,25 @@ export class DiffModal extends Modal {
     left.createDiv({ cls: "sd-diff-head", text: this.labels?.leftTitle ?? t("备份版本（修改前）") });
     const right = this.grid.createDiv({ cls: "sd-diff-column" });
     right.createDiv({ cls: "sd-diff-head", text: this.labels?.rightTitle ?? t("当前版本（磁盘上）") });
+    const bodies: HTMLElement[] = [];
     for (const [source, target] of [[this.before, left], [this.after, right]] as const) {
       const body = target.createDiv({ cls: "sd-diff-preview" });
+      bodies.push(body);
       if (source.trim()) {
         void MarkdownRenderer.render(this.app, source, body, "", this.component);
       } else {
         body.createDiv({ cls: "sd-diff-preview-empty", text: t("（空，新建文件）") });
       }
+    }
+    // 预览模式也要双栏滚动联动，否则两边看的位置对不上。
+    for (const [from, to] of [[bodies[0], bodies[1]], [bodies[1], bodies[0]]] as const) {
+      if (!from || !to) continue;
+      from.addEventListener("scroll", () => {
+        if (this.syncing) return;
+        this.syncing = true;
+        to.scrollTop = from.scrollTop;
+        this.syncing = false;
+      });
     }
   }
 

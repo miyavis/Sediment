@@ -2064,11 +2064,23 @@ button.sd-knowledge-open:not(.clickable-icon):hover,
 .modal-container:has(.sd-diff-modal) {
   width: min(94vw, 1400px);
   max-width: none;
+  max-height: 92vh;
 }
 
 .sd-diff-modal {
   width: 100%;
   max-width: none;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sd-diff-modal > h2,
+.sd-diff-meta,
+.sd-diff-modes,
+.sd-diff-actions {
+  flex-shrink: 0;
 }
 
 .sd-diff-modes {
@@ -2097,10 +2109,16 @@ button.sd-knowledge-open:not(.clickable-icon):hover,
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .sd-diff-column {
   min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .sd-diff-head {
@@ -2119,7 +2137,8 @@ button.sd-knowledge-open:not(.clickable-icon):hover,
 }
 
 .sd-diff-body {
-  max-height: 72vh;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
   padding: 6px 0;
   font-family: var(--font-monospace);
