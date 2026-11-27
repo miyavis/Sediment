@@ -2061,16 +2061,16 @@ button.sd-knowledge-open:not(.clickable-icon):hover,
 
 /* Obsidian 的宽度由外层 .modal-container 决定，只改 contentEl 会把内容撑出容器被裁切。
    用 :has() 命中承载本弹窗的那个容器，再让内部 100% 铺满。 */
-.modal-container:has(.sd-diff-modal) {
-  width: min(94vw, 1400px);
-  max-width: none;
-  max-height: 92vh;
+/* .modal-container 必须保持全屏，否则 .modal-background 遮罩也跟着缩成一小块。
+   只放大内部的 .modal 窗口，遮罩仍铺满整个 Obsidian 窗口并调暗。 */
+.modal-container:has(.sd-diff-modal) .modal-background {
+  background-color: rgb(0 0 0 / 55%);
 }
 
 .sd-diff-modal {
-  width: 100%;
-  max-width: none;
-  max-height: 92vh;
+  width: min(94vw, 1400px) !important;
+  max-width: 94vw !important;
+  max-height: 92vh !important;
   display: flex;
   flex-direction: column;
   overflow: hidden;
