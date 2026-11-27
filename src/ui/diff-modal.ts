@@ -1,4 +1,4 @@
-import { App, Modal } from "obsidian";
+import { App, Component, MarkdownRenderer, Modal } from "obsidian";
 import { t, tf } from "../i18n";
 
 type DiffType = "same" | "add" | "remove";
@@ -56,6 +56,9 @@ export function computeDiff(before: string, after: string): DiffLine[] {
 export class DiffModal extends Modal {
   private left: HTMLElement | null = null;
   private right: HTMLElement | null = null;
+  private grid: HTMLElement | null = null;
+  private mode: "diff" | "preview" = "diff";
+  private component = new Component();
   private syncing = false;
 
   constructor(
@@ -73,6 +76,7 @@ export class DiffModal extends Modal {
 
   onOpen(): void {
     const { contentEl } = this;
+    this.component.load();
     contentEl.addClass("sd-diff-modal");
     contentEl.createEl("h2", { text: this.titleText });
 
@@ -82,10 +86,21 @@ export class DiffModal extends Modal {
     meta.createSpan({ text: tf("+{n} 行", { n: added }) });
     meta.createSpan({ text: tf("-{n} 行", { n: removed }) });
 
-    const grid = contentEl.createDiv({ cls: "sd-diff-grid" });
-    this.left = this.column(grid, this.labels?.leftTitle ?? t("备份版本（修改前）"), "old");
-    this.right = this.column(grid, this.labels?.rightTitle ?? t("当前版本（磁盘上）"), "new");
-    this.renderLines(computeDiff(this.before, this.after));
+    const modes = contentEl.createDiv({ cls: "sd-diff-modes" });
+    for (const mode of ["diff", "preview"] as const) {
+      const label = mode === "diff" ? t("差异") : t("渲染预览");
+      const button = modes.createEl("button", { text: label });
+      if (mode === this.mode) button.addClass("is-active");
+      button.onclick = () => {
+        if (this.mode === mode) return;
+        this.mode = mode;
+        modes.querySelectorAll("button").forEach((node) => node.toggleClass("is-active", node === button));
+        this.renderMode();
+      };
+    }
+
+    this.grid = contentEl.createDiv({ cls: "sd-diff-grid" });
+    this.renderMode();
 
     const actions = contentEl.createDiv({ cls: "sd-diff-actions" });
     if (this.onRestore) {
@@ -98,6 +113,32 @@ export class DiffModal extends Modal {
       this.onKeep?.();
       this.close();
     };
+  }
+
+  /** 差异模式逐行高亮；预览模式把两侧 Markdown 渲染成最终排版，便于看效果而非源码。 */
+  private renderMode(): void {
+    if (!this.grid) return;
+    this.grid.empty();
+    this.left = null;
+    this.right = null;
+    if (this.mode === "diff") {
+      this.left = this.column(this.grid, this.labels?.leftTitle ?? t("备份版本（修改前）"), "old");
+      this.right = this.column(this.grid, this.labels?.rightTitle ?? t("当前版本（磁盘上）"), "new");
+      this.renderLines(computeDiff(this.before, this.after));
+      return;
+    }
+    const left = this.grid.createDiv({ cls: "sd-diff-column" });
+    left.createDiv({ cls: "sd-diff-head", text: this.labels?.leftTitle ?? t("备份版本（修改前）") });
+    const right = this.grid.createDiv({ cls: "sd-diff-column" });
+    right.createDiv({ cls: "sd-diff-head", text: this.labels?.rightTitle ?? t("当前版本（磁盘上）") });
+    for (const [source, target] of [[this.before, left], [this.after, right]] as const) {
+      const body = target.createDiv({ cls: "sd-diff-preview" });
+      if (source.trim()) {
+        void MarkdownRenderer.render(this.app, source, body, "", this.component);
+      } else {
+        body.createDiv({ cls: "sd-diff-preview-empty", text: t("（空，新建文件）") });
+      }
+    }
   }
 
   private column(grid: HTMLElement, title: string, side: "old" | "new"): HTMLElement {
@@ -141,6 +182,7 @@ export class DiffModal extends Modal {
   }
 
   onClose(): void {
+    this.component.unload();
     this.contentEl.empty();
   }
 }

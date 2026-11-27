@@ -781,6 +781,9 @@ const EN: Record<string, string> = {
   "已审查": "Reviewed",
   "已审查项仅为变更记录，无需处理；差异与恢复仅供事后追溯，不计入待审。": "Reviewed items are change records only — no action needed. Diff and restore are for later reference and are not counted as pending.",
   "审批已完成，无需操作；这里只作变更记录，差异/恢复可事后回溯": "Approval is complete — no action needed. This is just a change record; diff/restore remain available for later reference.",
+  "差异": "Diff",
+  "渲染预览": "Rendered preview",
+  "（空，新建文件）": "(empty — new file)",
 
   // 阶段二 Task 8：健康度六项
   "草稿滞留": "Draft stalled",

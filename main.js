@@ -886,6 +886,9 @@ var EN = {
   "\u5DF2\u5BA1\u67E5": "Reviewed",
   "\u5DF2\u5BA1\u67E5\u9879\u4EC5\u4E3A\u53D8\u66F4\u8BB0\u5F55\uFF0C\u65E0\u9700\u5904\u7406\uFF1B\u5DEE\u5F02\u4E0E\u6062\u590D\u4EC5\u4F9B\u4E8B\u540E\u8FFD\u6EAF\uFF0C\u4E0D\u8BA1\u5165\u5F85\u5BA1\u3002": "Reviewed items are change records only \u2014 no action needed. Diff and restore are for later reference and are not counted as pending.",
   "\u5BA1\u6279\u5DF2\u5B8C\u6210\uFF0C\u65E0\u9700\u64CD\u4F5C\uFF1B\u8FD9\u91CC\u53EA\u4F5C\u53D8\u66F4\u8BB0\u5F55\uFF0C\u5DEE\u5F02/\u6062\u590D\u53EF\u4E8B\u540E\u56DE\u6EAF": "Approval is complete \u2014 no action needed. This is just a change record; diff/restore remain available for later reference.",
+  "\u5DEE\u5F02": "Diff",
+  "\u6E32\u67D3\u9884\u89C8": "Rendered preview",
+  "\uFF08\u7A7A\uFF0C\u65B0\u5EFA\u6587\u4EF6\uFF09": "(empty \u2014 new file)",
   // 阶段二 Task 8：健康度六项
   "\u8349\u7A3F\u6EDE\u7559": "Draft stalled",
   "\u7591\u4F3C\u91CD\u590D": "Near-duplicate",
@@ -8320,11 +8323,15 @@ var DiffModal = class extends import_obsidian25.Modal {
     this.labels = labels;
     this.left = null;
     this.right = null;
+    this.grid = null;
+    this.mode = "diff";
+    this.component = new import_obsidian25.Component();
     this.syncing = false;
   }
   onOpen() {
-    var _a2, _b, _c, _d, _e, _f, _g, _h;
+    var _a2, _b, _c, _d;
     const { contentEl } = this;
+    this.component.load();
     contentEl.addClass("sd-diff-modal");
     contentEl.createEl("h2", { text: this.titleText });
     const meta = contentEl.createDiv({ cls: "sd-diff-meta" });
@@ -8332,23 +8339,59 @@ var DiffModal = class extends import_obsidian25.Modal {
     const removed = computeDiff(this.before, this.after).filter((line) => line.type === "remove").length;
     meta.createSpan({ text: tf("+{n} \u884C", { n: added }) });
     meta.createSpan({ text: tf("-{n} \u884C", { n: removed }) });
-    const grid = contentEl.createDiv({ cls: "sd-diff-grid" });
-    this.left = this.column(grid, (_b = (_a2 = this.labels) == null ? void 0 : _a2.leftTitle) != null ? _b : t("\u5907\u4EFD\u7248\u672C\uFF08\u4FEE\u6539\u524D\uFF09"), "old");
-    this.right = this.column(grid, (_d = (_c = this.labels) == null ? void 0 : _c.rightTitle) != null ? _d : t("\u5F53\u524D\u7248\u672C\uFF08\u78C1\u76D8\u4E0A\uFF09"), "new");
-    this.renderLines(computeDiff(this.before, this.after));
+    const modes = contentEl.createDiv({ cls: "sd-diff-modes" });
+    for (const mode of ["diff", "preview"]) {
+      const label = mode === "diff" ? t("\u5DEE\u5F02") : t("\u6E32\u67D3\u9884\u89C8");
+      const button = modes.createEl("button", { text: label });
+      if (mode === this.mode) button.addClass("is-active");
+      button.onclick = () => {
+        if (this.mode === mode) return;
+        this.mode = mode;
+        modes.querySelectorAll("button").forEach((node) => node.toggleClass("is-active", node === button));
+        this.renderMode();
+      };
+    }
+    this.grid = contentEl.createDiv({ cls: "sd-diff-grid" });
+    this.renderMode();
     const actions = contentEl.createDiv({ cls: "sd-diff-actions" });
     if (this.onRestore) {
-      actions.createEl("button", { text: (_f = (_e = this.labels) == null ? void 0 : _e.restore) != null ? _f : t("\u91C7\u7528\u5907\u4EFD\uFF08\u64A4\u9500\u672C\u6B21\u4FEE\u6539\uFF09") }).onclick = () => {
+      actions.createEl("button", { text: (_b = (_a2 = this.labels) == null ? void 0 : _a2.restore) != null ? _b : t("\u91C7\u7528\u5907\u4EFD\uFF08\u64A4\u9500\u672C\u6B21\u4FEE\u6539\uFF09") }).onclick = () => {
         var _a3;
         (_a3 = this.onRestore) == null ? void 0 : _a3.call(this);
         this.close();
       };
     }
-    actions.createEl("button", { cls: "mod-cta", text: (_h = (_g = this.labels) == null ? void 0 : _g.keep) != null ? _h : t("\u4FDD\u7559\u5F53\u524D\u5E76\u5173\u95ED") }).onclick = () => {
+    actions.createEl("button", { cls: "mod-cta", text: (_d = (_c = this.labels) == null ? void 0 : _c.keep) != null ? _d : t("\u4FDD\u7559\u5F53\u524D\u5E76\u5173\u95ED") }).onclick = () => {
       var _a3;
       (_a3 = this.onKeep) == null ? void 0 : _a3.call(this);
       this.close();
     };
+  }
+  /** 差异模式逐行高亮；预览模式把两侧 Markdown 渲染成最终排版，便于看效果而非源码。 */
+  renderMode() {
+    var _a2, _b, _c, _d, _e, _f, _g, _h;
+    if (!this.grid) return;
+    this.grid.empty();
+    this.left = null;
+    this.right = null;
+    if (this.mode === "diff") {
+      this.left = this.column(this.grid, (_b = (_a2 = this.labels) == null ? void 0 : _a2.leftTitle) != null ? _b : t("\u5907\u4EFD\u7248\u672C\uFF08\u4FEE\u6539\u524D\uFF09"), "old");
+      this.right = this.column(this.grid, (_d = (_c = this.labels) == null ? void 0 : _c.rightTitle) != null ? _d : t("\u5F53\u524D\u7248\u672C\uFF08\u78C1\u76D8\u4E0A\uFF09"), "new");
+      this.renderLines(computeDiff(this.before, this.after));
+      return;
+    }
+    const left = this.grid.createDiv({ cls: "sd-diff-column" });
+    left.createDiv({ cls: "sd-diff-head", text: (_f = (_e = this.labels) == null ? void 0 : _e.leftTitle) != null ? _f : t("\u5907\u4EFD\u7248\u672C\uFF08\u4FEE\u6539\u524D\uFF09") });
+    const right = this.grid.createDiv({ cls: "sd-diff-column" });
+    right.createDiv({ cls: "sd-diff-head", text: (_h = (_g = this.labels) == null ? void 0 : _g.rightTitle) != null ? _h : t("\u5F53\u524D\u7248\u672C\uFF08\u78C1\u76D8\u4E0A\uFF09") });
+    for (const [source, target] of [[this.before, left], [this.after, right]]) {
+      const body = target.createDiv({ cls: "sd-diff-preview" });
+      if (source.trim()) {
+        void import_obsidian25.MarkdownRenderer.render(this.app, source, body, "", this.component);
+      } else {
+        body.createDiv({ cls: "sd-diff-preview-empty", text: t("\uFF08\u7A7A\uFF0C\u65B0\u5EFA\u6587\u4EF6\uFF09") });
+      }
+    }
   }
   column(grid, title, side) {
     const wrapper = grid.createDiv({ cls: "sd-diff-column" });
@@ -8390,6 +8433,7 @@ var DiffModal = class extends import_obsidian25.Modal {
     }
   }
   onClose() {
+    this.component.unload();
     this.contentEl.empty();
   }
 };
